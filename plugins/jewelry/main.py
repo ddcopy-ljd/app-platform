@@ -188,7 +188,7 @@ def public_site(request: Request):
     with _db(request) as conn:
         prof = conn.execute("SELECT * FROM tenant_profiles ORDER BY id DESC LIMIT 1").fetchone()
         rows = conn.execute(
-            """SELECT id, name, category, material, weight, size, price, cert, status,
+            """SELECT id, code, name, category, material, weight, size, price, cert, status,
                       origin, showcase_order, showcase_desc
                  FROM products
                 WHERE showcase_public=1 AND status='在库'
@@ -220,6 +220,8 @@ def public_site(request: Request):
         if r["cert"]:
             tags_html += f"<span class='tag-cert'>附权威证书</span>"
         price_text = f"¥{float(r['price']):,.0f}" if r["price"] and float(r["price"]) > 0 else "<i>到店咨询</i>"
+        # 货号行：便于客户到店时报货号描述商品
+        code_html = f"<p class='sc-code'>货号 <b>{r['code']}</b></p>" if r["code"] else ""
         # 首字母占位的视觉 LOGO
         avatar_ch = (r["name"] or "臻")[:1]
         items_html.append(
@@ -230,10 +232,11 @@ def public_site(request: Request):
   </div>
   <div class='sc-body'>
     <h3>{r['name']}</h3>
+    {code_html}
     <p class='sc-desc'>{desc}</p>
     <div class='sc-foot'>
       <span class='sc-price'>{price_text}</span>
-      <button class='sc-book' onclick=\"focusBook('{r['name']}','{cat}')\">预约看货</button>
+      <button class='sc-book' onclick=\"focusBook('{r['name']}','{cat}','{r['code'] or ''}')\">预约看货</button>
     </div>
   </div>
 </article>"""
@@ -336,7 +339,13 @@ body {{ margin: 0; font-family: "PingFang SC","Microsoft YaHei","Hiragino Sans G
 }}
 .tag-cert {{ background: rgba(201,169,97,.85); color: #3D2B1F; border-color: rgba(255,255,255,.3); }}
 .sc-body {{ padding: 18px 18px 20px; }}
-.sc-body h3 {{ margin: 0 0 10px; font-size: 17px; color: #3D2B1F; }}
+.sc-body h3 {{ margin: 0 0 8px; font-size: 17px; color: #3D2B1F; }}
+.sc-code {{
+  margin: 0 0 10px; display: inline-block; font-size: 12px; color: #6E5426;
+  background: rgba(201,169,97,.14); border: 1px solid rgba(201,169,97,.4);
+  border-radius: 6px; padding: 2px 9px; letter-spacing: .3px;
+}}
+.sc-code b {{ font-family: Consolas, Menlo, 'Courier New', monospace; font-weight: 700; letter-spacing: 1px; }}
 .sc-desc {{
   margin: 0 0 16px; font-size: 12.5px; line-height: 1.7; color: #6A5546; min-height: 44px;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
@@ -439,10 +448,10 @@ textarea {{ resize: vertical; min-height: 72px; }}
   <div class="footer">© {name} · 以臻金品质 铸一世珍藏</div>
 </div>
 <script>
-function focusBook(name, cat) {{
+function focusBook(name, cat, code) {{
   const fp = document.getElementById('f-product');
   const fc = document.getElementById('f-category');
-  if (fp) fp.value = name;
+  if (fp) fp.value = code ? ('货号' + code + ' ' + name) : name;
   if (fc && !fc.value) fc.value = cat;
   fp && fp.scrollIntoView({{ behavior:'smooth', block:'center' }});
   fp && fp.focus();
