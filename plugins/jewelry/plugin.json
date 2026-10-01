@@ -1,0 +1,25 @@
+{
+  "id": "jewelry",
+  "name": "懿臻珠宝云",
+  "icon": "💍",
+  "category": "业务应用",
+  "author": "懿珠宝研发组",
+  "description": "面向珠宝门店的一站式业务管理，包含商品、库存、销售、定金尾款、借货、客户、维修、采购与委外加工等核心业务，支持电脑端与手机端。",
+  "features": [
+    "商品一物一码归档（含 RFID 芯片 EPC）",
+    "库存管理（入库 / 盘点 / 标签打印）",
+    "销售开单（普通 / 定金尾款）",
+    "借货、客户、维修、采购与委外加工",
+    "RFID 批量隔空盘点",
+    "多门店统一管理",
+    "企业迷你网站与到店预约"
+  ],
+  "softwareVersion": "1.0.0",
+  "dataVersion": "1.0.0",
+  "scripts": {
+    "init": "scripts/init.py",
+    "upgrade": "scripts/upgrade.py"
+  },
+  "entry": "main.py",
+  "promo": "promo/index.html"
+}

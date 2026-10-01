@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>应用插件管理</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="frame-page">
+<div id="app" v-cloak>
+  <section class="workspace">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <h2>插件列表</h2>
+        <button class="btn primary sm" @click="pickFile">＋ 上传插件包</button>
+      </div>
+      <ul class="plugin-list">
+        <li v-for="p in plugins" :key="p.id" class="pl-item" :class="{active: p.id === activeId}" @click="openPlugin(p.id)">
+          <span class="pl-icon">{{ p.icon }}</span>
+          <div>
+            <div class="pl-name">{{ p.name }}</div>
+            <div class="pl-sub">
+              {{ p.current_version ? 'v' + p.current_version : '未发布' }} · {{ p.version_count }} 个版本
+            </div>
+            <div class="pl-badges">
+              <span class="badge" :class="p.running_count ? 'b-ok' : 'b-gray'">{{ p.running_count ? '● ' + p.running_count + ' 个服务运行' : '○ 无服务运行' }}</span>
+              <span v-if="p.app_status === 'MAINTENANCE'" class="badge b-warn">维护</span>
+              <span v-if="p.gateway_state === 'MAINTENANCE'" class="badge b-err">切换中</span>
+              <span v-else-if="p.busy" class="badge b-doing">处理中</span>
+            </div>
+          </div>
+        </li>
+        <li v-if="!plugins.length" class="pl-empty">暂无插件<br>点击「上传插件包」登记第一个应用插件</li>
+      </ul>
+    </aside>
+
+    <main class="stage" @dragover.prevent="dragging = !!detail" @drop.prevent="onDrop">
+      <div v-if="!detail" class="empty">
+        <div class="empty-icon">🧩</div>
+        <h3>应用插件管理</h3>
+        <p>从左侧选择插件，或上传插件包（.zip，根目录含 plugin.json）</p>
+      </div>
+
+      <div v-else class="panel">
+        <div v-if="dragging" class="drop-overlay" @dragleave="dragging = false">⬆️ 松开鼠标，上传新版本插件包</div>
+        <div class="panel-title-bar">应用插件升级管理</div>
+
+        <section class="guide">
+          <div class="guide-head" @click="guideOpen = !guideOpen">
+            <span class="guide-title">📋 升级流程说明</span>
+            <span class="guide-toggle">{{ guideOpen ? '收起 ▲' : '展开 ▼' }}</span>
+          </div>
+          <div v-if="guideOpen" class="guide-steps">
+            <div class="guide-step"><div class="n">1</div><div class="t">上传插件包</div><div class="d">plugin.json 声明 softwareVersion、dataVersion 与服务入口 entry，每个版本拥有独立物理目录。</div></div>
+            <div class="guide-step"><div class="n">2</div><div class="t">阶段A · 沙箱试运行</div><div class="d">仅抽取沙箱租户及指定租户：结构未变则复制，结构升级则执行迁移脚本。真实业务不受影响。</div></div>
+            <div class="guide-step"><div class="n">3</div><div class="t">阶段B · 暂停与全量重迁</div><div class="d">网关进入 MAINTENANCE，基于旧版本最新数据对全部活跃租户重新复制/迁移。</div></div>
+            <div class="guide-step"><div class="n">4</div><div class="t">阶段C · 恢复与回滚</div><div class="d">主路由切向新正式版本；原正式版本服务在运行时自动交接到新版本。故障时将旧版本设为正式版本即可秒级降级。</div></div>
+          </div>
+        </section>
+
+        <header class="panel-head">
+          <div class="p-icon">{{ detail.icon }}</div>
+          <div class="p-head-main">
+            <div class="p-title-row">
+              <h1>{{ detail.name }}</h1>
+              <span v-if="detail.category" class="tag">{{ detail.category }}</span>
+              <span class="tag" :class="detail.gateway_state === 'NORMAL' ? 'green' : 'red'">网关 {{ detail.gateway_state }}</span>
+            </div>
+            <p class="p-desc">{{ detail.description || '暂无描述' }}</p>
+            <div class="p-meta">
+              <span>插件ID：<b class="mono">{{ detail.id }}</b></span><span>·</span>
+              <span>作者：{{ detail.author || '—' }}</span><span>·</span>
+              <span>正式版本：<b class="mono">{{ detail.current_version ? 'v' + detail.current_version : '未设置' }}</b></span><span>·</span>
+              <span>数据版本：<b class="mono">{{ currentVer ? 'v' + currentVer.data_version : '—' }}</b></span>
+              <template v-if="currentVer && currentVer.has_promo"><span>·</span>
+                <span>推广页：<a class="mono" :href="'/market/' + detail.id + '/'" target="_blank" rel="noopener">/market/{{ detail.id }}/</a></span></template>
+            </div>
+          </div>
+          <button class="btn ghost sm" @click="pickFile">⬆ 上传新版本</button>
+        </header>
+
+        <!-- 运行控制 -->
+        <section class="block">
+          <h2 class="block-title" style="margin-bottom:12px">运行控制</h2>
+          <div class="ctl-grid">
+            <div class="ctl-card">
+              <div class="ctl-label">应用状态</div>
+              <div class="seg">
+                <button :class="{on: detail.app_status === 'OPEN'}" @click="setAppStatus('OPEN')">🟢 开放</button>
+                <button :class="{on: detail.app_status === 'MAINTENANCE', warn: detail.app_status === 'MAINTENANCE'}" @click="setAppStatus('MAINTENANCE')">🛠 维护</button>
+              </div>
+              <div class="sub">维护状态下拦截企业常规访问，管理员沙箱/运维穿透仍可进入。</div>
+            </div>
+          </div>
+        </section>
+
+        <section v-if="detail.features.length" class="block">
+          <h2 class="block-title" style="margin-bottom:10px">功能介绍</h2>
+          <ul class="feature-list"><li v-for="f in detail.features" :key="f">{{ f }}</li></ul>
+        </section>
+
+        <!-- 版本链 -->
+        <section class="block">
+          <div class="block-head">
+            <h2 class="block-title">版本链 <span class="count">{{ detail.versions.length }}</span></h2>
+            <span class="tip">库命名：db_{plugin_id}_{tenant_id}_v{version}</span>
+          </div>
+          <div v-if="!detail.versions.length" class="ver-empty">暂无版本，拖拽插件包到此面板上传</div>
+          <table v-else class="ver-table">
+            <thead><tr><th>软件版本</th><th>数据版本</th><th>软件包</th><th>上传时间</th><th>数据状态</th><th>服务</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr v-for="v in detail.versions" :key="v.id" :class="rowClass(v)">
+                <td>
+                  <div class="cell-col">
+                    <span class="ver-no">v{{ v.software_version }}</span>
+                    <span v-if="v.is_current" class="badge b-current">⭐ 正式版本</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="cell-col">
+                    <span class="mono" style="color:#4f46e5;font-weight:600">v{{ v.data_version }}</span>
+                    <span v-if="v.structure === 'initial'" class="sub">初始结构</span>
+                    <span v-else-if="v.structure === 'same'" class="sub same">结构沿用 · 复制</span>
+                    <span v-else class="sub upgrade">结构升级 v{{ v.prev_data_version }}→v{{ v.data_version }}</span>
+                  </div>
+                </td>
+                <td><div class="cell-col"><span>{{ fmtSize(v.package_size) }}</span><span class="sub">{{ v.package_name }}</span></div></td>
+                <td class="sub">{{ v.uploaded_at }}</td>
+                <td>
+                  <div class="cell-col">
+                    <span class="badge" :class="statusMeta(v).cls">{{ statusMeta(v).text }}</span>
+                    <div v-if="v.status === 'preparing' || v.status === 'switching'" class="progress" :class="{danger: v.status === 'switching'}"><i :style="{width: v.progress + '%'}"></i></div>
+                    <span v-if="v.source_version && v.status !== 'uploaded'" class="sub">数据源 v{{ v.source_version }}</span>
+                    <span v-if="v.trial_tenants.length && ['trial','trial_passed','preparing'].includes(v.status)" class="sub">试运行租户：{{ v.trial_tenants.join('、') }}</span>
+                    <span v-if="v.switched_at && v.status === 'ready'" class="sub">切换于 {{ v.switched_at }}</span>
+                    <span v-if="v.error" class="sub err">{{ v.error }}</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="cell-col">
+                    <template v-if="!v.has_entry"><span class="badge b-gray">无服务入口</span></template>
+                    <template v-else>
+                      <span class="badge" :class="v.service.state === 'running' ? 'b-ok' : 'b-gray'">{{ v.service.state === 'running' ? '● 运行中' : '○ 已停止' }}</span>
+                      <span v-if="v.service.state === 'running'" class="sub mono">:{{ v.service.port }} · PID {{ v.service.pid }}</span>
+                      <button v-if="v.service.state !== 'running'" class="btn primary sm" :disabled="svcBusy === v.id || !canStart(v)" :title="canStart(v) ? '' : '数据就绪（初始化/试运行/已切换）后可启动'" @click="serviceAction(v, 'start')">{{ svcBusy === v.id ? '启动中…' : '▶ 启动' }}</button>
+                      <button v-else class="btn danger-ghost sm" :disabled="svcBusy === v.id" @click="confirmStopService(v)">■ 停止</button>
+                      <button class="btn ghost sm" @click="openServiceLog(v)">服务日志</button>
+                      <span v-if="v.service.error" class="sub err">{{ v.service.error }}</span>
+                    </template>
+                  </div>
+                </td>
+                <td>
+                  <div class="cell-col">
+                    <template v-if="v.status === 'uploaded' || v.status === 'failed'">
+                      <button v-if="!detail.current_version" class="btn primary sm" :disabled="busy" @click="act(v, 'init')">初始化数据</button>
+                      <button v-else-if="isNewer(v)" class="btn primary sm" :disabled="busy" @click="openPrepare(v)">🧪 发起试运行</button>
+                    </template>
+                    <template v-if="v.status === 'trial'">
+                      <button class="btn primary sm" @click="act(v, 'pass-trial')">✅ 试运行通过</button>
+                      <button class="btn ghost sm" @click="openPrepare(v)">重新准备</button>
+                    </template>
+                    <button v-if="v.status === 'trial_passed'" class="btn warn sm" :disabled="busy" @click="confirmSwitch(v)">⏸ 正式切换</button>
+                    <button v-if="v.status === 'ready' && !v.is_current" class="btn ghost sm" :disabled="busy" @click="confirmFormal(v)">⭐ 设为正式版本</button>
+                    <button class="btn ghost sm" @click="openLog(v)">任务日志</button>
+                    <a v-if="v.has_promo" class="btn ghost sm" :href="'/market-preview/' + detail.id + '/' + v.software_version + '/'" target="_blank" rel="noopener">📣 推广页</a>
+                    <span v-if="v.protected" class="badge b-protect" title="最后两个版本及正式版本不可删除">🔒 受保护</span>
+                    <button v-else class="btn danger-ghost sm" :disabled="busy" @click="confirmDelete(v)">删除</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <!-- 插件版本调试 -->
+        <section class="block">
+          <div class="block-head">
+            <h2 class="block-title">插件版本调试</h2>
+            <span class="tip">经平台网关访问指定版本的服务，网关按模式注入上下文 Header</span>
+          </div>
+          <div class="gw-form">
+            <select v-model="gw.mode">
+              <option value="NORMAL">常规业务模式 (Normal)</option>
+              <option value="SANDBOX">试运行上帝模式 (Sandbox)</option>
+              <option value="PRODUCTION_SUPPORT">生产运维穿透模式 (Production Support)</option>
+            </select>
+            <select v-if="gw.mode !== 'SANDBOX'" v-model="gw.tenant_id">
+              <option value="">选择企业租户</option>
+              <option v-for="t in realTenants" :key="t.id" :value="t.id">{{ t.name }}（{{ t.id }}）</option>
+            </select>
+            <select v-model="gw.version">
+              <option value="">自动路由（{{ gw.mode === 'SANDBOX' ? '试运行版本优先' : '正式版本' }}）</option>
+              <option v-for="v in detail.versions" :key="v.id" :value="v.software_version" :disabled="v.service.state !== 'running'">
+                v{{ v.software_version }}{{ v.is_current ? ' · 正式' : '' }}{{ v.service.state === 'running' ? ' · 运行中' : ' · 未启动' }}
+              </option>
+            </select>
+            <button class="btn primary sm" @click="openEntry">↗ 打开入口网址</button>
+          </div>
+          <div class="tip" style="margin-top:10px">
+            <template v-if="fixedUrl">固定网址：<a class="mono" :href="fixedUrl" target="_blank" rel="noopener">{{ fixedUrl }}</a>（始终指向正式版本，可收藏）</template>
+            <template v-else>常规模式 + 自动路由使用固定网址 /app/{插件ID}/{租户ID}/；其余组合为 30 分钟有效的临时调试网址。</template>
+          </div>
+        </section>
+
+        <!-- 审计 -->
+        <section class="block">
+          <h2 class="block-title" style="margin-bottom:10px">操作审计</h2>
+          <ul class="audit-list">
+            <li v-for="(a, i) in detail.audits" :key="i">
+              <span class="ts">{{ a.ts }}</span><span class="act">{{ a.action }}</span><span>{{ a.operator }} · {{ a.detail }}</span>
+            </li>
+            <li v-if="!detail.audits.length" class="tip">暂无记录</li>
+          </ul>
+        </section>
+      </div>
+    </main>
+  </section>
+
+  <input ref="fileInput" type="file" accept=".zip" style="display:none" @change="onFilePicked">
+
+  <!-- 发起试运行 -->
+  <div v-if="modal === 'prepare'" class="mask" @click.self="modal = null">
+    <div class="modal">
+      <h3>🧪 阶段A · 沙箱试运行准备 v{{ modalVer.software_version }}</h3>
+      <div class="info-box">
+        数据源：正式版本 <b class="mono">v{{ detail.current_version }}</b>（数据版本 v{{ currentVer.data_version }}）<br>
+        处理方式：<b>{{ currentVer.data_version === modalVer.data_version ? '结构未变 → 全量复制' : '结构升级 → 执行插件迁移脚本' }}</b><br>
+        默认仅迁移虚拟沙箱租户 <code>tenant_trial</code>，可额外抽取真实租户数据用于旁路验证（不影响其线上业务）。
+      </div>
+      <div class="check-list">
+        <label><input type="checkbox" checked disabled> 虚拟沙箱租户（tenant_trial）</label>
+        <label v-for="t in realTenants" :key="t.id"><input type="checkbox" :value="t.id" v-model="prepareTenants"> {{ t.name }}（{{ t.id }}）</label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" @click="modal = null">取消</button>
+        <button class="btn primary" @click="doPrepare">开始准备</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 通用确认 -->
+  <div v-if="modal === 'confirm'" class="mask" @click.self="modal = null">
+    <div class="modal wide">
+      <h3>{{ confirmBox.title }}</h3>
+      <div class="warn-box">
+        <div v-for="(line, i) in confirmBox.lines" :key="i">{{ line }}</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" @click="modal = null">取消</button>
+        <button class="btn" :class="confirmBox.btnClass" @click="confirmBox.onOk">{{ confirmBox.okText }}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 日志 -->
+  <div v-if="modal === 'log'" class="mask" @click.self="modal = null">
+    <div class="modal wide">
+      <h3>📜 {{ logData.title }}</h3>
+      <div class="log-box" ref="logBox"><div v-for="(l, i) in logLines" :key="i" :class="l.level">{{ l.text }}</div><div v-if="!logLines.length">暂无日志</div></div>
+      <div class="modal-actions"><button class="btn ghost" @click="modal = null">关闭</button></div>
+    </div>
+  </div>
+
+  <div v-if="toastMsg" id="toast" :class="{err: toastErr}">{{ toastMsg }}</div>
+</div>
+
+<script src="/static/vendor/vue.global.prod.js"></script>
+<script src="/static/common.js"></script>
+<script src="/static/plugins.js"></script>
+</body>
+</html>

@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>懿臻珠宝云 · 珠宝门店数智化经营平台</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap top-in">
+    <a class="brand" href="#top">
+      <span class="logo"><img src="../logo/logo.png" alt="懿臻珠宝云" style="width:100%;height:100%;border-radius:50%;object-fit:cover;"></span>
+      <span class="brand-text">懿臻珠宝云<small>Jewelry Cloud</small></span>
+    </a>
+    <nav class="nav">
+      <a href="#features" data-i18n="nav.features">功能介绍</a>
+      <a href="#modules" data-i18n="nav.modules">业务模块</a>
+      <a href="#devices" data-i18n="nav.devices">硬件支持</a>
+      <a href="#pricing" data-i18n="nav.pricing">版本</a>
+    </nav>
+    <button type="button" class="menu-btn" id="menuBtn" onclick="toggleMenu(event)" aria-label="菜单">
+      <span class="menu-bar"></span><span class="menu-bar"></span><span class="menu-bar"></span>
+    </button>
+    <div class="top-actions">
+      <div class="lang-switch" id="langSwitch" tabindex="0">
+        <button type="button" class="lang-current" onclick="toggleLangMenu(event)">
+          <span class="lang-globe">🌐</span><span id="langCurrentLabel">简体中文</span><span class="lang-caret">▾</span>
+        </button>
+        <div class="lang-menu" id="langMenu">
+          <a href="#" class="lang-opt" data-lang="zh-Hans" onclick="switchLang('zh-Hans',event)">简体中文</a>
+          <a href="#" class="lang-opt" data-lang="zh-Hant" onclick="switchLang('zh-Hant',event)">繁體中文</a>
+          <a href="#" class="lang-opt" data-lang="it" onclick="switchLang('it',event)">Italiano</a>
+          <a href="#" class="lang-opt" data-lang="en" onclick="switchLang('en',event)">English</a>
+          <a href="#" class="lang-opt" data-lang="ja" onclick="switchLang('ja',event)">日本語</a>
+          <a href="#" class="lang-opt" data-lang="ko" onclick="switchLang('ko',event)">한국어</a>
+        </div>
+      </div>
+      <a class="btn btn-line btn-sm" href="#" onclick="openLogin(event)" data-i18n="nav.login">登录</a>
+      <a class="btn btn-gold btn-sm" href="#cta" data-i18n="nav.trial">60 天免费试用</a>
+    </div>
+  </div>
+</header>
+
+<section class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div class="hero-text">
+      <div class="pill" data-i18n-html="hero.pill">🎉 新用户享受 <b>60 天</b>免费试用优惠</div>
+      <h1 data-i18n="hero.title">懿臻珠宝云</h1>
+      <p class="sub" data-i18n-html="hero.sub">懿德 · 臻品 · 云智<br>专为中高端珠宝门店打造的下一代数智化 SaaS 平台</p>
+      <div class="hero-cta">
+        <a class="btn btn-gold btn-lg" href="#cta" data-i18n-html="hero.trialBtn">🎁 立即免费试用 <small>前后 60 天</small></a>
+        <a class="btn btn-line btn-lg" href="#features" data-i18n="hero.more">了解更多</a>
+      </div>
+      <div class="stats">
+        <div><b>10+</b><span data-i18n="stats.modules">业务模块</span></div>
+        <div><b>2端</b><span data-i18n="stats.devices">电脑 / 手机</span></div>
+        <div><b data-i18n="stats.multiStoreLabel">多门店</b><span data-i18n="stats.multiStore">连锁统一管理</span></div>
+        <div><b>RFID</b><span data-i18n="stats.rfid">批量隔空盘点</span></div>
+      </div>
+    </div>
+    <div class="hero-card">
+      <div class="phone-screen">
+        <div class="ps-top"><i class="dot"></i><span data-i18n="phone.title">懿臻珠宝云</span><i class="dot gold"></i></div>
+        <div class="kpi-row">
+          <div class="kpi wine"><b>¥18,600</b><span data-i18n="phone.todaySales">今日销售</span></div>
+          <div class="kpi"><b>126</b><span data-i18n="phone.inStock">在售商品</span></div>
+        </div>
+        <div class="chart" aria-hidden="true">
+          <span class="b1"></span><span class="b2"></span><span class="b3"></span><span class="b4"></span><span class="b5"></span><span class="b6"></span>
+        </div>
+        <div class="mini">
+          <span class="tag-gold" data-i18n="phone.product">足金手镯 · 28.6g</span>
+          <span class="tag" data-i18n="phone.rfid">RFID 已写入 EPC</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="hero-wave" aria-hidden="true"></div>
+</section>
+
+<section class="features" id="features">
+  <div class="wrap">
+    <h2 class="sec-title" data-i18n="features.title">核心功能</h2>
+    <p class="sec-sub" data-i18n="features.sub">覆盖珠宝门店全业务流程，库存精确到单件，账实一目了然</p>
+    <div class="features-grid">
+      <div class="f-card">
+        <div class="f-icon" style="--c:#C9A961">
+          <svg viewBox="0 0 24 24"><path d="M12 2 3 7l9 5 9-5-9-5zM3 12l9 5 9-5M3 17l9 5 9-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        </div>
+        <h3 data-i18n="features.f1t">一物一码 精确到件</h3>
+        <p data-i18n="features.f1d">每件珠宝独立建档，成本、售价、状态、门店全程可溯，库存精确到单件。</p>
+      </div>
+      <div class="f-card">
+        <div class="f-icon" style="--c:#5C2233">
+          <svg viewBox="0 0 24 24"><path d="M3 8h18v11H3zM7 8V5h10v3M9 13h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        </div>
+        <h3 data-i18n="features.f2t">销售 · 定金尾款</h3>
+        <p data-i18n="features.f2d">普通开单、定金下单，尾款自动转正式单；交期到期自动提醒催交付。</p>
+      </div>
+      <div class="f-card">
+        <div class="f-icon" style="--c:#8a6d3b">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 12h10M12 7v10" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        </div>
+        <h3 data-i18n="features.f3t">借货 · 维修 · 委外</h3>
+        <p data-i18n="features.f3d">借进借出分开核算、归还自动恢复库存；维修与委外加工全流程管理。</p>
+      </div>
+      <div class="f-card">
+        <div class="f-icon" style="--c:#C9A961">
+          <svg viewBox="0 0 24 24"><path d="M4 4v16M4 6l16 14M20 20V4M20 6 4 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        </div>
+        <h3 data-i18n="features.f4t">经营看板</h3>
+        <p data-i18n="features.f4d">今日销售、在售商品、库存成本、未收欠款实时汇总，趋势一目了然。</p>
+      </div>
+      <div class="f-card">
+        <div class="f-icon" style="--c:#5C2233">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="3" width="7" height="7" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="3" y="14" width="7" height="7" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="14" width="7" height="7" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        </div>
+        <h3 data-i18n="features.f5t">多门店 连锁管理</h3>
+        <p data-i18n="features.f5d">总店 + 分店统一建档，按门店独立核算库存与销售，一店一账全局汇总。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="modules" id="modules">
+  <div class="wrap">
+    <h2 class="sec-title" data-i18n="modules.title">全业务模块</h2>
+    <div class="modules-grid">
+      <div class="m-item"><span>📊</span><span data-i18n="modules.m1">经营看板</span></div>
+      <div class="m-item"><span>💎</span><span data-i18n="modules.m2">商品管理</span></div>
+      <div class="m-item"><span>🏪</span><span data-i18n="modules.m3">多门店</span></div>
+      <div class="m-item"><span>📦</span><span data-i18n="modules.m4">库存管理</span></div>
+      <div class="m-item"><span>🛒</span><span data-i18n="modules.m5">销售开单</span></div>
+      <div class="m-item"><span>🪙</span><span data-i18n="modules.m6">定金尾款</span></div>
+      <div class="m-item"><span>🔁</span><span data-i18n="modules.m7">借货管理</span></div>
+      <div class="m-item"><span>👥</span><span data-i18n="modules.m8">客户管理</span></div>
+      <div class="m-item"><span>🛠</span><span data-i18n="modules.m9">维修管理</span></div>
+      <div class="m-item"><span>📥</span><span data-i18n="modules.m10">采购管理</span></div>
+      <div class="m-item"><span>🏭</span><span data-i18n="modules.m11">委外加工</span></div>
+      <div class="m-item"><span>🗒️</span><span data-i18n="modules.m12">操作日志</span></div>
+      <div class="m-item"><span>🧾</span><span data-i18n="modules.m13">标签打印</span></div>
+      <div class="m-item"><span>📡</span><span data-i18n="modules.m14">隔空盘点</span></div>
+      <div class="m-item"><span>🌐</span><span data-i18n="modules.m15">企业网站</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="devices" id="devices">
+  <div class="wrap">
+    <h2 class="sec-title" data-i18n="devices.title">RFID 硬件支持</h2>
+    <p class="sec-sub" data-i18n="devices.sub">打印机 + 读写器 + 手持机，实现「写入即识别」的隔空盘点</p>
+    <div class="devices-grid">
+      <div class="d-card">
+        <div class="d-icon">🖨️</div>
+        <h3 data-i18n="devices.d1t">RFID 打印机</h3>
+        <p data-i18n="devices.d1d">打印商品信息与条码并写入芯片 EPC，一次完成鉴标与写入。</p>
+      </div>
+      <div class="d-card">
+        <div class="d-icon">📡</div>
+        <h3 data-i18n="devices.d2t">高频 RFID 读写器</h3>
+        <p data-i18n="devices.d2d">柜面 / 保险柜范围隔空批量感应，实时盘点无需逐件触碰。</p>
+      </div>
+      <div class="d-card">
+        <div class="d-icon">🤳</div>
+        <h3 data-i18n="devices.d3t">蓝牙 RFID 手持机</h3>
+        <p data-i18n="devices.d3d">扣动扳机即扫，移动盘点随走随扫，自动生成盘点差异单。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta" id="cta">
+  <div class="wrap cta-in">
+    <div class="cta-badge" data-i18n="cta.badge">限时优惠</div>
+    <h2 data-i18n="cta.title">现在就为您的珠宝店开启数智化管理</h2>
+    <p class="cta-offer" data-i18n-html="cta.offer">新用户注册，即享 <b>60 天免费试用</b>，全功能模块开放体验。</p>
+    <a class="btn btn-gold btn-lg" href="#" data-i18n="cta.trialBtn">🎁 开始 60 天免费试用</a>
+    <p class="cta-login"><span data-i18n="cta.hasAccount">已有账号？</span><a href="#" onclick="openLogin(event)" data-i18n="cta.loginLink">直接登录</a></p>
+  </div>
+</section>
+
+<!-- 手机端抽屉菜单 -->
+<div class="drawer-mask" id="drawerMask" onclick="closeMenu()">
+  <div class="drawer" onclick="event.stopPropagation()">
+    <div class="drawer-head">
+      <div class="brand">
+        <span class="logo"><img src="../logo/logo.png" alt="懿臻珠宝云" style="width:100%;height:100%;border-radius:50%;object-fit:cover;"></span>
+        <span class="brand-text">懿臻珠宝云<small>Jewelry Cloud</small></span>
+      </div>
+      <button type="button" class="drawer-close" onclick="closeMenu()" aria-label="关闭">×</button>
+    </div>
+    <nav class="drawer-nav">
+      <a href="#features" onclick="closeMenu()" data-i18n="nav.features">功能介绍</a>
+      <a href="#modules" onclick="closeMenu()" data-i18n="nav.modules">业务模块</a>
+      <a href="#devices" onclick="closeMenu()" data-i18n="nav.devices">硬件支持</a>
+      <a href="#pricing" onclick="closeMenu()" data-i18n="nav.pricing">版本</a>
+    </nav>
+    <div class="drawer-actions">
+      <a class="btn btn-line btn-sm" href="#" onclick="closeMenu();openLogin(event)" data-i18n="nav.login">登录</a>
+      <a class="btn btn-gold btn-sm" href="#cta" onclick="closeMenu()" data-i18n="nav.trial">60 天免费试用</a>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap foot-in">
+    <a class="brand" href="#top"><span class="logo"><img src="../logo/logo.png" alt="懿臻珠宝云" style="width:100%;height:100%;border-radius:50%;object-fit:cover;"></span><span class="brand-text" data-i18n="footer.brand">懿臻珠宝云</span></a>
+    <span class="foot-note" data-i18n-html="footer.note">© 2026 懿臻珠宝云 · 珠宝门店数智化经营平台</span>
+  </div>
+</footer>
+
+<!-- 登录弹窗 -->
+<div class="modal-mask" id="loginMask" onclick="if(event.target===this)closeLogin()">
+  <div class="login-modal">
+    <button class="modal-close" onclick="closeLogin()" aria-label="关闭">×</button>
+    <div class="login-head">
+      <span class="logo lg"><img src="../logo/logo.png" alt="懿臻珠宝云" style="width:100%;height:100%;border-radius:50%;object-fit:cover;"></span>
+      <h3 data-i18n="login.title">登录懿臻珠宝云</h3>
+      <p data-i18n="login.sub">欢迎回来，登录后进入门店工作台</p>
+    </div>
+    <form onsubmit="return doLogin(event)">
+      <label class="field">
+        <span data-i18n="login.user">手机号 / 账号</span>
+        <input type="text" id="loginUser" data-i18n-ph="login.userPh" placeholder="请输入手机号或账号" autocomplete="username">
+      </label>
+      <label class="field">
+        <span data-i18n="login.pass">密码</span>
+        <input type="password" id="loginPass" data-i18n-ph="login.passPh" placeholder="请输入密码" autocomplete="current-password">
+      </label>
+      <div class="login-row">
+        <label class="chk"><input type="checkbox"> <span data-i18n="login.remember">记住登录</span></label>
+        <a href="#" class="forgot" onclick="return toast(t('login.forgotTip'))" data-i18n="login.forgot">忘记密码？</a>
+      </div>
+      <button type="submit" class="btn btn-gold btn-block" data-i18n="login.submit">登 录</button>
+    </form>
+    <p class="login-foot"><span data-i18n="login.noAccount">还没有账号？</span><a href="#cta" onclick="closeLogin()" data-i18n="login.register">免费试用开通（限时 60 天）</a></p>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// 语言字典：六种语言（zh/zh-Hant/it/en/ja/ko）均已实现完整翻译
+var LANG_MAP = { 'zh':'zh', 'zh-Hans':'zh', 'zh-Hant':'zh-Hant', 'it':'it', 'en':'en', 'ja':'ja', 'ko':'ko' };
+var LANG_LABELS = {
+  'zh-Hans':'简体中文','zh-Hant':'繁體中文','it':'Italiano','en':'English','ja':'日本語','ko':'한국어'
+};
+var I18N = {
+  zh: {
+    'nav.features': '功能介绍', 'nav.modules': '业务模块', 'nav.devices': '硬件支持', 'nav.pricing': '版本',
+    'nav.login': '登录', 'nav.trial': '60 天免费试用',
+    'hero.pill': '🎉 新用户享受 <b>60 天</b>免费试用优惠', 'hero.title': '懿臻珠宝云',
+    'hero.sub': '以科技之臻，承珠宝之美<br>一台电脑一部手机，轻松管理整店生意',
+    'hero.trialBtn': '🎁 立即免费试用 <small>前后 60 天</small>', 'hero.more': '了解更多',
+    'stats.modules': '业务模块', 'stats.devices': '电脑 / 手机',
+    'stats.multiStoreLabel': '多门店', 'stats.multiStore': '连锁统一管理',
+    'stats.rfid': '批量隔空盘点',
+    'phone.title': '懿臻珠宝云', 'phone.todaySales': '今日销售', 'phone.inStock': '在售商品',
+    'phone.product': '足金手镯 · 28.6g', 'phone.rfid': 'RFID 已写入 EPC',
+    'features.title': '核心功能', 'features.sub': '覆盖珠宝门店全业务流程，库存精确到单件，账实一目了然',
+    'features.f1t': '一物一码 精确到件', 'features.f1d': '每件珠宝独立建档，成本、售价、状态、门店全程可溯，库存精确到单件。',
+    'features.f2t': '销售 · 定金尾款', 'features.f2d': '普通开单、定金下单，尾款自动转正式单；交期到期自动提醒催交付。',
+    'features.f3t': '借货 · 维修 · 委外', 'features.f3d': '借进借出分开核算、归还自动恢复库存；维修与委外加工全流程管理。',
+    'features.f4t': '经营看板', 'features.f4d': '今日销售、在售商品、库存成本、未收欠款实时汇总，趋势一目了然。',
+    'features.f5t': '多门店 连锁管理', 'features.f5d': '总店 + 分店统一建档，按门店独立核算库存与销售，一店一账全局汇总。',
+    'modules.title': '全业务模块',
+    'modules.m1': '经营看板', 'modules.m2': '商品管理', 'modules.m3': '多门店', 'modules.m4': '库存管理',
+    'modules.m5': '销售开单', 'modules.m6': '定金尾款', 'modules.m7': '借货管理', 'modules.m8': '客户管理',
+    'modules.m9': '维修管理', 'modules.m10': '采购管理', 'modules.m11': '委外加工', 'modules.m12': '操作日志', 'modules.m13': '标签打印', 'modules.m14': '隔空盘点', 'modules.m15': '企业网站',
+    'devices.title': 'RFID 硬件支持', 'devices.sub': '打印机 + 读写器 + 手持机，实现「写入即识别」的隔空盘点',
+    'devices.d1t': 'RFID 打印机', 'devices.d1d': '打印商品信息与条码并写入芯片 EPC，一次完成鉴标与写入。',
+    'devices.d2t': '高频 RFID 读写器', 'devices.d2d': '柜面 / 保险柜范围隔空批量感应，实时盘点无需逐件触碰。',
+    'devices.d3t': '蓝牙 RFID 手持机', 'devices.d3d': '扣动扳机即扫，移动盘点随走随扫，自动生成盘点差异单。',
+    'cta.badge': '限时优惠', 'cta.title': '现在就为您的珠宝店开启数智化管理',
+    'cta.offer': '新用户注册，即享 <b>60 天免费试用</b>，全功能模块开放体验。',
+    'cta.trialBtn': '🎁 开始 60 天免费试用', 'cta.hasAccount': '已有账号？', 'cta.loginLink': '直接登录',
+    'footer.brand': '懿臻珠宝云', 'footer.note': '© 2026 懿臻珠宝云 · 珠宝门店数智化经营平台',
+    'login.title': '登录懿臻珠宝云', 'login.sub': '欢迎回来，登录后进入门店工作台',
+    'login.user': '手机号 / 账号', 'login.userPh': '请输入手机号或账号',
+    'login.pass': '密码', 'login.passPh': '请输入密码',
+    'login.remember': '记住登录', 'login.forgot': '忘记密码？', 'login.forgotTip': '请联系门店管理员重置密码',
+    'login.submit': '登 录', 'login.noAccount': '还没有账号？', 'login.register': '免费试用开通（限时 60 天）',
+    'login.success': '登录成功，正在进入工作台…'
+  },
+  en: {
+    'nav.features': 'Features', 'nav.modules': 'Modules', 'nav.devices': 'Hardware', 'nav.pricing': 'Pricing',
+    'nav.login': 'Sign in', 'nav.trial': '60-Day Free Trial',
+    'hero.pill': '🎉 New users: enjoy a <b>60-day</b> free trial', 'hero.title': 'Yi Jewelry Manager',
+    'hero.sub': 'Products · Stock · Sales · Deposits · Loans · Customers<br>Manage your business with a PC or a phone',
+    'hero.trialBtn': '🎁 Start Free Trial <small>for 60 days</small>', 'hero.more': 'Learn More',
+    'stats.modules': 'Business Modules', 'stats.devices': 'PC / Mobile',
+    'stats.multiStoreLabel': 'Multi-store', 'stats.multiStore': 'Unified Chain Management',
+    'stats.rfid': 'Batch RFID Count',
+    'phone.title': 'Yi Jewelry Manager', 'phone.todaySales': "Today's Sales", 'phone.inStock': 'In-stock Items',
+    'phone.product': 'Gold Bracelet · 28.6g', 'phone.rfid': 'RFID EPC Written',
+    'features.title': 'Core Features', 'features.sub': 'End-to-end jewelry store workflow with per-item precision',
+    'features.f1t': 'One Item, One Code', 'features.f1d': 'Every item gets its own profile, fully traceable by cost, price, status and store.',
+    'features.f2t': 'Sales & Deposits', 'features.f2d': 'Standard invoicing and deposit orders; balances auto-convert to formal orders.',
+    'features.f3t': 'Loans · Repairs · Outsourcing', 'features.f3d': 'Separate accounting for borrowed goods, auto-restock on return.',
+    'features.f4t': 'Business Dashboard', 'features.f4d': 'Live totals for today\u2019s sales, stock, cost and receivables.',
+    'features.f5t': 'Multi-store Management', 'features.f5d': 'Unified profiles for HQ and branches, per-store stock and sales accounting.',
+    'modules.title': 'All Business Modules',
+    'modules.m1': 'Dashboard', 'modules.m2': 'Products', 'modules.m3': 'Multi-store', 'modules.m4': 'Inventory',
+    'modules.m5': 'Sales', 'modules.m6': 'Deposits', 'modules.m7': 'Loans', 'modules.m8': 'Customers',
+    'modules.m9': 'Repairs', 'modules.m10': 'Purchasing', 'modules.m11': 'Outsourcing', 'modules.m12': 'Audit Logs', 'modules.m13': 'Label Printing', 'modules.m14': 'Touchless Counting', 'modules.m15': 'Company Site',
+    'devices.title': 'RFID Hardware Support', 'devices.sub': 'Printers, readers and handhelds for touchless counting',
+    'devices.d1t': 'RFID Printer', 'devices.d1d': 'Prints item info and barcode while writing the chip EPC in one pass.',
+    'devices.d2t': 'HF RFID Reader', 'devices.d2d': 'Batch-sensess tags over counters and safes for real-time counting.',
+    'devices.d3t': 'Bluetooth RFID Handheld', 'devices.d3d': 'Squeeze the trigger to scan while moving; auto-generates variance reports.',
+    'cta.badge': 'Limited Offer', 'cta.title': 'Start Smart Management for Your Jewelry Store Today',
+    'cta.offer': 'New users get a <b>60-day free trial</b> with full access.',
+    'cta.trialBtn': '🎁 Start 60-Day Free Trial', 'cta.hasAccount': 'Already have an account?', 'cta.loginLink': 'Sign in',
+    'footer.brand': 'Yi Jewelry Manager', 'footer.note': '© 2026 Yi Jewelry Manager · One-stop Jewelry Store Platform',
+    'login.title': 'Sign in to Yi Jewelry Manager', 'login.sub': 'Welcome back, sign in to enter your store workspace',
+    'login.user': 'Phone / Account', 'login.userPh': 'Enter phone or account',
+    'login.pass': 'Password', 'login.passPh': 'Enter your password',
+    'login.remember': 'Remember me', 'login.forgot': 'Forgot password?', 'login.forgotTip': 'Contact your store admin to reset the password',
+    'login.submit': 'Sign In', 'login.noAccount': 'No account yet?', 'login.register': 'Start free trial (60 days)',
+    'login.success': 'Signed in, entering workspace…'
+  },
+  it: {
+    'nav.features': 'Funzionalità', 'nav.modules': 'Moduli', 'nav.devices': 'Hardware', 'nav.pricing': 'Prezzi',
+    'nav.login': 'Accedi', 'nav.trial': 'Prova gratuita 60 giorni',
+    'hero.pill': '🎉 Nuovi utenti: prova gratuita di <b>60 giorni</b>', 'hero.title': 'Yi Jewelry Manager',
+    'hero.sub': 'Prodotti · Stock · Vendite · Acconti · Prestiti · Clienti<br>Gestisci la tua attività con un PC o un telefono',
+    'hero.trialBtn': '🎁 Inizia la prova gratuita <small>per 60 giorni</small>', 'hero.more': 'Scopri di più',
+    'stats.modules': 'Moduli aziendali', 'stats.devices': 'PC / Mobile',
+    'stats.multiStoreLabel': 'Multi-negozio', 'stats.multiStore': 'Gestione unita della catena',
+    'stats.rfid': 'Inventario RFID di massa',
+    'phone.title': 'Yi Jewelry Manager', 'phone.todaySales': 'Vendite di oggi', 'phone.inStock': 'Articoli in stock',
+    'phone.product': 'Bracciale d\u2019oro · 28,6 g', 'phone.rfid': 'RFID EPC scritto',
+    'features.title': 'Funzionalità principali', 'features.sub': 'Flusso completo del negozio di gioielli con precisione per singolo articolo',
+    'features.f1t': 'Un articolo, un codice', 'features.f1d': 'Ogni articolo ha la sua scheda, tracciabile per costo, prezzo, stato e negozio.',
+    'features.f2t': 'Vendite e acconti', 'features.f2d': 'Scontrinazione standard e ordini con acconto; i saldi si convertono in ordini formali.',
+    'features.f3t': 'Prestiti · Riparazioni · Esterni', 'features.f3d': 'Contabilità separata per merci in prestito, ripristino automatico dello stock.',
+    'features.f4t': 'Dashboard aziendale', 'features.f4d': 'Totali in tempo reale di vendite, stock, costi e crediti.',
+    'features.f5t': 'Gestione multi-negozio', 'features.f5d': 'Profili unificati per sede e filiali, contabilità stock e vendite per negozio.',
+    'modules.title': 'Tutti i moduli aziendali',
+    'modules.m1': 'Dashboard', 'modules.m2': 'Prodotti', 'modules.m3': 'Multi-negozio', 'modules.m4': 'Inventario',
+    'modules.m5': 'Vendite', 'modules.m6': 'Acconti', 'modules.m7': 'Prestiti', 'modules.m8': 'Clienti',
+    'modules.m9': 'Riparazioni', 'modules.m10': 'Acquisti', 'modules.m11': 'Esterni', 'modules.m12': 'Registri', 'modules.m13': 'Stampa etichette', 'modules.m14': 'Conteggio senza contatto', 'modules.m15': 'Sito aziendale',
+    'devices.title': 'Supporto hardware RFID', 'devices.sub': 'Stampanti, lettori e palmari per il conteggio senza contatto',
+    'devices.d1t': 'Stampante RFID', 'devices.d1d': 'Stampa le informazioni e il codice a barre scrivendo l\u2019EPC del chip in un\u2019unica passata.',
+    'devices.d2t': 'Lettore RFID HF', 'devices.d2d': 'Rilevazione batch su banconi e casseforti per il conteggio in tempo reale.',
+    'devices.d3t': 'Palmare RFID Bluetooth', 'devices.d3d': 'Premi il grilletto per scansire in movimento; genera automaticamente i report di differenza.',
+    'cta.badge': 'Offerta limitata', 'cta.title': 'Inizia oggi la gestione smart del tuo negozio di gioielli',
+    'cta.offer': 'Nuovi utenti ricevono una <b>prova gratuita di 60 giorni</b> con accesso completo.',
+    'cta.trialBtn': '🎁 Inizia la prova gratuita di 60 giorni', 'cta.hasAccount': 'Hai già un account?', 'cta.loginLink': 'Accedi',
+    'footer.brand': 'Yi Jewelry Manager', 'footer.note': '© 2026 Yi Jewelry Manager · Piattaforma completa per gioiellerie',
+    'login.title': 'Accedi a Yi Jewelry Manager', 'login.sub': 'Bentornato, accedi per entrare nello spazio di lavoro del negozio',
+    'login.user': 'Telefono / Account', 'login.userPh': 'Inserisci telefono o account',
+    'login.pass': 'Password', 'login.passPh': 'Inserisci la tua password',
+    'login.remember': 'Ricordami', 'login.forgot': 'Password dimenticata?', 'login.forgotTip': 'Contatta l\u2019amministratore del negozio per reimpostare la password',
+    'login.submit': 'Accedi', 'login.noAccount': 'Non hai ancora un account?', 'login.register': 'Inizia la prova gratuita (60 giorni)',
+    'login.success': 'Accesso riuscito, accesso all\u2019area di lavoro…'
+  },
+  'zh-Hant': {
+    'nav.features': '功能介紹', 'nav.modules': '業務模組', 'nav.devices': '硬體支援', 'nav.pricing': '版本', 'nav.login': '登入', 'nav.trial': '60 天免費試用',
+    'hero.pill': '🎉 新用戶享有 <b>60 天</b>免費試用優惠',
+    'hero.title': '懿珠寶管家',
+    'hero.sub': '商品 · 庫存 · 銷售 · 訂金 · 借貨 · 客戶<br>一台電腦一支手機，輕鬆管理整店生意',
+    'hero.trialBtn': '🎁 立即免費試用 <small>前後 60 天</small>', 'hero.more': '了解更多',
+    'stats.modules': '業務模組', 'stats.devices': '電腦 / 手機', 'stats.multiStoreLabel': '多門店', 'stats.multiStore': '連鎖統一管理', 'stats.rfid': '批量隔空盤點',
+    'phone.title': '懿珠寶管家', 'phone.todaySales': '今日銷售', 'phone.inStock': '在售商品', 'phone.product': '足金手鐲 · 28.6g', 'phone.rfid': 'RFID 已寫入 EPC',
+    'features.title': '核心功能', 'features.sub': '覆蓋珠寶門店全業務流程，庫存精確到單件，帳實一目了然',
+    'features.f1t': '一物一碼 精確到件', 'features.f1d': '每件珠寶獨立建檔，成本、售價、狀態、門店全程可溯，庫存精確到單件。',
+    'features.f2t': '銷售 · 訂金尾款', 'features.f2d': '普通開單、訂金下單，尾款自動轉正式單；交期到期自動提醒催交貨。',
+    'features.f3t': '借貨 · 維修 · 委外', 'features.f3d': '借進借出分開核算、歸還自動恢復庫存；維修與委外加工全流程管理。',
+    'features.f4t': '經營看板', 'features.f4d': '今日銷售、在售商品、庫存成本、未收欠款即時彙總，趨勢一目了然。',
+    'features.f5t': '多門店 連鎖管理', 'features.f5d': '總店+分店統一建檔，按門店獨立核算庫存與銷售，一店一帳全局彙總。',
+    'modules.title': '全部業務模組',
+    'modules.m1': '經營看板', 'modules.m2': '商品管理', 'modules.m3': '多門店', 'modules.m4': '庫存管理', 'modules.m5': '銷售開單', 'modules.m6': '訂金尾款', 'modules.m7': '借貨管理', 'modules.m8': '客戶管理', 'modules.m9': '維修管理', 'modules.m10': '採購管理', 'modules.m11': '委外加工', 'modules.m12': '操作日誌', 'modules.m13': '標籤列印', 'modules.m14': '隔空盤點', 'modules.m15': '企業網站',
+    'devices.title': 'RFID 硬體支援', 'devices.sub': '印表機 + 讀寫器 + 手持機，實現「寫入即辨識」的隔空盤點',
+    'devices.d1t': 'RFID 印表機', 'devices.d1d': '列印商品資訊與條碼並寫入晶片 EPC，一次完成整套與寫入。',
+    'devices.d2t': '高頻 RFID 讀寫器', 'devices.d2d': '櫃面/保險櫃範圍隔空批量感應，即時盤點無需逐件觸碰。',
+    'devices.d3t': '藍牙 RFID 手持機', 'devices.d3d': '扣動板機即掃，移動盤點隨走隨掃，自動產生盤點差異單。',
+    'cta.badge': '限時優惠', 'cta.title': '現在就為您的珠寶店開啟數位化管理',
+    'cta.offer': '新用戶註冊，即享 <b>60 天免費試用</b>，全功能模組開放體驗。',
+    'cta.trialBtn': '🎁 開始 60 天免費試用', 'cta.hasAccount': '已有帳號？', 'cta.loginLink': '直接登入',
+    'footer.brand': '懿珠寶管家', 'footer.note': '© 2026 懿珠寶管家 · 珠寶門店一體化經營平台',
+    'login.title': '登入懿珠寶管家', 'login.sub': '歡迎回來，登入後進入門店工作台',
+    'login.user': '手機號 / 帳號', 'login.userPh': '請輸入手機號或帳號',
+    'login.pass': '密碼', 'login.passPh': '請輸入密碼',
+    'login.remember': '記住登入', 'login.forgot': '忘記密碼？', 'login.forgotTip': '請聯繫門店管理員重置密碼',
+    'login.submit': '登 入', 'login.noAccount': '還沒有帳號？', 'login.register': '免費試用開通（限時 60 天）',
+    'login.success': '登入成功，正在進入工作台…'
+  },
+  'ja': {
+    'nav.features': '機能紹介', 'nav.modules': '業務モジュール', 'nav.devices': 'ハードウェア', 'nav.pricing': 'プラン', 'nav.login': 'ログイン', 'nav.trial': '60日間無料トライアル',
+    'hero.pill': '🎉 新規ユーザーは <b>60日間</b> 無料トライアル特典',
+    'hero.title': '懿珠寶管家',
+    'hero.sub': '商品 · 在庫 · 販売 · 手付金 · 貸出 · 顧客<br>パソコンとスマホで、お店の経営を簡単に',
+    'hero.trialBtn': '🎁 今すぐ無料トライアル <small>60日間</small>', 'hero.more': '詳しく見る',
+    'stats.modules': '業務モジュール', 'stats.devices': 'PC / スマホ', 'stats.multiStoreLabel': '多店舗', 'stats.multiStore': 'チェーン統合管理', 'stats.rfid': '一括リモート棚卸',
+    'phone.title': '懿珠寶管家', 'phone.todaySales': '本日の売上', 'phone.inStock': '販売中の商品', 'phone.product': '純金ブレスレット · 28.6g', 'phone.rfid': 'RFID EPC 書込済み',
+    'features.title': '主要機能', 'features.sub': 'ジュエリー店の全業務を網羅し、在庫は一点単位で正確に把握',
+    'features.f1t': '一点一点計上 一点単位', 'features.f1d': '各ジュエリーを個別に登録、原価・販売価格・状態・店舗を全過程で追跡可能。',
+    'features.f2t': '販売 · 手付金・残金', 'features.f2d': '普通販売・手付金注文、残金は自動で正式注文へ；期日到来で納品催促を自動通知。',
+    'features.f3t': '貸出 · 修理 · 外注', 'features.f3d': '貸出を個別に計算、返却で在庫自動復元；修理と外注加工を一括管理。',
+    'features.f4t': '経営ダッシュボード', 'features.f4d': '本日売上・在庫商品・在庫原価・未収金をリアルタイム集計、傾向が一目瞭然。',
+    'features.f5t': '多店舗 チェーン管理', 'features.f5d': '本店・支店を統合登録、店舗別に在庫と販売を独立計算し、全局集計。',
+    'modules.title': '全業務モジュール',
+    'modules.m1': '経営ダッシュボード', 'modules.m2': '商品管理', 'modules.m3': '多店舗', 'modules.m4': '在庫管理', 'modules.m5': '販売・注文', 'modules.m6': '手付金・残金', 'modules.m7': '貸出管理', 'modules.m8': '顧客管理', 'modules.m9': '修理管理', 'modules.m10': '仕入管理', 'modules.m11': '外注加工', 'modules.m12': '操作ログ', 'modules.m13': 'ラベル印刷', 'modules.m14': '一括リモート棚卸', 'modules.m15': '企業サイト',
+    'devices.title': 'RFID ハードウェア対応', 'devices.sub': 'プリンタ + リーダ + ハンディで「書込即識別」の一括棚卸を実現',
+    'devices.d1t': 'RFID プリンタ', 'devices.d1d': '商品情報とバーコードを印刷し、チップ EPC を書込、貼付と書込を一回で完了。',
+    'devices.d2t': '高周波 RFID リーダ', 'devices.d2d': 'カウンター/金庫の範囲を一括検知、一点ごとに触れず即時棚卸。',
+    'devices.d3t': 'Bluetooth RFID ハンディ', 'devices.d3d': 'トリガーで即スキャン、移動しながら棚卸、棚卸差異票を自動生成。',
+    'cta.badge': '期間限定', 'cta.title': '今すぐ珠寶店のデジタル管理を始めましょう',
+    'cta.offer': '新規登録で<b>60日間無料トライアル</b>、全モジュールを体験。',
+    'cta.trialBtn': '🎁 60日間無料トライアル開始', 'cta.hasAccount': 'すでにアカウントをお持ちですか？', 'cta.loginLink': 'ログイン',
+    'footer.brand': '懿珠寶管家', 'footer.note': '© 2026 懿珠寶管家 · ジュエリー店向け統合経営プラットフォーム',
+    'login.title': '懿珠寶管家 にログイン', 'login.sub': 'おかえりなさい、ログイン後ワークスペースへ',
+    'login.user': '携帯番号 / アカウント', 'login.userPh': '携帯番号またはアカウントを入力',
+    'login.pass': 'パスワード', 'login.passPh': 'パスワードを入力',
+    'login.remember': 'ログインを記憶', 'login.forgot': 'パスワードをお忘れですか？', 'login.forgotTip': '店舗管理者に依頼してパスワードをリセット',
+    'login.submit': 'ログイン', 'login.noAccount': 'アカウントをお持ちでない方', 'login.register': '無料トライアル開通（60日間）',
+    'login.success': 'ログイン成功、ワークスペースへ移動中…'
+  },
+  'ko': {
+    'nav.features': '기능 소개', 'nav.modules': '비즈니스 모듈', 'nav.devices': '하드웨어 지원', 'nav.pricing': '버전', 'nav.login': '로그인', 'nav.trial': '60일 무료 체험',
+    'hero.pill': '🎉 신규 사용자 <b>60일</b> 무료 체험 혜택',
+    'hero.title': '懿珠寶管家',
+    'hero.sub': '제품 · 재고 · 판매 · 계약금 · 대여 · 고객<br>PC와 스마트폰으로 매장을 손쉽게 관리',
+    'hero.trialBtn': '🎁 지금 무료 체험 <small>60일간</small>', 'hero.more': '자세히 보기',
+    'stats.modules': '비즈니스 모듈', 'stats.devices': 'PC / 모바일', 'stats.multiStoreLabel': '멀티스토어', 'stats.multiStore': '체인 통합 관리', 'stats.rfid': '대량 원격 재고조사',
+    'phone.title': '懿珠寶管家', 'phone.todaySales': '오늘 판매', 'phone.inStock': '판매 중 제품', 'phone.product': '순금 팔찌 · 28.6g', 'phone.rfid': 'RFID EPC 기록됨',
+    'features.title': '핵심 기능', 'features.sub': '보석 매장 전 업무를 아우르며 재고를 개별 단위로 정확히 관리',
+    'features.f1t': '일물일코드 개별 단위', 'features.f1d': '각 보석을 개별 등록하여 원가·판매가·상태·매장을 전 과정 추적, 재고를 개별 단위로 관리.',
+    'features.f2t': '판매 · 계약금·잔금', 'features.f2d': '일반 판매·계약금 주문, 잔금은 자동으로 정식 주문 전환; 납기 도래 시 자동 알림.',
+    'features.f3t': '대여 · 수리 · 외주', 'features.f3d': '대여를 별도 계산, 반납 시 재고 복원; 수리와 외주 가공을 전 과정 관리.',
+    'features.f4t': '경영 대시보드', 'features.f4d': '오늘 판매, 판매 중 제품, 재고 원가, 미수금을 실시간 집계, 추세를 한눈에.',
+    'features.f5t': '멀티스토어 체인 관리', 'features.f5d': '본점·지점을 통합 등록, 매장별 재고와 판매를 독립 계산하고 전체 집계.',
+    'modules.title': '전체 비즈니스 모듈',
+    'modules.m1': '경영 대시보드', 'modules.m2': '제품 관리', 'modules.m3': '멀티스토어', 'modules.m4': '재고 관리', 'modules.m5': '판매 주문', 'modules.m6': '계약금·잔금', 'modules.m7': '대여 관리', 'modules.m8': '고객 관리', 'modules.m9': '수리 관리', 'modules.m10': '구매 관리', 'modules.m11': '외주 가공', 'modules.m12': '작업 로그', 'modules.m13': '라벨 인쇄', 'modules.m14': '대량 원격 재고조사', 'modules.m15': '기업 웹사이트',
+    'devices.title': 'RFID 하드웨어 지원', 'devices.sub': '프린터 + 리더 + 핸디로「기록 즉 인식」의 대량 재고조사 실현',
+    'devices.d1t': 'RFID 프린터', 'devices.d1d': '제품 정보와 바코드를 인쇄하고 칩 EPC를 기록, 부착과 기록을 한 번에 완료.',
+    'devices.d2t': '고주파 RFID 리더', 'devices.d2d': '카운터/금고 범위를 대량 감지, 하나씩 접촉하지 않고 즉시 재고조사.',
+    'devices.d3t': 'Bluetooth RFID 핸디', 'devices.d3d': '트리거로 즉시 스캔, 이동하며 재고조사, 재고 차이표를 자동 생성.',
+    'cta.badge': '한정 프로모션', 'cta.title': '지금 보석 매장의 디지털 관리를 시작하세요',
+    'cta.offer': '신규 등록 시 <b>60일 무료 체험</b>, 전 모듈 체험 가능.',
+    'cta.trialBtn': '🎁 60일 무료 체험 시작', 'cta.hasAccount': '계정이 이미 있으신가요?', 'cta.loginLink': '로그인',
+    'footer.brand': '懿珠寶管家', 'footer.note': '© 2026 懿珠寶管家 · 보석 매장 통합 경영 플랫폼',
+    'login.title': '懿珠寶管家 로그인', 'login.sub': '환영합니다, 로그인 후 매장 워크스페이스로',
+    'login.user': '휴대폰 / 계정', 'login.userPh': '휴대폰 번호 또는 계정을 입력',
+    'login.pass': '비밀번호', 'login.passPh': '비밀번호를 입력하세요',
+    'login.remember': '로그인 유지', 'login.forgot': '비밀번호를 잊으셨나요?', 'login.forgotTip': '매장 관리자에게 요청하여 비밀번호 재설정',
+    'login.submit': '로그인', 'login.noAccount': '아직 계정이 없으신가요?', 'login.register': '무료 체험 시작 (60일)',
+    'login.success': '로그인 성공, 워크스페이스로 이동 중…'
+  }
+};
+
+var currentLang = 'zh';
+
+function dictOf(lang){ return I18N[LANG_MAP[lang]] || I18N.zh; }
+
+function t(key){
+  var dict = dictOf(currentLang);
+  return dict[key] != null ? dict[key] : (I18N.zh[key] != null ? I18N.zh[key] : key);
+}
+
+function applyI18n(){
+  document.documentElement.lang = currentLang;
+  document.querySelectorAll('[data-i18n]').forEach(function(el){
+    el.textContent = t(el.getAttribute('data-i18n'));
+  });
+  document.querySelectorAll('[data-i18n-html]').forEach(function(el){
+    el.innerHTML = t(el.getAttribute('data-i18n-html'));
+  });
+  document.querySelectorAll('[data-i18n-ph]').forEach(function(el){
+    el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph')));
+  });
+  var activeKey = currentLang;
+  if(!LANG_LABELS[activeKey]) activeKey = 'zh-Hans';
+  var label = document.getElementById('langCurrentLabel');
+  if(label) label.textContent = LANG_LABELS[activeKey];
+  var opts = document.querySelectorAll('.lang-opt');
+  opts.forEach(function(a){
+    a.classList.toggle('active', a.getAttribute('data-lang') === currentLang);
+  });
+  document.title = t('hero.title') + ' · ' + (currentLang === 'en' ? 'Features' : currentLang === 'it' ? 'Funzionalità' : t('features.title')) + '';
+}
+
+function switchLang(lang, e){
+  if(e) e.preventDefault();
+  if(I18N[lang] || LANG_MAP[lang]){
+    currentLang = lang;
+    try{ localStorage.setItem('yi_lang', lang); }catch(err){}
+    applyI18n();
+  }
+  closeLangMenu();
+}
+
+function detectLang(){
+  var saved = null;
+  try{ saved = localStorage.getItem('yi_lang'); }catch(e){}
+  if(saved && (I18N[saved] || LANG_MAP[saved])) return saved;
+  var nav = (navigator.language || '').toLowerCase();
+  if(nav.indexOf('zh') === 0) return nav.indexOf('tw') >= 0 || nav.indexOf('hant') >= 0 ? 'zh-Hant' : 'zh-Hans';
+  if(nav.indexOf('it') === 0) return 'it';
+  if(nav.indexOf('en') === 0) return 'en';
+  if(nav.indexOf('ja') === 0) return 'ja';
+  if(nav.indexOf('ko') === 0) return 'ko';
+  return 'zh-Hans';
+}
+
+// 语言下拉
+function toggleLangMenu(e){
+  if(e && e.stopPropagation) e.stopPropagation();
+  document.getElementById('langSwitch').classList.toggle('open');
+}
+function closeLangMenu(){ document.getElementById('langSwitch').classList.remove('open'); }
+document.addEventListener('click', function(e){
+  if(!document.getElementById('langSwitch').contains(e.target)) closeLangMenu();
+});
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape'){ closeLangMenu(); }
+});
+
+// 手机端抽屉菜单
+function toggleMenu(e){
+  if(e && e.stopPropagation) e.stopPropagation();
+  var mask = document.getElementById('drawerMask');
+  mask.classList.toggle('show');
+  document.body.classList.toggle('no-scroll', mask.classList.contains('show'));
+}
+function closeMenu(){
+  var mask = document.getElementById('drawerMask');
+  mask.classList.remove('show');
+  document.body.classList.remove('no-scroll');
+}
+document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeMenu(); });
+
+// 登录弹窗
+function openLogin(e){ if(e) e.preventDefault(); closeMenu(); document.getElementById('loginMask').classList.add('show'); }
+function closeLogin(){ document.getElementById('loginMask').classList.remove('show'); }
+document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeLogin(); });
+
+function doLogin(e){
+  e.preventDefault();
+  var u=document.getElementById('loginUser').value.trim();
+  var p=document.getElementById('loginPass').value;
+  if(!u) return toast(t('login.userPh'));
+  if(!p) return toast(t('login.passPh'));
+  // 演示登录：对接平台 SSO/业务 Token 鉴权后跳转 /app/jewelry/{tenant}/
+  closeLogin();
+  toast(t('login.success'));
+  setTimeout(function(){ window.location.href='/app/jewelry/'; }, 900);
+  return false;
+}
+
+var _t;
+function toast(msg){
+  var el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  clearTimeout(_t);
+  _t=setTimeout(function(){ el.classList.remove('show'); }, 2200);
+  return false;
+}
+
+currentLang = detectLang();
+applyI18n();
+</script>
+
+</body>
+</html>

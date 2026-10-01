@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>综合业务应用服务平台</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app" v-cloak>
+
+  <!-- ==================== 登录 ==================== -->
+  <div v-if="!user" class="login-wrap">
+    <form class="login-card" @submit.prevent="doLogin">
+      <div class="login-logo">◆</div>
+      <h1>综合业务应用服务平台</h1>
+      <p class="sub">平台管理后台</p>
+      <label class="field"><span>用户名</span><input v-model.trim="loginForm.username" autocomplete="username" required></label>
+      <label class="field"><span>密码</span><input v-model="loginForm.password" type="password" autocomplete="current-password" required></label>
+      <div class="login-err">{{ loginError }}</div>
+      <button class="btn primary block" :disabled="loggingIn">{{ loggingIn ? '登录中…' : '登 录' }}</button>
+      <div class="login-hint">演示账号：admin / admin123</div>
+    </form>
+  </div>
+
+  <!-- ==================== 主框架：左侧菜单 + 右侧 iframe 操作区 ==================== -->
+  <div v-else class="layout">
+    <div v-if="maintenance.length" class="pause-banner">
+      <span class="pb-icon">⏸️</span>
+      <div class="pb-main">
+        <div class="pb-title">系统升级中，暂停使用 · {{ maintenance[0].name }} 正在全量重迁至 v{{ maintenance[0].target }}</div>
+        <div class="pb-desc">网关状态 MAINTENANCE，业务请求已拦截。迁移完成后将自动切换并恢复业务。</div>
+      </div>
+      <div class="pb-progress"><i :style="{width: (maintenance[0].progress || 0) + '%'}"></i></div>
+      <div class="pb-pct">{{ maintenance[0].progress || 0 }}%</div>
+    </div>
+
+    <header class="topbar">
+      <div class="brand"><i>◆</i>综合业务应用服务平台</div>
+      <div class="spacer"></div>
+      <span class="user">{{ user.display_name }}（{{ user.username }}）</span>
+      <button class="btn sm" @click="doLogout">退出</button>
+    </header>
+
+    <div class="body">
+      <nav class="menu">
+        <div class="menu-group">功能菜单</div>
+        <div v-for="m in menus" :key="m.key" class="menu-item" :class="{active: menu === m.key}" @click="menu = m.key">
+          <span>{{ m.icon }}</span>{{ m.label }}
+        </div>
+      </nav>
+      <iframe class="work-frame" :key="currentMenu.key" :src="currentMenu.src" :title="currentMenu.label"></iframe>
+    </div>
+  </div>
+</div>
+
+<script src="/static/vendor/vue.global.prod.js"></script>
+<script src="/static/common.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

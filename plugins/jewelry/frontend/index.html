@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>懿臻珠宝云</title>
+<link rel="icon" href="/logo/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<div id="app">
+  <div v-if="mode==='PRODUCTION_SUPPORT'" class="support-banner">生产运维穿透模式 · 所有修改将写入审计日志</div>
+
+  <div v-if="!token" class="login-page">
+    <div class="login-logo"><img src="/logo/logo.svg" alt=""></div>
+    <div class="login-title">懿臻珠宝云</div>
+    <div class="login-sub">Jewelry Cloud · 独立工作台</div>
+    <div class="login-card">
+      <label>{{ t('login.user') }}</label>
+      <input v-model="loginUser" type="text" :placeholder="t('login.userPh')" @keyup.enter="doLogin">
+      <label>{{ t('login.pass') }}</label>
+      <input v-model="loginPwd" type="password" :placeholder="t('login.passPh')" @keyup.enter="doLogin">
+      <button class="btn btn-primary btn-block" @click="doLogin">{{ t('login.submit') }}</button>
+      <div class="login-hint">演示账号：admin / 123456</div>
+      <div class="lang-row">
+        <button v-for="k in langKeys" :key="k" class="lang-mini" :class="{on:lang===k}" @click="setLang(k)">{{ langLabels[k] }}</button>
+      </div>
+    </div>
+  </div>
+
+  <div v-else class="app-shell" :class="{pc:isPc, mobile:!isPc}">
+    <aside v-if="isPc" class="sidebar">
+      <div class="side-brand"><img src="/logo/logo.svg" alt=""><div><b>懿臻珠宝云</b><small>{{ tenant }}</small></div></div>
+      <nav>
+        <button v-for="n in nav" :key="n.id" class="nav-item" :class="{active:tab===n.id}" @click="go(n.id)">{{ n.icon }} {{ t(n.key) }}</button>
+      </nav>
+      <div class="side-foot">
+        <div>{{ user.display_name }} · {{ user.role==='TENANT_ADMIN'?'店长':'店员' }}</div>
+        <button class="btn btn-sm btn-outline" @click="doLogout">{{ t('nav.logout') }}</button>
+      </div>
+    </aside>
+
+    <div class="app-main">
+      <header class="app-bar" v-if="!isPc">
+        <div class="brand"><img src="/logo/logo.svg" class="app-logo" alt=""> 懿臻珠宝云</div>
+        <div class="store-tag">{{ tenant }}</div>
+        <div class="avatar" @click="go('more')">{{ (user.display_name||'店')[0] }}</div>
+      </header>
+      <header v-else class="pc-top">
+        <h1>{{ currentTitle }}</h1>
+        <div class="pc-top-actions">
+          <select v-model="lang" @change="setLang(lang)" class="lang-select">
+            <option v-for="k in langKeys" :key="k" :value="k">{{ langLabels[k] }}</option>
+          </select>
+          <a class="btn btn-sm btn-outline" href="/site" target="_blank">{{ t('nav.site') }}</a>
+          <button class="btn btn-gold btn-sm" @click="quickSale">{{ t('nav.sale') }}</button>
+        </div>
+      </header>
+
+      <div class="main-content" v-if="!subView || isPc">
+        <!-- dashboard -->
+        <section v-if="tab==='dashboard'">
+          <div class="stats-grid" v-if="dashData">
+            <div class="stat-card"><div class="stat-label">{{ t('kpi.stock') }}</div><div class="stat-value">{{ dashData.stock.count }}</div><div class="stat-sub">成本 ￥{{ fmt(dashData.stock.cost) }}</div></div>
+            <div class="stat-card gold"><div class="stat-label">{{ t('kpi.today') }}</div><div class="stat-value">￥{{ fmt(dashData.todaySales.amount) }}</div><div class="stat-sub">{{ dashData.todaySales.count }} 笔</div></div>
+            <div class="stat-card blue"><div class="stat-label">{{ t('kpi.month') }}</div><div class="stat-value">￥{{ fmt(dashData.monthSales.amount) }}</div></div>
+            <div class="stat-card green"><div class="stat-label">{{ t('kpi.due') }}</div><div class="stat-value">￥{{ fmt(dashData.depositPending.amount) }}</div></div>
+          </div>
+          <div class="mini-chart" v-if="trendData && trendData.months && trendData.months.length">
+            <div class="mini-chart-title"><span>{{ t('kpi.trend') }}</span></div>
+            <div class="chart-bars">
+              <div class="chart-bar-wrap" v-for="(m,i) in trendData.months" :key="m">
+                <div class="chart-bar" :style="{height: Math.max(4,(trendData.amounts[i]/Math.max.apply(null,trendData.amounts.concat([1])))*70)+'px'}"></div>
+                <div class="chart-bar-label">{{ m.slice(5) }}</div>
+              </div>
+            </div>
+          </div>
+          <div class="reminder-section" v-if="remindData">
+            <div class="reminder-head" @click="showRemind=!showRemind"><span>🕐 {{ t('kpi.todo') }}</span><span class="badge">{{ todoCount }}</span></div>
+            <div class="reminder-body" v-if="showRemind">
+              <div v-for="d in remindData.deposits" :key="'d'+d.id" class="reminder-item"><div class="ri-left"><span class="ri-name">{{ d.customer }}</span><span class="ri-date">{{ d.product }} {{ d.promised_date }}</span></div><span class="ri-amount">￥{{ fmt(d.balance) }}</span></div>
+              <div v-for="l in remindData.loansOverdue" :key="'l'+l.id" class="reminder-item"><div class="ri-left"><span class="ri-name">{{ l.product }}</span><span class="ri-date">逾期 {{ l.due_date }}</span></div></div>
+              <div v-for="r in remindData.repairsPending" :key="'r'+r.id" class="reminder-item"><div class="ri-left"><span class="ri-name">{{ r.item }}</span><span class="ri-date">{{ r.status }}</span></div></div>
+              <div class="reminder-empty" v-if="!todoCount">{{ t('empty.todo') }}</div>
+            </div>
+          </div>
+          <div class="section" v-if="!isPc">
+            <div class="section-title"><span class="dot"></span>{{ t('kpi.quick') }}</div>
+            <div class="quick-grid">
+              <div class="quick-item" @click="go('products')"><div class="quick-icon wine">💎</div><div class="quick-label">商品</div></div>
+              <div class="quick-item" @click="go('inventory')"><div class="quick-icon gold">📦</div><div class="quick-label">库存</div></div>
+              <div class="quick-item" @click="go('sales')"><div class="quick-icon blue">🧾</div><div class="quick-label">销售</div></div>
+              <div class="quick-item" @click="go('deposits')"><div class="quick-icon green">💰</div><div class="quick-label">定金</div></div>
+              <div class="quick-item" @click="openSubView('loans')"><div class="quick-icon orange">📥</div><div class="quick-label">借货</div></div>
+              <div class="quick-item" @click="openSubView('repairs')"><div class="quick-icon wine">🔧</div><div class="quick-label">维修</div></div>
+              <div class="quick-item" @click="openSubView('customers')"><div class="quick-icon gold">👥</div><div class="quick-label">客户</div></div>
+              <div class="quick-item" @click="openSubView('logs')"><div class="quick-icon blue">📋</div><div class="quick-label">日志</div></div>
+            </div>
+          </div>
+          <div class="section" v-if="dashData && dashData.recentSales.length">
+            <div class="section-title"><span class="dot"></span>{{ t('kpi.recent') }}</div>
+            <div class="card-list">
+              <div class="card-item sale-card" v-for="s in dashData.recentSales" :key="s.bill_no">
+                <div class="sale-top"><span class="sale-no">{{ s.bill_no }}</span><span class="sale-amount">￥{{ fmt(s.amount) }}</span></div>
+                <div class="sale-info">{{ s.customer }} · {{ s.method }} · {{ s.biz_date }} · {{ s.status }}</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- products -->
+        <section v-if="tab==='products'">
+          <div class="flex-between section" style="margin-top:12px">
+            <div class="section-title" style="margin:0"><span class="dot"></span>{{ t('nav.products') }}</div>
+            <div class="btn-row">
+              <button class="btn btn-sm btn-outline" @click="openRfid">RFID {{ t('inv.scan') }}</button>
+              <button class="btn btn-primary btn-sm" @click="addProduct">+ {{ t('act.add') }}</button>
+            </div>
+          </div>
+          <div class="search-wrap mt-sm"><input class="search-input" v-model="prodQ" :placeholder="t('ph.searchProd')"><button class="btn btn-sm btn-outline" @click="prodQ=''">{{ t('act.clear') }}</button></div>
+          <div class="cat-chips">
+            <div class="cat-chip" :class="{active:!prodCat}" @click="prodCat=''">{{ t('cat.all') }}</div>
+            <div class="cat-chip" v-for="c in cats" :key="c" :class="{active:prodCat===c}" @click="prodCat=c">{{ c }}</div>
+          </div>
+          <div class="table-wrap" v-if="isPc">
+            <table class="data-table">
+              <thead><tr><th>编码</th><th>名称</th><th>品类</th><th>克重</th><th>售价</th><th>成本</th><th>状态</th><th>EPC</th><th>橱窗</th><th></th></tr></thead>
+              <tbody>
+                <tr v-for="p in filteredProducts" :key="p.id">
+                  <td>{{ p.code }}</td><td>{{ p.name }}</td><td>{{ p.category }}</td><td>{{ p.weight }}g</td>
+                  <td>￥{{ fmt(p.price) }}</td><td>￥{{ fmt(p.cost) }}</td>
+                  <td><span class="tag" :class="statusClass(p.status)">{{ p.status }}</span></td>
+                  <td class="mono">{{ p.rfid_epc||'—' }}</td>
+                  <td>{{ p.showcase_public?'是':'否' }}</td>
+                  <td class="nowrap">
+                    <button class="link" @click="editProduct(p)">{{ t('act.edit') }}</button>
+                    <button class="link" @click="printLabel(p)">{{ t('act.print') }}</button>
+                    <button class="link danger" @click="delProduct(p.id)">{{ t('act.del') }}</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card-list" v-else>
+            <div class="card-item" v-for="p in filteredProducts" :key="p.id">
+              <div class="product-card" @click="editProduct(p)">
+                <div class="prod-thumb">💎</div>
+                <div class="prod-info">
+                  <div class="prod-name">{{ p.name }}<span class="tag" :class="statusClass(p.status)">{{ p.status }}</span></div>
+                  <div class="prod-meta">{{ p.code }} · {{ p.material }} · {{ p.weight }}g</div>
+                </div>
+                <div class="prod-price2"><div class="pp">￥{{ fmt(p.price) }}</div></div>
+              </div>
+              <div class="row-actions">
+                <button class="btn btn-sm btn-outline" @click="printLabel(p)">打印标签</button>
+                <button class="btn btn-sm btn-outline" @click="delProduct(p.id)" style="color:var(--danger);border-color:var(--danger)">删除</button>
+              </div>
+            </div>
+            <div class="empty" v-if="!filteredProducts.length"><div class="empty-icon">💎</div>{{ t('empty.prod') }}</div>
+          </div>
+        </section>
+
+        <!-- inventory -->
+        <section v-if="tab==='inventory'">
+          <div class="flex-between section" style="margin-top:12px">
+            <div class="section-title" style="margin:0"><span class="dot"></span>{{ t('nav.inventory') }}</div>
+            <div class="btn-row">
+              <button class="btn btn-sm btn-outline" @click="openRfid">RFID {{ t('inv.scan') }}</button>
+              <button class="btn btn-primary btn-sm" @click="openInbound">+ {{ t('inv.in') }}</button>
+            </div>
+          </div>
+          <div class="stats-grid" v-if="invSum">
+            <div class="stat-card"><div class="stat-label">在库</div><div class="stat-value">{{ invSum.inStock.count }}</div><div class="stat-sub">￥{{ fmt(invSum.inStock.cost) }}</div></div>
+            <div class="stat-card gold"><div class="stat-label">已定锁定</div><div class="stat-value">{{ invSum.reserved.count }}</div></div>
+            <div class="stat-card blue"><div class="stat-label">借出</div><div class="stat-value">{{ invSum.loaned.count }}</div></div>
+            <div class="stat-card orange"><div class="stat-label">已售</div><div class="stat-value">{{ invSum.sold.count }}</div></div>
+          </div>
+          <div class="section"><div class="section-title"><span class="dot"></span>{{ t('inv.copyHint') }}</div>
+            <div class="card-list">
+              <div class="card-item" v-for="p in products.filter(function(x){return x.status==='在库'})" :key="'c'+p.id">
+                <div class="flex-between"><div><b>{{ p.name }}</b> <span class="prod-meta">{{ p.code }}</span></div>
+                  <button class="btn btn-sm btn-outline" @click="copyInbound(p.id)">{{ t('inv.copy') }}</button></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- sales -->
+        <section v-if="tab==='sales'">
+          <div class="flex-between section" style="margin-top:12px">
+            <div class="section-title" style="margin:0"><span class="dot"></span>{{ t('nav.sales') }}</div>
+            <button class="btn btn-primary btn-sm" @click="quickSale">+ {{ t('nav.sale') }}</button>
+          </div>
+          <div class="card-list">
+            <div class="card-item sale-card" v-for="s in sales" :key="s.id">
+              <div class="sale-top"><span class="sale-no">{{ s.bill_no }}</span><span class="sale-amount">￥{{ fmt(s.amount) }}</span></div>
+              <div class="sale-info">{{ s.customer }} · {{ s.product }} · {{ s.method }} · {{ s.biz_date }}</div>
+              <div class="row-actions"><span class="tag" :class="s.status==='已冲红'?'tag-sold':'tag-stock'">{{ s.status }}</span>
+                <button v-if="s.status!=='已冲红'" class="btn btn-sm btn-outline" @click="voidSale(s)">{{ t('act.void') }}</button>
+              </div>
+            </div>
+            <div class="empty" v-if="!sales.length">{{ t('empty.sale') }}</div>
+          </div>
+        </section>
+
+        <!-- deposits -->
+        <section v-if="tab==='deposits'">
+          <div class="flex-between section" style="margin-top:12px">
+            <div class="section-title" style="margin:0"><span class="dot"></span>{{ t('nav.deposits') }}</div>
+            <button class="btn btn-primary btn-sm" @click="openDeposit">+ {{ t('act.deposit') }}</button>
+          </div>
+          <div class="card-list">
+            <div class="card-item deposit-card" v-for="d in deposits" :key="d.id">
+              <div class="dep-row"><div class="dep-customer">{{ d.customer }}</div><div class="dep-amounts"><div class="dep-total">￥{{ fmt(d.total) }}</div><div class="dep-detail">已付 ￥{{ fmt(d.deposit) }} / 尾款 ￥{{ fmt(d.balance) }}</div></div></div>
+              <div class="dep-product">{{ d.product }} · {{ d.promised_date }}</div>
+              <div class="dep-tags"><span class="tag tag-gold">{{ d.status }}</span></div>
+              <div class="row-actions" v-if="d.status==='已定'">
+                <button class="btn btn-sm btn-gold" @click="payDeposit(d)">{{ t('act.payBal') }}</button>
+                <button class="btn btn-sm btn-outline" @click="voidDeposit(d)">{{ t('act.void') }}</button>
+              </div>
+            </div>
+            <div class="empty" v-if="!deposits.length">{{ t('empty.dep') }}</div>
+          </div>
+        </section>
+
+        <section v-if="isPc && tab==='loans'">
+          <div class="flex-between section"><div class="section-title" style="margin:0">借货</div>
+            <button class="btn btn-primary btn-sm" @click="openLoan">+ 新增</button></div>
+          <div class="card-list">
+            <div class="card-item loan-card" v-for="d in subList" :key="d.id">
+              <div class="flex-between"><b>{{ d.product }}</b><span class="tag">{{ d.status }}</span></div>
+              <div class="prod-meta">{{ d.direction==='out'?'借出':'借入' }} · {{ d.party }} · {{ d.code }} · {{ d.due_date }}</div>
+              <button v-if="d.status==='借出中'||d.status==='借入中'" class="btn btn-sm btn-outline mt-sm" @click="returnLoan(d)">归还/核销</button>
+            </div>
+          </div>
+        </section>
+        <section v-if="isPc && tab==='repairs'">
+          <div class="flex-between section"><div class="section-title" style="margin:0">维修</div>
+            <button class="btn btn-primary btn-sm" @click="openRepair">+ 接件</button></div>
+          <div class="card-list">
+            <div class="card-item repair-card" v-for="d in subList" :key="d.id">
+              <div class="flex-between"><b>{{ d.item }}</b><span>{{ d.status }}</span></div>
+              <div class="prod-meta">{{ d.customer }} · {{ d.issue }}</div>
+              <button class="btn btn-sm btn-outline mt-sm" @click="editRepair(d)">更新状态</button>
+            </div>
+          </div>
+        </section>
+        <section v-if="isPc && tab==='purchases'">
+          <div class="flex-between section"><div class="section-title" style="margin:0">采购</div>
+            <button class="btn btn-primary btn-sm" @click="openPurchase">+ 采购</button></div>
+          <div class="card-list">
+            <div class="card-item" v-for="d in subList" :key="d.id">
+              <div class="flex-between"><b>{{ d.product }}</b><span class="tag">{{ d.status }}</span></div>
+              <div class="prod-meta">{{ d.supplier }} · ￥{{ fmt(d.cost) }}</div>
+              <button v-if="d.status!=='已入库'" class="btn btn-sm btn-outline mt-sm" @click="receivePurchase(d)">确认入库</button>
+            </div>
+          </div>
+        </section>
+        <section v-if="isPc && tab==='outsourcings'">
+          <div class="flex-between section"><div class="section-title" style="margin:0">委外加工</div>
+            <button class="btn btn-primary btn-sm" @click="openOutsource">+ 发料</button></div>
+          <div class="card-list">
+            <div class="card-item" v-for="d in subList" :key="d.id">
+              <div class="flex-between"><b>{{ d.product }}</b><span class="tag">{{ d.status }}</span></div>
+              <div class="prod-meta">成本 ￥{{ fmt(d.gold_price*d.weight+d.labor_fee) }} · {{ d.factory }}</div>
+              <button v-if="d.status!=='已收货'" class="btn btn-sm btn-outline mt-sm" @click="receiveOut(d)">收货入库</button>
+            </div>
+          </div>
+        </section>
+        <section v-if="tab==='customers'">
+          <div class="flex-between section"><div class="section-title" style="margin:0">客户</div>
+            <button class="btn btn-primary btn-sm" @click="openCustomer">+ 客户</button></div>
+          <div class="card-list">
+            <div class="card-item" v-for="d in subList" :key="d.id">
+              <div class="cust-item" :onclick="!isPc ? '' : ''" @click="(isPc ? editCustomer(d) : null)">
+                <div class="cust-avatar">{{ (d.name||'?')[0] }}</div>
+                <div class="cust-info"><div class="cust-name">{{ d.name }} · {{ d.level }}</div><div class="cust-phone">{{ d.phone }}</div><div class="cust-meta" v-if="d.preference || d.birthday">
+                  <span v-if="d.birthday" class="tag tag-gold">生日 {{ d.birthday }}</span>
+                  <span v-if="d.preference" class="tag">{{ d.preference }}</span>
+                </div></div>
+                <div class="cust-stats"><div class="cust-total">￥{{ fmt(d.total_amount) }}</div><div class="cust-due" v-if="d.due_amount">待付 ￥{{ fmt(d.due_amount) }}</div>
+                  <button v-if="isPc" class="btn btn-sm btn-outline mt-sm" @click.stop="editCustomer(d)">编辑</button>
+                </div>
+              </div>
+            </div>
+            <div class="empty" v-if="!subList.length">暂无客户，可从销售/定金开单时自动建档</div>
+          </div>
+        </section>
+
+        <section v-if="!isPc && tab==='appointments'">
+          <div class="section-title">到店预约</div>
+          <div class="card-list">
+            <div class="card-item" v-for="d in appointments" :key="d.id">
+              <div class="flex-between"><b>{{ d.name }}</b><span class="tag" :class="statusClass(d.status)">{{ d.status }}</span></div>
+              <div class="prod-meta">{{ d.contact }} · {{ d.category }}</div>
+              <div class="prod-meta">期望：{{ d.want_date }} {{ d.want_slot }}</div>
+              <div class="row-actions">
+                <button class="btn btn-sm btn-outline" @click="setAppt(d,'contacted')">已联系</button>
+                <button class="btn btn-sm btn-gold" @click="setAppt(d,'done')">成交</button>
+              </div>
+            </div>
+            <div class="empty" v-if="!appointments.length">暂无预约，访客可从公开页 /site 自助提交</div>
+          </div>
+        </section>
+
+        <section v-if="!isPc && tab==='profile'" v-if="profile">
+          <div class="section-title">店铺资料</div>
+          <div class="card-item">
+            <div class="form-group"><label>名称</label><input v-model="profile.name"></div>
+            <div class="form-group"><label>口号</label><input v-model="profile.slogan"></div>
+            <div class="form-group"><label>简介</label><textarea v-model="profile.intro"></textarea></div>
+            <div class="form-row"><div class="form-group"><label>电话</label><input v-model="profile.phone"></div><div class="form-group"><label>营业时间</label><input v-model="profile.hours"></div></div>
+            <div class="form-group"><label>地址</label><input v-model="profile.address"></div>
+            <button class="btn btn-gold btn-block" @click="saveProfile">{{ t('act.save') }}</button>
+            <a class="btn btn-outline btn-block" href="/site" target="_blank" style="text-decoration:none; margin-top:8px">预览迷你网站</a>
+          </div>
+        </section>
+        <section v-if="isPc && tab==='logs'">
+          <div class="flex-between section"><div class="section-title" style="margin:0">操作日志</div>
+            <a class="btn btn-sm btn-outline" :href="exportHref" @click.prevent="exportLogs">导出 CSV</a></div>
+          <div class="card-list"><div class="log-item" v-for="d in subList" :key="d.id"><span class="log-time">{{ d.time }}</span><span class="log-action">{{ d.operator }} {{ d.action }}</span><span class="log-target">{{ d.target }}</span></div></div>
+        </section>
+        <section v-if="isPc && tab==='appointments'">
+          <div class="section-title">到店预约</div>
+          <div class="card-list">
+            <div class="card-item" v-for="d in appointments" :key="d.id">
+              <div class="flex-between"><b>{{ d.name }}</b><span class="tag">{{ d.status }}</span></div>
+              <div class="prod-meta">{{ d.contact }} · {{ d.category }} · {{ d.want_date }} {{ d.want_slot }}</div>
+              <div class="row-actions">
+                <button class="btn btn-sm btn-outline" @click="setAppt(d,'contacted')">已联系</button>
+                <button class="btn btn-sm btn-outline" @click="setAppt(d,'arrived')">已到店</button>
+                <button class="btn btn-sm btn-gold" @click="setAppt(d,'done')">已成交</button>
+              </div>
+            </div>
+            <div class="empty" v-if="!appointments.length">暂无预约，可从公开页 /site 提交</div>
+          </div>
+        </section>
+        <section v-if="isPc && tab==='profile'">
+          <div class="section-title">店铺资料</div>
+          <div class="card-item" v-if="profile">
+            <div class="form-group"><label>名称</label><input v-model="profile.name"></div>
+            <div class="form-group"><label>口号</label><input v-model="profile.slogan"></div>
+            <div class="form-group"><label>简介</label><textarea v-model="profile.intro"></textarea></div>
+            <div class="form-row"><div class="form-group"><label>电话</label><input v-model="profile.phone"></div><div class="form-group"><label>营业时间</label><input v-model="profile.hours"></div></div>
+            <div class="form-group"><label>地址</label><input v-model="profile.address"></div>
+            <button class="btn btn-gold" @click="saveProfile">保存</button>
+            <a class="btn btn-outline" href="/site" target="_blank">预览迷你网站</a>
+          </div>
+        </section>
+
+        <!-- more (mobile) -->
+        <section v-if="!isPc && tab==='more'">
+          <div class="profile-card">
+            <div class="pf-top"><div class="pf-avatar">{{ (user.display_name||'店')[0] }}</div><div><div class="pf-name">{{ user.display_name }}</div><div class="pf-role">{{ user.role==='TENANT_ADMIN'?'店长':'店员' }}</div></div></div>
+          </div>
+          <div class="menu-list">
+            <div class="menu-item" @click="openSubView('customers')"><div class="menu-text">客户管理</div></div>
+            <div class="menu-item" @click="openSubView('loans')"><div class="menu-text">借货管理</div></div>
+            <div class="menu-item" @click="openSubView('repairs')"><div class="menu-text">维修管理</div></div>
+            <div class="menu-item" @click="openSubView('purchases')"><div class="menu-text">采购管理</div></div>
+            <div class="menu-item" @click="openSubView('outsourcings')"><div class="menu-text">委外加工</div></div>
+            <div class="menu-item" @click="openSubView('logs')"><div class="menu-text">操作日志</div></div>
+            <div class="menu-item" @click="go('appointments');loadAppt()"><div class="menu-text">到店预约</div></div>
+            <div class="menu-item" @click="go('profile');loadProfile()"><div class="menu-text">店铺资料</div></div>
+            <div class="menu-item"><a href="/site" target="_blank" class="menu-text">企业迷你网站</a></div>
+            <div class="menu-item" @click="doLogout"><div class="menu-text">退出登录</div></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- mobile sub views -->
+      <div class="sub-page" v-if="!isPc && subView">
+        <div class="sub-page-title"><button class="back-btn" @click="subView=''">←</button>{{ subTitle }}</div>
+        <div v-if="subView==='loans'">
+          <button class="btn btn-primary btn-sm mb-sm" @click="openLoan">+ 新增借货</button>
+          <div class="card-item loan-card" v-for="d in subList" :key="d.id">
+            <div class="flex-between"><b>{{ d.product }}</b><span>{{ d.status }}</span></div>
+            <div class="prod-meta">{{ d.party }} · {{ d.code }}</div>
+            <button v-if="d.status==='借出中'||d.status==='借入中'" class="btn btn-sm btn-outline mt-sm" @click="returnLoan(d)">归还</button>
+          </div>
+        </div>
+        <div v-if="subView==='repairs'">
+          <button class="btn btn-primary btn-sm" @click="openRepair">+ 接维修单</button>
+          <div class="card-item" v-for="d in subList" :key="d.id">
+            <div class="flex-between"><b>{{ d.item }}</b><span>{{ d.status }}</span></div>
+            <button class="btn btn-sm btn-outline mt-sm" @click="editRepair(d)">更新</button>
+          </div>
+        </div>
+        <div v-if="subView==='customers'">
+          <button class="btn btn-primary btn-sm mb-sm" @click="openCustomer">+ 客户</button>
+          <div class="card-item" v-for="d in subList" :key="d.id" @click="editCustomer(d)">
+            <div class="cust-item"><div class="cust-avatar">{{ (d.name||'?')[0] }}</div>
+              <div class="cust-info"><div class="cust-name">{{ d.name }} · {{ d.level }}</div><div class="cust-phone">{{ d.phone }}</div></div>
+              <div class="cust-stats"><div class="cust-total">￥{{ fmt(d.total_amount) }}</div><div class="cust-due" v-if="d.due_amount">待付 ￥{{ fmt(d.due_amount) }}</div></div>
+            </div>
+          </div>
+          <div class="empty" v-if="!subList.length">暂无客户</div>
+        </div>
+        <div v-if="subView==='purchases'">
+          <button class="btn btn-primary btn-sm" @click="openPurchase">+ 采购</button>
+          <div class="card-item" v-for="d in subList" :key="d.id">
+            <div class="flex-between"><b>{{ d.product }}</b>{{ d.status }}</div>
+            <button v-if="d.status!=='已入库'" class="btn btn-sm btn-outline mt-sm" @click="receivePurchase(d)">入库</button>
+          </div>
+        </div>
+        <div v-if="subView==='outsourcings'">
+          <button class="btn btn-primary btn-sm" @click="openOutsource">+ 委外</button>
+          <div class="card-item" v-for="d in subList" :key="d.id">
+            <div class="flex-between"><b>{{ d.product }}</b>{{ d.status }}</div>
+            <button v-if="d.status!=='已收货'" class="btn btn-sm btn-outline mt-sm" @click="receiveOut(d)">收货</button>
+          </div>
+        </div>
+        <div v-if="subView==='logs'">
+          <div class="log-item" v-for="d in subList" :key="d.id"><span class="log-time">{{ (d.time||'').slice(5,16) }}</span><span class="log-action">{{ d.action }}</span><span class="log-target">{{ d.target }}</span></div>
+        </div>
+      </div>
+
+      <nav v-if="!isPc" class="tab-bar">
+        <button class="tab-item" :class="{active:tab==='dashboard'}" @click="go('dashboard')"><span class="tab-icon">📊</span>看板</button>
+        <button class="tab-item" :class="{active:tab==='products'}" @click="go('products')"><span class="tab-icon">💎</span>商品</button>
+        <div class="tab-center"><button class="tab-btn-add" @click="quickSale">+</button></div>
+        <button class="tab-item" :class="{active:tab==='deposits'}" @click="go('deposits')"><span class="tab-icon">💰</span>定金</button>
+        <button class="tab-item" :class="{active:tab==='more'}" @click="go('more')"><span class="tab-icon">👤</span>我的</button>
+      </nav>
+    </div>
+  </div>
+
+  <div class="sheet-mask" :class="{show:sheetMode}" @click.self="closeSheet">
+    <div class="sheet" @click.stop>
+      <div class="sheet-head"><span class="sheet-title">{{ sheetTitle }}</span><button class="sheet-close" @click="closeSheet">×</button></div>
+      <div class="sheet-body">
+        <template v-if="sheetMode==='sale'">
+          <div class="form-group"><label>客户</label><input v-model="sheetData.customer"></div>
+          <div class="form-group"><label>手机</label><input v-model="sheetData.phone"></div>
+          <div class="form-group"><label>在库商品</label>
+            <select v-model="sheetData.product_id" @change="onPickProduct">
+              <option :value="null">自定义名称</option>
+              <option v-for="p in stockOptions" :key="p.id" :value="p.id">{{ p.code }} {{ p.name }} ￥{{ p.price }}</option>
+            </select>
+          </div>
+          <div class="form-group"><label>商品名称</label><input v-model="sheetData.product"></div>
+          <div class="form-row"><div class="form-group"><label>金额</label><input v-model.number="sheetData.amount" type="number"></div><div class="form-group"><label>实收</label><input v-model.number="sheetData.paid" type="number"></div></div>
+          <div class="form-row"><div class="form-group"><label>支付</label><select v-model="sheetData.method"><option>现金</option><option>微信</option><option>刷卡</option><option>转账</option></select></div>
+            <div class="form-group"><label>日期</label><input v-model="sheetData.biz_date" type="date"></div></div>
+        </template>
+        <template v-if="sheetMode==='product'||sheetMode==='inbound'">
+          <div class="form-row"><div class="form-group"><label>编码</label><input v-model="sheetData.code"></div><div class="form-group"><label>名称</label><input v-model="sheetData.name"></div></div>
+          <div class="form-row"><div class="form-group"><label>品类</label><select v-model="sheetData.category"><option v-for="c in cats" :key="c">{{ c }}</option></select></div><div class="form-group"><label>材质</label><input v-model="sheetData.material"></div></div>
+          <div class="form-row"><div class="form-group"><label>克重</label><input v-model.number="sheetData.weight" type="number"></div><div class="form-group"><label>尺寸</label><input v-model="sheetData.size"></div></div>
+          <div class="form-row"><div class="form-group"><label>成本</label><input v-model.number="sheetData.cost" type="number"></div><div class="form-group"><label>售价</label><input v-model.number="sheetData.price" type="number"></div></div>
+          <div class="form-group"><label>证书号</label><input v-model="sheetData.cert"></div>
+          <div class="form-row" v-if="sheetMode==='product'"><div class="form-group"><label>状态</label><select v-model="sheetData.status"><option>在库</option><option>已定</option><option>已售</option><option>借出</option></select></div>
+            <div class="form-group"><label>RFID EPC</label><input v-model="sheetData.rfid_epc"></div></div>
+          <div class="form-group" v-if="sheetMode==='product'"><label><input type="checkbox" v-model="sheetData.showcase_public" :true-value="1" :false-value="0"> 允许上橱窗</label></div>
+        </template>
+        <template v-if="sheetMode==='deposit'">
+          <div class="form-row"><div class="form-group"><label>客户</label><input v-model="sheetData.customer"></div><div class="form-group"><label>电话</label><input v-model="sheetData.phone"></div></div>
+          <div class="form-group"><label>锁定在库商品（可选）</label>
+            <select v-model="sheetData.product_id" @change="onPickProduct"><option :value="null">无现货定制</option>
+              <option v-for="p in stockOptions" :key="p.id" :value="p.id">{{ p.code }} {{ p.name }}</option></select>
+          </div>
+          <div class="form-group"><label>商品</label><input v-model="sheetData.product"></div>
+          <div class="form-row"><div class="form-group"><label>总价</label><input v-model.number="sheetData.total" type="number" @input="sheetData.balance=(sheetData.total||0)-(sheetData.deposit||0)"></div>
+            <div class="form-group"><label>定金</label><input v-model.number="sheetData.deposit" type="number" @input="sheetData.balance=(sheetData.total||0)-(sheetData.deposit||0)"></div></div>
+          <div class="form-row"><div class="form-group"><label>尾款</label><input :value="sheetData.balance" readonly></div><div class="form-group"><label>交期</label><input v-model="sheetData.promised_date" type="date"></div></div>
+        </template>
+        <template v-if="sheetMode==='loan'">
+          <div class="form-group"><label>方向</label><select v-model="sheetData.direction"><option value="out">借出</option><option value="in">借入</option></select></div>
+          <div class="form-row"><div class="form-group"><label>商品</label><input v-model="sheetData.product"></div><div class="form-group"><label>编码</label><input v-model="sheetData.code" placeholder="借出请填在库编码"></div></div>
+          <div class="form-row"><div class="form-group"><label>对方</label><input v-model="sheetData.party"></div><div class="form-group"><label>数量</label><input v-model.number="sheetData.qty" type="number"></div></div>
+          <div class="form-row"><div class="form-group"><label>日期</label><input v-model="sheetData.loan_date" type="date"></div><div class="form-group"><label>应还</label><input v-model="sheetData.due_date" type="date"></div></div>
+        </template>
+        <template v-if="sheetMode==='repair'">
+          <div class="form-row"><div class="form-group"><label>客户</label><input v-model="sheetData.customer"></div><div class="form-group"><label>电话</label><input v-model="sheetData.phone"></div></div>
+          <div class="form-group"><label>物品</label><input v-model="sheetData.item"></div>
+          <div class="form-group"><label>问题</label><textarea v-model="sheetData.issue"></textarea></div>
+          <div class="form-row"><div class="form-group"><label>预估</label><input v-model.number="sheetData.est_fee" type="number"></div><div class="form-group"><label>实收</label><input v-model.number="sheetData.actual_fee" type="number"></div></div>
+          <div class="form-group"><label>状态</label><select v-model="sheetData.status"><option>待维修</option><option>维修中</option><option>待取件</option><option>已完成</option></select></div>
+        </template>
+        <template v-if="sheetMode==='purchase'">
+          <div class="form-group"><label>供应商</label><input v-model="sheetData.supplier"></div>
+          <div class="form-row"><div class="form-group"><label>商品</label><input v-model="sheetData.product"></div><div class="form-group"><label>数量</label><input v-model.number="sheetData.qty" type="number"></div></div>
+          <div class="form-row"><div class="form-group"><label>成本</label><input v-model.number="sheetData.cost" type="number"></div><div class="form-group"><label>已付</label><input v-model.number="sheetData.paid" type="number"></div></div>
+        </template>
+        <template v-if="sheetMode==='outsource'">
+          <div class="form-group"><label>加工厂</label><input v-model="sheetData.factory"></div>
+          <div class="form-row"><div class="form-group"><label>商品</label><input v-model="sheetData.product"></div><div class="form-group"><label>材质</label><input v-model="sheetData.material"></div></div>
+          <div class="form-row"><div class="form-group"><label>克重</label><input v-model.number="sheetData.weight" type="number"></div><div class="form-group"><label>金价</label><input v-model.number="sheetData.gold_price" type="number"></div></div>
+          <div class="form-group"><label>工费</label><input v-model.number="sheetData.labor_fee" type="number"></div>
+        </template>
+        <template v-if="sheetMode==='customer'">
+          <div class="form-group"><label>姓名</label><input v-model="sheetData.name"></div>
+          <div class="form-group"><label>手机</label><input v-model="sheetData.phone"></div>
+          <div class="form-group"><label>等级</label><select v-model="sheetData.level"><option>普通</option><option>银卡</option><option>金卡</option></select></div>
+          <div class="form-group"><label>偏好</label><input v-model="sheetData.preference"></div>
+        </template>
+        <template v-if="sheetMode==='rfid'">
+          <p class="prod-meta">独立运行时可用「模拟扫描」读取全部已写入 EPC 的在库标签；也可粘贴读写器回传的 EPC 列表。</p>
+          <div class="form-group"><label>EPC（每行一个）</label><textarea v-model="sheetData.epcText" rows="6"></textarea></div>
+          <button class="btn btn-outline btn-block" @click="doRfid(true)">模拟高频扫描</button>
+          <div v-if="rfidResult" class="mt-md">
+            <div>感应 {{ rfidResult.scannedCount }} · 账面 {{ rfidResult.bookCount }} · 盘盈 {{ rfidResult.surplus.length }} · 盘亏 {{ rfidResult.shortage.length }}</div>
+            <div class="log-item" v-for="(it,i) in rfidResult.items" :key="i"><span>{{ it.result }}</span><span class="log-target">{{ it.code }} {{ it.product }} {{ it.epc }}</span></div>
+          </div>
+        </template>
+      </div>
+      <div class="sheet-foot" v-if="sheetMode && sheetMode!=='rfid'"><button class="btn btn-gold btn-block" @click="submitSheet">确认提交</button></div>
+      <div class="sheet-foot" v-else-if="sheetMode==='rfid'"><button class="btn btn-gold btn-block" @click="doRfid(false)">开始盘点</button></div>
+    </div>
+  </div>
+
+  <div id="printArea" class="print-area" v-if="printItem">
+    <div class="label-card">
+      <div class="l-name">{{ printItem.name }}</div>
+      <div>{{ printItem.material }} · {{ printItem.weight }}g</div>
+      <div class="l-price">¥{{ fmt(printItem.price) }}</div>
+      <div class="mono">{{ printItem.code }}</div>
+      <div class="mono small">EPC {{ printItem.rfid_epc }}</div>
+    </div>
+  </div>
+
+  <div class="toast" :class="['toast-'+toast.type, {show:toast.show}]">{{ toast.text }}</div>
+</div>
+<script src="./vendor/vue.global.prod.js"></script>
+<script src="./i18n.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>

@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>综合业务应用服务平台 · V4 解耦版</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #F0F2F5; color: #262626; font-size: 14px; }
+  button { font-family: inherit; cursor: pointer; border: none; background: none; }
+  input, select, textarea { font-family: inherit; font-size: 14px; }
+
+  /* ============ 全局业务暂停横幅 ============ */
+  .pause-banner{ position:fixed;top:0;left:0;right:0;z-index:2000; background:linear-gradient(90deg,#dc2626,#b91c1c); color:#fff;padding:14px 28px;display:flex;align-items:center;gap:14px; box-shadow:0 6px 24px rgba(220,38,38,.35); transform:translateY(-100%);transition:transform .3s cubic-bezier(.22,.61,.36,1); }
+  .pause-banner.show{transform:translateY(0)}
+  .pb-icon{font-size:20px;flex:0 0 auto;animation:pulse 1.2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+  .pb-main{flex:1;min-width:0}
+  .pb-title{font-size:14px;font-weight:700;letter-spacing:.3px}
+  .pb-desc{font-size:12.5px;opacity:.9;margin-top:3px}
+  .pb-progress{width:180px;height:6px;background:rgba(255,255,255,.25); border-radius:999px;overflow:hidden;flex:0 0 180px}
+  .pb-progress i{display:block;height:100%;width:0; background:linear-gradient(90deg,#fef08a,#fde047);transition:width .2s linear}
+  .pb-pct{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;flex:0 0 46px;text-align:right}
+  .app-container { display: flex; min-height: 100vh; transition: padding-top .3s; }
+  .app-container.paused { padding-top: 68px; }
+
+  /* ============ 框架结构 ============ */
+  .sidebar { width: 220px; background: #001529; color: #fff; flex-shrink: 0; display: flex; flex-direction: column; }
+  .sidebar-logo { height: 64px; display: flex; align-items: center; padding: 0 20px; background: #002140; font-weight: 600; font-size: 16px; gap: 10px; }
+  .logo-mark { width: 28px; height: 28px; border-radius: 6px; background: linear-gradient(135deg, #D4AF37, #B8860B); display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .sidebar-group { padding: 16px 20px 6px; font-size: 13px; color: #8C9AA6; letter-spacing: 1px; font-weight: 500; }
+  .nav-item { display: block; padding: 12px 20px; color: #A6ADB4; font-size: 14px; cursor: pointer; border-left: 3px solid transparent; transition: all .15s; }
+  .nav-item:hover { color: #fff; background: #0F2940; }
+  .nav-item.active { color: #fff; background: #1890FF; border-left-color: #fff; }
+  .sidebar-footer { margin-top: auto; padding: 16px 20px; border-top: 1px solid #1F3248; display: flex; align-items: center; gap: 10px; }
+  .avatar { width: 32px; height: 32px; border-radius: 50%; background: #1890FF; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; color:#fff;}
+  .sidebar-footer .info { font-size: 12px; line-height: 1.4; }
+  .sidebar-footer .info small { color: #6B7A8A; font-size: 11px; display: block; }
+
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .topbar { height: 64px; background: #fff; border-bottom: 1px solid #E8E8E8; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; flex-shrink: 0; }
+  .breadcrumb { font-size: 15px; color: #8C9AA6; }
+  .breadcrumb b { color: #1A1A1A; font-weight: 600; font-size: 16px; }
+  .topbar-actions { display: flex; align-items: center; gap: 12px; }
+  .icon-btn { width: 32px; height: 32px; border-radius: 50%; background: #F5F5F5; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .icon-btn:hover { background: #E8E8E8; }
+  .content { flex: 1; padding: 24px; overflow: auto; display: flex; flex-direction: column; }
+
+  /* ============ 基础组件 ============ */
+  .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.05); padding: 20px; }
+  .card-title { font-size: 18px; font-weight: 700; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; color: #1A1A1A; }
+  
+  .btn { padding: 7px 16px; border-radius: 4px; font-size: 13px; transition: all .15s; display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent;}
+  .btn-primary { background: #1890FF; color: #fff; }
+  .btn-primary:hover { background: #40A9FF; }
+  .btn-primary[disabled] { background: #D9D9D9; color: #fff; cursor: not-allowed; }
+  .btn-default { background: #fff; border-color:#d9d9d9; color: #595959; }
+  .btn-default:hover { background: #FAFAFA; border-color:#40A9FF; color:#40A9FF;}
+  .btn-danger { background: #FFF1F0; color: #F5222D; border-color:#FFA39E;}
+  .btn-danger:hover { background: #FFD6D3; }
+  .btn-warn { background: #FA8C16; color: #fff; }
+  .btn-warn:hover { background: #FF9C3A; }
+  .btn-sm { padding: 4px 12px; font-size: 12px; }
+  .btn-text { background: transparent; color: #1890FF; padding: 2px 6px; border: none; }
+  .btn-text:hover { background: #E6F7FF; border-radius: 4px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 11px 12px; background: #FAFAFA; font-size: 13px; font-weight: 700; color: #434343; border-bottom: 1px solid #F0F0F0; }
+  td { padding: 12px; font-size: 13px; border-bottom: 1px solid #F5F5F5; }
+  
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 12px; white-space:nowrap; }
+  .tag-green { background: #F6FFED; color: #52C41A; border:1px solid #B7EB8F;}
+  .tag-blue { background: #E6F7FF; color: #1890FF; border:1px solid #91D5FF;}
+  .tag-orange { background: #FFF7E6; color: #FA8C16; border:1px solid #FFD591;}
+  .tag-red { background: #FFF1F0; color: #F5222D; border:1px solid #FFA39E;}
+  .tag-gray { background: #F0F2F5; color: #8C9AA6; border:1px solid #D9D9D9;}
+
+  /* 模态框 */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+  .modal-overlay.show { display: flex; }
+  .modal { background: #fff; border-radius: 8px; width: 100%; max-width: 520px; max-height: 90vh; overflow: auto; animation: fadeIn .2s; }
+  .modal.wide { max-width: 680px; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } }
+  .modal-head { padding: 16px 24px; border-bottom: 1px solid #F0F0F0; display: flex; justify-content: space-between; align-items: center; }
+  .modal-head h3 { font-size: 16px; font-weight: 600; margin:0; }
+  .modal-close { font-size: 20px; color: #8C9AA6; cursor:pointer;}
+  .modal-body { padding: 24px; }
+  .modal-foot { padding: 16px 24px; border-top: 1px solid #F0F0F0; display: flex; justify-content: flex-end; gap: 12px; background:#FAFAFA; border-radius:0 0 8px 8px;}
+
+  /* 穿透警告块 */
+  .warn-box{background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:14px 16px; font-size:13px;color:#7f1d1d;line-height:1.7;}
+  .warn-box .wtitle{font-weight:700;color:#b91c1c;font-size:14px;margin-bottom:6px; display:flex;align-items:center;gap:6px}
+
+  /* ============ 版本控制面板 ============ */
+  .split-view { display: flex; height: calc(100vh - 120px); border: 1px solid #E8E8E8; border-radius: 8px; overflow: hidden; background:#fff;}
+  .v-sidebar { width: 260px; border-right: 1px solid #E8E8E8; display:flex; flex-direction:column; background:#FAFAFA;}
+  .v-stage { flex: 1; overflow: auto; padding: 20px 24px; position:relative; background:#fff;}
+  .pl-list { list-style:none; padding:10px; overflow:auto; flex:1;}
+  .pl-item { padding:12px; border-radius:6px; cursor:pointer; display:flex; gap:10px; align-items:center; transition:.15s; margin-bottom:4px;}
+  .pl-item:hover { background:#F0F2F5; }
+  .pl-item.active { background:#E6F7FF; color:#1890FF; }
+  
+  .ver-table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px; border:1px solid #E8E8E8;border-radius:8px;overflow:visible;table-layout:auto}
+  .ver-table thead th{background:#FAFAFA; border-bottom:1px solid #E8E8E8; padding:12px;}
+  .ver-table tbody td{padding:14px 12px; border-bottom:1px solid #F0F0F0; vertical-align:middle;}
+  .ver-table tbody tr.current td{background:#F6FFED;}
+  .ver-table tbody tr.trial td{background:#FFFBE6;}
+  .ver-table tbody tr.switching td{background:#FFF1F0;}
+  
+  .progress{height:6px;background:#F0F0F0;border-radius:999px;overflow:hidden;width:100%;margin-top:4px}
+  .progress i{display:block;height:100%;width:0;border-radius:999px; background:linear-gradient(90deg,#69C0FF,#1890FF);transition:width .2s linear}
+  .progress.danger i{background:linear-gradient(90deg,#FFA39E,#F5222D)}
+  
+  .empty { text-align: center; padding: 60px 20px; color: #8C9AA6; }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+
+  .toast { position: fixed; top: 24px; left: 50%; transform: translateX(-50%); background: #262626; color: #fff; padding: 12px 24px; border-radius: 6px; font-size: 13px; z-index: 2000; animation: fadeIn .2s; box-shadow: 0 4px 12px rgba(0,0,0,.2); }
+  
+  .run-status-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+  .dot-on { background: #52C41A; box-shadow: 0 0 4px #52C41A;}
+  .dot-off { background: #D9D9D9; }
+</style>
+</head>
+<body>
+
+<!-- 全局业务暂停横幅 -->
+<div class="pause-banner" id="pauseBanner">
+  <span class="pb-icon">⏸️</span>
+  <div class="pb-main">
+    <div class="pb-title" id="pbTitle">业务已暂停 · 正在重新迁移全量数据</div>
+    <div class="pb-desc" id="pbDesc">全网租户暂时无法使用系统，正在底层重塑架构，请稍候。</div>
+  </div>
+  <div class="pb-progress"><i id="pbBar"></i></div>
+  <div class="pb-pct" id="pbPct">0%</div>
+</div>
+
+<div class="app-container" id="app"></div>
+<div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()"></div>
+
+<script>
+/* ============================================================
+   数据层
+   ============================================================ */
+const db = {
+  tenants: [
+    { id: 1, name: '星辰珠宝有限公司', code: 'XC-2024' },
+    { id: 2, name: '明德科技集团', code: 'MD-2024' },
+  ],
+  apps: [
+    {
+      id: 1, code: 'inventory', name: '库存管理', icon: '📦',
+      currentVersionId: 'v1-3',
+      versions: [
+        { id:'v1-1', sw:'2.1.0', data:'2.1.0', runState: 'stopped', snapshot:{status:'ready'} },
+        { id:'v1-2', sw:'2.2.0', data:'2.1.0', runState: 'stopped', snapshot:{status:'ready'} },
+        { id:'v1-3', sw:'2.3.0', data:'2.3.0', runState: 'running', snapshot:{status:'ready'} }
+      ]
+    },
+    {
+      id: 2, code: 'hr', name: '人事管理', icon: '👥',
+      currentVersionId: 'v2-1',
+      versions: [
+        { id:'v2-1', sw:'1.0.0', data:'1.0.0', runState: 'running', snapshot:{status:'ready'} }
+      ]
+    },
+  ]
+};
+
+const state = { view: 'upgrades', activeAppId: 1, businessPaused: false };
+const $ = id => document.getElementById(id);
+const getApp = id => db.apps.find(a => a.id === id);
+
+function toast(msg) {
+  const el = document.createElement('div'); el.className = 'toast'; el.textContent = msg;
+  document.body.appendChild(el); setTimeout(() => el.remove(), 3000);
+}
+function openModal(title, bodyHTML, footHTML, cls = '') {
+  const m = $('modal');
+  m.innerHTML = `<div class="modal ${cls}">
+      <div class="modal-head"><h3>${title}</h3><div class="modal-close" onclick="closeModal()">✕</div></div>
+      <div class="modal-body">${bodyHTML}</div>
+      ${footHTML ? `<div class="modal-foot">${footHTML}</div>` : ''}
+    </div>`;
+  m.classList.add('show');
+}
+function closeModal() { $('modal').classList.remove('show');$('modal').innerHTML = ''; }
+
+/* ============================================================
+   主渲染逻辑
+   ============================================================ */
+function render() {
+  $('app').innerHTML = `
+    <aside class="sidebar">${renderSidebar()}</aside>
+    <main class="main">
+      <header class="topbar">${renderTopbar()}</header>
+      <div class="content">${renderView()}</div>
+    </main>
+  `;
+  if(state.view === 'upgrades' && state.activeAppId) renderUpgradeStage();
+}
+
+function renderSidebar() {
+  return `
+    <div class="sidebar-logo"><div class="logo-mark">应</div>应用服务平台</div>
+    <div class="sidebar-group">运营后台</div>
+    <div class="nav-item" onclick="toast('演示版本')">🏠 工作台</div>
+    <div class="nav-item active">🚀 插件与多版本控制</div>
+    <div class="sidebar-footer">
+      <div class="avatar">管</div><div class="info">管理员<small>平台运营方</small></div>
+    </div>
+  `;
+}
+
+function renderTopbar() {
+  return `
+    <div class="breadcrumb">首页 / <b>插件与多版本控制 (V4架构)</b></div>
+    <div class="topbar-actions">
+      <button class="btn btn-default btn-sm" onclick="toast('已切换 SSO 票据直达架构')">架构说明</button>
+      <div class="avatar" style="width:28px;height:28px;">管</div>
+    </div>
+  `;
+}
+
+function renderView() {
+  return `
+    <div class="split-view">
+      <div class="v-sidebar">
+        <div style="padding:16px; font-weight:600; border-bottom:1px solid #E8E8E8;">应用列表</div>
+        <ul class="pl-list">
+          ${db.apps.map(a => `
+            <li class="pl-item ${a.id === state.activeAppId ? 'active' : ''}" data-action="select-upgrade-app" data-id="${a.id}">
+              <div style="font-size:20px;">${a.icon}</div>
+              <div>
+                <div style="font-weight:600;margin-bottom:2px;">${a.name}</div>
+                <div style="font-size:12px;color:#8C9AA6;">${a.versions.length} 个版本记录</div>
+              </div>
+            </li>
+          `).join('')}
+        </ul>
+      </div>
+      <div class="v-stage" id="upgrade-stage"></div>
+    </div>
+  `;
+}
+
+/* ============================================================
+   版本面板
+   ============================================================ */
+function renderUpgradeStage() {
+  const stage = $('upgrade-stage');
+  const a = getApp(state.activeAppId);
+  if (!stage || !a) return;
+  
+  const curV = a.versions.find(v => v.id === a.currentVersionId);
+  
+  stage.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="font-size:32px; background:#F0F2F5; border-radius:8px; padding:10px;">${a.icon}</div>
+        <div>
+          <h2 style="font-size:20px;margin-bottom:4px;">${a.name} <span class="tag tag-blue" style="font-weight:normal;font-size:12px;">标识：${a.code}</span></h2>
+          <div style="color:#8C9AA6;font-size:13px;">平台不代理业务流量，通过签发 SSO 票据 (Token) 新开网页跳转至独立插件进程。</div>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="toast('触发选择安装包弹窗')">📥 上传新版本</button>
+    </div>
+
+    <table class="ver-table">
+      <thead>
+        <tr><th>版本号 (结构版本)</th><th>底层进程状态</th><th>数据状态</th><th>操作流转 (SSO直达)</th></tr>
+      </thead>
+      <tbody>
+        ${a.versions.map((v) => {
+          const isCur = v.id === a.currentVersionId;
+          const isRunning = v.runState === 'running';
+          const st = v.snapshot.status;
+
+          /* 进程启停状态列 */
+          let processHtml = isRunning 
+            ? `<div style="margin-bottom:6px;"><span class="run-status-dot dot-on"></span><b>进程运行中</b></div>
+               <button class="btn btn-default btn-sm" data-action="toggle-process" data-vid="${v.id}" data-appid="${a.id}">⏹ 停用进程</button>`
+            : `<div style="margin-bottom:6px;"><span class="run-status-dot dot-off"></span><span style="color:#8C9AA6">进程已休眠</span></div>
+               <button class="btn btn-default btn-sm" data-action="toggle-process" data-vid="${v.id}" data-appid="${a.id}">▶️ 启动进程</button>`;
+
+          /* 数据状态列 */
+          let statusHtml = '';
+          if (st === 'ready') statusHtml = `<span class="tag tag-green">💾 数据已就绪</span>`;
+          else if (st === 'trial') statusHtml = `<span class="tag tag-orange">🧪 沙箱试运行中</span>`;
+          else if (st === 'trial_passed') statusHtml = `<span class="tag tag-green">✅ 沙箱验证通过</span><div style="font-size:12px;color:#8C9AA6;margin-top:4px;">待执行停机割接</div>`;
+          else if (st === 'switching') statusHtml = `<span class="tag tag-red">⏸ 全量割接中</span><div class="progress danger"><i style="width:${v.snapshot.progress||0}%"></i></div>`;
+          else if (st === 'migrating') statusHtml = `<span class="tag tag-blue">🔄 沙箱克隆中</span><div class="progress"><i style="width:${v.snapshot.progress||0}%"></i></div>`;
+          else statusHtml = `<span class="tag tag-gray">待初始化</span>`;
+
+          /* 操作列 */
+          let opsHtml = '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">';
+          if (st === 'pending') opsHtml += `<button class="btn btn-primary btn-sm" data-action="prepare-trial" data-vid="${v.id}" data-appid="${a.id}">克隆沙箱并验证</button>`;
+          if (st === 'trial') opsHtml += `<button class="btn btn-primary btn-sm" data-action="pass-trial" data-vid="${v.id}" data-appid="${a.id}">通过验证</button>`;
+          if (st === 'trial_passed') opsHtml += `<button class="btn btn-warn btn-sm" data-action="open-switch" data-vid="${v.id}" data-appid="${a.id}">全网正式割接</button>`;
+          
+          if (isCur) opsHtml += `<span class="tag tag-blue" style="border:none;background:#BAE7FF;color:#096DD9;font-weight:600;">👑 正式接管全网路由</span>`;
+          else if (st === 'ready') opsHtml += `<button class="btn btn-text btn-sm" onclick="toast('模拟：秒级回滚至该版本')">回滚至此</button>`;
+
+          if (st === 'ready' || st === 'trial' || st === 'trial_passed') {
+             opsHtml += `<div style="width:100%;margin-top:4px;"><button class="btn btn-primary btn-sm" data-action="open-workspace-modal" data-appid="${a.id}" data-vid="${v.id}" ${!isRunning?'disabled title="请先启动进程"':''}>🚀 生成鉴权 Token 并新开网页直达</button></div>`;
+          }
+          opsHtml += '</div>';
+
+          return `<tr class="${isCur?'current':''} ${st==='trial'?'trial':''}${st==='switching'?'switching':''}">
+            <td>
+              <div style="font-size:15px;font-weight:600;font-family:ui-monospace,monospace;margin-bottom:4px;">v${v.sw}</div>
+              <div style="font-size:12px;color:#8C9AA6;">结构版本: v${v.data}</div>
+            </td>
+            <td>${processHtml}</td>
+            <td>${statusHtml}</td>
+            <td>${opsHtml}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+/* ============================================================
+   操作分发器
+   ============================================================ */
+const actions = {
+  'select-upgrade-app'(el) {
+    state.activeAppId = Number(el.id);
+    renderUpgradeStage();
+    document.querySelectorAll('.pl-item').forEach(li => li.classList.remove('active'));
+    document.querySelector(`.pl-item[data-id="${el.id}"]`).classList.add('active');
+  },
+
+  /* 启停底层进程 */
+  'toggle-process'(el) {
+    const a = getApp(Number(el.appid));
+    const v = a.versions.find(x => x.id === el.vid);
+    if(v.runState === 'running' && v.id === a.currentVersionId) {
+      return toast('无法停用当前正在提供正式服务的进程！');
+    }
+    v.runState = v.runState === 'running' ? 'stopped' : 'running';
+    toast(v.runState === 'running' ? `[v${v.sw}] 底层进程已拉起` : `[v${v.sw}] 底层进程已休眠`);
+    renderUpgradeStage();
+  },
+
+  /* SSO Token 签发与新开网页直达 (V4核心变更) */
+  'open-workspace-modal'(el) {
+    const a = getApp(Number(el.appid));
+    const v = a.versions.find(x => x.id === el.vid);
+    
+    openModal(`🎟 签发 [v${v.sw}] 的 SSO 访问票据`, `
+      <div style="margin-bottom:16px;font-size:13px;color:#595959;">
+        平台不代理业务请求，将通过签发一次性 Ticket 重定向至插件独立域名，由插件底层自行解析上下文环境。
+      </div>
+      <div class="form-item">
+        <label>选择注入的授权契约 (Auth Contract)</label>
+        <select id="ws-tenant-select" onchange="document.getElementById('ws-warn-box').style.display = this.value === 'support' ? 'block' : 'none'">
+          <option value="sandbox">🧪 [上帝模式] 沙箱租户 tenant_trial (安全，强拦截副作用)</option>
+          <option value="normal">🏢 [常规模式] 模拟普通员工登录星辰珠宝 (正常副作用)</option>
+          <option value="support">⚠️ [运维穿透] 管理员穿透至明德科技真实库 (最高危)</option>
+        </select>
+      </div>
+      <div id="ws-warn-box" class="warn-box" style="display:none; margin-top:16px;">
+        <div class="wtitle">⚠️ 生产排障穿透警告</div>
+        生成 <code>Mode: PRODUCTION_SUPPORT</code> 的票据直连真实数据库！
+        <ul>
+          <li>应用鉴权将被强制绕过（赋予租户超级管理员身份）。</li>
+          <li><b>您的操作将直接修改客户真实线上数据并触发真实副作用！</b></li>
+        </ul>
+      </div>
+    `, `<button class="btn btn-default" onclick="closeModal()">取消</button>
+        <button class="btn btn-primary" onclick="window.open('about:blank', '_blank'); closeModal(); toast('已生成带签名的 JWT 票据，并在新标签页重定向至应用独立地址。');">生成 Ticket 并新开网页 (模拟)</button>`, 'wide');
+  },
+
+  /* 升级状态流转模拟 */
+  'prepare-trial'(el) {
+    if(state.businessPaused) return toast('业务全局暂停中');
+    const a = getApp(Number(el.appid));
+    const v = a.versions.find(x => x.id === el.vid);
+    v.snapshot.status = 'migrating'; v.snapshot.progress = 0;
+    renderUpgradeStage();
+    let prog = 0;
+    const timer = setInterval(() => {
+      prog += 20; v.snapshot.progress = Math.min(100, prog); renderUpgradeStage();
+      if(prog >= 100) {
+        clearInterval(timer);
+        v.snapshot.status = 'trial';
+        v.runState = 'running'; // 沙箱准备好自动拉起进程
+        toast(`沙箱数据克隆完毕，[v${v.sw}] 底层进程已自动启动`);
+        renderUpgradeStage();
+      }
+    }, 200);
+  },
+  'pass-trial'(el) {
+    const a = getApp(Number(el.appid));
+    const v = a.versions.find(x => x.id === el.vid);
+    v.snapshot.status = 'trial_passed';
+    toast('沙箱验证通过，已解锁全量割接按钮');
+    renderUpgradeStage();
+  },
+  'open-switch'(el) {
+    const a = getApp(Number(el.appid));
+    openModal('⚠️ 确认全网停机割接', `
+      <div class="warn-box">
+        <div class="wtitle">⏸ 割接期间将暂停所有租户业务</div>
+        全量割接将抛弃沙箱脏数据。平台将挂起网关拦截请求，并发遍历所有租户库，重新执行全量重迁。
+        <ul style="margin-top:8px;">
+          <li>预计造成全网业务中断约 <b>10-15 秒</b></li>
+          <li>完成后，平台将自动更改主路由配置，并将用户重定向至新版本进程</li>
+        </ul>
+      </div>
+    `, `<button class="btn btn-default" onclick="closeModal()">取消</button>
+        <button class="btn btn-danger" data-action="do-switch" data-vid="${el.vid}" data-appid="${a.id}">确认冻结网关并开始割接</button>`);
+  },
+  'do-switch'(el) {
+    closeModal();
+    const a = getApp(Number(el.appid));
+    const v = a.versions.find(x => x.id === el.vid);
+    state.businessPaused = true;
+    v.snapshot.status = 'switching'; v.snapshot.progress = 0;
+    
+    $('app').classList.add('paused');$('pauseBanner').classList.add('show');
+    renderUpgradeStage();
+
+    let prog = 0;
+    const timer = setInterval(() => {
+      prog += 15; v.snapshot.progress = Math.min(100, prog);
+      $('pbBar').style.width = v.snapshot.progress + '\%';$('pbPct').textContent = v.snapshot.progress + '%';
+      renderUpgradeStage();
+      if(prog >= 100) {
+        clearInterval(timer);
+        v.snapshot.status = 'ready';
+        a.currentVersionId = v.id;
+        state.businessPaused = false;
+        $('app').classList.remove('paused');$('pauseBanner').classList.remove('show');
+        toast(`割接成功！全网主路由已自动切换至 [v${v.sw}]`);
+        renderUpgradeStage();
+      }
+    }, 300);
+  }
+};
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-action]');
+  if (el && actions[el.dataset.action]) {
+    e.preventDefault();
+    actions[el.dataset.action](el.dataset);
+  }
+});
+render();
+</script>
+</body>
+</html>

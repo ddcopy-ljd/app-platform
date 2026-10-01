@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>业务应用插件升级管理</title>
+<style>
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;overflow:hidden;background:#f4f6fb;color:#1f2937;font-size:14px;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.app{display:flex;height:100vh}
+
+/* ============ 全局业务暂停横幅 ============ */
+.pause-banner{
+  position:fixed;top:0;left:0;right:0;z-index:200;
+  background:linear-gradient(90deg,#dc2626,#b91c1c);
+  color:#fff;padding:14px 28px;display:flex;align-items:center;gap:14px;
+  box-shadow:0 6px 24px rgba(220,38,38,.35);
+  transform:translateY(-100%);transition:transform .3s cubic-bezier(.22,.61,.36,1);
+}
+.pause-banner.show{transform:translateY(0)}
+.pb-icon{font-size:20px;flex:0 0 auto;animation:pulse 1.2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+.pb-main{flex:1;min-width:0}
+.pb-title{font-size:14px;font-weight:700;letter-spacing:.3px}
+.pb-desc{font-size:12.5px;opacity:.9;margin-top:3px}
+.pb-progress{width:180px;height:6px;background:rgba(255,255,255,.25);
+  border-radius:999px;overflow:hidden;flex:0 0 180px}
+.pb-progress i{display:block;height:100%;width:0;
+  background:linear-gradient(90deg,#fef08a,#fde047);transition:width .2s linear}
+.pb-pct{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;flex:0 0 46px;text-align:right}
+.app.paused{padding-top:68px}
+
+/* ============ 侧边栏 ============ */
+.sidebar{width:288px;flex:0 0 288px;background:#fff;border-right:1px solid #e8ecf4;display:flex;flex-direction:column}
+.sidebar-head{padding:20px 18px 10px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.sidebar-head h2{font-size:14px;margin:0;color:#111827;letter-spacing:.5px}
+.plugin-list{list-style:none;margin:0;padding:6px 12px 16px;overflow:auto;flex:1}
+.pl-item{display:flex;gap:12px;align-items:center;padding:11px 12px;border-radius:11px;cursor:pointer;transition:.16s;border:1px solid transparent}
+.pl-item:hover{background:#f6f7fd}
+.pl-item.active{background:#eef0ff;border-color:#dcdcff}
+.pl-icon{width:36px;height:36px;border-radius:10px;background:#f1f3fa;display:grid;place-items:center;font-size:18px;flex:0 0 36px}
+.pl-item.active .pl-icon{background:#fff}
+.pl-txt{min-width:0}
+.pl-name{font-size:13.5px;font-weight:600;color:#1f2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl-sub{font-size:11.5px;color:#8a93a6;margin-top:3px}
+
+/* ============ 按钮 ============ */
+.btn{border:1px solid #d7dcea;background:#fff;color:#374151;border-radius:8px;padding:7px 14px;
+  font-size:13px;cursor:pointer;transition:.16s;font-family:inherit;white-space:nowrap}
+.btn:hover{background:#f3f5fb;border-color:#c3cade}
+.btn.primary{background:#4f46e5;border-color:#4f46e5;color:#fff;box-shadow:0 4px 12px rgba(79,70,229,.25)}
+.btn.primary:hover{background:#4338ca}
+.btn.warn{background:#f59e0b;border-color:#f59e0b;color:#fff;box-shadow:0 4px 12px rgba(245,158,11,.25)}
+.btn.warn:hover{background:#d97706}
+.btn.ghost{background:#f6f8fc;border-color:#e3e8f2;color:#4b5563}
+.btn.ghost:hover{background:#eef1f9}
+.btn.sm{padding:5px 11px;font-size:12px;border-radius:7px}
+.btn.danger-ghost{color:#e11d48;border-color:#f6cdd7;background:#fff}
+.btn.danger-ghost:hover{background:#fff1f4;border-color:#f0a9ba}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.icon-btn{width:32px;height:32px;border-radius:8px;border:1px solid transparent;background:transparent;
+  font-size:20px;color:#9aa3b5;cursor:pointer;line-height:1;flex:0 0 32px}
+.icon-btn:hover{background:#f1f3f9;color:#4b5563}
+
+/* ============ 主区域 ============ */
+.stage{flex:1;overflow:auto;padding:24px 28px;position:relative}
+.empty{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#9aa3b5;gap:6px}
+.empty-icon{font-size:46px;opacity:.65}
+.empty h3{margin:6px 0 0;color:#4b5563;font-size:16px}
+.empty p{margin:0;font-size:13px}
+
+/* ============ 面板 ============ */
+.panel{background:#fff;border-radius:16px;border:1px solid #e8ecf4;
+  box-shadow:0 10px 30px rgba(31,41,55,.06);
+  position:relative;overflow:hidden;max-width:1140px;margin:0 auto;
+  animation:panelIn .26s cubic-bezier(.22,.61,.36,1)}
+@keyframes panelIn{from{opacity:0;transform:translateY(12px) scale(.99)}to{opacity:1;transform:none}}
+
+.panel-title-bar{display:flex;align-items:center;gap:10px;padding:15px 24px;
+  font-size:15px;font-weight:600;color:#111827;letter-spacing:.4px;
+  background:linear-gradient(90deg,#eef0ff,#f8f9ff 55%,#fff);border-bottom:1px solid #eef1f7}
+.panel-title-bar::before{content:'';width:4px;height:16px;border-radius:2px;background:#4f46e5}
+
+/* ============ 业务说明 ============ */
+.guide{padding:16px 24px;background:#fafbff;border-bottom:1px solid #f1f3f9}
+.guide-head{display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}
+.guide-title{font-size:13px;font-weight:600;color:#4f46e5;display:flex;align-items:center;gap:7px}
+.guide-toggle{font-size:11.5px;color:#9aa3b5}
+.guide-body{margin-top:14px}
+.guide.collapsed .guide-body{display:none}
+.guide-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+.guide-step{background:#fff;border:1px solid #e8ecf4;border-radius:10px;padding:12px 14px}
+.guide-step .n{width:20px;height:20px;border-radius:50%;background:#eef0ff;color:#4f46e5;
+  font-size:11px;font-weight:600;display:grid;place-items:center;margin-bottom:8px}
+.guide-step .n.warn{background:#fef3c7;color:#b45309}
+.guide-step .t{font-size:12.5px;font-weight:600;color:#1f2937;margin-bottom:5px}
+.guide-step .d{font-size:11.5px;color:#7c85a0;line-height:1.65}
+.guide-note{margin-top:12px;font-size:11.5px;color:#8a93a6;line-height:1.8;
+  background:#f4f4ff;border-left:3px solid #c7c8f8;border-radius:0 8px 8px 0;padding:10px 14px}
+.guide-note b{color:#4f46e5;font-family:ui-monospace,Menlo,monospace;font-weight:600}
+.guide-note code{background:#eef0ff;padding:1px 6px;border-radius:5px;font-size:11px;color:#4338ca}
+
+/* ============ 拖拽遮罩 ============ */
+.drop-overlay{position:absolute;inset:0;z-index:9;display:none;align-items:center;justify-content:center;
+  background:rgba(79,70,229,.07);border:2px dashed #4f46e5;border-radius:16px;backdrop-filter:blur(2px)}
+.panel.dragging .drop-overlay{display:flex}
+.do-inner{text-align:center;color:#4f46e5}
+.do-icon{font-size:34px;animation:bounce .9s infinite}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+.do-title{font-size:15px;font-weight:600;margin-top:6px}
+.do-sub{font-size:12px;color:#7c85a0;margin-top:6px}
+
+/* ============ 头部 ============ */
+.panel-head{display:flex;gap:16px;padding:22px 24px;border-bottom:1px solid #eef1f7;
+  background:linear-gradient(180deg,#fbfcff,#fff)}
+.p-icon{width:56px;height:56px;border-radius:14px;background:#eef0ff;display:grid;place-items:center;
+  font-size:26px;flex:0 0 56px}
+.p-head-main{flex:1;min-width:0}
+.p-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.p-title-row h1{font-size:19px;margin:0}
+.tag{font-size:12px;color:#4f46e5;background:#eef0ff;padding:2px 9px;border-radius:999px}
+.p-desc{margin:8px 0 10px;color:#5b6478;line-height:1.65;font-size:13px}
+.p-meta{font-size:12.5px;color:#8a93a6;display:flex;gap:8px;flex-wrap:wrap}
+.p-meta b{color:#4f46e5;font-family:ui-monospace,Menlo,monospace}
+
+/* ============ 内容块 ============ */
+.block{padding:18px 24px;border-bottom:1px solid #f1f3f9}
+.block:last-child{border-bottom:none}
+.block-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.block-title{font-size:14px;margin:0 0 12px;display:flex;align-items:center;gap:8px;color:#111827}
+.block-head .block-title{margin:0}
+.block-title .count{font-size:11px;background:#eef0ff;color:#4f46e5;border-radius:999px;padding:1px 8px;font-weight:500}
+.tip{font-size:12px;color:#9aa3b5}
+
+.feature-list{list-style:none;margin:0;padding:0;display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 22px}
+.feature-list li{position:relative;padding-left:18px;color:#4b5563;font-size:13px;line-height:1.7}
+.feature-list li::before{content:'';position:absolute;left:0;top:8px;width:6px;height:6px;
+  border-radius:50%;background:#a5b4fc}
+
+/* ============ 数据版本条 ============ */
+.databar{display:flex;align-items:center;gap:18px;background:#f8f9ff;border:1px solid #e6e8fb;
+  border-radius:12px;padding:14px 16px;flex-wrap:wrap}
+.databar-info{flex:1;min-width:220px}
+.databar-label{font-size:13px;font-weight:600;color:#1f2937}
+.databar-hint{font-size:12px;color:#8a93a6;margin-top:4px;line-height:1.5}
+.databar-value{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:#4f46e5;font-weight:600;
+  background:#eef0ff;border:1px solid #dcdcff;border-radius:9px;padding:8px 14px;white-space:nowrap}
+.databar-value.muted{color:#9aa3b5;background:#f5f6fa;border-color:#e8ecf4;font-weight:500}
+
+/* ============ 版本链表格 ============ */
+.ver-table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;
+  border:1px solid #e8ecf4;border-radius:12px;overflow:visible;table-layout:auto}
+.ver-table thead th{text-align:left;padding:11px 14px;font-size:12px;color:#6b7280;
+  font-weight:600;background:#f8f9ff;border-bottom:1px solid #e8ecf4;white-space:nowrap}
+.ver-table tbody td{padding:14px;border-bottom:1px solid #f1f3f9;vertical-align:top}
+.ver-table tbody tr:last-child td{border-bottom:none}
+.ver-table tbody tr.current td{background:#f9f9ff}
+.ver-table tbody tr.current td:first-child{box-shadow:inset 3px 0 0 #4f46e5}
+.ver-table tbody tr.trial td{background:#fffbeb}
+.ver-table tbody tr.switching td{background:#fef2f2}
+.ver-table tbody tr:hover td{background:#fafbff}
+.ver-table tbody tr.current:hover td{background:#f5f5ff}
+
+.cell-ver{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.cell-ver .ver-no{font-size:14px;font-weight:600;color:#111827;
+  font-family:ui-monospace,Menlo,monospace;display:inline-flex;align-items:center;gap:4px}
+.ver-table tr.current .ver-no{color:#4f46e5}
+.cell-badges{display:flex;gap:5px;flex-wrap:wrap}
+
+/* 数据版本单元格：两行 */
+.cell-ds{display:flex;flex-direction:column;gap:3px;align-items:flex-start;line-height:1.5}
+.cell-ds .ds-main{font-family:ui-monospace,Menlo,monospace;font-size:13px;font-weight:600;color:#4f46e5}
+.cell-ds .ds-sub{font-size:11.5px;color:#8a93a6}
+.cell-ds .ds-sub.upgrade{color:#b45309;font-weight:600}
+.cell-ds .ds-sub.same{color:#1d4ed8}
+
+/* 结构来源 */
+.cell-schema-origin{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:#4b5563;font-weight:500}
+.cell-schema-origin.initial{color:#6b7280;font-size:12.5px;font-weight:400;font-family:inherit}
+
+/* 数据来源：多行 */
+.cell-snap{display:flex;flex-direction:column;gap:5px}
+.snap-state{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.snap-line1{font-size:12.5px;color:#374151;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.snap-line1 .ver{font-family:ui-monospace,Menlo,monospace;color:#4f46e5;font-weight:600}
+.snap-line1 .size{color:#9aa3b5}
+.snap-line2{font-size:11.5px;color:#9aa3b5;line-height:1.5}
+.cell-ops{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+
+/* 结构升级 tip 图标 */
+.schema-tip{position:relative;display:inline-flex;align-items:center;justify-content:center;
+  width:14px;height:14px;border-radius:50%;background:#fde68a;color:#b45309;
+  font-size:10px;font-weight:700;cursor:help;font-family:inherit;font-style:normal;
+  line-height:1;flex:0 0 14px}
+.schema-tip::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 7px);left:50%;
+  transform:translateX(-50%);background:#111827;color:#fff;font-size:11px;padding:6px 10px;
+  border-radius:7px;white-space:nowrap;z-index:20;font-weight:400;line-height:1.5;
+  opacity:0;pointer-events:none;transition:.15s}
+.schema-tip::before{content:'';position:absolute;bottom:calc(100% + 3px);left:50%;
+  transform:translateX(-50%);border:4px solid transparent;border-top-color:#111827;
+  z-index:20;opacity:0;pointer-events:none;transition:.15s}
+.schema-tip:hover::after,.schema-tip:hover::before{opacity:1}
+
+.script-details{margin-top:2px}
+.script-details summary{cursor:pointer;color:#4f46e5;font-size:11.5px;list-style:none;
+  display:inline-flex;align-items:center;gap:4px;padding:2px 0;user-select:none}
+.script-details summary::-webkit-details-marker{display:none}
+.script-details summary::before{content:'▸';transition:.16s;display:inline-block}
+.script-details[open] summary::before{transform:rotate(90deg)}
+
+.progress{height:5px;background:#e5e7eb;border-radius:999px;overflow:hidden;width:100%;margin-top:3px}
+.progress i{display:block;height:100%;width:0;border-radius:999px;
+  background:linear-gradient(90deg,#818cf8,#4f46e5);transition:width .2s linear}
+.progress.danger i{background:linear-gradient(90deg,#fb923c,#dc2626)}
+
+/* ============ 徽章 / 标签 ============ */
+.badge{font-size:11px;padding:2px 8px;border-radius:999px;font-weight:500;line-height:1.6;white-space:nowrap}
+.badge-current{background:#4f46e5;color:#fff}
+.badge-first{background:#f0f0f0;color:#6b7280}
+.badge-protect{background:#e8ecf4;color:#6b7280}
+.badge-upload{background:#fff7e6;color:#b45309;border:1px solid #fde3b0}
+.badge-trial{background:#fef3c7;color:#b45309;border:1px solid #fde68a}
+.badge-pause{background:#fee2e2;color:#b91c1c;border:1px solid #fecaca}
+
+.data-tag{font-size:11.5px;padding:2px 8px;border-radius:999px;font-weight:500;line-height:1.6;white-space:nowrap}
+.data-tag.ok{background:#dcfce7;color:#15803d}
+.data-tag.warn{background:#fef3c7;color:#b45309}
+.data-tag.doing{background:#e0e7ff;color:#4338ca}
+.data-tag.err{background:#fee2e2;color:#b91c1c}
+.data-tag.trial{background:#fef3c7;color:#b45309}
+.data-tag.pause{background:#fee2e2;color:#b91c1c}
+
+/* ============ 脚本参数面板 ============ */
+.script-box{margin-top:6px;background:#1e1b4b;border-radius:9px;padding:10px 12px;
+  font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.8;color:#c7d2fe;overflow-x:auto}
+.script-box .c{color:#818cf8}
+.script-box .v{color:#fde68a}
+
+/* ============ 空状态 ============ */
+.ver-empty{text-align:center;padding:32px 16px;border:1px dashed #d9dfec;
+  border-radius:12px;color:#9aa3b5;background:#fbfcff}
+.ve-icon{font-size:28px;margin-bottom:8px}
+.ve-title{font-size:13.5px;color:#6b7280;font-weight:600}
+.ve-sub{font-size:12px;margin-top:6px}
+
+/* ============ 弹窗 ============ */
+.mask{position:fixed;inset:0;background:rgba(17,24,39,.42);z-index:50;display:flex;
+  align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:.2s}
+.mask.show{opacity:1;pointer-events:auto}
+.modal{width:440px;max-width:calc(100vw - 40px);background:#fff;border-radius:16px;padding:22px;
+  box-shadow:0 24px 60px rgba(17,24,39,.25);transform:translateY(10px) scale(.98);transition:.2s}
+.modal.wide{width:540px}
+.mask.show .modal{transform:none}
+.modal h3{margin:0 0 18px;font-size:16px;color:#111827;display:flex;align-items:center;gap:8px}
+.field{display:block;margin-bottom:14px}
+.field > span{display:block;font-size:12.5px;color:#5b6478;margin-bottom:6px}
+.field input,.field select,.field textarea{width:100%;border:1px solid #d7dcea;border-radius:9px;
+  padding:9px 11px;font-size:13px;font-family:inherit;color:#1f2937;outline:none;transition:.16s;background:#fff;resize:vertical}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:#4f46e5;
+  box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+
+/* 切换确认弹窗里的警示块 */
+.warn-box{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 16px;
+  font-size:12.5px;color:#7f1d1d;line-height:1.75}
+.warn-box .wtitle{font-weight:700;color:#b91c1c;font-size:13px;margin-bottom:6px;
+  display:flex;align-items:center;gap:6px}
+.warn-box ul{margin:6px 0 0;padding-left:18px}
+.warn-box li{margin-bottom:4px}
+.warn-box code{background:#fff;padding:1px 6px;border-radius:5px;
+  font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:#b91c1c}
+
+/* 试运行日志 */
+.trial-log{background:#fffbeb;border:1px solid #fef3c7;border-radius:9px;padding:10px 12px;
+  font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.85;color:#78350f;
+  max-height:180px;overflow-y:auto}
+.trial-log .ok{color:#15803d}
+.trial-log .warn{color:#b45309}
+.trial-log .dim{color:#a16207}
+
+/* ============ Toast ============ */
+#toast{position:fixed;left:50%;bottom:32px;transform:translate(-50%,14px);background:#111827;
+  color:#fff;font-size:13px;padding:10px 18px;border-radius:10px;opacity:0;pointer-events:none;
+  transition:.25s;z-index:80;box-shadow:0 12px 30px rgba(17,24,39,.3);max-width:80vw}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+
+<!-- 全局业务暂停横幅 -->
+<div class="pause-banner" id="pauseBanner">
+  <span class="pb-icon">⏸️</span>
+  <div class="pb-main">
+    <div class="pb-title" id="pbTitle">业务已暂停 · 正在重新迁移全量数据</div>
+    <div class="pb-desc" id="pbDesc">用户暂时无法使用系统，请稍候。迁移完成后将自动切换并恢复业务。</div>
+  </div>
+  <div class="pb-progress"><i id="pbBar"></i></div>
+  <div class="pb-pct" id="pbPct">0%</div>
+</div>
+
+<div class="app" id="app">
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <h2>插件列表</h2>
+      <button class="btn primary sm" id="btnAdd">＋ 新增插件</button>
+    </div>
+    <ul class="plugin-list" id="pluginList"></ul>
+  </aside>
+  <main class="stage" id="stage"></main>
+</div>
+
+<!-- 新增插件弹窗 -->
+<div class="mask" id="mask">
+  <div class="modal">
+    <h3>新增插件</h3>
+    <label class="field"><span>插件名称</span>
+      <input id="npName" placeholder="例如：日志采集器" maxlength="20"></label>
+    <label class="field"><span>插件分类</span>
+      <select id="npCat"></select></label>
+    <label class="field"><span>功能介绍</span>
+      <textarea id="npDesc" rows="3" placeholder="一句话描述这个插件的作用"></textarea></label>
+    <div class="modal-actions">
+      <button class="btn ghost" id="npCancel">取消</button>
+      <button class="btn primary" id="npOk">创建并打开面板</button>
+    </div>
+  </div>
+</div>
+
+<!-- 上传时模拟读取包元数据的弹窗 -->
+<div class="mask" id="metaMask">
+  <div class="modal">
+    <h3>读取插件包元数据</h3>
+    <p style="margin:0 0 14px;font-size:12.5px;color:#6b7280;line-height:1.6">
+      真实场景下这两个版本号由插件包内的 <code style="background:#eef0ff;padding:1px 6px;border-radius:5px;color:#4338ca">plugin.json</code> 声明，此处模拟读取结果。
+    </p>
+    <div class="field-row">
+      <label class="field"><span>软件版本 softwareVersion</span>
+        <input id="mSoft" placeholder="如 2.4.0"></label>
+      <label class="field"><span>数据版本 dataVersion</span>
+        <input id="mData" placeholder="如 2.3.0"></label>
+    </div>
+    <p style="margin:0;font-size:11.5px;color:#9aa3b5;line-height:1.6">
+      规则：结构未变 → dataVersion 与上一版本相同；结构升级 → dataVersion 等于 softwareVersion。
+    </p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="metaCancel">取消</button>
+      <button class="btn primary" id="metaOk">确认上传</button>
+    </div>
+  </div>
+</div>
+
+<!-- 试运行日志弹窗 -->
+<div class="mask" id="trialMask">
+  <div class="modal wide">
+    <h3>🧪 试运行日志 <span style="font-size:12px;color:#9aa3b5;font-weight:400" id="trialVerLabel"></span></h3>
+    <div class="trial-log" id="trialLog"></div>
+    <p style="margin:12px 0 0;font-size:12px;color:#6b7280;line-height:1.7">
+      试运行期间，新版本在旁路环境运行，<b>不影响用户当前使用</b>。旧版本仍在服务中，用户数据会继续变化。
+      正式切换时将<b>暂停业务并重新全量迁移</b>，确保新版本拿到最新数据。
+    </p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="trialClose">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 正式切换确认弹窗 -->
+<div class="mask" id="switchMask">
+  <div class="modal wide">
+    <h3>⚠️ 确认正式切换</h3>
+    <div class="warn-box">
+      <div class="wtitle">⏸ 切换期间将暂停用户业务</div>
+      试运行期间用户一直在使用原有系统，数据已发生变化。正式切换前需要<b>基于最新数据重新执行一次全量迁移</b>，此过程将暂停用户业务：
+      <ul>
+        <li>用户将暂时无法使用系统，预计约 <b>15 秒</b></li>
+        <li>系统会重新执行升级脚本，把旧版本最新全量数据迁移到新结构</li>
+        <li>迁移完成后自动切换到新版本并恢复业务</li>
+      </ul>
+    </div>
+    <p style="margin:14px 0 0;font-size:12.5px;color:#6b7280;line-height:1.7">
+      目标版本：<code style="background:#eef0ff;padding:2px 8px;border-radius:6px;font-family:ui-monospace,Menlo,monospace;color:#4338ca" id="switchTarget">v2.4.0</code>
+    </p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="switchCancel">取消</button>
+      <button class="btn warn" id="switchOk">确认切换并暂停业务</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ============================================================
+   业务模型（全量迁移 + 试运行 + 正式切换）
+   ------------------------------------------------------------
+   1. 插件包声明两个版本号：softwareVersion / dataVersion
+   2. 结构判定：dataVersion 是否变化 → 复制或迁移
+   3. 数据准备阶段：
+        pending → migrating → trial（试运行）→ trial_passed → switching → ready
+        - 首版本无试运行，直接：pending → ready（初始化）
+   4. 试运行期间：
+        - 新版本用迁移后的数据副本旁路运行，不影响用户
+        - 旧版本继续服务，用户数据持续变化
+   5. 正式切换（全量重新迁移，不做增量）：
+        - 暂停用户业务（全局横幅提示）
+        - 基于旧版本当前最新数据，重新执行一次完整迁移
+        - 完成后切换到新版本、恢复业务
+   6. 删除约束：最后两个版本（含当前运行版本）受保护
+============================================================ */
+const CATS = ['数据工具','安全审计','报表分析','流程审批','系统集成'];
+
+let plugins = [
+  {
+    id:'p1', name:'数据同步助手', icon:'🔄', category:'数据工具',
+    author:'平台研发组',
+    desc:'在不同业务系统之间同步数据，支持定时增量同步与全量重建，内置断点续传与失败重试机制。',
+    features:['支持定时增量 / 全量同步','断点续传与失败自动重试','可视化同步日志与告警','多数据源适配（MySQL / Oracle / 达梦）'],
+    currentVersionId:'v1-3',
+    versions:[
+      {id:'v1-1', sw:'2.1.0', data:'2.1.0', date:'2024-11-19 09:05', size:'3.5 MB',
+       snapshot:{status:'ready', createdAt:'2024-11-19 09:30', switchedAt:'2024-11-19 09:30',
+                 size:'1.4 MB', sourceId:null, script:false, trialStartedAt:null}},
+      {id:'v1-2', sw:'2.2.0', data:'2.1.0', date:'2025-01-08 16:40', size:'3.9 MB',
+       snapshot:{status:'ready', createdAt:'2025-01-08 17:00', switchedAt:'2025-01-08 17:08',
+                 size:'1.6 MB', sourceId:'v1-1', script:false, trialStartedAt:'2025-01-08 17:02'}},
+      {id:'v1-3', sw:'2.3.0', data:'2.3.0', date:'2025-03-12 10:22', size:'4.2 MB',
+       snapshot:{status:'ready', createdAt:'2025-03-12 10:40', switchedAt:'2025-03-12 10:52',
+                 size:'1.9 MB', sourceId:'v1-2', script:true, trialStartedAt:'2025-03-12 10:44'}}
+    ]
+  },
+  {
+    id:'p2', name:'操作审计中心', icon:'🛡️', category:'安全审计',
+    author:'安全合规部',
+    desc:'记录并分析系统内的关键操作行为，支持按人员、时间、模块多维检索与风险告警。',
+    features:['全量操作留痕，不可篡改','风险规则引擎，实时告警','支持审计报表导出','操作链路回溯'],
+    currentVersionId:'v2-2',
+    versions:[
+      {id:'v2-1', sw:'1.3.0', data:'1.3.0', date:'2024-12-02 14:18', size:'2.6 MB',
+       snapshot:{status:'ready', createdAt:'2024-12-02 14:40', switchedAt:'2024-12-02 14:40',
+                 size:'0.9 MB', sourceId:null, script:false, trialStartedAt:null}},
+      {id:'v2-2', sw:'1.4.0', data:'1.4.0', date:'2025-02-26 11:07', size:'2.8 MB',
+       snapshot:{status:'ready', createdAt:'2025-02-26 11:25', switchedAt:'2025-02-26 11:34',
+                 size:'1.1 MB', sourceId:'v2-1', script:true, trialStartedAt:'2025-02-26 11:28'}}
+    ]
+  }
+];
+
+let activeId = null;
+let guideCollapsed = false;
+let pendingFile = null;
+
+/* 全局暂停状态 */
+let businessPaused = false;
+let switchingVersionId = null;
+
+/* ==================== 工具 ==================== */
+const $ = s => document.querySelector(s);
+const stage = $('#stage');
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const activePlugin = () => plugins.find(p => p.id === activeId) || null;
+
+function fmtSize(bytes){
+  if (!bytes && bytes !== 0) return '—';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/1024/1024).toFixed(1) + ' MB';
+}
+function nowStr(){
+  const d = new Date(), pad = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function fakeSnapshotSize(){
+  return fmtSize(Math.round((1.4 + Math.random()*0.8) * 1024 * 1024));
+}
+function cmpVersion(a, b){
+  const pa = a.split('.').map(n=>parseInt(n,10)||0);
+  const pb = b.split('.').map(n=>parseInt(n,10)||0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i=0;i<len;i++){
+    const x = pa[i]||0, y = pb[i]||0;
+    if (x !== y) return x - y;
+  }
+  return 0;
+}
+function bumpPatch(v){
+  const parts = v.split('.').map(n=>parseInt(n,10)||0);
+  while (parts.length < 3) parts.push(0);
+  parts[2]++;
+  return parts.join('.');
+}
+let toastTimer;
+function toast(msg){
+  const el = $('#toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+function isSameSchema(v, prev){ return prev && v.data === prev.data; }
+function isSchemaPoint(v){ return v.sw === v.data; }
+const dLabel = data => 'v' + data;
+
+/* ==================== 侧边栏 ==================== */
+function renderSidebar(){
+  $('#pluginList').innerHTML = plugins.map(p => {
+    const cur = p.versions.find(v => v.id === p.currentVersionId);
+    return `<li class="pl-item ${p.id===activeId?'active':''}" data-id="${p.id}">
+      <span class="pl-icon">${p.icon}</span>
+      <div class="pl-txt">
+        <div class="pl-name">${esc(p.name)}</div>
+        <div class="pl-sub">${cur?'v'+cur.sw:'未发布'} · ${p.versions.length} 个版本</div>
+      </div>
+    </li>`;
+  }).join('');
+}
+
+/* ==================== 面板 ==================== */
+function renderPanel(){
+  const p = activePlugin();
+  if (!p){
+    stage.innerHTML = `<div class="empty">
+      <div class="empty-icon">🧩</div>
+      <h3>业务应用插件升级管理</h3>
+      <p>从左侧选择一个插件，或点击「新增插件」创建</p>
+    </div>`;
+    return;
+  }
+  const curV = p.versions.find(v => v.id === p.currentVersionId);
+  const curReady = curV && curV.snapshot.status === 'ready';
+
+  stage.innerHTML = `
+  <div class="panel" id="panel">
+    <div class="panel-title-bar">业务应用插件升级管理</div>
+
+    <!-- 业务说明 -->
+    <section class="guide ${guideCollapsed?'collapsed':''}" id="guide">
+      <div class="guide-head" id="guideHead">
+        <span class="guide-title">📋 业务说明</span>
+        <span class="guide-toggle">${guideCollapsed?'展开 ▼':'收起 ▲'}</span>
+      </div>
+      <div class="guide-body">
+        <div class="guide-steps">
+          <div class="guide-step">
+            <div class="n">1</div>
+            <div class="t">插件包声明两个版本号</div>
+            <div class="d">包内 <b>plugin.json</b> 声明 softwareVersion（软件版本）与 dataVersion（数据版本）。数据版本 = 最近一次结构变化的软件版本号。</div>
+          </div>
+          <div class="guide-step">
+            <div class="n">2</div>
+            <div class="t">结构未变则复制、升级则迁移</div>
+            <div class="d">新版本 dataVersion 等于上一版本 → 直接复制数据；不等于 → 执行插件包自带的升级脚本。</div>
+          </div>
+          <div class="guide-step">
+            <div class="n warn">3</div>
+            <div class="t">迁移完成后进入试运行</div>
+            <div class="d">新版本在旁路环境用迁移后的数据副本试运行，<b>不影响用户当前使用</b>。可查看试运行日志，确认无异常。</div>
+          </div>
+          <div class="guide-step">
+            <div class="n warn">4</div>
+            <div class="t">切换前暂停业务并全量重迁</div>
+            <div class="d">试运行期间用户一直在用旧系统，数据会变化。切换前需暂停用户业务，<b>基于旧版本最新数据重新执行一次全量迁移</b>。</div>
+          </div>
+          <div class="guide-step">
+            <div class="n">5</div>
+            <div class="t">完成后自动切换并恢复</div>
+            <div class="d">全量重迁完成，系统切换到新版本，用户业务自动恢复。整个过程预计 15 秒左右。</div>
+          </div>
+          <div class="guide-step">
+            <div class="n">6</div>
+            <div class="t">保留最后两个版本</div>
+            <div class="d">最后两个版本（含当前运行版本）不可删除。更早的历史版本可删，删除时连同其数据快照一并移除。</div>
+          </div>
+        </div>
+        <div class="guide-note">
+          <b>软件版本</b>：<code>v2.3.0</code>，插件程序本身的版本。<br>
+          <b>数据版本</b>：<code>v2.3.0</code>，最近一次结构变化对应的软件版本号。<br>
+          <b>试运行</b>：迁移后用数据副本旁路验证，不影响生产。<br>
+          <b>全量重迁</b>：切换时基于最新数据重新跑一次升级脚本，不做增量同步，确保新旧结构一次性对齐。<br>
+          <b>业务暂停</b>：仅发生在正式切换阶段，时长约 15 秒，完成后自动恢复。
+        </div>
+      </div>
+    </section>
+
+    <!-- 拖拽遮罩 -->
+    <div class="drop-overlay">
+      <div class="do-inner">
+        <div class="do-icon">⬆️</div>
+        <div class="do-title">松开鼠标，上传新版本</div>
+        <div class="do-sub">一次仅支持上传一个插件安装包（.zip / .jar / .tar.gz）</div>
+      </div>
+    </div>
+
+    <!-- 插件属性 -->
+    <header class="panel-head">
+      <div class="p-icon">${p.icon}</div>
+      <div class="p-head-main">
+        <div class="p-title-row">
+          <h1>${esc(p.name)}</h1>
+          <span class="tag">${esc(p.category)}</span>
+        </div>
+        <p class="p-desc">${esc(p.desc)}</p>
+        <div class="p-meta">
+          <span>作者：${esc(p.author)}</span><span>·</span>
+          <span>当前版本：<b>${curV?'v'+curV.sw:'未发布'}</b></span><span>·</span>
+          <span>数据版本：<b>${curV?dLabel(curV.data):'—'}</b></span>
+        </div>
+      </div>
+      <button class="icon-btn" id="panelClose" title="关闭面板">×</button>
+    </header>
+
+    <!-- 功能介绍 -->
+    <section class="block">
+      <h2 class="block-title">功能介绍</h2>
+      <ul class="feature-list">
+        ${p.features.map(f => `<li>${esc(f)}</li>`).join('')}
+      </ul>
+    </section>
+
+    <!-- 当前数据版本 -->
+    <section class="block">
+      <h2 class="block-title">当前数据版本</h2>
+      <div class="databar">
+        <div class="databar-info">
+          <div class="databar-label">当前运行版本使用的数据快照</div>
+          <div class="databar-hint">数据版本 = 最近一次结构变化的软件版本号 · 快照时间 = 该版本接管时的时刻</div>
+        </div>
+        ${curV && curReady
+          ? `<span class="databar-value">${dLabel(curV.data)} · ${curV.snapshot.switchedAt || curV.snapshot.createdAt}</span>`
+          : `<span class="databar-value muted">${curV ? '当前版本数据尚未就绪' : '暂无运行版本'}</span>`}
+      </div>
+    </section>
+
+    <!-- 版本链表格 -->
+    <section class="block">
+      <div class="block-head">
+        <h2 class="block-title">版本链 <span class="count" id="verCount">${p.versions.length}</span></h2>
+        <span class="tip">数据沿版本链逐级继承 · 正式切换时短暂暂停业务</span>
+      </div>
+      <div id="versionWrap"></div>
+    </section>
+  </div>`;
+
+  renderVersions();
+}
+
+/* ==================== 版本链（表格） ==================== */
+function renderVersions(){
+  const p = activePlugin();
+  const wrap = document.getElementById('versionWrap');
+  if (!wrap || !p) return;
+
+  const countEl = document.getElementById('verCount');
+  if (countEl) countEl.textContent = p.versions.length;
+
+  if (!p.versions.length){
+    wrap.innerHTML = `<div class="ver-empty">
+      <div class="ve-icon">📥</div>
+      <div class="ve-title">暂无版本记录</div>
+      <div class="ve-sub">把插件安装包拖拽到面板上，上传第一个版本</div>
+    </div>`;
+    return;
+  }
+
+  const total = p.versions.length;
+  const protectFrom = Math.max(0, total - 2);
+
+  wrap.innerHTML = `
+  <table class="ver-table">
+    <thead>
+      <tr>
+        <th>软件版本</th>
+        <th>数据版本</th>
+        <th>软件包</th>
+        <th>上传时间</th>
+        <th>结构来源</th>
+        <th>数据来源</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${p.versions.map((v, idx) => {
+        const isCur = v.id === p.currentVersionId && !v.uploading;
+        const isFirst = idx === 0;
+        const isProtected = idx >= protectFrom || isCur;
+        const schemaPoint = isSchemaPoint(v);
+        const prev = idx > 0 ? p.versions[idx-1] : null;
+        const same = prev && isSameSchema(v, prev);
+        const st = v.snapshot.status;
+        const isTrial = st === 'trial' || st === 'trial_passed';
+        const isSwitching = st === 'switching';
+
+        const schemaTip = (!isFirst && schemaPoint)
+          ? `<span class="schema-tip" data-tip="结构升级点：数据结构在此版本发生变化">i</span>`
+          : '';
+
+        let dsSub;
+        if (isFirst) dsSub = `<span class="ds-sub">初始结构</span>`;
+        else if (schemaPoint) dsSub = `<span class="ds-sub upgrade">结构升级点</span>`;
+        else dsSub = `<span class="ds-sub same">沿用</span>`;
+
+        return `<tr class="${isCur?'current':''} ${isProtected?'protected':''} ${isTrial?'trial':''} ${isSwitching?'switching':''}" data-id="${v.id}">
+          <td>
+            <div class="cell-ver">
+              <span class="ver-no">v${v.sw}${schemaTip}</span>
+              <div class="cell-badges">
+                ${isCur ? '<span class="badge badge-current">运行中</span>' : ''}
+                ${isFirst ? '<span class="badge badge-first">首个</span>' : ''}
+                ${v.uploading ? '<span class="badge badge-upload">上传中</span>' : ''}
+                ${isTrial ? '<span class="badge badge-trial">🧪 试运行</span>' : ''}
+                ${isSwitching ? '<span class="badge badge-pause">⏸ 切换中</span>' : ''}
+              </div>
+            </div>
+          </td>
+          <td>
+            <div class="cell-ds">
+              <span class="ds-main">${dLabel(v.data)}</span>
+              ${dsSub}
+            </div>
+          </td>
+          <td>${v.size}</td>
+          <td style="font-size:12px;color:#9aa3b5">${v.date}</td>
+          <td>${renderSchemaOriginCell(p, v, idx, prev)}</td>
+          <td>${renderDataOriginCell(p, v, idx, prev, same)}</td>
+          <td>${renderOpsCell(p, v, idx, isCur, isProtected, prev, same)}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
+}
+
+/* ---- 结构来源 ---- */
+function renderSchemaOriginCell(p, v, idx, prev){
+  if (v.uploading) return `<span class="cell-schema-origin initial">—</span>`;
+  if (!prev) return `<span class="cell-schema-origin initial">初始结构</span>`;
+  if (isSchemaPoint(v)) return `<span class="cell-schema-origin">${dLabel(prev.data)}</span>`;
+  return `<span class="cell-schema-origin">${dLabel(v.data)}</span>`;
+}
+
+/* ---- 数据来源单元格 ---- */
+function renderDataOriginCell(p, v, idx, prev, same){
+  const s = v.snapshot;
+  const st = s.status;
+
+  if (v.uploading){
+    return `<div class="cell-snap"><span class="snap-line2">等待上传完成…</span></div>`;
+  }
+
+  /* 首个版本 */
+  if (!prev){
+    if (st === 'ready'){
+      return `<div class="cell-snap">
+        <div class="snap-state"><span class="data-tag ok">💾 已就绪</span></div>
+        <div class="snap-line1"><span class="ver">初始数据</span><span class="size">${s.size}</span></div>
+        <div class="snap-line2">${s.createdAt}</div>
+      </div>`;
+    }
+    return `<div class="cell-snap">
+      <div class="snap-state"><span class="data-tag warn">⚠️ 待初始化</span></div>
+      <div class="snap-line2">首个版本，无上一版本可继承</div>
+    </div>`;
+  }
+
+  if (prev.snapshot.status !== 'ready' && prev.snapshot.status !== 'trial_passed'){
+    return `<div class="cell-snap">
+      <div class="snap-state"><span class="data-tag err">⛔ 上一版本数据未就绪</span></div>
+      <div class="snap-line2">无法从 v${prev.sw} 继承数据</div>
+    </div>`;
+  }
+
+  /* 迁移中 */
+  if (st === 'migrating'){
+    return `<div class="cell-snap">
+      <div class="snap-state"><span class="data-tag doing">${same?'🔄 复制中':'🔄 迁移中'}</span></div>
+      <div class="snap-line1"><span class="ver">v${prev.sw}</span></div>
+      <div class="progress"><i style="width:${s.progress||0}%"></i></div>
+    </div>`;
+  }
+
+  /* 试运行中 */
+  if (st === 'trial'){
+    return `<div class="cell-snap">
+      <div class="snap-state"><span class="data-tag trial">🧪 试运行中</span></div>
+      <div class="snap-line1"><span class="ver">v${prev.sw}</span><span class="size">${s.size||''}</span></div>
+      <div class="snap-line2">新版本旁路运行，不影响用户</div>
+    </div>`;
+  }
+
+  /* 试运行通过 */
+  if (st === 'trial_passed'){
+    return `<div class="cell-snap">
+      <div class="snap-state"><span class="data-tag ok">✅ 试运行通过</span></div>
+      <div class="snap-line1"><span class="ver">v${prev.sw}</span><span class="size">${s.size||''}</span></div>
+      <div class="snap-line2">待正式切换 · 切换将暂停业务并全量重迁</div>
+    </div>`;
+  }
+
+  /* 切换中 */
+  if (st === 'switching'){
+    return `<div class="cell-snap">
+      <div class="snap-state"><span class="data-tag pause">⏸ 业务暂停中</span></div>
+      <div class="snap-line2">正在基于 v${prev.sw} 最新数据重新全量迁移</div>
+      <div class="progress danger"><i style="width:${s.progress||0}%"></i></div>
+    </div>`;
+  }
+
+  /* 失败 */
+  if (st === 'failed'){
+    return `<div class="cell-snap">
+      <div class="snap-state"><span class="data-tag err">❌ ${same?'复制失败':'迁移失败'}</span></div>
+      <div class="snap-line2">${esc(s.error||'源数据已保留，可重试')}</div>
+    </div>`;
+  }
+
+  /* 已就绪 */
+  if (st === 'ready'){
+    const isCur = v.id === p.currentVersionId;
+    return `<div class="cell-snap">
+      <div class="snap-state">
+        <span class="data-tag ok">💾 已就绪</span>
+        ${isCur ? '<span class="data-tag ok">当前使用中</span>' : ''}
+      </div>
+      <div class="snap-line1">
+        <span class="ver">v${prev.sw}</span>
+        <span class="size">${s.size}</span>
+      </div>
+      <div class="snap-line2">${same?'复制':'迁移'}于 ${s.createdAt}</div>
+      <div class="snap-line2">切换于 ${s.switchedAt || s.createdAt}（全量重迁）</div>
+    </div>`;
+  }
+
+  /* pending：结构未变 */
+  if (same){
+    return `<div class="cell-snap">
+      <div class="snap-state"><span class="data-tag warn">🔄 待复制</span></div>
+      <div class="snap-line1"><span class="ver">v${prev.sw}</span></div>
+      <div class="snap-line2">结构未变，直接复制数据</div>
+    </div>`;
+  }
+
+  /* pending：结构升级 */
+  return `<div class="cell-snap">
+    <div class="snap-state"><span class="data-tag warn">🔄 待迁移</span></div>
+    <div class="snap-line1"><span class="ver">v${prev.sw}</span></div>
+    <div class="snap-line2">数据 ${dLabel(prev.data)} → ${dLabel(v.data)}</div>
+    <details class="script-details">
+      <summary>查看升级脚本调用参数</summary>
+      <div class="script-box">
+        <div><span class="c">$</span> upgrade.sh <span class="v">--old-storage=/data/${p.id}/v${prev.sw}</span></div>
+        <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="v">--new-storage=/data/${p.id}/v${v.sw}</span></div>
+        <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="v">--old-db-uri=mysql://…/db_v${prev.data}</span></div>
+        <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="v">--new-db-uri=mysql://…/db_v${v.data}</span></div>
+        <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="v">--old-version=${prev.sw}</span> <span class="v">--new-version=${v.sw}</span></div>
+        <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="v">--old-data-version=v${prev.data}</span> <span class="v">--new-data-version=v${v.data}</span></div>
+      </div>
+    </details>
+  </div>`;
+}
+
+/* ---- 操作单元格 ---- */
+function renderOpsCell(p, v, idx, isCur, isProtected, prev, same){
+  if (v.uploading){
+    return `<span style="font-size:12px;color:#9aa3b5">上传中…</span>`;
+  }
+  const s = v.snapshot;
+  const st = s.status;
+  let html = '<div class="cell-ops">';
+
+  if (st === 'pending'){
+    if (!prev){
+      html += `<button class="btn primary sm" data-act="init" data-id="${v.id}">初始化数据</button>`;
+    } else if (prev.snapshot.status === 'ready' || prev.snapshot.status === 'trial_passed'){
+      html += `<button class="btn primary sm" data-act="prepare" data-id="${v.id}">${same?'复制数据':'执行升级脚本'}</button>`;
+    } else {
+      html += `<button class="btn ghost sm" disabled>等待上一版本就绪</button>`;
+    }
+  }
+  else if (st === 'migrating'){
+    html += `<span style="font-size:12px;color:#4338ca">${same?'复制':'迁移'}中…</span>`;
+  }
+  else if (st === 'trial'){
+    html += `<button class="btn ghost sm" data-act="trial-log" data-id="${v.id}">🧪 查看日志</button>`;
+    html += `<button class="btn primary sm" data-act="trial-pass" data-id="${v.id}">完成试运行</button>`;
+  }
+  else if (st === 'trial_passed'){
+    html += `<button class="btn warn sm" data-act="switch" data-id="${v.id}">正式切换</button>`;
+    html += `<button class="btn ghost sm" data-act="trial-log" data-id="${v.id}">日志</button>`;
+  }
+  else if (st === 'switching'){
+    html += `<span style="font-size:12px;color:#b91c1c;font-weight:600">⏸ 业务暂停中…</span>`;
+  }
+  else if (st === 'failed'){
+    html += `<button class="btn primary sm" data-act="prepare" data-id="${v.id}">重试</button>`;
+  }
+  else if (st === 'ready'){
+    if (isCur){
+      html += `<span class="badge badge-current" style="padding:5px 10px">运行中</span>`;
+    } else {
+      html += `<button class="btn ghost sm" data-act="use" data-id="${v.id}">设为当前</button>`;
+    }
+  }
+
+  if (st !== 'switching'){
+    if (isProtected){
+      html += `<span class="badge badge-protect" title="最后两个版本受保护，不可删除">🔒 受保护</span>`;
+    } else {
+      html += `<button class="btn danger-ghost sm" data-act="del" data-id="${v.id}">删除</button>`;
+    }
+  }
+
+  html += '</div>';
+  return html;
+}
+
+/* ==================== 数据准备（复制 / 迁移）→ 试运行 ==================== */
+function prepareData(p, v, prev, same){
+  v.snapshot.status = 'migrating';
+  v.snapshot.progress = 0;
+  if (activeId === p.id) renderVersions();
+
+  let prog = 0;
+  const timer = setInterval(() => {
+    prog += Math.random() * 18 + 8;
+    v.snapshot.progress = Math.min(100, Math.round(prog));
+    if (activeId === p.id){
+      const bar = document.querySelector(`tr[data-id="${v.id}"] .progress i`);
+      if (bar) bar.style.width = v.snapshot.progress + '%';
+      else renderVersions();
+    }
+
+    if (v.snapshot.progress >= 100){
+      clearInterval(timer);
+      v.snapshot.status = 'trial';
+      v.snapshot.createdAt = nowStr();
+      v.snapshot.trialStartedAt = nowStr();
+      v.snapshot.size = fakeSnapshotSize();
+      v.snapshot.sourceId = prev ? prev.id : null;
+      v.snapshot.script = !same;
+      if (activeId === p.id) renderPanel();
+      renderSidebar();
+      toast(same
+        ? `v${v.sw} 数据已复制，进入试运行（用户业务不受影响）`
+        : `v${v.sw} 升级脚本执行完成，进入试运行（用户业务不受影响）`);
+    }
+  }, 180);
+}
+
+/* ==================== 正式切换（暂停业务 + 全量重迁） ==================== */
+function startSwitch(p, v){
+  businessPaused = true;
+  switchingVersionId = v.id;
+  v.snapshot.status = 'switching';
+  v.snapshot.progress = 0;
+
+  const prev = p.versions[p.versions.indexOf(v) - 1];
+
+  /* 显示暂停横幅 */
+  const banner = $('#pauseBanner');
+  $('#pbTitle').textContent = `业务已暂停 · 正在基于最新数据重新全量迁移到 v${v.sw}`;
+  $('#pbDesc').textContent = '用户暂时无法使用系统，请稍候。迁移完成后将自动切换并恢复业务。';
+  $('#pbBar').style.width = '0%';
+  $('#pbPct').textContent = '0%';
+  banner.classList.add('show');
+  $('#app').classList.add('paused');
+
+  if (activeId === p.id) renderVersions();
+
+  let prog = 0;
+  const timer = setInterval(() => {
+    prog += Math.random() * 12 + 5;
+    v.snapshot.progress = Math.min(100, Math.round(prog));
+
+    $('#pbBar').style.width = v.snapshot.progress + '%';
+    $('#pbPct').textContent = v.snapshot.progress + '%';
+    if (activeId === p.id){
+      const bar = document.querySelector(`tr[data-id="${v.id}"] .progress i`);
+      if (bar) bar.style.width = v.snapshot.progress + '%';
+    }
+
+    if (v.snapshot.progress >= 100){
+      clearInterval(timer);
+      /* 全量重迁完成，切换 */
+      v.snapshot.status = 'ready';
+      v.snapshot.switchedAt = nowStr();
+      v.snapshot.size = fakeSnapshotSize();
+      p.currentVersionId = v.id;
+
+      businessPaused = false;
+      switchingVersionId = null;
+      banner.classList.remove('show');
+      $('#app').classList.remove('paused');
+
+      if (activeId === p.id) renderPanel();
+      renderSidebar();
+      toast(`v${v.sw} 已基于最新数据全量重迁并切换，业务已恢复`);
+    }
+  }, 130);
+}
+
+/* ==================== 打开 / 关闭 ==================== */
+function openPlugin(id){
+  activeId = id;
+  renderSidebar();
+  renderPanel();
+  stage.scrollTop = 0;
+}
+function closePanel(){
+  activeId = null;
+  renderSidebar();
+  renderPanel();
+}
+
+/* ==================== 上传 ==================== */
+function handleFiles(fileList){
+  const p = activePlugin();
+  if (!p) return;
+  if (businessPaused){ toast('业务暂停中，请等待切换完成'); return; }
+  if (p.versions.some(v => v.uploading)){
+    toast('有版本正在上传中，请等待完成后再上传');
+    return;
+  }
+  const files = [...fileList];
+  if (!files.length) return;
+  if (files.length > 1) toast('一次只能上传一个版本文件，已上传：' + files[0].name);
+
+  pendingFile = files[0];
+  const last = p.versions[p.versions.length - 1];
+  const guessSoft = last ? bumpPatch(last.sw) : '1.0.0';
+  $('#mSoft').value = guessSoft;
+  $('#mData').value = last ? last.data : guessSoft;
+  $('#metaMask').classList.add('show');
+  setTimeout(() => $('#mSoft').focus(), 120);
+}
+
+/* ==================== 元数据确认 ==================== */
+$('#metaCancel').addEventListener('click', () => {
+  $('#metaMask').classList.remove('show');
+  pendingFile = null;
+});
+$('#metaOk').addEventListener('click', () => {
+  const p = activePlugin();
+  if (!p || !pendingFile) return;
+
+  const sw = $('#mSoft').value.trim();
+  const data = $('#mData').value.trim();
+  const last = p.versions[p.versions.length - 1];
+
+  if (!sw || !data){ toast('两个版本号都不能为空'); return; }
+  if (last && cmpVersion(sw, last.sw) <= 0){
+    toast(`软件版本 ${sw} 必须大于链尾版本 ${last.sw}`);
+    return;
+  }
+  if (last){
+    const okSame = data === last.data;
+    const okUpgrade = data === sw;
+    if (!okSame && !okUpgrade){
+      toast(`数据版本 ${data} 非法：只能等于上一版本数据版本 ${last.data}（沿用）或自身软件版本 ${sw}（升级）`);
+      return;
+    }
+  } else if (data !== sw){
+    toast(`首个版本的数据版本必须等于软件版本 ${sw}`);
+    return;
+  }
+
+  const file = pendingFile;
+  pendingFile = null;
+  $('#metaMask').classList.remove('show');
+
+  const item = {
+    id: 'v' + Date.now(),
+    sw, data,
+    date: nowStr(),
+    size: fmtSize(file.size),
+    snapshot: {
+      status: 'pending',
+      createdAt: null, trialStartedAt: null, switchedAt: null,
+      size: null, sourceId: null, script: false, progress: 0
+    },
+    uploading: true,
+    progress: 0
+  };
+  p.versions.push(item);
+  renderVersions();
+  renderSidebar();
+
+  let prog = 0;
+  const timer = setInterval(() => {
+    prog += Math.random() * 24 + 10;
+    item.progress = Math.min(100, Math.round(prog));
+    if (item.progress >= 100){
+      clearInterval(timer);
+      item.uploading = false;
+      item.progress = 100;
+      if (!p.currentVersionId && p.versions.length === 1) p.currentVersionId = item.id;
+      if (activeId === p.id) renderPanel();
+      renderSidebar();
+      toast(`v${item.sw} 上传完成（数据版本 ${dLabel(item.data)}）`);
+      return;
+    }
+    if (activeId === p.id){
+      const bar = document.querySelector(`tr[data-id="${item.id}"] .progress i`);
+      if (bar) bar.style.width = item.progress + '%';
+      else renderVersions();
+    }
+  }, 220);
+});
+
+/* ==================== 侧边栏点击 ==================== */
+$('#pluginList').addEventListener('click', e => {
+  const li = e.target.closest('.pl-item');
+  if (li) openPlugin(li.dataset.id);
+});
+
+/* ==================== 试运行日志弹窗 ==================== */
+function openTrialLog(v){
+  $('#trialVerLabel').textContent = `· v${v.sw} · 数据版本 ${dLabel(v.data)}`;
+  const start = v.snapshot.trialStartedAt || v.snapshot.createdAt || nowStr();
+  $('#trialLog').innerHTML = `
+    <div><span class="dim">[${start}]</span> <span class="ok">✔</span> 试运行环境启动</div>
+    <div><span class="dim">[${start}]</span> <span class="ok">✔</span> 加载数据副本 v${v.data}</div>
+    <div><span class="dim">[${start}]</span> <span class="ok">✔</span> 插件 v${v.sw} 启动成功</div>
+    <div><span class="dim">[${start}]</span> <span class="dim">·</span> 开始采样运行指标…</div>
+    <div><span class="dim">[+10s]</span> <span class="ok">✔</span> CPU 6% / 内存 128MB / 无异常</div>
+    <div><span class="dim">[+30s]</span> <span class="ok">✔</span> 接口响应 p95 42ms，正常</div>
+    <div><span class="dim">[+1m]</span> <span class="ok">✔</span> 数据处理任务执行正常</div>
+    <div><span class="dim">[+2m]</span> <span class="warn">⚠</span> 未发现致命异常，可进入切换评估</div>
+    <div><span class="dim">[+2m]</span> <span class="dim">·</span> 提示：用户数据仍在变化，切换时将暂停业务并全量重迁</div>
+  `;
+  $('#trialMask').classList.add('show');
+}
+$('#trialClose').addEventListener('click', () => $('#trialMask').classList.remove('show'));
+$('#trialMask').addEventListener('click', e => { if (e.target === $('#trialMask')) $('#trialMask').classList.remove('show'); });
+
+/* ==================== 正式切换确认弹窗 ==================== */
+let switchTargetId = null;
+function openSwitchConfirm(v){
+  switchTargetId = v.id;
+  $('#switchTarget').textContent = `v${v.sw} · ${dLabel(v.data)}`;
+  $('#switchMask').classList.add('show');
+}
+$('#switchCancel').addEventListener('click', () => {
+  $('#switchMask').classList.remove('show');
+  switchTargetId = null;
+});
+$('#switchMask').addEventListener('click', e => {
+  if (e.target === $('#switchMask')){
+    $('#switchMask').classList.remove('show');
+    switchTargetId = null;
+  }
+});
+$('#switchOk').addEventListener('click', () => {
+  const p = activePlugin();
+  if (!p || !switchTargetId) return;
+  const v = p.versions.find(x => x.id === switchTargetId);
+  $('#switchMask').classList.remove('show');
+  switchTargetId = null;
+  if (!v) return;
+  startSwitch(p, v);
+});
+
+/* ==================== 面板交互 ==================== */
+stage.addEventListener('click', e => {
+  if (e.target.closest('#guideHead')){
+    guideCollapsed = !guideCollapsed;
+    const g = document.getElementById('guide');
+    if (g){
+      g.classList.toggle('collapsed', guideCollapsed);
+      const t = g.querySelector('.guide-toggle');
+      if (t) t.textContent = guideCollapsed ? '展开 ▼' : '收起 ▲';
+    }
+    return;
+  }
+  if (e.target.closest('#panelClose')){ closePanel(); return; }
+
+  const btn = e.target.closest('[data-act]');
+  if (!btn) return;
+  const p = activePlugin();
+  if (!p) return;
+  const { act, id } = btn.dataset;
+  const idx = p.versions.findIndex(x => x.id === id);
+  if (idx < 0) return;
+  const v = p.versions[idx];
+  if (v.uploading) return;
+  const prev = idx > 0 ? p.versions[idx-1] : null;
+
+  /* 首个版本初始化（无试运行） */
+  if (act === 'init'){
+    v.snapshot.status = 'ready';
+    v.snapshot.createdAt = nowStr();
+    v.snapshot.switchedAt = nowStr();
+    v.snapshot.size = fakeSnapshotSize();
+    v.snapshot.sourceId = null;
+    renderPanel();
+    renderSidebar();
+    toast(`v${v.sw} 初始数据已生成，数据版本 ${dLabel(v.data)}`);
+  }
+
+  /* 复制 / 迁移 → 进入试运行 */
+  if (act === 'prepare'){
+    if (businessPaused){ toast('业务暂停中，请稍候'); return; }
+    if (!prev){ toast('该版本没有上一版本，请使用初始化数据'); return; }
+    if (prev.snapshot.status !== 'ready' && prev.snapshot.status !== 'trial_passed'){
+      toast(`上一版本 v${prev.sw} 数据未就绪，无法处理`);
+      return;
+    }
+    const same = isSameSchema(v, prev);
+    if (v.snapshot.status === 'trial' || v.snapshot.status === 'trial_passed'){
+      if (!confirm('该版本已进入试运行，重新准备将覆盖当前试运行数据，确定继续？')) return;
+    }
+    prepareData(p, v, prev, same);
+  }
+
+  /* 查看试运行日志 */
+  if (act === 'trial-log'){
+    openTrialLog(v);
+  }
+
+  /* 完成试运行 */
+  if (act === 'trial-pass'){
+    if (v.snapshot.status !== 'trial') return;
+    v.snapshot.status = 'trial_passed';
+    renderPanel();
+    renderSidebar();
+    toast(`v${v.sw} 试运行已确认通过，可进行正式切换`);
+  }
+
+  /* 正式切换 */
+  if (act === 'switch'){
+    if (businessPaused){ toast('已有切换进行中'); return; }
+    if (v.snapshot.status !== 'trial_passed'){
+      toast('请先完成试运行');
+      return;
+    }
+    openSwitchConfirm(v);
+  }
+
+  /* 设为当前 */
+  if (act === 'use'){
+    if (businessPaused){ toast('业务暂停中，请稍候'); return; }
+    if (v.snapshot.status !== 'ready'){
+      toast('该版本数据尚未就绪');
+      return;
+    }
+    p.currentVersionId = v.id;
+    renderPanel();
+    renderSidebar();
+    toast(`已切换到 v${v.sw}，数据版本 ${dLabel(v.data)}`);
+  }
+
+  /* 删除 */
+  if (act === 'del'){
+    if (businessPaused){ toast('业务暂停中，请稍候'); return; }
+    const total = p.versions.length;
+    const protectFrom = Math.max(0, total - 2);
+    if (idx >= protectFrom){ toast('最后两个版本受保护，不可删除'); return; }
+    if (v.id === p.currentVersionId){ toast('当前运行版本不可删除'); return; }
+
+    const st = v.snapshot.status;
+    let msg;
+    if (st === 'trial'){
+      msg = `v${v.sw} 正在试运行中，删除将终止试运行并移除数据副本，确定继续？`;
+    } else if (st === 'ready'){
+      msg = `确定删除 v${v.sw} 及其数据快照（${dLabel(v.data)} · ${v.snapshot.createdAt}）吗？\n该操作不可恢复。`;
+    } else {
+      msg = `确定删除 v${v.sw} 吗？该操作不可恢复。`;
+    }
+    if (!confirm(msg)) return;
+
+    p.versions = p.versions.filter(x => x.id !== id);
+    renderPanel();
+    renderSidebar();
+    toast(`已删除 v${v.sw}`);
+  }
+});
+
+/* ==================== 拖拽上传 ==================== */
+let dragDepth = 0;
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => e.preventDefault());
+stage.addEventListener('dragenter', e => {
+  if (!activePlugin() || businessPaused) return;
+  e.preventDefault();
+  dragDepth++;
+  const panel = document.getElementById('panel');
+  if (panel) panel.classList.add('dragging');
+});
+stage.addEventListener('dragover', e => {
+  if (!activePlugin() || businessPaused) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+stage.addEventListener('dragleave', () => {
+  dragDepth--;
+  if (dragDepth <= 0){
+    dragDepth = 0;
+    const panel = document.getElementById('panel');
+    if (panel) panel.classList.remove('dragging');
+  }
+});
+stage.addEventListener('drop', e => {
+  if (!activePlugin() || businessPaused) return;
+  e.preventDefault();
+  dragDepth = 0;
+  const panel = document.getElementById('panel');
+  if (panel) panel.classList.remove('dragging');
+  handleFiles(e.dataTransfer.files);
+});
+
+/* ==================== 新增插件 ==================== */
+const mask = $('#mask');
+$('#npCat').innerHTML = CATS.map(c => `<option>${c}</option>`).join('');
+function openModal(){
+  $('#npName').value = '';
+  $('#npDesc').value = '';
+  mask.classList.add('show');
+  setTimeout(() => $('#npName').focus(), 120);
+}
+function closeModal(){ mask.classList.remove('show'); }
+
+$('#btnAdd').addEventListener('click', openModal);
+$('#npCancel').addEventListener('click', closeModal);
+mask.addEventListener('click', e => { if (e.target === mask) closeModal(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape'){
+    if (mask.classList.contains('show')) closeModal();
+    if ($('#metaMask').classList.contains('show')){ $('#metaMask').classList.remove('show'); pendingFile = null; }
+    if ($('#trialMask').classList.contains('show')) $('#trialMask').classList.remove('show');
+    if ($('#switchMask').classList.contains('show')){ $('#switchMask').classList.remove('show'); switchTargetId = null; }
+  }
+});
+
+$('#npOk').addEventListener('click', () => {
+  const name = $('#npName').value.trim() || '未命名插件';
+  const icons = ['🧩','🚀','📊','🔐','🧠','🛠️','📡'];
+  const p = {
+    id: 'p' + Date.now(),
+    name,
+    icon: icons[Math.floor(Math.random()*icons.length)],
+    category: $('#npCat').value,
+    author: '当前用户',
+    desc: $('#npDesc').value.trim() || '暂无插件介绍，可在插件详情中补充。',
+    features: ['（功能介绍待补充）'],
+    currentVersionId: null,
+    versions: []
+  };
+  plugins.push(p);
+  closeModal();
+  openPlugin(p.id);
+  toast('插件已创建，拖拽安装包上传第一个版本');
+});
+
+/* ==================== 初始化 ==================== */
+renderSidebar();
+renderPanel();
+</script>
+</body>
+</html>
