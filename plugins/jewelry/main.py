@@ -245,6 +245,17 @@ def public_site(request: Request):
         "<div class='sc-empty'><div class='sc-empty-ico'>💎</div>"
         "<p>橱窗正在整理中</p><span>敬请期待本季臻品</span></div>"
     )
+    # 企业宣传 · 四大安心承诺
+    promises = [
+        ("🔍", "源头直采", "金料与裸石直选自深圳水贝、云南腾冲，省去中间环节，同品质价格更实在。"),
+        ("📜", "一物一证", "每件成品均配 NGTC / GIA 权威证书，支持全国任意机构复检，假一赔十。"),
+        ("🔨", "自有工坊", "驻店师傅平均从业 20 年，改圈、刻字、维修立等可取，高级定制最快 7 日交付。"),
+        ("♾️", "终身养护", "所购首饰终身享免费清洗、抛光与牢固度检测，以旧换新按当日金价估价。"),
+    ]
+    promise_cards_html = "\n".join(
+        f"<div class='p-card'><div class='p-ico'>{ico}</div><h3>{pt}</h3><p>{pd}</p></div>"
+        for ico, pt, pd in promises
+    )
     # 小图标
     icon_phone = "<svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z'/></svg>"
     icon_loc = "<svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z'/><circle cx='12' cy='10' r='3'/></svg>"
@@ -395,6 +406,71 @@ textarea {{ resize: vertical; min-height: 72px; }}
 .ok {{ color: #2E7D4F; font-weight: 600; }}
 .err {{ color: #B33A3A; font-weight: 600; }}
 .footer {{ text-align: center; color: #8A6F58; font-size: 12px; margin-top: 44px; padding-top: 18px; border-top: 1px dashed #E5D7BE; }}
+.footer-certs {{ color: #12473D; font-weight: 600; font-size: 12.5px; letter-spacing: 1px; margin-bottom: 8px; }}
+section[id] {{ scroll-margin-top: 64px; }}
+/* ===== 吸顶锚点导航 ===== */
+.site-nav {{
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(251,246,236,.9); backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(21,72,61,.14);
+}}
+.site-nav-in {{ max-width: 1160px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; }}
+.site-nav-brand {{ font-weight: 700; color: #12473D; letter-spacing: 2px; font-size: 15px; }}
+.site-nav-links a {{ color: #12473D; text-decoration: none; font-size: 13.5px; margin-left: 24px; opacity: .75; transition: opacity .15s; }}
+.site-nav-links a:hover {{ opacity: 1; text-decoration: underline; text-underline-offset: 4px; }}
+/* ===== 品牌故事（墨玉绿，与酒红金品牌头区分） ===== */
+.about {{
+  position: relative; overflow: hidden; color: #EAF4EE;
+  background: linear-gradient(155deg, #0B322A 0%, #11473C 48%, #18584A 100%);
+}}
+.about::before {{
+  content: ''; position: absolute; top: -120px; right: -90px; width: 340px; height: 340px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(94,196,151,.20) 0%, transparent 70%);
+}}
+.about::after {{
+  content: 'SINCE 2009'; position: absolute; right: 16px; bottom: -20px; font-size: 84px; font-weight: 800;
+  color: rgba(255,255,255,.045); letter-spacing: 6px; pointer-events: none; white-space: nowrap;
+}}
+.about-wrap {{
+  position: relative; z-index: 1; max-width: 1160px; margin: 0 auto; padding: 66px 20px 8px;
+  display: grid; grid-template-columns: 1.25fr .9fr; gap: 50px; align-items: center;
+}}
+.about-kicker {{
+  display: inline-block; font-size: 12px; letter-spacing: 3px; color: #8FE0BC;
+  border: 1px solid rgba(143,224,188,.4); border-radius: 20px; padding: 4px 14px; margin-bottom: 20px;
+}}
+.about-text h2 {{ margin: 0 0 20px; font-size: 28px; line-height: 1.5; color: #F3F9F6; letter-spacing: 1px; }}
+.about-text p {{ margin: 0 0 14px; font-size: 14.5px; line-height: 2; color: rgba(234,244,238,.86); }}
+.about-cats {{ margin-top: 22px; font-size: 13px; color: #8FE0BC; letter-spacing: 2px; }}
+.about-stats {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
+.stat {{
+  background: rgba(255,255,255,.06); border: 1px solid rgba(143,224,188,.18);
+  border-radius: 16px; padding: 26px 18px; text-align: center;
+}}
+.stat b {{ display: block; font-size: 30px; color: #8FE0BC; font-family: Georgia, 'Times New Roman', serif; margin-bottom: 6px; }}
+.stat span {{ font-size: 12.5px; color: rgba(234,244,238,.78); }}
+/* ===== 四大承诺（同墨绿章节，玻璃卡） ===== */
+.promise-inner {{ max-width: 1160px; margin: 0 auto; padding: 56px 20px 64px; }}
+.promise-head {{ text-align: center; margin-bottom: 34px; }}
+.promise-head h2 {{ margin: 0 0 8px; font-size: 25px; color: #F3F9F6; letter-spacing: 2px; }}
+.promise-head p {{ margin: 0; font-size: 13.5px; color: rgba(234,244,238,.66); }}
+.promise-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }}
+.p-card {{
+  background: rgba(255,255,255,.05); border: 1px solid rgba(143,224,188,.16); border-radius: 18px;
+  padding: 30px 22px; text-align: center;
+  transition: transform .2s ease, background .2s ease, border-color .2s ease;
+}}
+.p-card:hover {{ transform: translateY(-5px); background: rgba(255,255,255,.09); border-color: rgba(143,224,188,.42); }}
+.p-ico {{
+  width: 58px; height: 58px; margin: 0 auto 16px; border-radius: 50%;
+  background: rgba(143,224,188,.14); display: flex; align-items: center; justify-content: center; font-size: 26px;
+}}
+.p-card h3 {{ margin: 0 0 10px; font-size: 17px; color: #F3F9F6; }}
+.p-card p {{ margin: 0; font-size: 12.5px; line-height: 1.85; color: rgba(234,244,238,.75); }}
+@media (max-width: 900px) {{
+  .about-wrap {{ grid-template-columns: 1fr; gap: 32px; padding: 48px 18px 0; }}
+  .promise-grid {{ grid-template-columns: 1fr 1fr; }}
+}}
 @media (max-width: 640px) {{
   .hero {{ padding: 54px 16px 42px; }}
   .hero h1 {{ font-size: 24px; }}
@@ -402,6 +478,13 @@ textarea {{ resize: vertical; min-height: 72px; }}
   .section-title h2 {{ font-size: 20px; }}
   .sc-grid {{ gap: 16px; }}
   .form {{ padding: 20px; }}
+  .site-nav-brand {{ display: none; }}
+  .site-nav-in {{ justify-content: center; }}
+  .site-nav-links a {{ margin: 0 10px; }}
+  .about-text h2 {{ font-size: 22px; }}
+  .about::after {{ font-size: 52px; bottom: -12px; }}
+  .promise-grid {{ grid-template-columns: 1fr; }}
+  .stat b {{ font-size: 24px; }}
 }}
 </style></head><body>
 <section class="hero">
@@ -415,14 +498,46 @@ textarea {{ resize: vertical; min-height: 72px; }}
     { (f'<span>{icon_clock}{hours}</span>' if hours else '') }
   </div>
 </section>
+<nav class="site-nav">
+  <div class="site-nav-in">
+    <span class="site-nav-brand">{name}</span>
+    <span class="site-nav-links">
+      <a href="#about">品牌故事</a><a href="#showcase">臻品橱窗</a><a href="#booking">预约到店</a>
+    </span>
+  </div>
+</nav>
+<section class="about" id="about">
+  <div class="about-wrap">
+    <div class="about-text">
+      <span class="about-kicker">SINCE 2009 · 品牌故事</span>
+      <h2>十七年只做一件事<br>让每件珠宝都经得起岁月</h2>
+      <p>{name}创立于 2009 年，前身为老街上一间三十平米的打金铺。十七年来，我们坚持从深圳水贝、云南腾冲源头直选金料与裸石，每件成品均经 NGTC / GIA 权威检测，一物一证，支持全国复检。</p>
+      <p>如今，懿臻已发展为集黄金、钻石、翡翠、彩宝销售与高级定制于一体的珠宝门店，驻店师傅平均从业 20 年以上。我们相信，好的珠宝从不只是商品——它陪人走过求婚、结婚、弥月、纪念等一生里最重要的时刻。</p>
+      <div class="about-cats">黄金首饰 · 钻石婚戒 · 翡翠玉石 · 彩宝定制 · 投资金条</div>
+    </div>
+    <div class="about-stats">
+      <div class="stat"><b>17年</b><span>匠心经营</span></div>
+      <div class="stat"><b>10000+</b><span>客户的共同选择</span></div>
+      <div class="stat"><b>100%</b><span>一物一证 · 支持复检</span></div>
+      <div class="stat"><b>20年</b><span>驻店师傅平均工龄</span></div>
+    </div>
+  </div>
+  <div class="promise-inner">
+    <div class="promise-head">
+      <h2>四大安心承诺</h2>
+      <p>从选料到售后，每个环节都写进我们的店规</p>
+    </div>
+    <div class="promise-grid">{promise_cards_html}</div>
+  </div>
+</section>
 <div class="wrap">
-  <div class="section-title">
+  <div class="section-title" id="showcase">
     <div><h2>{sh_title}</h2><span class="sub">{sh_sub}</span></div>
     <span class="sub">共 {len(rows)} 件臻品 · 官方直营 · 假一赔十</span>
   </div>
   <div class="sc-grid">{cards_html}</div>
 
-  <section class="form-section">
+  <section class="form-section" id="booking">
     <div class="section-title">
       <div><h2>预约到店</h2><span class="sub">专属顾问一对一 · VIP 私享鉴赏</span></div>
     </div>
@@ -445,7 +560,10 @@ textarea {{ resize: vertical; min-height: 72px; }}
       </form>
     </div>
   </section>
-  <div class="footer">© {name} · 以臻金品质 铸一世珍藏</div>
+  <div class="footer">
+    <div class="footer-certs">NGTC / GIA 权威检测合作 · 假一赔十 · 终身免费养护</div>
+    © {name} · 以臻金品质 铸一世珍藏
+  </div>
 </div>
 <script>
 function focusBook(name, cat, code) {{
