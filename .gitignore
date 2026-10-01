@@ -1,0 +1,15 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# 运行时数据（平台库 / 租户库 / 日志 / 已安装包 / 存储）
+platform/data/
+plugins/jewelry/dev_data/
+
+# 生成的压缩包（样例包、示例包，可由 tools/build_samples.py 重新生成）
+*.zip
+
+# 系统杂项
+Thumbs.db
+.DS_Store
