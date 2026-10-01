@@ -34,7 +34,10 @@ function fmt(n) { return n == null ? '0' : Number(n).toLocaleString(); }
 function fmtY(n) { return '￥' + fmt(n); }
 function dateFmt(s) { return s ? String(s).replace(/-/g, '/') : ''; }
 
-function t(key) { return (typeof window.t === 'function') ? window.t(key) : key; }
+// i18n.js 已提供全局 t(key) 翻译函数（先于本文件加载）；
+// 切勿在此重新声明同名 function t，否则会覆盖 window.t 导致自递归栈溢出。
+// 仅在 i18n.js 缺失时兜底：原样返回 key。
+if (typeof window.t !== 'function') { window.t = function (key) { return key; }; }
 
 function api(m, url, body) {
   var h = { 'Content-Type': 'application/json' };
