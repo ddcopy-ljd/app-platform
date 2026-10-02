@@ -467,7 +467,7 @@ class MainActivity : AppCompatActivity() {
         )
         if (trigger) {
             when (event.action) {
-                KeyEvent.ACTION_DOWN -> if (!event.repeat && canScan() && !scanning) startScan()
+                KeyEvent.ACTION_DOWN -> if (event.repeatCount == 0 && canScan() && !scanning) startScan()
                 KeyEvent.ACTION_UP -> if (scanning && prefs.readMode == 0) pauseScan()
             }
             return true
