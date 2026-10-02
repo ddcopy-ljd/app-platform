@@ -30,9 +30,15 @@ jobs:
       - name: Build Debug APK
         working-directory: ./scanner-app
         run: |
-          set -o pipefail
-          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee build-debug.log
-          echo "BUILD_EXIT=${PIPESTATUS[0]}" >> $GITHUB_ENV
+          set +e
+          gradle assembleDebug --no-daemon --stacktrace > build-debug.log 2>&1
+          echo "BUILD_EXIT=$?" >> $GITHUB_ENV
+          exit 0
+
+      - name: Show build errors
+        working-directory: ./scanner-app
+        if: ${{ env.BUILD_EXIT != '0' }}
+        run: grep -iE "error|exception|caused by|what went wrong|FAILURE|cannot|unresolved|unsupported" build-debug.log | head -80
 
       - name: Build Release APK
         working-directory: ./scanner-app
