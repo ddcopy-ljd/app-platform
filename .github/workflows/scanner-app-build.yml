@@ -29,33 +29,7 @@ jobs:
 
       - name: Build Debug APK
         working-directory: ./scanner-app
-        run: |
-          set +e
-          gradle assembleDebug --no-daemon --stacktrace > build-debug.log 2>&1
-          echo "BUILD_EXIT=$?" >> $GITHUB_ENV
-          exit 0
-
-      - name: Show build errors
-        working-directory: ./scanner-app
-        if: ${{ env.BUILD_EXIT != '0' }}
-        run: |
-          E=$(grep "^e:" build-debug.log | head -30 | cut -c1-220 | tr '\n' '|')
-          echo "::error::KOTLIN: $E"
-          W=$(grep -A8 "What went wrong" build-debug.log | head -30 | cut -c1-200 | tr '\n' '|')
-          echo "::error::WHAT: $W"
-          AAPT=$(grep -iE "AAPT|error: |Android resource" build-debug.log | head -20 | cut -c1-200 | tr '\n' '|')
-          echo "::error::RES: $AAPT"
-
-      - name: Upload Build Log
-        uses: actions/upload-artifact@v4
-        if: ${{ env.BUILD_EXIT != '0' }}
-        with:
-          name: build-log
-          path: scanner-app/build-debug.log
-
-      - name: Build gate
-        run: |
-          if [ "${BUILD_EXIT}" != "0" ]; then echo "Build failed"; exit 1; fi
+        run: gradle assembleDebug --no-daemon
 
       - name: Build Release APK
         working-directory: ./scanner-app
