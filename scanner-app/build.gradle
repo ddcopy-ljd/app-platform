@@ -16,7 +16,7 @@ allprojects {
         google()
         mavenCentral()
         flatDir {
-            dirs 'libs'
+            dirs rootProject.file('app/libs')
         }
     }
 }
