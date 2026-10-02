@@ -10,6 +10,9 @@ plugins/jewelry/dev_data/
 # 生成的压缩包（样例包、示例包，可由 tools/build_samples.py 重新生成）
 *.zip
 
+# 打包脚本构建产物（zip 与 changes.lst 均为构建时生成）
+dist/
+
 # 系统杂项
 Thumbs.db
 .DS_Store

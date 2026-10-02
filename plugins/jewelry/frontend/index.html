@@ -134,7 +134,7 @@
                   <td>{{ p.showcase_public?'是':'否' }}</td>
                   <td class="nowrap">
                     <button class="link" @click="editProduct(p)">{{ t('act.edit') }}</button>
-                    <button class="link" @click="printLabel(p)">{{ t('act.print') }}</button>
+                    <button class="link" @click="openLabelPrint(p)">🏷 排版打印</button>
                     <button class="link danger" @click="delProduct(p.id)">{{ t('act.del') }}</button>
                   </td>
                 </tr>
@@ -152,7 +152,7 @@
                 <div class="prod-price2"><div class="pp">￥{{ fmt(p.price) }}</div></div>
               </div>
               <div class="row-actions">
-                <button class="btn btn-sm btn-outline" @click="printLabel(p)">打印标签</button>
+                <button class="btn btn-sm btn-outline" @click="openLabelPrint(p)">🏷 排版打印</button>
                 <button class="btn btn-sm btn-outline" @click="delProduct(p.id)" style="color:var(--danger);border-color:var(--danger)">删除</button>
               </div>
             </div>
@@ -166,6 +166,7 @@
             <div class="section-title" style="margin:0"><span class="dot"></span>{{ t('nav.inventory') }}</div>
             <div class="btn-row">
               <button class="btn btn-sm btn-outline" @click="openRfid">RFID {{ t('inv.scan') }}</button>
+              <button class="btn btn-sm btn-outline" @click="openLabelPrint()">🏷 标签排版</button>
               <button class="btn btn-primary btn-sm" @click="openInbound">+ {{ t('inv.in') }}</button>
             </div>
           </div>
@@ -174,6 +175,46 @@
             <div class="stat-card gold"><div class="stat-label">已定锁定</div><div class="stat-value">{{ invSum.reserved.count }}</div></div>
             <div class="stat-card blue"><div class="stat-label">借出</div><div class="stat-value">{{ invSum.loaned.count }}</div></div>
             <div class="stat-card orange"><div class="stat-label">已售</div><div class="stat-value">{{ invSum.sold.count }}</div></div>
+          </div>
+
+          <!-- RFID 手持机批量盘点 -->
+          <div class="section rfid-box">
+            <div class="section-title"><span class="dot"></span>📡 RFID 手持机批量盘点</div>
+            <div class="rfid-flow">
+              <div class="rfid-left">
+                <p class="prod-meta">在盘点页生成二维码 → 手持机扫码保存上传接口地址（免输入，12 小时有效）→ 盘完上传 EPC，自动出盘盈/盘亏/异常结果。</p>
+                <div class="rfid-host">
+                  <input v-model="stockHost" class="search-input" placeholder="主机地址（自动检测，无需填写；如 192.168.1.20:8002）">
+                  <button class="btn btn-gold btn-sm" :disabled="stockBusy" @click="genStockQr">{{ stockQr ? '重新生成二维码' : '生成盘点二维码' }}</button>
+                </div>
+                <div v-if="stockQr" class="rfid-url">
+                  <label>手持机上传接口（POST JSON：{&quot;epcs&quot;:[...],&quot;device&quot;:&quot;&quot;}）</label>
+                  <div class="url-line"><code>{{ stockQr.url }}</code><button class="btn btn-sm btn-outline" @click="copyStockUrl">复制</button></div>
+                  <a class="rfid-page-link" :href="stockQr.page_url" target="_blank">手机/浏览器人工录入页 →</a>
+                </div>
+              </div>
+              <div class="rfid-right" v-if="stockQr">
+                <img class="qr-img" :src="'/api/stocktake/qr?token=' + encodeURIComponent(stockQr.token)" alt="盘点接口二维码">
+                <div class="qr-cap">手持机扫码保存接口地址</div>
+              </div>
+            </div>
+            <div v-if="stockBatches.length" class="stock-batches">
+              <div class="section-title" style="font-size:14px;margin:14px 0 8px">最近盘点批次</div>
+              <table class="data-table">
+                <thead><tr><th>批次号</th><th>时间</th><th>设备</th><th>扫描/账面</th><th>相符</th><th>盘盈</th><th>盘亏</th><th>异常</th><th></th></tr></thead>
+                <tbody>
+                  <tr v-for="b in stockBatches" :key="b.id">
+                    <td class="mono">{{ b.batch_no }}</td><td class="small">{{ b.created }}</td><td>{{ b.device }}</td>
+                    <td>{{ b.scanned_count }} / {{ b.book_count }}</td>
+                    <td class="stock-ok">{{ b.matched_count }}</td>
+                    <td class="stock-surplus">{{ b.surplus_count }}</td>
+                    <td class="stock-shortage">{{ b.shortage_count }}</td>
+                    <td class="stock-abnormal">{{ b.abnormal_count }}</td>
+                    <td><button class="link" @click="viewStockBatch(b)">明细</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
           <div class="section"><div class="section-title"><span class="dot"></span>{{ t('inv.copyHint') }}</div>
             <div class="card-list">
@@ -506,6 +547,83 @@
       </div>
       <div class="sheet-foot" v-if="sheetMode && sheetMode!=='rfid'"><button class="btn btn-gold btn-block" @click="submitSheet">确认提交</button></div>
       <div class="sheet-foot" v-else-if="sheetMode==='rfid'"><button class="btn btn-gold btn-block" @click="doRfid(false)">开始盘点</button></div>
+    </div>
+  </div>
+
+  <!-- RFID 标签排版打印弹窗 -->
+  <div class="modal-mask" v-if="labelDlg" @click.self="closeLabel">
+    <div class="modal-box label-sheet">
+      <div class="sheet-head"><h3>🏷 RFID 标签排版打印</h3><span class="sheet-close" @click="closeLabel">✕</span></div>
+      <div class="sheet-body">
+        <div class="form-group">
+          <label>打印商品（70×35mm / 300dpi · 得实 DL-735RE）</label>
+          <div class="label-items">
+            <span class="label-chip" v-for="it in labelItems" :key="it.id">{{ it.code }} {{ it.name }} <b @click="removeLabelItem(it.id)">✕</b></span>
+            <span v-if="!labelItems.length" class="prod-meta">尚未选择，可从下方添加，或去商品列表点「排版打印」</span>
+          </div>
+          <select class="mt-sm" @change="if($event.target.value){openLabelPrint(products.find(function(p){return p.id===+$event.target.value}));$event.target.value=''}">
+            <option value="">＋ 添加在库商品…</option>
+            <option v-for="p in products.filter(function(x){return x.status==='在库'})" :key="p.id" :value="p.id">{{ p.code }} {{ p.name }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>标签内容字段</label>
+          <div class="field-chips">
+            <label class="field-chip" v-for="(labName, labKey) in FIELD_LABELS" :key="labKey">
+              <input type="checkbox" v-model="labelFields[labKey]"> {{ labName }}
+            </label>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>打印机</label>
+            <select v-model="printerName" :disabled="!printSupported">
+              <option value="" v-if="printSupported">— 请选择 —</option>
+              <option v-for="n in printers" :key="n" :value="n">{{ n }}</option>
+              <option v-if="!printSupported" value="">未检测到打印机</option>
+            </select>
+          </div>
+          <div class="form-group"><label>份数</label><input type="number" min="1" max="50" v-model.number="labelCopies"></div>
+        </div>
+        <div class="form-group"><label>机内中文字体（^A@ 字体名，按打印机实际配置）</label><input v-model="labelFont" placeholder="E:SIMSUN.FNT"></div>
+        <div class="form-group">
+          <label class="field-chip"><input type="checkbox" v-model="writeEpc"> 同时写入 RFID 芯片 EPC（^RFW）</label>
+          <label class="field-chip"><input type="checkbox" v-model="simulatePrint"> 仅生成 ZPL 指令（不实际打印，用于预览/调试）</label>
+        </div>
+        <div v-if="labelResult" class="label-result">
+          <div class="stock-ok">✔ {{ labelResult.sent ? '已发送 ' + labelResult.count + ' 张到 ' + labelResult.printer : '已生成 ' + labelResult.count + ' 张标签指令（模拟）' }}</div>
+          <div class="log-item" v-for="j in labelResult.jobs" :key="j.id"><span>{{ j.code }} {{ j.name }}</span><span class="mono small">{{ j.rfid_epc }}</span></div>
+          <details><summary>查看 ZPL 指令</summary><pre class="zpl-pre">{{ labelResult.zpl }}</pre></details>
+        </div>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn btn-gold btn-block" :disabled="labelBusy || !labelItems.length" @click="submitLabelPrint">{{ labelBusy ? '发送中…' : (simulatePrint || !printSupported ? '生成 ZPL 指令' : '打印标签') }}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 盘点批次明细弹窗 -->
+  <div class="modal-mask" v-if="stockDetail" @click.self="stockDetail=null">
+    <div class="modal-box">
+      <div class="sheet-head"><h3>盘点批次 {{ stockDetail.head.batch_no }}</h3><span class="sheet-close" @click="stockDetail=null">✕</span></div>
+      <div class="sheet-body">
+        <p class="prod-meta">{{ stockDetail.head.created }} · {{ stockDetail.head.device }} · 扫描 {{ stockDetail.head.scanned_count }} / 账面 {{ stockDetail.head.book_count }}</p>
+        <div class="stock-summary">
+          <span class="stock-ok">相符 {{ stockDetail.head.matched_count }}</span>
+          <span class="stock-surplus">盘盈 {{ stockDetail.head.surplus_count }}</span>
+          <span class="stock-shortage">盘亏 {{ stockDetail.head.shortage_count }}</span>
+          <span class="stock-abnormal">异常 {{ stockDetail.head.abnormal_count }}</span>
+        </div>
+        <table class="data-table mt-sm">
+          <thead><tr><th>结果</th><th>货号</th><th>商品</th><th>账面状态</th><th>EPC</th></tr></thead>
+          <tbody>
+            <tr v-for="it in stockDetail.items" :key="it.id"
+                :class="{'row-shortage':it.result.indexOf('盘亏')>=0,'row-surplus':it.result.indexOf('盘盈')>=0,'row-abnormal':it.result.indexOf('异常')>=0}">
+              <td>{{ it.result }}</td><td>{{ it.code }}</td><td>{{ it.product }}</td><td>{{ it.book_status }}</td>
+              <td class="mono small">{{ it.epc }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 

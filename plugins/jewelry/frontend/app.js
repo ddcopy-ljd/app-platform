@@ -25,6 +25,15 @@ var ST = Vue.reactive({
   // sheet
   sheetMode: '', sheetTitle: '', sheetData: {},
   rfidResult: null, printItem: null,
+  // RFID 标签排版打印
+  labelDlg: false,
+  labelItems: [],          // 已选商品 [{id,code,name}]
+  printers: [], printerName: '', printSupported: true,
+  labelFields: { store: true, name: true, spec: true, price: true, cert: false, barcode: true, epc_text: false },
+  writeEpc: true, labelCopies: 1, labelFont: 'E:SIMSUN.FNT',
+  simulatePrint: false, labelBusy: false, labelResult: null,
+  // 手持机盘点
+  stockQr: null, stockHost: '', stockBatches: [], stockDetail: null, stockBusy: false,
   // toast
   toast: { show: false, text: '', type: 'success' },
 });
@@ -135,7 +144,7 @@ function setLang(lang) {
 function go(tab) {
   ST.tab = tab;
   ST.subView = '';
-  if (tab === 'inventory') loadInv();
+  if (tab === 'inventory') { loadInv(); loadStockBatches(); }
   if (tab === 'appointments') loadAppt();
   if (tab === 'profile') loadProfile();
 }
@@ -394,6 +403,75 @@ function doRfid(simulate) {
   }).catch(function (e) { toast(e.message, 'error'); });
 }
 
+// ---- RFID 标签排版打印 ----
+var FIELD_LABELS = {
+  store: '门店名称', name: '商品名称', spec: '材质克重',
+  price: '售价', cert: '证书号', barcode: '货号条码', epc_text: 'EPC明文',
+};
+
+function openLabelPrint(p) {
+  ST.labelDlg = true;
+  ST.labelResult = null;
+  if (p && !ST.labelItems.some(function (x) { return x.id === p.id; })) {
+    ST.labelItems.push({ id: p.id, code: p.code, name: p.name });
+  }
+  api('GET', '/api/print/printers').then(function (r) {
+    var list = r.printers || [];
+    ST.printSupported = r.supported;
+    if (r.supported) {
+      // 先定值、后赋选项列表，避免 select options 未渲染时 v-model 落空
+      if (!ST.printerName) {
+        ST.printerName = list.find(function (n) { return /735|DASCOM/i.test(n); }) || list[0] || '';
+      }
+      ST.printers = list;
+    } else {
+      ST.simulatePrint = true;
+      ST.printers = [];
+    }
+  }).catch(function () {});
+}
+function removeLabelItem(id) {
+  ST.labelItems = ST.labelItems.filter(function (x) { return x.id !== id; });
+}
+function closeLabel() { ST.labelDlg = false; }
+function submitLabelPrint() {
+  if (!ST.labelItems.length) { toast('请先选择要打印的商品', 'error'); return; }
+  ST.labelBusy = true;
+  var fields = Object.keys(ST.labelFields).filter(function (k) { return ST.labelFields[k]; });
+  api('POST', '/api/print/labels', {
+    product_ids: ST.labelItems.map(function (x) { return x.id; }),
+    printer: ST.printerName, copies: ST.labelCopies || 1, fields: fields,
+    write_epc: ST.writeEpc, font: ST.labelFont || '', simulate: ST.simulatePrint || !ST.printSupported,
+  }).then(function (r) {
+    ST.labelResult = r;
+    toast(r.sent ? '已发送到打印机' : 'ZPL 指令已生成');
+    refreshAll();
+  }).catch(function (e) { toast(e.message, 'error'); })
+   .finally(function () { ST.labelBusy = false; });
+}
+
+// ---- 手持机批量盘点 ----
+function genStockQr() {
+  ST.stockBusy = true;
+  api('POST', '/api/stocktake/setup', { host: ST.stockHost || '' }).then(function (r) {
+    ST.stockQr = r;
+    loadStockBatches();
+    toast('盘点二维码已生成，有效期 12 小时');
+  }).catch(function (e) { toast(e.message, 'error'); })
+   .finally(function () { ST.stockBusy = false; });
+}
+function loadStockBatches() {
+  api('GET', '/api/stocktake/list?limit=8').then(function (r) { ST.stockBatches = r.list || []; }).catch(function () {});
+}
+function viewStockBatch(b) {
+  api('GET', '/api/stocktake/' + b.id).then(function (r) { ST.stockDetail = r; }).catch(function (e) { toast(e.message, 'error'); });
+}
+function copyStockUrl() {
+  if (!ST.stockQr) return;
+  var u = ST.stockQr.url;
+  if (navigator.clipboard) navigator.clipboard.writeText(u).then(function () { toast('接口地址已复制'); });
+}
+
 // ---- resize ----
 window.addEventListener('resize', function () { ST.isPc = window.innerWidth >= 900; });
 
@@ -408,6 +486,7 @@ var app = Vue.createApp({
     exportHref: exportHref,
     nav: function () { return NAV_ITEMS; },
     cats: function () { return CATS; },
+    FIELD_LABELS: function () { return FIELD_LABELS; },
   },
   methods: {
     t: t, fmt: fmt, fmtY: fmtY, dateFmt: dateFmt,
@@ -418,6 +497,10 @@ var app = Vue.createApp({
     onPickProduct: onPickProduct,
     addProduct: addProduct, editProduct: editProduct, delProduct: delProduct, printLabel: printLabel,
     openInbound: openInbound, copyInbound: copyInbound, openRfid: openRfid, doRfid: doRfid,
+    openLabelPrint: openLabelPrint, removeLabelItem: removeLabelItem, closeLabel: closeLabel,
+    submitLabelPrint: submitLabelPrint,
+    genStockQr: genStockQr, loadStockBatches: loadStockBatches,
+    viewStockBatch: viewStockBatch, copyStockUrl: copyStockUrl,
     quickSale: quickSale, openDeposit: openDeposit,
     voidSale: voidSale, payDeposit: payDeposit, voidDeposit: voidDeposit,
     openLoan: openLoan, returnLoan: returnLoan,

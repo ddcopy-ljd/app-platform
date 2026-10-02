@@ -217,6 +217,34 @@ CREATE TABLE IF NOT EXISTS users (
   display_name TEXT DEFAULT '',
   role TEXT DEFAULT 'EMPLOYEE'
 );
+
+CREATE TABLE IF NOT EXISTS stocktakes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_no TEXT UNIQUE,
+  device TEXT DEFAULT '',
+  scanned_count INTEGER DEFAULT 0,
+  book_count INTEGER DEFAULT 0,
+  matched_count INTEGER DEFAULT 0,
+  surplus_count INTEGER DEFAULT 0,
+  shortage_count INTEGER DEFAULT 0,
+  abnormal_count INTEGER DEFAULT 0,
+  dup_count INTEGER DEFAULT 0,
+  status TEXT DEFAULT '完成',
+  operator TEXT DEFAULT '手持机',
+  created TEXT DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS stocktake_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  stocktake_id INTEGER,
+  result TEXT DEFAULT '相符',
+  epc TEXT DEFAULT '',
+  product_id INTEGER,
+  code TEXT DEFAULT '',
+  product TEXT DEFAULT '',
+  book_status TEXT DEFAULT '',
+  dup_count INTEGER DEFAULT 0
+);
 """
 
 

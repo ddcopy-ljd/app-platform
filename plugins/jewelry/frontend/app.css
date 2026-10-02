@@ -355,3 +355,34 @@ a { text-decoration: none; color: inherit; }
 @media (min-width: 440px) {
   .app-shell.mobile { margin: 12px auto; border-radius: 24px; min-height: calc(100vh - 24px); overflow: hidden; box-shadow: var(--shadow-lg); }
 }
+/* ===== RFID 标签排版 & 手持机盘点 ===== */
+.modal-mask { position: fixed; inset: 0; z-index: 600; background: rgba(26,10,18,.45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.modal-box { background: #fff; border-radius: 18px; width: 100%; max-width: 620px; max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.25); animation: modalIn .2s ease; }
+@keyframes modalIn { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+.label-items { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.label-chip { display: inline-flex; align-items: center; gap: 6px; background: #f7efe2; border: 1px solid #e3d3b4; color: #7a5a2e; border-radius: 999px; padding: 4px 12px; font-size: 12.5px; }
+.label-chip b { cursor: pointer; color: #b03a3a; font-weight: 700; }
+.field-chips { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; }
+.field-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #5a4636; font-weight: normal; cursor: pointer; }
+.label-result { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 10px; }
+.zpl-pre { background: #1e2a26; color: #b8e6d2; border-radius: 10px; padding: 12px; font-size: 10.5px; line-height: 1.5; overflow-x: auto; white-space: pre; margin-top: 6px; }
+.rfid-box { background: linear-gradient(160deg, #f2f8f5, #fbf7ee); border: 1px solid #cfe5da; }
+.rfid-flow { display: grid; grid-template-columns: 1.5fr 1fr; gap: 18px; align-items: center; }
+.rfid-host { display: flex; gap: 8px; margin: 8px 0; }
+.rfid-host .search-input { flex: 1; }
+.rfid-url label { font-size: 12px; color: #35604f; display: block; margin: 10px 0 4px; }
+.url-line { display: flex; gap: 8px; align-items: center; }
+.url-line code { flex: 1; background: #0f3d33; color: #8fe0bc; border-radius: 8px; padding: 8px 10px; font-size: 11px; word-break: break-all; }
+.rfid-page-link { display: inline-block; margin-top: 8px; color: #127a5c; font-size: 12.5px; text-decoration: none; border-bottom: 1px dashed #127a5c; }
+.rfid-right { text-align: center; }
+.qr-img { width: 178px; height: 178px; background: #fff; padding: 10px; border-radius: 14px; border: 1px solid #cfe5da; box-shadow: 0 8px 24px rgba(15,61,51,.12); }
+.qr-cap { font-size: 12px; color: #35604f; margin-top: 8px; }
+.stock-batches { overflow-x: auto; }
+.stock-summary { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; font-weight: 600; margin: 8px 0; }
+.stock-ok { color: #128a63; } .stock-surplus { color: #b8860b; } .stock-shortage { color: #c0392b; } .stock-abnormal { color: #8e44ad; }
+.row-shortage td { background: #fdecea; } .row-surplus td { background: #fdf6e3; } .row-abnormal td { background: #f4ecf7; }
+@media (max-width: 640px) {
+  .rfid-flow { grid-template-columns: 1fr; }
+  .rfid-right { order: -1; }
+  .qr-img { width: 150px; height: 150px; }
+}

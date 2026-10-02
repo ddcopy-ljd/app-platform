@@ -107,21 +107,17 @@
           </div>
           <div v-if="!detail.versions.length" class="ver-empty">暂无版本，拖拽插件包到此面板上传</div>
           <table v-else class="ver-table">
-            <thead><tr><th>软件版本</th><th>数据版本</th><th>软件包</th><th>上传时间</th><th>数据状态</th><th>服务</th><th>操作</th></tr></thead>
+            <thead><tr><th>版本</th><th>软件包</th><th>上传时间</th><th>数据状态</th><th>服务</th><th>操作</th></tr></thead>
             <tbody>
               <tr v-for="v in detail.versions" :key="v.id" :class="rowClass(v)">
                 <td>
                   <div class="cell-col">
-                    <span class="ver-no">v{{ v.software_version }}</span>
-                    <span v-if="v.is_current" class="badge b-current">⭐ 正式版本</span>
-                  </div>
-                </td>
-                <td>
-                  <div class="cell-col">
-                    <span class="mono" style="color:#4f46e5;font-weight:600">v{{ v.data_version }}</span>
-                    <span v-if="v.structure === 'initial'" class="sub">初始结构</span>
-                    <span v-else-if="v.structure === 'same'" class="sub same">结构沿用 · 复制</span>
-                    <span v-else class="sub upgrade">结构升级 v{{ v.prev_data_version }}→v{{ v.data_version }}</span>
+                    <span class="ver-no">v{{ v.software_version }}<span v-if="v.is_current" class="badge b-current" style="margin-left:6px">⭐ 正式版本</span></span>
+                    <span class="sub"><span class="mono" style="color:#4f46e5;font-weight:600">数据 v{{ v.data_version }}</span>
+                      <template v-if="v.structure === 'initial'"> · 初始结构</template>
+                      <template v-else-if="v.structure === 'same'"> · 结构沿用</template>
+                      <template v-else> · 结构升级 v{{ v.prev_data_version }}→v{{ v.data_version }}</template>
+                    </span>
                   </div>
                 </td>
                 <td><div class="cell-col"><span>{{ fmtSize(v.package_size) }}</span><span class="sub">{{ v.package_name }}</span></div></td>

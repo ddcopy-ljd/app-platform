@@ -9,18 +9,22 @@ from __future__ import annotations
 import logging
 import os
 import secrets
+import socket
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 import uvicorn
 
 import db
+import rfid_print
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("jewelry")
@@ -1019,6 +1023,312 @@ def rfid_scan(body: RfidScanIn, request: Request):
             "shortage": shortage,
             "items": scanned + surplus + shortage,
         }
+
+
+# ---------------------------------------------------------------- 标签排版打印
+
+@app.get("/api/print/printers")
+def print_printers(request: Request):
+    _require_auth(request)
+    names = rfid_print.list_printers()
+    return {"supported": bool(names), "printers": names}
+
+
+class LabelPrintIn(BaseModel):
+    product_ids: list[int] = Field(default_factory=list)
+    printer: str = ""
+    copies: int = 1
+    fields: list[str] = Field(default_factory=lambda: sorted(rfid_print.DEFAULT_FIELDS))
+    write_epc: bool = True
+    font: str = rfid_print.DEFAULT_FONT
+    simulate: bool = False  # True 时只生成 ZPL 不实际发送
+
+
+@app.post("/api/print/labels")
+def print_labels(body: LabelPrintIn, request: Request):
+    op = _require_auth(request)
+    if not body.product_ids:
+        raise HTTPException(400, "请至少选择一件商品")
+    fields = {f for f in body.fields if f in rfid_print.FIELD_OPTIONS}
+    with _db(request) as conn:
+        prof = conn.execute("SELECT name FROM tenant_profiles ORDER BY id DESC LIMIT 1").fetchone()
+        store_name = prof["name"] if prof and prof["name"] else ""
+        rows = conn.execute(
+            f"SELECT * FROM products WHERE id IN ({','.join('?' * len(body.product_ids))})",
+            body.product_ids,
+        ).fetchall()
+        if len(rows) != len(set(body.product_ids)):
+            raise HTTPException(404, "部分商品不存在")
+        products = [dict(r) for r in rows]
+        jobs = []
+        for p in products:
+            epc = p.get("rfid_epc") or _gen_epc(p["code"])
+            if not p.get("rfid_epc"):
+                conn.execute("UPDATE products SET rfid_epc=? WHERE id=?", (epc, p["id"]))
+            p["rfid_epc"] = epc
+            _inv(conn, p["id"], epc, "rfid", op["username"], body.copies)
+            jobs.append({"id": p["id"], "code": p["code"], "name": p["name"], "rfid_epc": epc})
+        zpl = rfid_print.build_batch_zpl(
+            products, fields=fields, store_name=store_name,
+            font=(body.font or ""), write_epc=body.write_epc, copies=body.copies,
+        )
+        sent = False
+        error = ""
+        if not body.simulate:
+            if not body.printer:
+                raise HTTPException(400, "未选择打印机（无打印机时可勾选“仅生成指令”）")
+            try:
+                rfid_print.send_raw(body.printer, zpl, job_title=f"jewelry-labels-{len(jobs)}")
+                sent = True
+            except Exception as e:
+                raise HTTPException(500, f"发送打印机失败：{e}")
+        conn.commit()
+        _log(conn, op["username"], "RFID标签排版打印",
+             f"{len(jobs)}件×{body.copies}张 {body.printer or '仅生成指令'}")
+        return {
+            "ok": True, "sent": sent, "count": len(jobs) * body.copies,
+            "printer": body.printer or "", "jobs": jobs, "zpl": zpl,
+        }
+
+
+# ---------------------------------------------------------------- RFID 手持机盘点
+
+# 盘点令牌：token -> (租户, 过期时间戳, 上传接口URL)
+_stocktake_tokens: dict[str, tuple[str, float, str]] = {}
+STOCKTAKE_TOKEN_TTL = 12 * 3600
+
+
+def _lan_ip() -> str:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
+def _db_for_tenant(tenant: str):
+    return _db(SimpleNamespace(headers={"X-Resolved-Tenant-ID": tenant}))
+
+
+def _next_batch_no(conn: sqlite3.Connection) -> str:
+    return "PD" + datetime.now().strftime("%Y%m%d%H%M%S") + secrets.token_hex(1).upper()
+
+
+def _run_stocktake(conn: sqlite3.Connection, epcs: list[str], device: str, operator: str) -> dict:
+    """核心盘点：扫到的 EPC 集合对比账面，落库批次与明细，返回结果。"""
+    book_rows = conn.execute(
+        "SELECT * FROM products WHERE status IN ('在库','已定','借出') AND rfid_epc!=''"
+    ).fetchall()
+    book_map = {r["rfid_epc"]: dict(r) for r in book_rows}
+    all_rows = conn.execute("SELECT * FROM products WHERE rfid_epc!=''").fetchall()
+    all_map = {r["rfid_epc"]: dict(r) for r in all_rows}
+
+    # 重复读取计数
+    read_count: dict[str, int] = {}
+    for e in epcs:
+        read_count[e] = read_count.get(e, 0) + 1
+    seen = list(dict.fromkeys(epcs))
+
+    matched, surplus, shortage, abnormal = [], [], [], []
+    for epc in seen:
+        dup = read_count[epc] - 1
+        if epc in book_map:
+            p = book_map[epc]
+            matched.append({"epc": epc, "code": p["code"], "product": p["name"],
+                            "book_status": p["status"], "result": "相符", "dup_count": dup})
+        elif epc in all_map:
+            p = all_map[epc]
+            abnormal.append({"epc": epc, "code": p["code"], "product": p["name"],
+                             "book_status": p["status"], "result": f"异常（{p['status']}仍出现）", "dup_count": dup})
+        else:
+            surplus.append({"epc": epc, "code": "", "product": "",
+                            "book_status": "", "result": "盘盈（未登记标签）", "dup_count": dup})
+    for epc, p in book_map.items():
+        if epc not in seen:
+            shortage.append({"epc": epc, "code": p["code"], "product": p["name"],
+                             "book_status": p["status"], "result": "盘亏（未扫到）", "dup_count": 0})
+
+    batch_no = _next_batch_no(conn)
+    cur = conn.execute(
+        """INSERT INTO stocktakes(batch_no,device,scanned_count,book_count,matched_count,
+                                  surplus_count,shortage_count,abnormal_count,dup_count,operator)
+           VALUES(?,?,?,?,?,?,?,?,?,?)""",
+        (batch_no, device, len(seen), len(book_map), len(matched),
+         len(surplus), len(shortage), len(abnormal),
+         sum(v - 1 for v in read_count.values() if v > 1), operator),
+    )
+    sid = cur.lastrowid
+    for it in matched + surplus + shortage + abnormal:
+        conn.execute(
+            """INSERT INTO stocktake_items(stocktake_id,result,epc,product_id,code,product,book_status,dup_count)
+               VALUES(?,?,?,?,?,?,?,?)""",
+            (sid, it["result"], it["epc"],
+             (book_map.get(it["epc"]) or all_map.get(it["epc"]) or {}).get("id"),
+             it["code"], it["product"], it["book_status"], it["dup_count"]),
+        )
+        if it["epc"] in book_map:
+            _inv(conn, book_map[it["epc"]]["id"], it["epc"], "scan", operator)
+    conn.commit()
+    _log(conn, operator, "RFID批量盘点",
+         f"{batch_no} 扫描{len(seen)} 盘盈{len(surplus)} 盘亏{len(shortage)} 异常{len(abnormal)}")
+    items = matched + abnormal + surplus + shortage
+    return {
+        "id": sid, "batch_no": batch_no, "device": device,
+        "scannedCount": len(seen), "bookCount": len(book_map),
+        "matchedCount": len(matched), "surplusCount": len(surplus),
+        "shortageCount": len(shortage), "abnormalCount": len(abnormal),
+        "matched": matched, "surplus": surplus, "shortage": shortage, "abnormal": abnormal,
+        "items": items,
+    }
+
+
+class StocktakeSetupIn(BaseModel):
+    host: str = ""  # 可手工指定手持机能访问的主机（如 192.168.1.20:8002）
+
+
+@app.post("/api/stocktake/setup")
+def stocktake_setup(body: StocktakeSetupIn, request: Request):
+    op = _require_auth(request)
+    tenant = _tenant_of(request)
+    token = secrets.token_urlsafe(18)
+    _stocktake_tokens[token] = (tenant, time.time() + STOCKTAKE_TOKEN_TTL)
+    # 清理过期令牌
+    now = time.time()
+    for k in [k for k, v in _stocktake_tokens.items() if v[1] < now]:
+        _stocktake_tokens.pop(k, None)
+    host = (body.host or "").strip().rstrip("/")
+    if not host:
+        host = f"{_lan_ip()}:{PORT}"
+    if not host.startswith("http"):
+        host = "http://" + host
+    url = f"{host}/api/stocktake/upload?key={token}"
+    _stocktake_tokens[token] = (tenant, time.time() + STOCKTAKE_TOKEN_TTL, url)
+    return {"url": url, "token": token, "expires_in": STOCKTAKE_TOKEN_TTL,
+            "page_url": f"{host}/stocktake/upload?key={token}", "operator": op["username"]}
+
+
+@app.get("/api/stocktake/qr")
+def stocktake_qr(token: str):
+    """二维码内容即手持机上传接口地址（<img src> 直接加载，凭 token 访问）。"""
+    rec = _stocktake_tokens.get(token)
+    if not rec or rec[1] < time.time():
+        raise HTTPException(403, "盘点二维码已过期，请重新生成")
+    try:
+        import io
+
+        import qrcode
+        from qrcode.image.svg import SvgImage
+    except Exception:
+        raise HTTPException(503, "服务端缺少 qrcode 依赖")
+    img = qrcode.make(rec[2], image_factory=SvgImage, box_size=10, border=2)
+    buf = io.BytesIO()
+    img.save(buf)
+    return Response(content=buf.getvalue(), media_type="image/svg+xml")
+
+
+class StocktakeUploadIn(BaseModel):
+    epcs: list[str] = Field(default_factory=list)
+    device: str = ""
+
+
+@app.post("/api/stocktake/upload")
+def stocktake_upload(key: str, body: StocktakeUploadIn):
+    """手持机调用：免登录，凭盘点 key 上传 EPC 列表。"""
+    rec = _stocktake_tokens.get(key)
+    if not rec:
+        raise HTTPException(403, "盘点密钥无效，请在盘点页面重新获取二维码")
+    if rec[1] < time.time():
+        _stocktake_tokens.pop(key, None)
+        raise HTTPException(403, "盘点密钥已过期，请重新获取二维码")
+    tenant = rec[0]
+    epcs = [e.strip().upper() for e in body.epcs if e and e.strip()]
+    if not epcs:
+        raise HTTPException(400, "未收到任何 EPC 数据")
+    with _db_for_tenant(tenant) as conn:
+        result = _run_stocktake(conn, epcs, body.device or "RFID手持机", "手持机")
+    return {"ok": True, **result}
+
+
+@app.get("/api/stocktake/list")
+def stocktake_list(request: Request, limit: int = 10):
+    _require_auth(request)
+    with _db(request) as conn:
+        rows = conn.execute(
+            "SELECT * FROM stocktakes ORDER BY id DESC LIMIT ?", (max(1, min(limit, 50)),)
+        ).fetchall()
+        return {"list": [dict(r) for r in rows]}
+
+
+@app.get("/api/stocktake/{sid}")
+def stocktake_detail(sid: int, request: Request):
+    _require_auth(request)
+    with _db(request) as conn:
+        head = conn.execute("SELECT * FROM stocktakes WHERE id=?", (sid,)).fetchone()
+        if not head:
+            raise HTTPException(404, "盘点批次不存在")
+        items = conn.execute(
+            "SELECT * FROM stocktake_items WHERE stocktake_id=? ORDER BY id", (sid,)
+        ).fetchall()
+        return {"head": dict(head), "items": [dict(r) for r in items]}
+
+
+_UPLOAD_PAGE = """<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RFID 盘点上传</title>
+<style>
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:#0F3D33;color:#eaf4ee;padding:18px}
+h2{font-size:19px;margin:4px 0 2px} .sub{color:#8fe0bc;font-size:12.5px;margin-bottom:16px}
+.card{background:rgba(255,255,255,.07);border:1px solid rgba(143,224,188,.25);border-radius:14px;padding:16px;margin-bottom:14px}
+label{font-size:13px;display:block;margin:10px 0 6px}
+input,textarea{width:100%;box-sizing:border-box;border-radius:9px;border:1px solid rgba(143,224,188,.35);
+ background:rgba(0,0,0,.25);color:#fff;padding:10px;font-size:14px}
+textarea{min-height:170px;line-height:1.7;letter-spacing:.5px}
+button{width:100%;margin-top:14px;border:0;border-radius:11px;padding:13px;font-size:16px;font-weight:700;
+ background:linear-gradient(135deg,#2fae82,#8fe0bc);color:#083025}
+.r{margin-top:12px;font-size:13px;line-height:1.9} .ok{color:#8fe0bc}.err{color:#ffb4b4}
+table{width:100%;border-collapse:collapse;margin-top:8px;font-size:12.5px}td,th{border-bottom:1px solid rgba(255,255,255,.12);padding:6px 4px;text-align:left}
+</style></head><body>
+<h2>📡 RFID 批量盘点上传</h2><div class="sub">密钥已通过扫码自动带入 · 懿臻珠宝云</div>
+<div class="card">
+ <label>手持机 / 设备编号（选填）</label><input id="dev" placeholder="如 PDA-01">
+ <label>扫描到的 EPC（每行一个，或用空格/逗号分隔）</label>
+ <textarea id="epcs" placeholder="E28011606000020999A1C14501&#10;E280116060000205B85A1234"></textarea>
+ <button onclick="up()">上传并生成盘点结果</button>
+ <div id="r" class="r"></div>
+</div>
+<script>
+var KEY = new URLSearchParams(location.search).get('key') || '';
+function up(){
+  var raw = document.getElementById('epcs').value;
+  var epcs = raw.split(/[\\s,;]+/).map(function(s){return s.trim();}).filter(Boolean);
+  var box = document.getElementById('r');
+  if(!epcs.length){ box.innerHTML='<span class="err">请先录入 EPC</span>'; return; }
+  box.innerHTML='正在上传盘点…';
+  fetch('/api/stocktake/upload?key=' + encodeURIComponent(KEY), {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({epcs:epcs, device:document.getElementById('dev').value})
+  }).then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
+  .then(function(x){
+    if(!x.ok){ box.innerHTML='<span class="err">'+(x.j.detail||'上传失败')+'</span>'; return; }
+    var d=x.j, rows=d.items.map(function(it){
+      return '<tr><td>'+it.result+'</td><td>'+(it.code||'')+'</td><td>'+(it.product||'')+'</td><td style="font-family:monospace;font-size:11px">'+it.epc+'</td></tr>';
+    }).join('');
+    box.innerHTML='<div class="ok">批次 '+d.batch_no+' 完成 ✔</div>'+
+      '<div>扫描 <b>'+d.scannedCount+'</b> / 账面 <b>'+d.bookCount+'</b> · '+
+      '相符 <b>'+d.matchedCount+'</b> · 盘盈 <b>'+d.surplusCount+'</b> · '+
+      '盘亏 <b>'+d.shortageCount+'</b> · 异常 <b>'+d.abnormalCount+'</b></div>'+
+      '<table><tr><th>结果</th><th>货号</th><th>商品</th><th>EPC</th></tr>'+rows+'</table>';
+  }).catch(function(e){ box.innerHTML='<span class="err">网络错误：'+e+'</span>'; });
+}
+</script></body></html>"""
+
+
+@app.get("/stocktake/upload", response_class=HTMLResponse)
+def stocktake_upload_page(key: str):
+    return HTMLResponse(_UPLOAD_PAGE)
 
 
 # ---------------------------------------------------------------- 销售
