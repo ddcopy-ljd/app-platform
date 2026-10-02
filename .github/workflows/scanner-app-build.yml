@@ -38,7 +38,11 @@ jobs:
       - name: Show build errors
         working-directory: ./scanner-app
         if: ${{ env.BUILD_EXIT != '0' }}
-        run: tail -60 build-debug.log
+        run: |
+          echo "=== BUILD_EXIT=$BUILD_EXIT ==="
+          grep -n -A12 "What went wrong" build-debug.log | head -60 | cut -c1-250
+          echo "=== FAILURE lines ==="
+          grep -n -i "FAILURE" build-debug.log | head -20 | cut -c1-250
 
       - name: Build Release APK
         working-directory: ./scanner-app
