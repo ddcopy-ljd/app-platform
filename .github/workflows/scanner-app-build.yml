@@ -5,6 +5,7 @@ on:
     branches: [ main ]
     paths:
       - 'scanner-app/**'
+      - '.github/workflows/scanner-app-build.yml'
   workflow_dispatch:
 
 jobs:
@@ -28,11 +29,22 @@ jobs:
 
       - name: Build Debug APK
         working-directory: ./scanner-app
-        run: gradle assembleDebug --no-daemon
+        run: |
+          set -o pipefail
+          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee build-debug.log
+          echo "BUILD_EXIT=${PIPESTATUS[0]}" >> $GITHUB_ENV
 
       - name: Build Release APK
         working-directory: ./scanner-app
-        run: gradle assembleRelease --no-daemon
+        if: ${{ env.BUILD_EXIT == '0' }}
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Upload Build Log (on failure)
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-log
+          path: scanner-app/build-debug.log
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4

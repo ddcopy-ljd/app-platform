@@ -50,7 +50,7 @@ class RfidBridge(private val context: Context, private val webView: WebView) {
                             Thread.sleep(20)
                             continue
                         }
-                        pushToJs(tag.epc, tag.rssi)
+                        pushToJs(tag.epc, tag.rssi.toString())
                     }
                 }.start()
             }
