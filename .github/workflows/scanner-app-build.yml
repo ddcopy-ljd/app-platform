@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -29,34 +29,11 @@ jobs:
 
       - name: Build Debug APK
         working-directory: ./scanner-app
-        run: |
-          set +e
-          gradle assembleDebug --no-daemon --stacktrace > build-debug.log 2>&1
-          echo "BUILD_EXIT=$?" >> $GITHUB_ENV
-          exit 0
-
-      - name: Show build errors
-        working-directory: ./scanner-app
-        if: ${{ env.BUILD_EXIT != '0' }}
-        run: |
-          echo "=== KOTLIN ERRORS ==="
-          KERR=$(grep "^e:" build-debug.log | head -30 | cut -c1-220 | tr '\n' '|')
-          echo "::error::KOTLIN_ERRORS: $KERR"
-          echo "=== WHAT WENT WRONG ==="
-          W=$(grep -A8 "What went wrong" build-debug.log | head -30 | cut -c1-200 | tr '\n' '|')
-          echo "::error::WHAT_WENT_WRONG: $W"
+        run: gradle assembleDebug --no-daemon
 
       - name: Build Release APK
         working-directory: ./scanner-app
-        if: ${{ env.BUILD_EXIT == '0' }}
-        run: gradle assembleRelease --no-daemon --stacktrace
-
-      - name: Upload Build Log (on failure)
-        uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: build-log
-          path: scanner-app/build-debug.log
+        run: gradle assembleRelease --no-daemon
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
