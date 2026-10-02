@@ -38,7 +38,7 @@ jobs:
       - name: Show build errors
         working-directory: ./scanner-app
         if: ${{ env.BUILD_EXIT != '0' }}
-        run: grep -iE "error|exception|caused by|what went wrong|FAILURE|cannot|unresolved|unsupported" build-debug.log | head -80
+        run: tail -60 build-debug.log
 
       - name: Build Release APK
         working-directory: ./scanner-app
