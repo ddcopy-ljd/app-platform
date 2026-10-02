@@ -82,7 +82,7 @@ class RfidBridge(private val context: Context, private val webView: WebView) {
     fun inventoryOnce(): String {
         if (!isInitialized) return ""
         return try {
-            uhf?.inventorySingleTag() ?: ""
+            uhf?.inventorySingleTag()?.toString() ?: ""
         } catch (e: Exception) {
             e.printStackTrace()
             ""
