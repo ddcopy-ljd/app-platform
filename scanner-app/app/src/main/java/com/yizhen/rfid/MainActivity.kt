@@ -70,7 +70,7 @@ class MainActivity : AppCompatActivity() {
     private val hhmmss = SimpleDateFormat("HH:mm:ss", Locale.US)
 
     override fun attachBaseContext(base: Context) {
-        val lang = Prefs(base).lang
+        val lang = base.getSharedPreferences("rfid", Context.MODE_PRIVATE).getString("lang", "zh") ?: "zh"
         val locale = if (lang == "en") Locale.ENGLISH else Locale.SIMPLIFIED_CHINESE
         Locale.setDefault(locale)
         val cfg = Configuration(base.resources.configuration)
