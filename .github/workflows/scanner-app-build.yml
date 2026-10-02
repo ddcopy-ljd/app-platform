@@ -39,11 +39,12 @@ jobs:
         working-directory: ./scanner-app
         if: ${{ env.BUILD_EXIT != '0' }}
         run: |
-          echo "=== BUILD_EXIT=$BUILD_EXIT ==="
-          ERR=$(grep -A12 "What went wrong" build-debug.log | head -40 | cut -c1-200 | tr '\n' '|')
-          echo "::error::WHAT_WENT_WRONG: $ERR"
-          FAIL=$(grep -i "FAILURE" build-debug.log | head -10 | cut -c1-200 | tr '\n' '|')
-          echo "::error::FAILURE_LINES: $FAIL"
+          echo "=== KOTLIN ERRORS ==="
+          KERR=$(grep "^e:" build-debug.log | head -30 | cut -c1-220 | tr '\n' '|')
+          echo "::error::KOTLIN_ERRORS: $KERR"
+          echo "=== WHAT WENT WRONG ==="
+          W=$(grep -A8 "What went wrong" build-debug.log | head -30 | cut -c1-200 | tr '\n' '|')
+          echo "::error::WHAT_WENT_WRONG: $W"
 
       - name: Build Release APK
         working-directory: ./scanner-app
