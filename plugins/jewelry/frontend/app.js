@@ -34,6 +34,7 @@ var ST = Vue.reactive({
   simulatePrint: false, labelBusy: false, labelResult: null,
   // 手持机盘点
   stockQr: null, stockHost: '', stockBatches: [], stockDetail: null, stockBusy: false,
+  coTask: null, coTaskHost: '', coBusy: false, coTimer: null,
   // toast
   toast: { show: false, text: '', type: 'success' },
 });
@@ -144,7 +145,7 @@ function setLang(lang) {
 function go(tab) {
   ST.tab = tab;
   ST.subView = '';
-  if (tab === 'inventory') { loadInv(); loadStockBatches(); }
+  if (tab === 'inventory') { loadInv(); loadStockBatches(); loadCoTask(); }
   if (tab === 'appointments') loadAppt();
   if (tab === 'profile') loadProfile();
 }
@@ -472,6 +473,52 @@ function copyStockUrl() {
   if (navigator.clipboard) navigator.clipboard.writeText(u).then(function () { toast('接口地址已复制'); });
 }
 
+// ---- 多终端协同盘点 ----
+function startCoTask() {
+  if (!confirm('开启盘点任务后，本店销售与出入库将暂停，直到主管核对确认。确定开启？')) return;
+  ST.coBusy = true;
+  api('POST', '/api/stocktake/task/start', { host: ST.coTaskHost || '' }).then(function (r) {
+    ST.coTask = r;
+    toast('协同盘点任务已开启，请手持机扫码加入');
+    ensureCoTimer();
+  }).catch(function (e) { toast(e.message, 'error'); })
+   .finally(function () { ST.coBusy = false; });
+}
+function loadCoTask() {
+  api('GET', '/api/stocktake/task/active').then(function (r) {
+    if (r && r.active) { ST.coTask = r; ensureCoTimer(); }
+    else { ST.coTask = null; clearCoTimer(); }
+  }).catch(function () {});
+}
+function endCoTask() {
+  if (!ST.coTask) return;
+  if (!confirm('确定结束扫描阶段？系统将合并所有手持机数据并核对差异（销售仍暂停）。')) return;
+  ST.coBusy = true;
+  api('POST', '/api/stocktake/task/' + ST.coTask.id + '/end', {}).then(function () {
+    toast('已核对，请查看差异并确认'); loadCoTask();
+  }).catch(function (e) { toast(e.message, 'error'); })
+   .finally(function () { ST.coBusy = false; });
+}
+function confirmCoTask() {
+  if (!ST.coTask) return;
+  if (!confirm('差异核对无误？确认后解除销售/出入库冻结，任务完成。')) return;
+  ST.coBusy = true;
+  api('POST', '/api/stocktake/task/' + ST.coTask.id + '/confirm', {}).then(function () {
+    toast('盘点完成，销售已恢复'); ST.coTask = null; clearCoTimer(); loadStockBatches();
+  }).catch(function (e) { toast(e.message, 'error'); })
+   .finally(function () { ST.coBusy = false; });
+}
+function copyCoUrl() {
+  if (ST.coTask && navigator.clipboard) navigator.clipboard.writeText(ST.coTask.co_url).then(function () { toast('加入地址已复制'); });
+}
+function ensureCoTimer() {
+  if (ST.coTimer) return;
+  ST.coTimer = setInterval(function () { if (ST.coTask && ST.coTask.status === '进行中') loadCoTask(); else clearCoTimer(); }, 5000);
+}
+function clearCoTimer() {
+  if (ST.coTimer) { clearInterval(ST.coTimer); ST.coTimer = null; }
+}
+
 // ---- resize ----
 window.addEventListener('resize', function () { ST.isPc = window.innerWidth >= 900; });
 
@@ -501,6 +548,8 @@ var app = Vue.createApp({
     submitLabelPrint: submitLabelPrint,
     genStockQr: genStockQr, loadStockBatches: loadStockBatches,
     viewStockBatch: viewStockBatch, copyStockUrl: copyStockUrl,
+    startCoTask: startCoTask, loadCoTask: loadCoTask, endCoTask: endCoTask,
+    confirmCoTask: confirmCoTask, copyCoUrl: copyCoUrl,
     quickSale: quickSale, openDeposit: openDeposit,
     voidSale: voidSale, payDeposit: payDeposit, voidDeposit: voidDeposit,
     openLoan: openLoan, returnLoan: returnLoan,

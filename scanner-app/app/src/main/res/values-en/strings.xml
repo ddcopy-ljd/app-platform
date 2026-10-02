@@ -1,4 +1,104 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">RFID Stocktake</string>
+    <string name="app_title">UHF Collaborative Stocktake</string>
+    <string name="lang_switch">中文</string>
+    <string name="settings_title">Settings</string>
+    <string name="btn_settings">Settings</string>
+
+    <string name="st_group_server">Server</string>
+    <string name="server_url">Server API URL</string>
+    <string name="server_url_hint">Auto-filled after scanning the task QR</string>
+    <string name="st_pull_interval">Auto-pull interval</string>
+    <string name="unit_seconds">s</string>
+
+    <string name="st_group_rfid">RFID Parameters</string>
+    <string name="st_power">Read power</string>
+    <string name="st_region">Region</string>
+    <string name="region_cn">China (920-925MHz)</string>
+    <string name="region_us">USA (902-928MHz)</string>
+    <string name="region_eu">Europe (865-868MHz)</string>
+    <string name="region_jp">Japan (916-921MHz)</string>
+    <string name="region_kr">Korea (917-921MHz)</string>
+    <string name="region_au">Australia (920-926MHz)</string>
+    <string name="st_session">Session</string>
+    <string name="st_qvalue">Q value</string>
+    <string name="q_auto">Auto</string>
+    <string name="st_readmode">Read mode</string>
+    <string name="mode_continuous">Continuous</string>
+    <string name="mode_single">Single</string>
+    <string name="st_rssi_on">Show signal strength (RSSI)</string>
+    <string name="st_rssi_on_sub">Show RSSI on each tag record</string>
+    <string name="st_rssi_threshold">RSSI threshold</string>
+    <string name="st_rssi_hint">Tags below this are ignored (lower = more sensitive; -90 reads farther, -30 only very close)</string>
+
+    <string name="st_group_count">Stocktake</string>
+    <string name="st_dedup">Auto de-duplicate</string>
+    <string name="st_dedup_sub">Count an item only once when read repeatedly</string>
+    <string name="st_hv">High-value alert</string>
+    <string name="st_hv_sub">Keep unscanned high-value items on top</string>
+    <string name="st_vibrate">Vibrate on abnormal</string>
+    <string name="st_vibrate_sub">Vibrate when a non-store item is read</string>
+
+    <string name="st_group_device">Device Info</string>
+    <string name="st_dev_model">Model</string>
+    <string name="st_dev_id">Device ID</string>
+    <string name="st_sdk_ver">SDK version</string>
+    <string name="st_fw_ver">Firmware</string>
+    <string name="st_reset">Restore defaults</string>
+    <string name="st_confirm_reset">Reset all settings to defaults?</string>
+    <string name="settings_saved">✓ Settings saved</string>
+
+    <string name="net_online">● Online</string>
+    <string name="net_offline">● Offline</string>
+    <string name="task_none">Not joined to a task</string>
+    <string name="task_active">Task in progress</string>
+    <string name="task_waiting">Waiting for review</string>
+    <string name="task_ended">Task ended</string>
+    <string name="snapshot_none">Snapshot not downloaded</string>
+    <string name="snapshot_ok">Snapshot downloaded: %1$d items</string>
+    <string name="device_me">Device no: %1$d</string>
+    <string name="btn_scan_join">Scan QR to join</string>
+    <string name="btn_download">Download snapshot</string>
+    <string name="btn_join">Reconnect</string>
+
+    <string name="hv_alert">⚠ %1$d high-value item(s) not yet scanned</string>
+
+    <string name="stat_self">Self scanned</string>
+    <string name="stat_abnormal">Foreign</string>
+    <string name="stat_global">Global</string>
+    <string name="stat_book">Book</string>
+
+    <string name="btn_start">Start</string>
+    <string name="btn_pause">Pause</string>
+    <string name="btn_resume">Resume</string>
+    <string name="btn_finish">Finish &amp; Submit</string>
+
+    <string name="tab_store">Store Items</string>
+    <string name="tab_abnormal">Foreign Items</string>
+
+    <string name="empty_store">No store items yet</string>
+    <string name="empty_abnormal">No foreign items found</string>
+    <string name="tag_self">Self</string>
+    <string name="tag_device">#%1$d</string>
+    <string name="tag_hv">High-value</string>
+    <string name="tag_hv_uns">HV·missing</string>
+    <string name="tag_other">Other</string>
+
+    <string name="rules_title">Business Rules</string>
+    <string name="rules_fold">Collapse</string>
+    <string name="rules_expand">Expand</string>
+    <string name="rules_body">1. A task is started by the supervisor; Start is disabled otherwise.\n2. During a task, sales and stock in/out are paused.\n3. Finish &amp; Submit uploads this device\'s reads for central reconciliation.\n4. Each device gets a temporary number for the task.\n5. The device periodically pulls items scanned by other devices.\n6. Only new records are pulled to save traffic.\n7. With one device, nothing is pulled and alerts are local.\n8. With multiple devices, records merge into one full table.\n9. Offline use is unaffected; data syncs when reconnected.\n10. Online shows the global view; offline shows only local.\n11-13. Offline reads are queued and auto-uploaded; foreign items are still flagged.\n14. The full store item list is downloaded before scanning for instant comparison.\n15. Foreign items are flagged red and set aside.\n16. Missing high-value items stay pinned on top.\n17. Send when possible, queue when not; auto-retry later.\n18. Duplicate reads count once.\n19. Order: abnormal &gt; missing HV &gt; scanned HV &gt; normal &gt; other-device.\n20. The device only scans/compares/uploads; the backend computes differences.\n21. Sales resume only after the supervisor reviews the merged result.</string>
+
+    <string name="scanning">Scanning…</string>
+    <string name="paused">Paused</string>
+    <string name="idle">Idle</string>
+    <string name="need_join">Scan the task QR and download the snapshot first</string>
+    <string name="joined_ok">Joined task, device no %1$d</string>
+    <string name="snapshot_downloaded">Snapshot downloaded: %1$d items</string>
+    <string name="upload_finished">This device has submitted</string>
+    <string name="task_stopped_remote">Supervisor ended the task; scanning stopped</string>
+    <string name="offline_queued">Network error, queued for retry</string>
+    <string name="rfid_fail">RFID init failed. Please run on a C27 device.</string>
+    <string name="demo_mode">Demo mode (no RFID hardware)</string>
+    <string name="confirm_finish">Finish and submit this device? You cannot scan after submitting.</string>
 </resources>

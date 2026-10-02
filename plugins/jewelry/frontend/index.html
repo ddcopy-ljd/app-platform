@@ -216,6 +216,61 @@
               </table>
             </div>
           </div>
+
+          <!-- 多终端协同盘点任务（主管端） -->
+          <div class="section rfid-box" style="border-color:#8a6d1f">
+            <div class="section-title"><span class="dot"></span>🧭 多终端协同盘点任务</div>
+            <p class="prod-meta">主管开启任务后销售/出入库自动暂停 → 各手持机扫任务二维码加入并下载快照实时比对 → 全部结束后主管核对确认，解除冻结。</p>
+
+            <!-- 无任务：开启 -->
+            <div v-if="!coTask" class="rfid-host">
+              <input v-model="coTaskHost" class="search-input" placeholder="主机地址（自动检测；如 192.168.1.20:8002）">
+              <button class="btn btn-gold btn-sm" :disabled="coBusy" @click="startCoTask">开启协同盘点任务</button>
+            </div>
+
+            <!-- 进行中/待核对 -->
+            <div v-else class="rfid-flow">
+              <div class="rfid-left">
+                <div class="url-line" style="margin-bottom:6px">
+                  <b>任务 {{ coTask.task_no }}</b>
+                  <span :class="coTask.status==='进行中' ? 'stock-ok' : 'stock-surplus'">【{{ coTask.status }}】</span>
+                  <button class="btn btn-sm btn-outline" @click="loadCoTask">刷新</button>
+                </div>
+                <label>手持机加入地址（扫码自动配置）</label>
+                <div class="url-line"><code>{{ coTask.co_url }}</code><button class="btn btn-sm btn-outline" @click="copyCoUrl">复制</button></div>
+
+                <table class="data-table" style="margin-top:10px">
+                  <thead><tr><th>设备</th><th>名称</th><th>最近在线</th><th>状态</th></tr></thead>
+                  <tbody>
+                    <tr v-for="d in coTask.devices" :key="d.device_no">
+                      <td class="stock-ok">{{ d.device_no }} 号机</td><td>{{ d.name }}</td>
+                      <td class="small">{{ d.last_seen }}</td>
+                      <td :class="d.finished ? 'stock-ok' : 'stock-surplus'">{{ d.finished ? '已提交' : '盘点中' }}</td>
+                    </tr>
+                    <tr v-if="!coTask.devices.length"><td colspan="4" class="small">尚无手持机加入</td></tr>
+                  </tbody>
+                </table>
+
+                <div v-if="coTask.result" class="stock-batches" style="margin-top:10px">
+                  扫描 <b>{{ coTask.result.scannedCount }}</b> / 账面 <b>{{ coTask.result.bookCount }}</b> ·
+                  相符 <b class="stock-ok">{{ coTask.result.matchedCount }}</b> ·
+                  盘盈 <b class="stock-surplus">{{ coTask.result.surplusCount }}</b> ·
+                  盘亏 <b class="stock-shortage">{{ coTask.result.shortageCount }}</b> ·
+                  异常 <b class="stock-abnormal">{{ coTask.result.abnormalCount }}</b>
+                </div>
+
+                <div style="margin-top:12px">
+                  <button v-if="coTask.status==='进行中'" class="btn btn-sm" style="background:#c0392b;color:#fff" :disabled="coBusy" @click="endCoTask">结束扫描并核对</button>
+                  <button v-if="coTask.status==='待核对'" class="btn btn-gold btn-sm" :disabled="coBusy" @click="confirmCoTask">核对确认，解除销售冻结</button>
+                </div>
+              </div>
+              <div class="rfid-right">
+                <img class="qr-img" :src="'/api/stocktake/task/' + coTask.id + '/qr'" alt="协同任务二维码">
+                <div class="qr-cap">手持机扫码加入任务</div>
+                <div class="small" style="text-align:center;margin-top:4px">全局已扫 {{ coTask.scanned_count }}</div>
+              </div>
+            </div>
+          </div>
           <div class="section"><div class="section-title"><span class="dot"></span>{{ t('inv.copyHint') }}</div>
             <div class="card-list">
               <div class="card-item" v-for="p in products.filter(function(x){return x.status==='在库'})" :key="'c'+p.id">

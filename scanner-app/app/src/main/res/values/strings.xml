@@ -1,4 +1,116 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">RFID 盘点</string>
+    <string name="app_title">UHF 协同盘点</string>
+    <string name="lang_switch">EN</string>
+    <string name="settings_title">设置</string>
+    <string name="btn_settings">设置</string>
+
+    <!-- 设置：服务端 -->
+    <string name="st_group_server">服务端</string>
+    <string name="server_url">服务端接口地址</string>
+    <string name="server_url_hint">扫描任务二维码后自动填入</string>
+    <string name="st_pull_interval">自动拉取间隔</string>
+    <string name="unit_seconds">秒</string>
+
+    <!-- 设置：RFID -->
+    <string name="st_group_rfid">RFID 参数</string>
+    <string name="st_power">读取功率</string>
+    <string name="st_region">工作区域</string>
+    <string name="region_cn">中国（920-925MHz）</string>
+    <string name="region_us">美国（902-928MHz）</string>
+    <string name="region_eu">欧洲（865-868MHz）</string>
+    <string name="region_jp">日本（916-921MHz）</string>
+    <string name="region_kr">韩国（917-921MHz）</string>
+    <string name="region_au">澳洲（920-926MHz）</string>
+    <string name="st_session">Session</string>
+    <string name="st_qvalue">Q 值</string>
+    <string name="q_auto">自动</string>
+    <string name="st_readmode">读取模式</string>
+    <string name="mode_continuous">连续读取</string>
+    <string name="mode_single">单次读取</string>
+    <string name="st_rssi_on">读取信号强度（RSSI）</string>
+    <string name="st_rssi_on_sub">每条标签记录显示信号强度</string>
+    <string name="st_rssi_threshold">信号强度阈值</string>
+    <string name="st_rssi_hint">低于此值的标签将被忽略（数值越小越灵敏，-90 可读更远，-30 只读很近）</string>
+
+    <!-- 设置：盘点 -->
+    <string name="st_group_count">盘点设置</string>
+    <string name="st_dedup">重复扫描自动去重</string>
+    <string name="st_dedup_sub">同一商品短时间内重复扫只记一次</string>
+    <string name="st_hv">高价值商品提醒</string>
+    <string name="st_hv_sub">未扫到的高价值商品置顶显示</string>
+    <string name="st_vibrate">异常时震动提醒</string>
+    <string name="st_vibrate_sub">扫到非本店商品时震动一下</string>
+
+    <!-- 设置：设备 -->
+    <string name="st_group_device">设备信息</string>
+    <string name="st_dev_model">设备型号</string>
+    <string name="st_dev_id">设备编号</string>
+    <string name="st_sdk_ver">SDK 版本</string>
+    <string name="st_fw_ver">固件版本</string>
+    <string name="st_reset">恢复默认设置</string>
+    <string name="st_confirm_reset">确认恢复所有设置为默认值？</string>
+    <string name="settings_saved">✓ 设置已保存</string>
+
+    <!-- 首页：连接/任务 -->
+    <string name="net_online">● 已连接</string>
+    <string name="net_offline">● 未连接</string>
+    <string name="task_none">未加入盘点任务</string>
+    <string name="task_active">任务进行中</string>
+    <string name="task_waiting">待主管核对</string>
+    <string name="task_ended">任务已结束</string>
+    <string name="snapshot_none">未下载商品快照</string>
+    <string name="snapshot_ok">已下载商品快照 %1$d 件</string>
+    <string name="device_me">本机编号：%1$d 号</string>
+    <string name="btn_scan_join">扫码加入任务</string>
+    <string name="btn_download">下载快照</string>
+    <string name="btn_join">重新连接</string>
+
+    <!-- 首页：高价值提醒条 -->
+    <string name="hv_alert">⚠ 有 %1$d 件高价值商品尚未扫到</string>
+
+    <!-- 首页：统计 -->
+    <string name="stat_self">本机已扫</string>
+    <string name="stat_abnormal">非本店</string>
+    <string name="stat_global">全局已扫</string>
+    <string name="stat_book">账面</string>
+
+    <!-- 首页：控制 -->
+    <string name="btn_start">开始盘点</string>
+    <string name="btn_pause">暂停</string>
+    <string name="btn_resume">继续</string>
+    <string name="btn_finish">结束提交</string>
+
+    <!-- 首页：Tab -->
+    <string name="tab_store">本店商品</string>
+    <string name="tab_abnormal">非本店商品</string>
+
+    <!-- 列表 -->
+    <string name="empty_store">暂无本店商品记录</string>
+    <string name="empty_abnormal">未发现非本店商品</string>
+    <string name="tag_self">本机</string>
+    <string name="tag_device">%1$d号机</string>
+    <string name="tag_hv">高价值</string>
+    <string name="tag_hv_uns">高价值·未扫</string>
+    <string name="tag_other">他机</string>
+
+    <!-- 规则 -->
+    <string name="rules_title">业务说明与规则</string>
+    <string name="rules_fold">收起</string>
+    <string name="rules_expand">展开</string>
+    <string name="rules_body">一、任务与设备\n1. 盘点任务由主管在系统里开启，手持机才能开始盘点；没开启时【开始盘点】按钮不可点。\n2. 盘点期间，本店销售暂停，商品不能买卖、不能出入库。\n3. 点【结束提交】后，本机扫到的数据上交给系统统一核对。\n4. 任务开始时系统给每台设备编临时号（如1号、2号），任务结束释放。\n\n二、多台设备协同\n5. 手持机按设定间隔自动获取“其他设备已扫到的商品”并更新屏幕。\n6. 每次只取新增的，不重复取，省流量。\n7. 只有一台设备时不取别人数据，高价值提醒只按本机算。\n8. 多台设备时合成一张完整盘点表。\n9. 断网不影响使用，网络恢复后自动补齐。\n10. 网络正常看到全局；断网只显示本机，提醒按本机算。\n11-13. 断网数据先存本机，恢复后自动补传；非本店商品照样标红。\n\n三、商品核对\n14. 开始前下载本店全部商品清单到本地，扫描时立刻比对。\n15. 扫到非本店商品标红，挑出单独存放，结束后统一处理。\n16. 高价值商品没扫到会一直置顶提醒，重点寻找。\n\n四、数据与结果\n17. 能传就传，传不了先存，恢复后自动补传。\n18. 同一件商品重复扫只记一次。\n19. 排序：异常 &gt; 未扫高价值 &gt; 已扫高价值 &gt; 普通 &gt; 其他设备扫的。\n20. 手持机只负责扫描、核对、上传，差异结果由后台计算。\n21. 全部设备合并去重，主管核对确认后才解除销售暂停。</string>
+
+    <!-- 状态/提示 -->
+    <string name="scanning">扫描中…</string>
+    <string name="paused">已暂停</string>
+    <string name="idle">未开始</string>
+    <string name="need_join">请先扫码加入盘点任务并下载快照</string>
+    <string name="joined_ok">已加入任务，编号 %1$d 号机</string>
+    <string name="snapshot_downloaded">快照已下载：%1$d 件</string>
+    <string name="upload_finished">本机已结束提交</string>
+    <string name="task_stopped_remote">主管已结束任务，停止扫描</string>
+    <string name="offline_queued">网络异常，已存待传队列</string>
+    <string name="rfid_fail">RFID 模块初始化失败，请在 C27 设备上运行</string>
+    <string name="demo_mode">演示模式（无 RFID 硬件）</string>
+    <string name="confirm_finish">确认结束本机盘点并提交？提交后不能继续扫描。</string>
 </resources>

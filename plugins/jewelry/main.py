@@ -1331,6 +1331,316 @@ def stocktake_upload_page(key: str):
     return HTMLResponse(_UPLOAD_PAGE)
 
 
+# ------------------------------------------------- 多终端协同盘点（主管端，需登录）
+
+def _next_task_no(conn: sqlite3.Connection) -> str:
+    return "RW" + time.strftime("%Y%m%d%H%M%S")
+
+
+def _active_session(conn: sqlite3.Connection):
+    return conn.execute(
+        "SELECT * FROM stocktake_sessions WHERE status IN ('进行中','待核对') ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+
+
+class TaskStartIn(BaseModel):
+    host: str = ""
+
+
+@app.post("/api/stocktake/task/start")
+def task_start(body: TaskStartIn, request: Request):
+    """主管开启协同盘点任务：冻结销售/出入库，返回任务密钥与手持机接入地址。"""
+    op = _require_auth(request)
+    with _db(request) as conn:
+        if _active_session(conn):
+            raise HTTPException(409, "已有盘点任务进行中，请先结束当前任务")
+        task_no = _next_task_no(conn)
+        key = secrets.token_urlsafe(18)
+        cur = conn.execute(
+            "INSERT INTO stocktake_sessions(task_no,task_key,status,operator) VALUES(?,?, '进行中',?)",
+            (task_no, key, op["username"]),
+        )
+        sid = cur.lastrowid
+        conn.commit()
+        _log(conn, op["username"], "开启协同盘点", task_no)
+        host = (body.host or "").strip().rstrip("/")
+        if not host:
+            host = f"{_lan_ip()}:{PORT}"
+        if not host.startswith("http"):
+            host = "http://" + host
+        return {"id": sid, "task_no": task_no, "key": key,
+                "co_url": f"{host}/api/stocktake/co/join?key={key}"}
+
+
+@app.get("/api/stocktake/task/active")
+def task_active(request: Request):
+    _require_auth(request)
+    with _db(request) as conn:
+        s = _active_session(conn)
+        if not s:
+            return {"active": False}
+        return {"active": True, **_session_progress(conn, s)}
+
+
+@app.post("/api/stocktake/task/{sid}/end")
+def task_end(sid: int, request: Request):
+    """结束扫描阶段：合并所有设备的 EPC，统一核对生成差异；销售仍冻结，等待主管确认。"""
+    op = _require_auth(request)
+    with _db(request) as conn:
+        s = conn.execute("SELECT * FROM stocktake_sessions WHERE id=?", (sid,)).fetchone()
+        if not s:
+            raise HTTPException(404, "盘点任务不存在")
+        if s["status"] != "进行中":
+            raise HTTPException(409, "任务扫描阶段已结束")
+        epcs = [r["epc"] for r in conn.execute(
+            "SELECT epc FROM stocktake_scans WHERE session_id=? ORDER BY id", (sid,)).fetchall()]
+        if not epcs:
+            raise HTTPException(400, "没有任何扫描数据，无法结束")
+        result = _run_stocktake(conn, epcs, "协同盘点", op["username"])
+        conn.execute(
+            "UPDATE stocktake_sessions SET status='待核对', ended=datetime('now','localtime'), result_id=? WHERE id=?",
+            (result["id"], sid))
+        conn.commit()
+        _log(conn, op["username"], "结束协同盘点-待核对", s["task_no"])
+        return {"ok": True, "result": result}
+
+
+@app.post("/api/stocktake/task/{sid}/confirm")
+def task_confirm(sid: int, request: Request):
+    """主管核对确认：解除销售冻结，任务完成。"""
+    op = _require_auth(request)
+    with _db(request) as conn:
+        s = conn.execute("SELECT * FROM stocktake_sessions WHERE id=?", (sid,)).fetchone()
+        if not s:
+            raise HTTPException(404, "盘点任务不存在")
+        conn.execute("UPDATE stocktake_sessions SET status='已完成' WHERE id=?", (sid,))
+        conn.commit()
+        _log(conn, op["username"], "确认协同盘点完成", s["task_no"])
+        return {"ok": True}
+
+
+@app.get("/api/stocktake/task/{sid}")
+def task_detail(sid: int, request: Request):
+    _require_auth(request)
+    with _db(request) as conn:
+        s = conn.execute("SELECT * FROM stocktake_sessions WHERE id=?", (sid,)).fetchone()
+        if not s:
+            raise HTTPException(404, "盘点任务不存在")
+        return _session_progress(conn, s)
+
+
+@app.get("/api/stocktake/task/{sid}/qr")
+def task_qr(sid: int, request: Request):
+    """协同任务二维码，内容为手持机 join 完整地址。"""
+    _require_auth(request)
+    with _db(request) as conn:
+        s = conn.execute("SELECT task_key FROM stocktake_sessions WHERE id=?", (sid,)).fetchone()
+        if not s:
+            raise HTTPException(404, "盘点任务不存在")
+        url = f"http://{_lan_ip()}:{PORT}/api/stocktake/co/join?key={s['task_key']}"
+        try:
+            import io
+            import qrcode
+            from qrcode.image.svg import SvgImage
+        except Exception:
+            raise HTTPException(503, "服务端缺少 qrcode 依赖")
+        img = qrcode.make(url, image_factory=SvgImage, box_size=10, border=2)
+        buf = io.BytesIO()
+        img.save(buf)
+        return Response(content=buf.getvalue(), media_type="image/svg+xml")
+
+
+def _session_progress(conn: sqlite3.Connection, s) -> dict:
+    devices = conn.execute(
+        "SELECT device_no,name,last_seen,finished FROM stocktake_devices WHERE session_id=? ORDER BY device_no",
+        (s["id"],)).fetchall()
+    scanned = conn.execute(
+        "SELECT COUNT(*) n FROM stocktake_scans WHERE session_id=?", (s["id"],)).fetchone()["n"]
+    result = None
+    if s["result_id"]:
+        r = conn.execute("SELECT * FROM stocktakes WHERE id=?", (s["result_id"],)).fetchone()
+        if r:
+            result = {"id": r["id"], "scannedCount": r["scanned_count"], "bookCount": r["book_count"],
+                      "matchedCount": r["matched_count"], "surplusCount": r["surplus_count"],
+                      "shortageCount": r["shortage_count"], "abnormalCount": r["abnormal_count"]}
+    return {
+        "id": s["id"], "task_no": s["task_no"], "status": s["status"],
+        "operator": s["operator"], "started": s["started"], "ended": s["ended"],
+        "scanned_count": scanned,
+        "co_url": f"http://{_lan_ip()}:{PORT}/api/stocktake/co/join?key={s['task_key']}",
+        "devices": [dict(d) for d in devices],
+        "result": result,
+    }
+
+
+# ------------------------------------------------- 多终端协同盘点（手持机端，凭 key 免登录）
+
+def _session_by_key(key: str, conn: sqlite3.Connection):
+    s = conn.execute("SELECT * FROM stocktake_sessions WHERE task_key=?", (key,)).fetchone()
+    if not s:
+        raise HTTPException(403, "盘点密钥无效，请重新扫描任务二维码")
+    return s
+
+
+def _device_heartbeat(conn: sqlite3.Connection, sid: int, device_key: str, name: str):
+    """注册/续期设备并分配临时编号，返回 (device_no, finished)。"""
+    row = conn.execute(
+        "SELECT * FROM stocktake_devices WHERE session_id=? AND device_key=?",
+        (sid, device_key)).fetchone()
+    if row:
+        conn.execute(
+            "UPDATE stocktake_devices SET last_seen=datetime('now','localtime'), name=? WHERE id=?",
+            (name or row["name"], row["id"]))
+        return row["device_no"], row["finished"]
+    no = conn.execute(
+        "SELECT COALESCE(MAX(device_no),0)+1 n FROM stocktake_devices WHERE session_id=?", (sid,)
+    ).fetchone()["n"]
+    conn.execute(
+        "INSERT INTO stocktake_devices(session_id,device_key,device_no,name) VALUES(?,?,?,?)",
+        (sid, device_key, no, name or f"手持机{no}号"))
+    return no, 0
+
+
+class CoJoinIn(BaseModel):
+    device: str = ""
+    name: str = ""
+
+
+@app.post("/api/stocktake/co/join")
+def co_join(key: str, body: CoJoinIn):
+    device_key = (body.device or "anon").strip()
+    with _db_for_tenant_key(key) as conn:
+        s = _session_by_key(key, conn)
+        no, finished = _device_heartbeat(conn, s["id"], device_key, body.name)
+        conn.commit()
+        return {"active": s["status"] == "进行中", "status": s["status"],
+                "task_no": s["task_no"], "device_no": no, "finished": bool(finished),
+                "server_time": int(time.time())}
+
+
+@app.get("/api/stocktake/co/snapshot")
+def co_snapshot(key: str, device: str = ""):
+    """下发本店在库商品全量快照，手持机据此本地实时比对。"""
+    with _db_for_tenant_key(key) as conn:
+        s = _session_by_key(key, conn)
+        rows = conn.execute(
+            "SELECT code,name,rfid_epc epc,status,COALESCE(high_value,0) high_value FROM products "
+            "WHERE rfid_epc!='' AND status IN ('在库','已定','借出')"
+        ).fetchall()
+        items = [dict(r) for r in rows]
+        return {"version": s["started"], "task_no": s["task_no"],
+                "status": s["status"], "count": len(items), "items": items}
+
+
+class CoScanTag(BaseModel):
+    epc: str
+    rssi: int = 0
+
+
+class CoScanIn(BaseModel):
+    device: str = ""
+    name: str = ""
+    tags: list[CoScanTag] = Field(default_factory=list)
+
+
+@app.post("/api/stocktake/co/scan")
+def co_scan(key: str, body: CoScanIn):
+    """实时上报本批标签；服务端按 任务+EPC 全局去重，返回本机本次新登记的 EPC。"""
+    device_key = (body.device or "anon").strip()
+    accepted, seen = [], set()
+    with _db_for_tenant_key(key) as conn:
+        s = _session_by_key(key, conn)
+        if s["status"] != "进行中":
+            raise HTTPException(409, "盘点任务已结束，停止扫描")
+        no, _ = _device_heartbeat(conn, s["id"], device_key, body.name)
+        for t in body.tags:
+            epc = (t.epc or "").strip().upper()
+            if not epc or epc in seen:
+                continue
+            seen.add(epc)
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO stocktake_scans(session_id,epc,device_key,device_no,rssi) "
+                "VALUES(?,?,?,?,?)", (s["id"], epc, device_key, no, t.rssi))
+            if cur.rowcount > 0:
+                accepted.append(epc)
+        total = conn.execute(
+            "SELECT COUNT(*) n FROM stocktake_scans WHERE session_id=?", (s["id"],)).fetchone()["n"]
+        conn.commit()
+        return {"accepted": accepted, "device_no": no, "global_count": total}
+
+
+@app.get("/api/stocktake/co/pull")
+def co_pull(key: str, device: str = "", since_id: int = 0):
+    """增量拉取其他设备新扫到的标签（id 大于 since_id）。"""
+    device_key = (device or "anon").strip()
+    with _db_for_tenant_key(key) as conn:
+        s = _session_by_key(key, conn)
+        conn.execute(
+            "UPDATE stocktake_devices SET last_seen=datetime('now','localtime') "
+            "WHERE session_id=? AND device_key=?", (s["id"], device_key))
+        rows = conn.execute(
+            "SELECT id,epc,device_no FROM stocktake_scans "
+            "WHERE session_id=? AND id>? AND device_key!=? ORDER BY id",
+            (s["id"], since_id, device_key)).fetchall()
+        conn.commit()
+        max_id = rows[-1]["id"] if rows else since_id
+        return {"status": s["status"], "items": [dict(r) for r in rows], "max_id": max_id}
+
+
+class CoFinishIn(BaseModel):
+    device: str = ""
+    name: str = ""
+
+
+@app.post("/api/stocktake/co/finish")
+def co_finish(key: str, body: CoFinishIn):
+    device_key = (body.device or "anon").strip()
+    with _db_for_tenant_key(key) as conn:
+        s = _session_by_key(key, conn)
+        _device_heartbeat(conn, s["id"], device_key, body.name)
+        conn.execute(
+            "UPDATE stocktake_devices SET finished=1, last_seen=datetime('now','localtime') "
+            "WHERE session_id=? AND device_key=?", (s["id"], device_key))
+        conn.commit()
+        return {"ok": True, "status": s["status"]}
+
+
+@app.get("/api/stocktake/co/task")
+def co_task(key: str, device: str = ""):
+    """手持机轮询任务状态（是否已被主管结束/确认）。"""
+    device_key = (device or "anon").strip()
+    with _db_for_tenant_key(key) as conn:
+        s = _session_by_key(key, conn)
+        row = conn.execute(
+            "SELECT device_no,finished FROM stocktake_devices WHERE session_id=? AND device_key=?",
+            (s["id"], device_key)).fetchone()
+        return {"active": s["status"] == "进行中", "status": s["status"],
+                "device_no": row["device_no"] if row else 0,
+                "finished": bool(row["finished"]) if row else False}
+
+
+@contextmanager
+def _db_for_tenant_key(key: str):
+    """凭任务 key 反查租户并打开其库（手持机免登录接口使用）。"""
+    # key 不直接携带租户；扫描全部租户库定位任务
+    base = os.environ.get("TENANT_DB_DIR") or str(ROOT / "dev_data")
+    db_dir = Path(base)
+    for path in db_dir.glob("db_jewelry_*_v*.sqlite"):
+        conn = sqlite3.connect(str(path), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        db.migrate_schema(conn)
+        row = conn.execute(
+            "SELECT id FROM stocktake_sessions WHERE task_key=?", (key,)).fetchone()
+        if row:
+            try:
+                yield conn
+            finally:
+                conn.close()
+            return
+        conn.close()
+    raise HTTPException(403, "盘点密钥无效，请重新扫描任务二维码")
+
+
 # ---------------------------------------------------------------- 销售
 
 class SaleReq(BaseModel):
@@ -1348,6 +1658,10 @@ class SaleReq(BaseModel):
 def sale_create(body: SaleReq, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        if conn.execute(
+            "SELECT COUNT(*) n FROM stocktake_sessions WHERE status IN ('进行中','待核对')"
+        ).fetchone()["n"]:
+            raise HTTPException(409, "盘点任务进行中，销售已暂停，盘点核对确认后恢复")
         prod = None
         if body.product_id:
             prod = conn.execute("SELECT * FROM products WHERE id=?", (body.product_id,)).fetchone()

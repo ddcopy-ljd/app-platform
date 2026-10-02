@@ -245,6 +245,43 @@ CREATE TABLE IF NOT EXISTS stocktake_items (
   book_status TEXT DEFAULT '',
   dup_count INTEGER DEFAULT 0
 );
+
+-- 多终端协同盘点：任务会话
+CREATE TABLE IF NOT EXISTS stocktake_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_no TEXT UNIQUE,
+  task_key TEXT UNIQUE,
+  status TEXT DEFAULT '进行中',
+  operator TEXT DEFAULT '',
+  snapshot_version TEXT DEFAULT '',
+  started TEXT DEFAULT (datetime('now','localtime')),
+  ended TEXT DEFAULT '',
+  result_id INTEGER DEFAULT 0
+);
+
+-- 多终端协同盘点：任务内设备与临时编号
+CREATE TABLE IF NOT EXISTS stocktake_devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id INTEGER,
+  device_key TEXT DEFAULT '',
+  device_no INTEGER DEFAULT 0,
+  name TEXT DEFAULT '',
+  last_seen TEXT DEFAULT (datetime('now','localtime')),
+  finished INTEGER DEFAULT 0,
+  UNIQUE(session_id, device_key)
+);
+
+-- 多终端协同盘点：实时扫描记录（全局按任务+EPC去重）
+CREATE TABLE IF NOT EXISTS stocktake_scans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id INTEGER,
+  epc TEXT DEFAULT '',
+  device_key TEXT DEFAULT '',
+  device_no INTEGER DEFAULT 0,
+  rssi INTEGER DEFAULT 0,
+  scanned_at TEXT DEFAULT (datetime('now','localtime')),
+  UNIQUE(session_id, epc)
+);
 """
 
 
@@ -291,6 +328,7 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("products", "showcase_order", "INTEGER DEFAULT 0"),
         ("products", "showcase_desc", "TEXT DEFAULT ''"),
         ("products", "origin", "TEXT DEFAULT ''"),
+        ("products", "high_value", "INTEGER DEFAULT 0"),
         ("tenant_profiles", "showcase_title", "TEXT DEFAULT '新品橱窗'"),
         ("tenant_profiles", "showcase_subtitle", "TEXT DEFAULT '本周臻品 · 限量发售'"),
     ]
