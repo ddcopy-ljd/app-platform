@@ -14,7 +14,7 @@
     "多门店统一管理",
     "企业迷你网站与到店预约"
   ],
-  "softwareVersion": "1.0.0",
+  "softwareVersion": "1.0.1",
   "dataVersion": "1.0.0",
   "scripts": {
     "init": "scripts/init.py",
