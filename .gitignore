@@ -16,3 +16,6 @@ dist/
 # 系统杂项
 Thumbs.db
 .DS_Store
+
+# 本地下载的构建产物
+scanner-apk/

@@ -3,6 +3,11 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+// 正式签名：keystore 由 CI 首次构建时生成并提交到 app/release.jks（私有仓库）。
+def releaseKeystore = file('release.jks')
+def ksStorePass = project.findProperty('YIZHEN_KS_PASS') ?: 'yizhen_rfid_2026'
+def ksKeyPass = project.findProperty('YIZHEN_KEY_PASS') ?: 'yizhen_rfid_2026'
+
 android {
     namespace 'com.yizhen.rfid'
     compileSdk 34
@@ -15,8 +20,22 @@ android {
         versionName "1.1.0"
     }
 
+    signingConfigs {
+        if (releaseKeystore.exists()) {
+            release {
+                storeFile releaseKeystore
+                storePassword ksStorePass
+                keyAlias 'yizhen'
+                keyPassword ksKeyPass
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseKeystore.exists()) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }

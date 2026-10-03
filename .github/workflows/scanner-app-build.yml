@@ -11,6 +11,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -21,6 +23,24 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
+
+      - name: Ensure release keystore
+        run: |
+          KS=scanner-app/app/release.jks
+          if [ ! -f "$KS" ]; then
+            keytool -genkeypair -keystore "$KS" -alias yizhen \
+              -storepass yizhen_rfid_2026 -keypass yizhen_rfid_2026 \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=yizhen,O=yizhen,C=CN"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add "$KS"
+            git commit -m "chore(app): add CI-managed release keystore"
+            git push
+            echo "keystore generated and committed"
+          else
+            echo "keystore already present"
+          fi
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
