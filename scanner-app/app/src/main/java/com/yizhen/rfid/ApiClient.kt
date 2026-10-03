@@ -26,6 +26,8 @@ class ApiClient(private val prefs: Prefs) {
 
     private fun parse(): Endpoint? {
         val url = prefs.serverUrl
+        // 必须是协同任务 join 地址（含 /co/join）；旧版单人盘点 /stocktake/upload 地址视为未配置
+        if (!url.contains("/co/join", ignoreCase = true)) return null
         val keyMatch = Regex("[?&]key=([^&]+)").find(url) ?: return null
         val key = keyMatch.groupValues[1]
         val origin = Regex("^(https?://[^/]+)").find(url)?.groupValues?.get(1) ?: return null
@@ -105,5 +107,28 @@ class ApiClient(private val prefs: Prefs) {
     fun task(): JSONObject {
         val ep = parse() ?: throw IllegalStateException("URL 未配置")
         return get(u("/api/stocktake/co/task", ep))
+    }
+
+    companion object {
+        const val QR_CO = "co"        // 多终端协同盘点任务码
+        const val QR_LEGACY = "legacy" // 旧版单人批量盘点码（/api/stocktake/upload）
+        const val QR_UNKNOWN = "unknown"
+
+        /** 识别扫码结果类型，防止手持机误扫旧版「RFID手持机批量盘点」二维码后一直显示未连接。 */
+        fun qrKind(raw: String?): String {
+            val s = (raw ?: "").trim()
+            return when {
+                s.contains("/co/join", ignoreCase = true) -> QR_CO
+                s.contains("/stocktake/upload", ignoreCase = true) -> QR_LEGACY
+                else -> QR_UNKNOWN
+            }
+        }
+
+        /** 补全 http(s) 协议头。 */
+        fun normalize(raw: String?): String {
+            val s = (raw ?: "").trim()
+            return if (s.startsWith("http://", ignoreCase = true) ||
+                s.startsWith("https://", ignoreCase = true)) s else "http://$s"
+        }
     }
 }

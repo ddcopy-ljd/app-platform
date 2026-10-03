@@ -79,10 +79,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val qrLauncher = registerForActivityResult(ScanContract()) { res ->
-        val code = res.contents
-        if (!code.isNullOrBlank()) {
-            prefs.serverUrl = code
-            doJoin(autoSnapshot = true)
+        val code = res.contents?.trim().orEmpty()
+        if (code.isNotEmpty()) {
+            when (ApiClient.qrKind(code)) {
+                ApiClient.QR_CO -> {
+                    prefs.serverUrl = ApiClient.normalize(code)
+                    doJoin(autoSnapshot = true)
+                }
+                ApiClient.QR_LEGACY -> toast(R.string.qr_legacy_hint)
+                else -> toast(R.string.qr_unknown_hint)
+            }
         }
     }
 
@@ -230,7 +236,14 @@ class MainActivity : AppCompatActivity() {
                 main.post {
                     lastNetworkOk = false
                     joined = false
-                    toast(e.message ?: "join error")
+                    val msg = e.message ?: "join error"
+                    // 密钥无效/任务不存在：清除已保存的错误地址（如误扫旧版单人盘点码），下次点按钮直接重新扫码
+                    if (msg.contains("403") || msg.contains("404")) {
+                        prefs.serverUrl = ""
+                        toast(R.string.qr_invalid_key)
+                    } else {
+                        toast(msg)
+                    }
                     refreshUi()
                 }
             }

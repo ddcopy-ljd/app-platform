@@ -18,8 +18,14 @@ class SettingsActivity : AppCompatActivity() {
     private val qrLauncher = registerForActivityResult(ScanContract()) { res ->
         val code = res.contents?.trim().orEmpty()
         if (code.isNotEmpty()) {
-            etUrl.setText(normalizeUrl(code))
-            Toast.makeText(this, R.string.st_url_filled, Toast.LENGTH_SHORT).show()
+            when (ApiClient.qrKind(code)) {
+                ApiClient.QR_LEGACY -> Toast.makeText(this, R.string.qr_legacy_hint, Toast.LENGTH_LONG).show()
+                ApiClient.QR_UNKNOWN -> Toast.makeText(this, R.string.qr_unknown_hint, Toast.LENGTH_LONG).show()
+                else -> {
+                    etUrl.setText(ApiClient.normalize(code))
+                    Toast.makeText(this, R.string.st_url_filled, Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
@@ -151,12 +157,5 @@ class SettingsActivity : AppCompatActivity() {
     private fun resetUi() {
         prefs.resetAll()
         loadValues()
-    }
-
-    /** 任务二维码为 http(s) 完整 join 地址（含 key，必须原样保留）；兼容缺协议头的裸地址。 */
-    private fun normalizeUrl(raw: String): String {
-        val s = raw.trim()
-        return if (s.startsWith("http://", ignoreCase = true) ||
-            s.startsWith("https://", ignoreCase = true)) s else "http://$s"
     }
 }
