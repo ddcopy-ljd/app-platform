@@ -26,21 +26,33 @@ jobs:
 
       - name: Ensure release keystore
         run: |
+          set -e
           KS=scanner-app/app/release.jks
+          mkdir -p scanner-app/app
+          if [ -f "$KS" ]; then
+            echo "keystore file present ($(stat -c%s "$KS") bytes)"
+            if keytool -list -keystore "$KS" -storetype PKCS12 -storepass yizhen_rfid_2026 >/dev/null 2>&1; then
+              echo "existing PKCS12 keystore validated OK"
+            else
+              echo "::warning::existing keystore cannot be opened as PKCS12, regenerating"
+              rm -f "$KS"
+            fi
+          fi
           if [ ! -f "$KS" ]; then
-            keytool -genkeypair -keystore "$KS" -alias yizhen \
+            keytool -genkeypair -keystore "$KS" -storetype PKCS12 -alias yizhen \
               -storepass yizhen_rfid_2026 -keypass yizhen_rfid_2026 \
               -keyalg RSA -keysize 2048 -validity 10000 \
               -dname "CN=yizhen,O=yizhen,C=CN"
+            echo "new PKCS12 keystore generated"
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add "$KS"
-            git commit -m "chore(app): add CI-managed release keystore"
-            git push
-            echo "keystore generated and committed"
-          else
-            echo "keystore already present"
+            git commit -m "chore(app): add CI-managed release keystore" || echo "nothing to commit"
+            git push || echo "push skipped"
           fi
+          echo "---- final keystore info ----"
+          ls -la "$KS"
+          keytool -list -keystore "$KS" -storetype PKCS12 -storepass yizhen_rfid_2026
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -53,7 +65,23 @@ jobs:
 
       - name: Build Release APK
         working-directory: ./scanner-app
-        run: gradle assembleRelease --no-daemon
+        run: |
+          set -o pipefail
+          gradle assembleRelease --no-daemon 2>&1 | tee /tmp/release-build.log
+          echo "########## release output dir ##########"
+          ls -la app/build/outputs/apk/release/
+          if grep -iE "keystore|signing" /tmp/release-build.log; then
+            echo "(signing-related lines above, if any)"
+          fi
+
+      - name: Verify release signature
+        working-directory: ./scanner-app
+        run: |
+          set -e
+          APK=$(ls app/build/outputs/apk/release/app-release.apk)
+          echo "Verifying $APK"
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4

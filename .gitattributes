@@ -1,0 +1,10 @@
+# 二进制文件严禁 EOL/文本转换（保护签名 keystore）
+*.jks binary
+*.p12 binary
+*.keystore binary
+*.aar binary
+*.apk binary
+*.png binary
+*.jpg binary
+*.webp binary
+*.ttf binary

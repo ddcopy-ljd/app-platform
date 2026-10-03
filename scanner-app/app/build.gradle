@@ -24,6 +24,7 @@ android {
         if (releaseKeystore.exists()) {
             release {
                 storeFile releaseKeystore
+                storeType 'PKCS12'
                 storePassword ksStorePass
                 keyAlias 'yizhen'
                 keyPassword ksKeyPass
