@@ -108,9 +108,10 @@ class StockEngine(private val prefs: Prefs) {
     }
 
     fun listForTab(abnormalTab: Boolean): List<ScanRecord> {
+        // 同类型内按 seq 降序：最新扫到的记录始终排在最上面，无需翻找
         return records.values
             .filter { if (abnormalTab) it.type == RecordType.ABNORMAL else it.type != RecordType.ABNORMAL }
-            .sortedWith(compareBy({ it.type.weight }, { it.seq }))
+            .sortedWith(compareBy({ it.type.weight }, { -it.seq }))
     }
 
     fun countSelf(): Int = records.values.count { it.selfScanned }

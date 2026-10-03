@@ -50,6 +50,14 @@
             android:textSize="12sp" />
     </LinearLayout>
 
+    <!-- 头部信息区：小屏手持机上内容过多时可上下滚动，与明细列表各占一半高度 -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:scrollbars="none">
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -275,7 +283,11 @@
                 android:textSize="16sp"
                 android:textStyle="bold" />
 
-            <!-- Tab -->
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- Tab -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -305,10 +317,8 @@
                     android:paddingVertical="9dp"
                     android:text="@string/tab_abnormal"
                     android:textColor="@color/text_secondary"
-                    android:textSize="13sp" />
+                android:textSize="13sp" />
             </LinearLayout>
-        </LinearLayout>
-    </LinearLayout>
 
     <!-- 明细列表（固定底部区域） -->
     <FrameLayout
