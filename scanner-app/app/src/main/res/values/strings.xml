@@ -29,9 +29,6 @@
     <string name="st_session">Session</string>
     <string name="st_qvalue">Q 值</string>
     <string name="q_auto">自动</string>
-    <string name="st_readmode">读取模式</string>
-    <string name="mode_continuous">连续读取</string>
-    <string name="mode_single">单次读取</string>
     <string name="st_rssi_on">读取信号强度（RSSI）</string>
     <string name="st_rssi_on_sub">每条标签记录显示信号强度</string>
     <string name="st_rssi_threshold">信号强度阈值</string>
@@ -88,6 +85,8 @@
     <string name="trigger_btn">🎯 按住模拟扳机（按住扫描，松开停止）</string>
     <string name="trigger_btn_active">🔴 扫描中…松开停止</string>
     <string name="trigger_btn_join">📷 按住模拟扳机：扫码加入任务</string>
+    <string name="uhf_ready">UHF 模块：就绪 %1$s · 功率 %2$d dBm</string>
+    <string name="uhf_none">UHF 模块：未检测到（摄像头条码模式）</string>
 
     <!-- 摄像头连续扫码页（无 UHF 模块的手机兜底） -->
     <string name="camera_title">摄像头条码盘点（条码即 EPC）</string>

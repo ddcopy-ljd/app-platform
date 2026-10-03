@@ -166,6 +166,15 @@
                     android:textColor="@color/text_secondary"
                     android:textSize="11sp" />
 
+                <TextView
+                    android:id="@+id/tvUhf"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="@string/uhf_none"
+                    android:textColor="@color/text_hint"
+                    android:textSize="11sp" />
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

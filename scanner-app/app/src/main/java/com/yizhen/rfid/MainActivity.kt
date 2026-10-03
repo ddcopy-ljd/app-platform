@@ -43,6 +43,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var dotNet: View
     private lateinit var tvTask: TextView
     private lateinit var tvSnapshot: TextView
+    private lateinit var tvUhf: TextView
     private lateinit var tvDeviceNo: TextView
     private lateinit var tvHv: TextView
     private lateinit var statSelf: TextView
@@ -118,6 +119,7 @@ class MainActivity : AppCompatActivity() {
         dotNet = findViewById(R.id.dotNet)
         tvTask = findViewById(R.id.tvTask)
         tvSnapshot = findViewById(R.id.tvSnapshot)
+        tvUhf = findViewById(R.id.tvUhf)
         tvDeviceNo = findViewById(R.id.tvDeviceNo)
         tvHv = findViewById(R.id.tvHvAlert)
         statSelf = findViewById(R.id.statSelf)
@@ -171,13 +173,20 @@ class MainActivity : AppCompatActivity() {
 
     private fun initRfid() {
         net.execute {
-            RfidManager.init(applicationContext)
+            // 部分固件首次 init 会失败（串口被占用/未就绪），重试 3 次
+            var ok = false
+            repeat(3) {
+                RfidManager.init(applicationContext)
+                if (RfidManager.ready) { ok = true; return@repeat }
+                Thread.sleep(800)
+            }
             main.post {
                 if (RfidManager.ready) {
                     RfidManager.setPower(prefs.power)
                 } else {
                     Toast.makeText(this, R.string.demo_mode, Toast.LENGTH_SHORT).show()
                 }
+                refreshUi()
             }
         }
     }
@@ -333,17 +342,14 @@ class MainActivity : AppCompatActivity() {
     private fun startScan() {
         if (!canScan()) { toast(R.string.need_join); return }
         if (scanning) return
-        val burst = prefs.readMode == 1
+        // 盘点一律连续读取：按住扫、松开停（单次读取模式已废弃）
         val ok = if (RfidManager.ready)
-            RfidManager.start(burst) { epc, rssi -> onTag(epc, rssi) }
+            RfidManager.start { epc, rssi -> onTag(epc, rssi) }
         else true // 演示模式
         if (!ok && RfidManager.ready) {
             toast(R.string.rfid_fail); return
         }
         scanning = true
-        if (!RfidManager.ready) {
-            // 无硬件：不产生数据，仅演示状态
-        }
         refreshUi()
     }
 
@@ -353,7 +359,7 @@ class MainActivity : AppCompatActivity() {
         refreshUi()
     }
 
-    private fun onTag(epcRaw: String, rssi: Int, fromCamera: Boolean = false) {
+    private fun onTag(epcRaw: String, rssi: Int) {
         if (!scanning) return
         val epc = epcRaw.uppercase()
         if (prefs.rssiEnabled && rssi != 0 && rssi < prefs.rssiThreshold) return
@@ -367,8 +373,6 @@ class MainActivity : AppCompatActivity() {
                 pending[epc] = rssi // 重复也上传，服务端去重；流量可接受
             }
         }
-        // 单次读取模式只对 UHF 扳机生效；摄像头连续扫描由扫码页自行控制
-        if (prefs.readMode == 1 && !fromCamera) { scanning = false }
         refreshUi()
     }
 
@@ -391,7 +395,7 @@ class MainActivity : AppCompatActivity() {
             if (!scanning) {
                 false // 任务已被主管结束/进入待核对：扫码页自动关闭
             } else {
-                onTag(code, 0, fromCamera = true)
+                onTag(code, 0)
                 true
             }
         }
@@ -603,9 +607,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** 扳机按下：任务内启动 UHF 盘存（无 UHF 的手机开摄像头扫条码）；
-     *  任务外不做状态判断，直接打开摄像头扫任务二维码加入盘点。 */
+     *  任务外不做状态判断，直接打开摄像头扫任务二维码加入盘点。
+     *  防抖：350ms 内的重复 down（KeyEvent+广播双通道/固件抖动）只算一次；
+     *  若已在扫描中再次按下，视为"再按一下停止"（脉冲型固件没有松开事件）。 */
     private fun onTriggerDown() {
-        if (triggerDown) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastTriggerDownAt < 350) return
+        lastTriggerDownAt = now
+        if (scanning && RfidManager.ready) {
+            triggerDown = false
+            cancelTriggerStop()
+            pauseScan()
+            return
+        }
         triggerDown = true
         if (canScan()) {
             if (RfidManager.ready) startScan() else openCameraScan()
@@ -614,10 +628,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** 扳机松开：连续模式下停止盘存；单次模式由读到标签后自行停止。 */
+    /** 扳机松开：延迟 300ms 再停——部分固件按下瞬间会连发 down+false 双拍，
+     *  立即停会导致"每按一次只读到 1 个标签"。 */
     private fun onTriggerUp() {
+        if (!triggerDown) return
         triggerDown = false
-        if (scanning && RfidManager.ready && prefs.readMode == 0) pauseScan()
+        if (scanning && RfidManager.ready) {
+            cancelTriggerStop()
+            triggerStop = Runnable { if (scanning && RfidManager.ready) pauseScan() }
+            main.postDelayed(triggerStop, 300)
+        }
+    }
+
+    private var triggerStop: Runnable? = null
+    private var lastTriggerDownAt = 0L
+
+    private fun cancelTriggerStop() {
+        triggerStop?.let { main.removeCallbacks(it) }
+        triggerStop = null
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -661,6 +689,12 @@ class MainActivity : AppCompatActivity() {
         tvSnapshot.text =
             if (snapshotReady) getString(R.string.snapshot_ok, engine.snapshotCount)
             else getString(R.string.snapshot_none)
+
+        // UHF 模块状态（初始化时缓存，不在主线程访问串口）
+        tvUhf.text =
+            if (RfidManager.ready) getString(R.string.uhf_ready,
+                RfidManager.cachedVersion.ifBlank { "" }, RfidManager.cachedPower)
+            else getString(R.string.uhf_none)
 
         // 统计
         statSelf.text = engine.countSelf().toString()

@@ -18,6 +18,12 @@ object RfidManager {
     var ready = false
         private set
 
+    // 初始化成功后缓存的模块信息（供界面展示，避免主线程串口调用）
+    var cachedVersion = ""
+        private set
+    var cachedPower = -1
+        private set
+
     @Volatile
     var scanning = false
         private set
@@ -27,10 +33,15 @@ object RfidManager {
     fun init(context: Context) {
         if (ready) return
         try {
-            uhf = RFIDWithUHFUART.getInstance()
-            uhf?.init(context)
+            val u = RFIDWithUHFUART.getInstance()
+            // init() 返回 false 表示串口/模块未就绪，必须视为失败，不能假装可用
+            val ok = u.init(context)
+            if (!ok) return
+            uhf = u
             ready = true
-        } catch (e: Throwable) {
+            cachedVersion = try { u.version ?: "" } catch (_: Exception) { "" }
+            cachedPower = try { u.power } catch (_: Exception) { -1 }
+        } catch (_: Throwable) {
             ready = false
         }
     }
@@ -55,18 +66,16 @@ object RfidManager {
     }
 
     /**
-     * 开始盘存。
-     * @param burst 单次模式：读到第一个标签即自动停止
+     * 开始盘存（连续读取，直到 stop()）。
      * @param onTag 主线程回调 (epc, rssi)
      */
-    fun start(burst: Boolean, onTag: (String, Int) -> Unit): Boolean {
+    fun start(onTag: (String, Int) -> Unit): Boolean {
         if (!ready || scanning) return false
         return try {
             val ok = uhf?.startInventoryTag() ?: false
             if (!ok) return false
             scanning = true
             worker = Thread {
-                var got = false
                 while (scanning) {
                     try {
                         val tag: UHFTAGInfo? = uhf?.readTagFromBuffer()
@@ -77,15 +86,8 @@ object RfidManager {
                                 mainHandler.post {
                                     if (scanning) onTag(epc, rssi)
                                 }
-                                if (burst) {
-                                    got = true
-                                    scanning = false
-                                    try { uhf?.stopInventory() } catch (_: Exception) {}
-                                    break
-                                }
                             }
                         } else {
-                            if (burst && got) break
                             Thread.sleep(20)
                         }
                     } catch (e: Exception) {

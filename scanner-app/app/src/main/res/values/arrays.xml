@@ -16,8 +16,4 @@
         <item>Q=1</item><item>Q=2</item><item>Q=3</item><item>Q=4</item>
         <item>Q=5</item><item>Q=6</item><item>Q=7</item>
     </string-array>
-    <string-array name="readmodes">
-        <item>@string/mode_continuous</item>
-        <item>@string/mode_single</item>
-    </string-array>
 </resources>

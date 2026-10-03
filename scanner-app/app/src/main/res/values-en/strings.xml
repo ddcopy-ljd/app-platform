@@ -27,9 +27,6 @@
     <string name="st_session">Session</string>
     <string name="st_qvalue">Q value</string>
     <string name="q_auto">Auto</string>
-    <string name="st_readmode">Read mode</string>
-    <string name="mode_continuous">Continuous</string>
-    <string name="mode_single">Single</string>
     <string name="st_rssi_on">Show signal strength (RSSI)</string>
     <string name="st_rssi_on_sub">Show RSSI on each tag record</string>
     <string name="st_rssi_threshold">RSSI threshold</string>
@@ -80,6 +77,8 @@
     <string name="trigger_btn">🎯 HOLD TO SCAN (hold = scan, release = stop)</string>
     <string name="trigger_btn_active">🔴 SCANNING… release to stop</string>
     <string name="trigger_btn_join">📷 Hold: scan task QR to join</string>
+    <string name="uhf_ready">UHF module: ready %1$s · power %2$d dBm</string>
+    <string name="uhf_none">UHF module: not found (camera barcode mode)</string>
 
     <string name="camera_title">Camera barcode stocktake (barcode = EPC)</string>
     <string name="camera_counter">New %1$d · Duplicates %2$d</string>

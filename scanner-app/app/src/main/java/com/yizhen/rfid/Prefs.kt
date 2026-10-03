@@ -30,11 +30,6 @@ class Prefs(context: Context) {
         get() = sp.getInt("qvalue", 0)
         set(v) = sp.edit().putInt("qvalue", v).apply()
 
-    /** 0=连续读取 1=单次读取 */
-    var readMode: Int
-        get() = sp.getInt("read_mode", 0)
-        set(v) = sp.edit().putInt("read_mode", v).apply()
-
     var rssiEnabled: Boolean
         get() = sp.getBoolean("rssi_enabled", true)
         set(v) = sp.edit().putBoolean("rssi_enabled", v).apply()

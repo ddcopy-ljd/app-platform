@@ -143,10 +143,6 @@
                 <Spinner android:id="@+id/stQValue" style="@style/StSpinner"
                     android:entries="@array/qvalues" />
 
-                <TextView style="@style/StLabel" android:text="@string/st_readmode" />
-                <Spinner android:id="@+id/stReadMode" style="@style/StSpinner"
-                    android:entries="@array/readmodes" />
-
                 <LinearLayout style="@style/StSwitch">
                     <LinearLayout
                         android:layout_width="0dp"

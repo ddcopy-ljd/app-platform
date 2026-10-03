@@ -22,7 +22,6 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var spRegion: Spinner
     private lateinit var spSession: Spinner
     private lateinit var spQ: Spinner
-    private lateinit var spMode: Spinner
     private lateinit var swRssi: SwitchCompat
     private lateinit var skRssi: SeekBar
     private lateinit var tvRssi: TextView
@@ -57,7 +56,6 @@ class SettingsActivity : AppCompatActivity() {
         spRegion = findViewById(R.id.stRegion)
         spSession = findViewById(R.id.stSession)
         spQ = findViewById(R.id.stQValue)
-        spMode = findViewById(R.id.stReadMode)
         swRssi = findViewById(R.id.stRssiEnabled)
         skRssi = findViewById(R.id.stRssiThreshold)
         tvRssi = findViewById(R.id.stRssiVal)
@@ -96,7 +94,6 @@ class SettingsActivity : AppCompatActivity() {
         spRegion.setSelection(prefs.region.coerceIn(0, 5))
         spSession.setSelection(prefs.session.coerceIn(0, 3))
         spQ.setSelection(prefs.qValue.coerceIn(0, 7))
-        spMode.setSelection(prefs.readMode.coerceIn(0, 1))
         swRssi.isChecked = prefs.rssiEnabled
         skRssi.progress = (prefs.rssiThreshold + 90).coerceIn(0, 60)
         swDedup.isChecked = prefs.dedup
@@ -118,7 +115,6 @@ class SettingsActivity : AppCompatActivity() {
         prefs.region = spRegion.selectedItemPosition
         prefs.session = spSession.selectedItemPosition
         prefs.qValue = spQ.selectedItemPosition
-        prefs.readMode = spMode.selectedItemPosition
         prefs.rssiEnabled = swRssi.isChecked
         prefs.rssiThreshold = skRssi.progress - 90
         prefs.dedup = swDedup.isChecked
