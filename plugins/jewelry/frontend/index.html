@@ -124,7 +124,7 @@
           </div>
           <div class="table-wrap" v-if="isPc">
             <table class="data-table">
-              <thead><tr><th>编码</th><th>名称</th><th>品类</th><th>克重</th><th>售价</th><th>成本</th><th>状态</th><th>EPC</th><th>橱窗</th><th></th></tr></thead>
+              <thead><tr><th>编码</th><th>名称</th><th>品类</th><th>克重</th><th>售价</th><th>成本</th><th>状态</th><th>EPC</th><th>橱窗</th><th>高价值</th><th></th></tr></thead>
               <tbody>
                 <tr v-for="p in filteredProducts" :key="p.id">
                   <td>{{ p.code }}</td><td>{{ p.name }}</td><td>{{ p.category }}</td><td>{{ p.weight }}g</td>
@@ -132,6 +132,7 @@
                   <td><span class="tag" :class="statusClass(p.status)">{{ p.status }}</span></td>
                   <td class="mono">{{ p.rfid_epc||'—' }}</td>
                   <td>{{ p.showcase_public?'是':'否' }}</td>
+                  <td><span class="tag tag-hv" v-if="p.high_value">⭐高价值</span><span v-else>—</span></td>
                   <td class="nowrap">
                     <button class="link" @click="editProduct(p)">{{ t('act.edit') }}</button>
                     <button class="link" @click="openLabelPrint(p)">🏷 排版打印</button>
@@ -146,7 +147,7 @@
               <div class="product-card" @click="editProduct(p)">
                 <div class="prod-thumb">💎</div>
                 <div class="prod-info">
-                  <div class="prod-name">{{ p.name }}<span class="tag" :class="statusClass(p.status)">{{ p.status }}</span></div>
+                  <div class="prod-name">{{ p.name }}<span class="tag tag-hv" v-if="p.high_value">⭐高价值</span><span class="tag" :class="statusClass(p.status)">{{ p.status }}</span></div>
                   <div class="prod-meta">{{ p.code }} · {{ p.material }} · {{ p.weight }}g</div>
                 </div>
                 <div class="prod-price2"><div class="pp">￥{{ fmt(p.price) }}</div></div>
@@ -548,6 +549,7 @@
           <div class="form-row" v-if="sheetMode==='product'"><div class="form-group"><label>状态</label><select v-model="sheetData.status"><option>在库</option><option>已定</option><option>已售</option><option>借出</option></select></div>
             <div class="form-group"><label>RFID EPC</label><input v-model="sheetData.rfid_epc"></div></div>
           <div class="form-group" v-if="sheetMode==='product'"><label><input type="checkbox" v-model="sheetData.showcase_public" :true-value="1" :false-value="0"> 允许上橱窗</label></div>
+          <div class="form-group" v-if="sheetMode==='product'"><label><input type="checkbox" v-model="sheetData.high_value" :true-value="1" :false-value="0"> ⭐ 高价值商品（盘点时未扫到将置顶提醒）</label></div>
         </template>
         <template v-if="sheetMode==='deposit'">
           <div class="form-row"><div class="form-group"><label>客户</label><input v-model="sheetData.customer"></div><div class="form-group"><label>电话</label><input v-model="sheetData.phone"></div></div>

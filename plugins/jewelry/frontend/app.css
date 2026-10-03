@@ -201,6 +201,7 @@ a { text-decoration: none; color: inherit; }
 .tag-stock { background: rgba(39,174,96,.1); color: var(--success); }
 .tag-sold { background: rgba(192,57,43,.1); color: var(--danger); }
 .tag-reserved { background: rgba(201,169,97,.15); color: #A8883D; }
+.tag-hv { background: rgba(230,126,34,.14); color: #C0661A; margin-right: 4px; }
 
 /* ---------- more menu ---------- */
 .menu-section { margin-top: 14px; }

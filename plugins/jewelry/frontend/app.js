@@ -222,7 +222,7 @@ function openInbound() {
 }
 
 function addProduct() {
-  openSheet('product', t('sheet.product'), { code: '', name: '', category: '黄金', material: '', weight: 0, size: '', cert: '', cost: 0, price: 0, status: '在库', rfid_epc: '', showcase_public: 0 });
+  openSheet('product', t('sheet.product'), { code: '', name: '', category: '黄金', material: '', weight: 0, size: '', cert: '', cost: 0, price: 0, status: '在库', rfid_epc: '', showcase_public: 0, high_value: 0 });
 }
 
 function editProduct(p) {
@@ -307,7 +307,7 @@ function submitSheet() {
     if (!d.code || !d.name) { toast(t('toast.fillCode'), 'error'); return; }
     var m2 = d.id ? 'PUT' : 'POST';
     var u2 = d.id ? '/api/products/' + d.id : '/api/products';
-    api(m2, u2, { code: d.code || '', name: d.name || '', category: d.category || '黄金', material: d.material || '', weight: Number(d.weight) || 0, size: d.size || '', cert: d.cert || '', cost: Number(d.cost) || 0, price: Number(d.price) || 0, status: d.status || '在库', rfid_epc: d.rfid_epc || '', showcase_public: d.showcase_public || 0 }).then(function () {
+    api(m2, u2, { code: d.code || '', name: d.name || '', category: d.category || '黄金', material: d.material || '', weight: Number(d.weight) || 0, size: d.size || '', cert: d.cert || '', cost: Number(d.cost) || 0, price: Number(d.price) || 0, status: d.status || '在库', rfid_epc: d.rfid_epc || '', showcase_public: d.showcase_public || 0, high_value: d.high_value || 0 }).then(function () {
       toast(t('toast.saveOk')); closeSheet(); refreshAll();
     }).catch(function (e) { toast(e.message, 'error'); });
   } else if (ST.sheetMode === 'inbound') {

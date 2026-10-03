@@ -790,6 +790,7 @@ class ProductIn(BaseModel):
     showcase_order: int = 0
     showcase_desc: str = ""
     origin: str = ""
+    high_value: int = 0
 
 
 @app.get("/api/products")
@@ -837,16 +838,17 @@ def product_detail(pid: int, request: Request):
 def product_create(body: ProductIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        _assert_stock_unfrozen(conn)
         if conn.execute("SELECT 1 FROM products WHERE code=?", (body.code,)).fetchone():
             raise HTTPException(400, "商品编码已存在")
         epc = body.rfid_epc or ""
         cur = conn.execute(
             """INSERT INTO products(code,name,category,material,weight,size,cert,cost,price,status,store_id,rfid_epc,
-                                     showcase_public,showcase_order,showcase_desc,origin)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                     showcase_public,showcase_order,showcase_desc,origin,high_value)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (body.code, body.name, body.category, body.material, body.weight, body.size, body.cert,
              body.cost, body.price, body.status, body.store_id, epc,
-             body.showcase_public, body.showcase_order, body.showcase_desc, body.origin),
+             body.showcase_public, body.showcase_order, body.showcase_desc, body.origin, body.high_value),
         )
         _inv(conn, cur.lastrowid, epc, "in", op["username"])
         conn.commit()
@@ -858,6 +860,7 @@ def product_create(body: ProductIn, request: Request):
 def product_update(pid: int, body: ProductIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        _assert_stock_unfrozen(conn)
         if not conn.execute("SELECT 1 FROM products WHERE id=?", (pid,)).fetchone():
             raise HTTPException(404, "商品不存在")
         if conn.execute("SELECT 1 FROM products WHERE code=? AND id<>?", (body.code, pid)).fetchone():
@@ -865,10 +868,10 @@ def product_update(pid: int, body: ProductIn, request: Request):
         conn.execute(
             """UPDATE products SET code=?,name=?,category=?,material=?,weight=?,size=?,cert=?,
                cost=?,price=?,status=?,store_id=?,rfid_epc=?,showcase_public=?,
-               showcase_order=?,showcase_desc=?,origin=? WHERE id=?""",
+               showcase_order=?,showcase_desc=?,origin=?,high_value=? WHERE id=?""",
             (body.code, body.name, body.category, body.material, body.weight, body.size, body.cert,
              body.cost, body.price, body.status, body.store_id, body.rfid_epc, body.showcase_public,
-             body.showcase_order, body.showcase_desc, body.origin, pid),
+             body.showcase_order, body.showcase_desc, body.origin, body.high_value, pid),
         )
         conn.commit()
         _log(conn, op["username"], "修改商品", f"#{pid} {body.code}")
@@ -879,6 +882,7 @@ def product_update(pid: int, body: ProductIn, request: Request):
 def product_delete(pid: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        _assert_stock_unfrozen(conn)
         row = conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
         if not row:
             raise HTTPException(404, "商品不存在")
@@ -947,6 +951,7 @@ class InboundIn(BaseModel):
 def inventory_inbound(body: InboundIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        _assert_stock_unfrozen(conn)
         code = body.code.strip() or _next_code(conn)
         if conn.execute("SELECT 1 FROM products WHERE code=?", (code,)).fetchone():
             raise HTTPException(400, "商品编码已存在")
@@ -966,6 +971,7 @@ def inventory_inbound(body: InboundIn, request: Request):
 def inventory_copy(pid: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        _assert_stock_unfrozen(conn)
         src = conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
         if not src:
             raise HTTPException(404, "源商品不存在")
@@ -1343,6 +1349,13 @@ def _active_session(conn: sqlite3.Connection):
     ).fetchone()
 
 
+def _assert_stock_unfrozen(conn: sqlite3.Connection):
+    """协同盘点进行中/待核对期间冻结一切改变库存的操作（销售、出入库、借还、状态变更）。"""
+    s = _active_session(conn)
+    if s:
+        raise HTTPException(409, f"盘点任务 {s['task_no']} {s['status']}，库存操作已暂停，主管核对确认后恢复")
+
+
 class TaskStartIn(BaseModel):
     host: str = ""
 
@@ -1658,10 +1671,7 @@ class SaleReq(BaseModel):
 def sale_create(body: SaleReq, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
-        if conn.execute(
-            "SELECT COUNT(*) n FROM stocktake_sessions WHERE status IN ('进行中','待核对')"
-        ).fetchone()["n"]:
-            raise HTTPException(409, "盘点任务进行中，销售已暂停，盘点核对确认后恢复")
+        _assert_stock_unfrozen(conn)
         prod = None
         if body.product_id:
             prod = conn.execute("SELECT * FROM products WHERE id=?", (body.product_id,)).fetchone()
@@ -1708,6 +1718,7 @@ def sale_list(request: Request, q: str = "", page: int = 1, size: int = 50):
 def sale_void(sid: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        _assert_stock_unfrozen(conn)
         row = conn.execute("SELECT * FROM sales WHERE id=?", (sid,)).fetchone()
         if not row:
             raise HTTPException(404, "单据不存在")
@@ -1754,6 +1765,7 @@ def deposit_list(request: Request, page: int = 1, size: int = 50):
 def deposit_create(body: DepositIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        _assert_stock_unfrozen(conn)
         name = body.product
         if body.product_id:
             p = conn.execute("SELECT * FROM products WHERE id=?", (body.product_id,)).fetchone()
@@ -1778,6 +1790,7 @@ def deposit_create(body: DepositIn, request: Request):
 def deposit_pay(did: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        _assert_stock_unfrozen(conn)
         d = conn.execute("SELECT * FROM deposits WHERE id=?", (did,)).fetchone()
         if not d:
             raise HTTPException(404, "定金单不存在")
@@ -1806,6 +1819,7 @@ def deposit_pay(did: int, request: Request):
 def deposit_void(did: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        _assert_stock_unfrozen(conn)
         d = conn.execute("SELECT * FROM deposits WHERE id=?", (did,)).fetchone()
         if not d:
             raise HTTPException(404, "定金单不存在")
@@ -1844,6 +1858,7 @@ def loan_list(request: Request, page: int = 1, size: int = 50):
 def loan_create(body: LoanIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        _assert_stock_unfrozen(conn)
         st = "借出中" if body.direction == "out" else "借入中"
         if body.direction == "out" and body.code:
             p = conn.execute("SELECT * FROM products WHERE code=?", (body.code,)).fetchone()
@@ -1865,6 +1880,7 @@ def loan_create(body: LoanIn, request: Request):
 def loan_return(lid: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        _assert_stock_unfrozen(conn)
         row = conn.execute("SELECT * FROM loans WHERE id=?", (lid,)).fetchone()
         if not row:
             raise HTTPException(404, "记录不存在")
@@ -2025,6 +2041,7 @@ def purchase_create(body: PurchaseIn, request: Request):
 def purchase_receive(pid: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        _assert_stock_unfrozen(conn)
         row = conn.execute("SELECT * FROM purchases WHERE id=?", (pid,)).fetchone()
         if not row:
             raise HTTPException(404, "采购单不存在")
@@ -2085,6 +2102,7 @@ def outsource_create(body: OutsourceIn, request: Request):
 def outsource_receive(oid: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        _assert_stock_unfrozen(conn)
         row = conn.execute("SELECT * FROM outsourcings WHERE id=?", (oid,)).fetchone()
         if not row:
             raise HTTPException(404, "加工单不存在")
