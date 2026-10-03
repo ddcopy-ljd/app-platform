@@ -1,7 +1,11 @@
 package com.yizhen.rfid
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
+import androidx.core.content.ContextCompat
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
@@ -57,8 +61,9 @@ class MainActivity : AppCompatActivity() {
     private var abnormalTab = false
     private var rulesOpen = false
 
-    private val pending = LinkedHashMap<String, Int>() // 待上报 EPC->RSSI
+    private var pending = LinkedHashMap<String, Int>() // 待上报 EPC->RSSI
     private var lastNetworkOk = false
+    private var triggerDown = false   // 扳机当前是否按住（防止 KeyEvent 与广播双通道重复触发）
 
     private var tone: ToneGenerator? = null
     private var vibrator: Vibrator? = null
@@ -543,19 +548,76 @@ class MainActivity : AppCompatActivity() {
 
     // -------------------------------- 触发键
 
+    /**
+     * C27（RSCJA/Chainway 方案）机身扳机不产生 KeyEvent——系统扫描服务会吞掉按键，
+     * 改为通过系统广播下发：action=android.rfid.FUN_KEY（部分固件为 android.intent.action.FUN_KEY），
+     * extras: keyCode(int，缺省 139)、keydown(boolean，部分固件为字符串 "true"/"false")。
+     * 以广播为主通道、KeyEvent 为兜底，两者都汇入 onTriggerDown/Up。
+     */
+    private val triggerReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.action ?: return
+            if (action != "android.rfid.FUN_KEY" && action != "android.intent.action.FUN_KEY") return
+            val down = when (val v = intent.extras?.get("keydown")) {
+                is Boolean -> v
+                is String -> v.equals("true", ignoreCase = true) || v == "1"
+                else -> intent.getBooleanExtra("keydown", false)
+            }
+            if (down) onTriggerDown() else onTriggerUp()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 扫码摄像头页面期间收不到松开事件，回来时复位扳机状态，避免下次按下被吞
+        triggerDown = false
+        val filter = IntentFilter().apply {
+            addAction("android.rfid.FUN_KEY")
+            addAction("android.intent.action.FUN_KEY")
+        }
+        try {
+            // FUN_KEY 由系统扫描服务发出，属于跨应用广播，Android 13+ 必须声明 EXPORTED
+            ContextCompat.registerReceiver(this, triggerReceiver, filter,
+                ContextCompat.RECEIVER_EXPORTED)
+        } catch (_: Exception) {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(triggerReceiver, filter)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        try { unregisterReceiver(triggerReceiver) } catch (_: Exception) {}
+    }
+
+    /** 扳机按下：任务内启动 UHF 盘存（无 UHF 的手机开摄像头扫条码）；
+     *  任务外不做状态判断，直接打开摄像头扫任务二维码加入盘点。 */
+    private fun onTriggerDown() {
+        if (triggerDown) return
+        triggerDown = true
+        if (canScan()) {
+            if (RfidManager.ready) startScan() else openCameraScan()
+        } else {
+            scanJoinQr()
+        }
+    }
+
+    /** 扳机松开：连续模式下停止盘存；单次模式由读到标签后自行停止。 */
+    private fun onTriggerUp() {
+        triggerDown = false
+        if (scanning && RfidManager.ready && prefs.readMode == 0) pauseScan()
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val code = event.keyCode
         val trigger = code in intArrayOf(
-            KeyEvent.KEYCODE_F1, KeyEvent.KEYCODE_F2, 102, 103, 115, 139, 280, 281,
+            KeyEvent.KEYCODE_F1, KeyEvent.KEYCODE_F2, 102, 103, 115, 139, 140, 280, 281,
             KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1
         )
         if (trigger) {
             when (event.action) {
-                KeyEvent.ACTION_DOWN -> if (event.repeatCount == 0 && canScan() && !scanning) {
-                    // 有 UHF 模块：扳机启动 RFID 盘存；无模块（手机）：调起摄像头扫条码
-                    if (RfidManager.ready) startScan() else openCameraScan()
-                }
-                KeyEvent.ACTION_UP -> if (scanning && RfidManager.ready && prefs.readMode == 0) pauseScan()
+                KeyEvent.ACTION_DOWN -> if (event.repeatCount == 0) onTriggerDown()
+                KeyEvent.ACTION_UP -> onTriggerUp()
             }
             return true
         }
