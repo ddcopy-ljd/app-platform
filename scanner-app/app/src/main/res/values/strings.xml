@@ -8,12 +8,12 @@
 
     <!-- 设置：服务端 -->
     <string name="st_group_server">服务端</string>
-    <string name="server_url">服务端接口地址</string>
+    <string name="server_url">服务器接口地址</string>
     <string name="server_url_hint">首页扫码加入任务后自动填入，一般无需修改</string>
     <string name="qr_legacy_hint">这是旧版【单人批量盘点】二维码，不能用于本任务。\n请在电脑库存页【盘点任务】卡片先开启任务，再扫该处的二维码</string>
     <string name="qr_unknown_hint">无法识别该二维码，请扫描【盘点任务】的二维码</string>
     <string name="qr_invalid_key">任务密钥无效或任务已结束，请重新扫描最新的盘点任务二维码</string>
-    <string name="st_pull_interval">自动拉取间隔</string>
+    <string name="st_pull_interval">读取库存时间间隔</string>
     <string name="unit_seconds">秒</string>
 
     <!-- 设置：RFID -->

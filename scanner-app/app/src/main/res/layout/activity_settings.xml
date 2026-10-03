@@ -62,22 +62,9 @@
             <!-- 服务端 -->
             <TextView style="@style/StGroup" android:text="@string/st_group_server" />
             <LinearLayout style="@style/StCard" android:orientation="vertical">
-                <TextView
-                    style="@style/StLabel"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/server_url" />
-                <EditText
-                    android:id="@+id/stUrl"
-                    style="@style/StInput"
-                    android:layout_marginTop="6dp"
-                    android:hint="@string/server_url_hint"
-                    android:inputType="textUri"
-                    android:singleLine="true" />
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
                     android:orientation="horizontal">
                     <TextView
                         android:layout_width="0dp"
@@ -100,6 +87,20 @@
                     android:max="115"
                     android:progressTint="@color/green"
                     android:thumbTint="@color/green" />
+
+                <TextView
+                    style="@style/StLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/server_url" />
+                <EditText
+                    android:id="@+id/stUrl"
+                    style="@style/StInput"
+                    android:layout_marginTop="6dp"
+                    android:hint="@string/server_url_hint"
+                    android:inputType="textUri"
+                    android:singleLine="true" />
             </LinearLayout>
 
             <!-- RFID 参数 -->
