@@ -97,7 +97,7 @@
               <div class="quick-item" @click="openSubView('logs')"><div class="quick-icon blue">📋</div><div class="quick-label">日志</div></div>
             </div>
           </div>
-          <div class="section" v-if="dashData && dashData.recentSales.length">
+          <div class="section" v-if="dashData && dashData.recentSales && dashData.recentSales.length">
             <div class="section-title"><span class="dot"></span>{{ t('kpi.recent') }}</div>
             <div class="card-list">
               <div class="card-item sale-card" v-for="s in dashData.recentSales" :key="s.bill_no">
@@ -248,7 +248,7 @@
                       <td class="small">{{ d.last_seen }}</td>
                       <td :class="d.finished ? 'stock-ok' : 'stock-surplus'">{{ d.finished ? '已提交' : '盘点中' }}</td>
                     </tr>
-                    <tr v-if="!coTask.devices.length"><td colspan="4" class="small">尚无手持机加入</td></tr>
+                    <tr v-if="!coTask.devices || !coTask.devices.length"><td colspan="4" class="small">尚无手持机加入</td></tr>
                   </tbody>
                 </table>
 
@@ -260,13 +260,16 @@
                   异常 <b class="stock-abnormal">{{ coTask.result.abnormalCount }}</b>
                 </div>
 
-                <div style="margin-top:12px">
+                <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
                   <button v-if="coTask.status==='进行中'" class="btn btn-sm" style="background:#c0392b;color:#fff" :disabled="coBusy" @click="endCoTask">结束扫描并核对</button>
                   <button v-if="coTask.status==='待核对'" class="btn btn-gold btn-sm" :disabled="coBusy" @click="confirmCoTask">核对确认，解除销售冻结</button>
+                  <button class="btn btn-sm btn-outline" style="color:#c0392b;border-color:#c0392b" :disabled="coBusy" @click="abortCoTask">强制终止任务</button>
+                  <span class="small" style="color:#8B7A6B">手持机故障/扫不到/误开任务时点此立即解冻</span>
                 </div>
               </div>
               <div class="rfid-right">
-                <img class="qr-img" :src="'/api/stocktake/task/' + coTask.id + '/qr'" alt="协同任务二维码">
+                <img v-if="coQrUrl" class="qr-img" :src="coQrUrl" alt="协同任务二维码">
+                <div v-else class="qr-img" style="display:flex;align-items:center;justify-content:center;color:#B0A08C;font-size:12px">二维码加载中…</div>
                 <div class="qr-cap">手持机扫码加入任务</div>
                 <div class="small" style="text-align:center;margin-top:4px">全局已扫 {{ coTask.scanned_count }}</div>
               </div>

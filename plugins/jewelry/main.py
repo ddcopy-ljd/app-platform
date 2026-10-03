@@ -183,7 +183,7 @@ def health():
 def spa_index():
     f = FRONTEND_DIR / "index.html"
     if f.exists():
-        return FileResponse(str(f))
+        return FileResponse(str(f), headers={"Cache-Control": "no-cache"})
     return JSONResponse({"detail": "前端未构建"}, status_code=503)
 
 
@@ -1381,8 +1381,10 @@ def task_start(body: TaskStartIn, request: Request):
             host = f"{_lan_ip()}:{PORT}"
         if not host.startswith("http"):
             host = "http://" + host
-        return {"id": sid, "task_no": task_no, "key": key,
-                "co_url": f"{host}/api/stocktake/co/join?key={key}"}
+        row = conn.execute("SELECT * FROM stocktake_sessions WHERE id=?", (sid,)).fetchone()
+        # 返回完整任务对象（含 devices/status/result 等），与 active 轮询结构一致，前端可直接渲染
+        return {**_session_progress(conn, row),
+                "key": key, "co_url": f"{host}/api/stocktake/co/join?key={key}"}
 
 
 @app.get("/api/stocktake/task/active")
@@ -1408,7 +1410,7 @@ def task_end(sid: int, request: Request):
         epcs = [r["epc"] for r in conn.execute(
             "SELECT epc FROM stocktake_scans WHERE session_id=? ORDER BY id", (sid,)).fetchall()]
         if not epcs:
-            raise HTTPException(400, "没有任何扫描数据，无法结束")
+            raise HTTPException(400, "没有任何扫描数据，无法核对。如手持机故障或误开任务，请点「强制终止任务」立即解除冻结")
         result = _run_stocktake(conn, epcs, "协同盘点", op["username"])
         conn.execute(
             "UPDATE stocktake_sessions SET status='待核对', ended=datetime('now','localtime'), result_id=? WHERE id=?",
@@ -1429,6 +1431,27 @@ def task_confirm(sid: int, request: Request):
         conn.execute("UPDATE stocktake_sessions SET status='已完成' WHERE id=?", (sid,))
         conn.commit()
         _log(conn, op["username"], "确认协同盘点完成", s["task_no"])
+        return {"ok": True}
+
+
+@app.post("/api/stocktake/task/{sid}/abort")
+def task_abort(sid: int, request: Request):
+    """主管强制终止任务：无论扫描进度如何立即解除冻结，不生成盘点结果。
+
+    用于手持机故障、无法加入、误开任务等异常场景，避免业务被永久冻结。
+    """
+    op = _require_auth(request)
+    with _db(request) as conn:
+        s = conn.execute("SELECT * FROM stocktake_sessions WHERE id=?", (sid,)).fetchone()
+        if not s:
+            raise HTTPException(404, "盘点任务不存在")
+        if s["status"] == "已完成":
+            return {"ok": True, "already": True}
+        conn.execute(
+            "UPDATE stocktake_sessions SET status='已完成', ended=datetime('now','localtime') WHERE id=?",
+            (sid,))
+        conn.commit()
+        _log(conn, op["username"], "强制终止协同盘点任务", s["task_no"])
         return {"ok": True}
 
 
@@ -2322,10 +2345,12 @@ def spa_asset(asset_path: str):
     if f.is_file() and _safe_relative(f, FRONTEND_DIR.resolve()) and f.suffix.lower() in (
         ".js", ".css", ".map", ".png", ".svg", ".woff2", ".ico", ".jpg", ".webp",
     ):
-        return FileResponse(str(f))
+        # 业务页面脚本/样式每次校验更新，避免发布后浏览器缓存旧版（内网工具，开销可忽略）
+        nocache = {"Cache-Control": "no-cache"} if f.suffix.lower() in (".js", ".css", ".html") else None
+        return FileResponse(str(f), headers=nocache)
     index = FRONTEND_DIR / "index.html"
     if index.exists() and "." not in Path(asset_path).name:
-        return FileResponse(str(index))
+        return FileResponse(str(index), headers={"Cache-Control": "no-cache"})
     return JSONResponse({"detail": "Not Found"}, status_code=404)
 
 

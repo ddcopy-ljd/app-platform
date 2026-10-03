@@ -46,6 +46,7 @@ var ST = Vue.reactive({
   // 手持机盘点
   stockQr: null, stockHost: '', stockBatches: [], stockDetail: null, stockBusy: false,
   coTask: null, coTaskHost: '', coBusy: false, coTimer: null,
+  coQrUrl: '', _qrFor: 0, _coQrObj: '',
   // toast
   toast: { show: false, text: '', type: 'success' },
 });
@@ -490,6 +491,7 @@ function startCoTask() {
   ST.coBusy = true;
   api('POST', '/api/stocktake/task/start', { host: ST.coTaskHost || '' }).then(function (r) {
     ST.coTask = r;
+    loadCoQr(r.id);
     toast('协同盘点任务已开启，请手持机扫码加入');
     ensureCoTimer();
   }).catch(function (e) { toast(e.message, 'error'); })
@@ -497,9 +499,30 @@ function startCoTask() {
 }
 function loadCoTask() {
   api('GET', '/api/stocktake/task/active').then(function (r) {
-    if (r && r.active) { ST.coTask = r; ensureCoTimer(); }
-    else { ST.coTask = null; clearCoTimer(); }
+    if (r && r.active) { ST.coTask = r; ensureCoTimer(); loadCoQr(r.id); }
+    else { clearCoTask(); }
   }).catch(function () {});
+}
+function clearCoTask() {
+  if (ST._coQrObj) { try { URL.revokeObjectURL(ST._coQrObj); } catch (e) {} }
+  ST._coQrObj = ''; ST._qrFor = 0; ST.coQrUrl = '';
+  ST.coTask = null; clearCoTimer();
+}
+// 二维码接口需要登录态，<img> 无法带 Authorization 头，故用带 token 的 fetch 取 SVG 再转 blob 显示。
+function loadCoQr(id) {
+  if (ST._qrFor === id || !ST.token) return;
+  ST._qrFor = id;
+  fetch(API + '/api/stocktake/task/' + id + '/qr', { headers: { 'Authorization': 'Bearer ' + ST.token } })
+    .then(function (r) {
+      if (!r.ok) throw new Error('qr ' + r.status);
+      return r.blob();
+    })
+    .then(function (b) {
+      if (ST._coQrObj) { try { URL.revokeObjectURL(ST._coQrObj); } catch (e) {} }
+      ST._coQrObj = URL.createObjectURL(b);
+      ST.coQrUrl = ST._coQrObj;
+    })
+    .catch(function () { ST.coQrUrl = ''; });
 }
 function endCoTask() {
   if (!ST.coTask) return;
@@ -515,7 +538,17 @@ function confirmCoTask() {
   if (!confirm('差异核对无误？确认后解除销售/出入库冻结，任务完成。')) return;
   ST.coBusy = true;
   api('POST', '/api/stocktake/task/' + ST.coTask.id + '/confirm', {}).then(function () {
-    toast('盘点完成，销售已恢复'); ST.coTask = null; clearCoTimer(); loadStockBatches();
+    toast('盘点完成，销售已恢复'); clearCoTask(); loadStockBatches();
+  }).catch(function (e) { toast(e.message, 'error'); })
+   .finally(function () { ST.coBusy = false; });
+}
+// 强制终止：手持机故障/无法加入/误开任务时立即解冻，不生成盘点结果
+function abortCoTask() {
+  if (!ST.coTask) return;
+  if (!confirm('【强制终止任务】\n\n立即解除销售/出入库冻结，本次盘点不生成核对结果，已扫描数据仅作记录。确定终止？')) return;
+  ST.coBusy = true;
+  api('POST', '/api/stocktake/task/' + ST.coTask.id + '/abort', {}).then(function () {
+    toast('任务已强制终止，销售已恢复'); clearCoTask(); loadStockBatches();
   }).catch(function (e) { toast(e.message, 'error'); })
    .finally(function () { ST.coBusy = false; });
 }
@@ -560,7 +593,7 @@ var app = Vue.createApp({
     genStockQr: genStockQr, loadStockBatches: loadStockBatches,
     viewStockBatch: viewStockBatch, copyStockUrl: copyStockUrl,
     startCoTask: startCoTask, loadCoTask: loadCoTask, endCoTask: endCoTask,
-    confirmCoTask: confirmCoTask, copyCoUrl: copyCoUrl,
+    confirmCoTask: confirmCoTask, abortCoTask: abortCoTask, copyCoUrl: copyCoUrl,
     quickSale: quickSale, openDeposit: openDeposit,
     voidSale: voidSale, payDeposit: payDeposit, voidDeposit: voidDeposit,
     openLoan: openLoan, returnLoan: returnLoan,
