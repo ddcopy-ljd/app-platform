@@ -657,9 +657,14 @@ class MainActivity : AppCompatActivity() {
         if (!TriggerChannels.handlesKeyEvent(prefs.triggerMode))
             return super.dispatchKeyEvent(event)
         val code = event.keyCode
-        // 已知扳机键码：F1-F12(131-143)、手柄键(96-110)、对焦(280/281)、
-        // 厂商扩展扳机键(282-300，C27 实测扳机=293)
-        val knownTrigger = code in 96..110 || code in 131..143 || code in 280..300
+        // C27 实测物理键：293=厂商扳机、139=Scan键(F9)、142=F12、66=回车、82=菜单；
+        // 另覆盖常见 F1-F12(131-143)、手柄键(96-110)、对焦(280-300)。
+        // 注意：4=返回键绝不拦截，否则无法退出页面。
+        val candidate = code == 66 || code == 82 ||
+                code in 96..110 || code in 131..143 || code in 280..300
+        // 回车键在输入框聚焦时不拦截（避免影响文本录入）
+        val focusEditable = currentFocus is android.widget.EditText
+        val knownTrigger = candidate && !(code == 66 && focusEditable)
         // 事件来源是物理按键（手柄/摇杆/方向键设备）——扳机被系统扫描服务吞掉时
         // 常以 GAMEPAD/JOYSTICK 来源上报，不在键码表里也能兜住
         val src = event.source
