@@ -98,10 +98,7 @@ class BarcodeScanActivity : AppCompatActivity() {
         })
 
         if (hasCameraPermission()) startCamera()
-        else if (!permissionRequested) {
-            permissionRequested = true
-            permLauncher.launch(Manifest.permission.CAMERA)
-        }
+        else permLauncher.launch(Manifest.permission.CAMERA)
     }
 
     private fun hasCameraPermission() =
