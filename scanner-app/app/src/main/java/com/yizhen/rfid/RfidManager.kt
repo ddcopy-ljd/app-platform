@@ -33,14 +33,11 @@ object RfidManager {
     fun init(context: Context) {
         if (ready) return
         try {
-            val u = RFIDWithUHFUART.getInstance()
-            // init() 返回 false 表示串口/模块未就绪，必须视为失败，不能假装可用
-            val ok = u.init(context)
-            if (!ok) return
-            uhf = u
+            uhf = RFIDWithUHFUART.getInstance()
+            uhf?.init(context)
             ready = true
-            cachedVersion = try { u.version ?: "" } catch (_: Exception) { "" }
-            cachedPower = try { u.power } catch (_: Exception) { -1 }
+            cachedVersion = version()
+            cachedPower = power()
         } catch (_: Throwable) {
             ready = false
         }
