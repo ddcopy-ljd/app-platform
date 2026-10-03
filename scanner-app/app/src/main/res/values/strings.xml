@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_title">UHF 协同盘点</string>
+    <string name="app_title">UHF RFID 批量盘点</string>
     <string name="lang_switch">EN</string>
     <string name="settings_title">设置</string>
     <string name="btn_settings">设置</string>
@@ -10,15 +10,24 @@
     <string name="st_group_server">服务端</string>
     <string name="server_url">服务端接口地址</string>
     <string name="server_url_hint">首页扫码加入任务后自动填入，一般无需修改</string>
-    <string name="qr_legacy_hint">这是旧版【单人批量盘点】二维码，不能用于协同盘点。\n请在电脑库存页【多终端协同盘点任务】卡片先开启任务，再扫该处的二维码</string>
-    <string name="qr_unknown_hint">无法识别该二维码，请扫描【多终端协同盘点任务】的二维码</string>
-    <string name="qr_invalid_key">任务密钥无效或任务已结束，请重新扫描最新的协同任务二维码</string>
+    <string name="qr_legacy_hint">这是旧版【单人批量盘点】二维码，不能用于本任务。\n请在电脑库存页【盘点任务】卡片先开启任务，再扫该处的二维码</string>
+    <string name="qr_unknown_hint">无法识别该二维码，请扫描【盘点任务】的二维码</string>
+    <string name="qr_invalid_key">任务密钥无效或任务已结束，请重新扫描最新的盘点任务二维码</string>
     <string name="st_pull_interval">自动拉取间隔</string>
     <string name="unit_seconds">秒</string>
 
     <!-- 设置：RFID -->
     <string name="st_group_rfid">RFID 参数</string>
     <string name="st_power">读取功率</string>
+    <string name="st_trigger">机身扳机适配（按扳机无反应时逐个切换测试）</string>
+    <string name="st_trigger_hint">在首页按一次机身扳机，看「扳机事件」诊断行显示哪个通道，就选对应项；正常后保持自动即可。</string>
+    <string name="trig_auto">自动（全部通道，推荐先试）</string>
+    <string name="trig_fun1">① RFID功能键广播 android.rfid.FUN_KEY</string>
+    <string name="trig_fun2">② 功能键广播 intent.action.FUN_KEY</string>
+    <string name="trig_svc">③ 系统扫描服务广播</string>
+    <string name="trig_result">④ 扫码结果广播（nlscan等）</string>
+    <string name="trig_key">⑤ 物理按键（F键/手柄键）</string>
+    <string name="trig_screen">⑥ 仅屏幕按钮（禁用机身扳机）</string>
     <string name="st_region">工作区域</string>
     <string name="region_cn">中国（920-925MHz）</string>
     <string name="region_us">美国（902-928MHz）</string>
@@ -78,15 +87,19 @@
     <string name="stat_book">账面</string>
 
     <!-- 首页：扫描提示条 -->
-    <string name="trigger_hint">按一下机身扳机开始连续扫描，再按一下停止；扫到自动上传</string>
+    <string name="trigger_hint">按机身扳机或下方按钮：开始扫描 / 再按一次停止</string>
     <string name="trigger_camera">点按此处打开摄像头，对准条码连续扫描，自动上传</string>
-    <string name="trigger_scanning">扫描中…数据自动上传；再按一下扳机或按钮停止</string>
-    <string name="trigger_idle">点按此处打开摄像头，扫任务二维码加入盘点</string>
-    <string name="trigger_btn">🎯 点按开始扫描</string>
-    <string name="trigger_btn_active">🔴 扫描中…点按停止</string>
-    <string name="trigger_btn_join">📷 点按扫码加入盘点任务</string>
+    <string name="trigger_scanning">扫描中…数据自动上传；再按一次扳机或按钮停止</string>
+    <string name="trigger_idle">点按【开始扫描】，未加入任务时将先扫码加入盘点</string>
+    <string name="trigger_btn">▶ 开始扫描</string>
+    <string name="trigger_btn_active">■ 停止扫描</string>
+    <string name="trigger_btn_join">▶ 开始扫描</string>
     <string name="uhf_ready">UHF 模块：就绪%1$s</string>
     <string name="uhf_none">UHF 模块：未检测到（摄像头条码模式）</string>
+    <string name="diag_none">扳机事件：等待按下…</string>
+    <string name="diag_key">扳机事件：按键 code=%1$d</string>
+    <string name="diag_bcast">扳机事件：广播 %1$s（%2$s）</string>
+    <string name="diag_btn">扳机事件：屏幕按钮</string>
 
     <!-- 摄像头连续扫码页（无 UHF 模块的手机兜底） -->
     <string name="camera_title">摄像头条码盘点（条码即 EPC）</string>

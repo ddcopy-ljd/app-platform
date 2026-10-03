@@ -16,4 +16,13 @@
         <item>Q=1</item><item>Q=2</item><item>Q=3</item><item>Q=4</item>
         <item>Q=5</item><item>Q=6</item><item>Q=7</item>
     </string-array>
+    <string-array name="trigger_modes">
+        <item>@string/trig_auto</item>
+        <item>@string/trig_fun1</item>
+        <item>@string/trig_fun2</item>
+        <item>@string/trig_svc</item>
+        <item>@string/trig_result</item>
+        <item>@string/trig_key</item>
+        <item>@string/trig_screen</item>
+    </string-array>
 </resources>

@@ -15,8 +15,20 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putInt("pull_interval", v).apply()
 
     var power: Int
-        get() = sp.getInt("power", 20)
+        get() = sp.getInt("power", 30)
         set(v) = sp.edit().putInt("power", v).apply()
+
+    /** 一次性把老版本（默认20dBm，读取距离仅20cm）提升到最大功率30dBm；用户之后可自行调小。 */
+    fun migratePowerIfNeeded() {
+        if (sp.getBoolean("power_mig_v2", false)) return
+        sp.edit().putInt("power", 30).putBoolean("power_mig_v2", true).apply()
+    }
+
+    /** 扳机适配模式：0=自动(全通道) 1=android.rfid.FUN_KEY 2=intent.FUN_KEY
+     *  3=扫描服务广播 4=扫码结果广播 5=物理按键 6=仅屏幕按钮 */
+    var triggerMode: Int
+        get() = sp.getInt("trigger_mode", 0)
+        set(v) = sp.edit().putInt("trigger_mode", v).apply()
 
     var region: Int
         get() = sp.getInt("region", 0)

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_title">UHF Collaborative Stocktake</string>
+    <string name="app_title">UHF RFID Batch Stocktake</string>
     <string name="lang_switch">中文</string>
     <string name="settings_title">Settings</string>
     <string name="btn_settings">Settings</string>
@@ -17,6 +17,15 @@
 
     <string name="st_group_rfid">RFID Parameters</string>
     <string name="st_power">Read power</string>
+    <string name="st_trigger">Trigger mapping (try each if the side trigger does nothing)</string>
+    <string name="st_trigger_hint">Press the trigger once on the home screen; the diagnostic line shows which channel fired — pick that option. Auto is fine afterwards.</string>
+    <string name="trig_auto">Auto (all channels, try first)</string>
+    <string name="trig_fun1">① RFID FUN_KEY broadcast</string>
+    <string name="trig_fun2">② intent.action.FUN_KEY broadcast</string>
+    <string name="trig_svc">③ Scanner service broadcast</string>
+    <string name="trig_result">④ Scan result broadcast (nlscan etc.)</string>
+    <string name="trig_key">⑤ Physical key (F / gamepad buttons)</string>
+    <string name="trig_screen">⑥ Screen button only (disable trigger)</string>
     <string name="st_region">Region</string>
     <string name="region_cn">China (920-925MHz)</string>
     <string name="region_us">USA (902-928MHz)</string>
@@ -70,15 +79,19 @@
     <string name="stat_global">Global</string>
     <string name="stat_book">Book</string>
 
-    <string name="trigger_hint">Tap the trigger once to start continuous scanning, tap again to stop; reads upload automatically</string>
+    <string name="trigger_hint">Press the trigger or the button: start scanning / press again to stop</string>
     <string name="trigger_camera">Tap here to open the camera and continuously scan barcodes; reads upload automatically</string>
-    <string name="trigger_scanning">Scanning… reads upload automatically; tap trigger or button to stop</string>
-    <string name="trigger_idle">Tap to open camera and scan the task QR to join</string>
-    <string name="trigger_btn">🎯 TAP TO START SCANNING</string>
-    <string name="trigger_btn_active">🔴 SCANNING… tap to stop</string>
-    <string name="trigger_btn_join">📷 Tap to scan task QR and join</string>
+    <string name="trigger_scanning">Scanning… reads upload automatically; press trigger or button again to stop</string>
+    <string name="trigger_idle">Tap START; if not joined, it opens the camera to scan the task QR first</string>
+    <string name="trigger_btn">▶ START SCAN</string>
+    <string name="trigger_btn_active">■ STOP SCAN</string>
+    <string name="trigger_btn_join">▶ START SCAN</string>
     <string name="uhf_ready">UHF module: ready%1$s</string>
     <string name="uhf_none">UHF module: not found (camera barcode mode)</string>
+    <string name="diag_none">Trigger: waiting…</string>
+    <string name="diag_key">Trigger: key code=%1$d</string>
+    <string name="diag_bcast">Trigger: broadcast %1$s (%2$s)</string>
+    <string name="diag_btn">Trigger: screen button</string>
 
     <string name="camera_title">Camera barcode stocktake (barcode = EPC)</string>
     <string name="camera_counter">New %1$d · Duplicates %2$d</string>

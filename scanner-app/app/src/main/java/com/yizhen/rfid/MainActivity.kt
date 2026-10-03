@@ -14,8 +14,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.view.InputDevice
 import android.view.KeyEvent
-import android.view.MotionEvent
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
@@ -44,6 +44,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvTask: TextView
     private lateinit var tvSnapshot: TextView
     private lateinit var tvUhf: TextView
+    private lateinit var tvDiag: TextView
     private lateinit var tvDeviceNo: TextView
     private lateinit var tvHv: TextView
     private lateinit var statSelf: TextView
@@ -98,6 +99,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
+        prefs.migratePowerIfNeeded()
         engine = StockEngine(prefs)
         api = ApiClient(prefs)
         setContentView(R.layout.activity_main)
@@ -120,6 +122,7 @@ class MainActivity : AppCompatActivity() {
         tvTask = findViewById(R.id.tvTask)
         tvSnapshot = findViewById(R.id.tvSnapshot)
         tvUhf = findViewById(R.id.tvUhf)
+        tvDiag = findViewById(R.id.tvDiag)
         tvDeviceNo = findViewById(R.id.tvDeviceNo)
         tvHv = findViewById(R.id.tvHvAlert)
         statSelf = findViewById(R.id.statSelf)
@@ -159,7 +162,10 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.btnJoin).setOnClickListener { scanJoinQr() }
         findViewById<TextView>(R.id.btnDownload).setOnClickListener { downloadSnapshot() }
         // 屏幕模拟扳机：点按=扣下扳机（开始扫描），再点按=停止；与机身扳机同一套状态机
-        btnTrigger.setOnClickListener { onTriggerDown() }
+        btnTrigger.setOnClickListener {
+            tvDiag.setText(R.string.diag_btn)
+            onTriggerDown()
+        }
         tabStore.setOnClickListener { abnormalTab = false; refreshList() }
         tabAbnormal.setOnClickListener { abnormalTab = true; refreshList() }
     }
@@ -589,23 +595,30 @@ class MainActivity : AppCompatActivity() {
     private val triggerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val action = intent?.action ?: return
-            if (action != "android.rfid.FUN_KEY" && action != "android.intent.action.FUN_KEY") return
+            if (!TriggerChannels.handlesBroadcast(prefs.triggerMode)) return
+            if (prefs.triggerMode != TriggerChannels.MODE_AUTO &&
+                action != TriggerChannels.actionForMode(prefs.triggerMode)) return
             val down = when (val v = intent.extras?.get("keydown")) {
                 is Boolean -> v
                 is String -> v.equals("true", ignoreCase = true) || v == "1"
-                else -> intent.getBooleanExtra("keydown", false)
+                is Int -> v != 0
+                // 部分固件只发"按下"广播且不带任何 extras：注册的动作出现即视为按下
+                null -> true
+                else -> intent.getBooleanExtra("keydown", true)
             }
-            // 只处理按下事件；部分固件按住期间连发 keydown=false 双拍，
-            // 若据此停止会导致"按住即秒停、一个标签都扫不到"
+            // 诊断行：显示设备实际发出的广播通道
+            tvDiag.text = getString(R.string.diag_bcast, action, if (down) "down" else "up")
+            // 只处理按下事件；部分固件按住期间连发 keydown=false 双拍会秒停扫描
             if (down) onTriggerDown()
         }
     }
 
     override fun onResume() {
         super.onResume()
+        val actions = TriggerChannels.actionsForMode(prefs.triggerMode)
+        if (actions.isEmpty()) return
         val filter = IntentFilter().apply {
-            addAction("android.rfid.FUN_KEY")
-            addAction("android.intent.action.FUN_KEY")
+            actions.forEach { addAction(it) }
         }
         try {
             // FUN_KEY 由系统扫描服务发出，属于跨应用广播，Android 13+ 必须声明 EXPORTED
@@ -641,13 +654,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (!TriggerChannels.handlesKeyEvent(prefs.triggerMode))
+            return super.dispatchKeyEvent(event)
         val code = event.keyCode
-        val trigger = code in intArrayOf(
-            KeyEvent.KEYCODE_F1, KeyEvent.KEYCODE_F2, 102, 103, 115, 139, 140, 280, 281,
-            KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1
-        )
-        if (trigger) {
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) onTriggerDown()
+        // 已知扳机键码：F1-F12(131-143)、手柄键(96-110)、对焦(280/281)、
+        // 厂商扩展扳机键(282-300，C27 实测扳机=293)
+        val knownTrigger = code in 96..110 || code in 131..143 || code in 280..300
+        // 事件来源是物理按键（手柄/摇杆/方向键设备）——扳机被系统扫描服务吞掉时
+        // 常以 GAMEPAD/JOYSTICK 来源上报，不在键码表里也能兜住
+        val src = event.source
+        val physical = (src and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
+                (src and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
+        val dpadCenter = (src and InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD &&
+                code == KeyEvent.KEYCODE_DPAD_CENTER
+        val isTrigger = knownTrigger || physical || dpadCenter
+        if (isTrigger) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                tvDiag.text = getString(R.string.diag_key, code)
+                onTriggerDown()
+            }
             return true
         }
         return super.dispatchKeyEvent(event)

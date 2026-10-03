@@ -6,15 +6,15 @@
     android:background="@color/bg"
     android:fitsSystemWindows="true">
 
-    <!-- 顶栏 -->
+    <!-- 顶栏：标题 + 语言（设置已移入连接状态行） -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:paddingHorizontal="12dp"
-        android:paddingTop="10dp"
-        android:paddingBottom="8dp">
+        android:paddingTop="6dp"
+        android:paddingBottom="4dp">
 
         <TextView
             android:id="@+id/tvTitle"
@@ -23,7 +23,7 @@
             android:layout_weight="1"
             android:text="@string/app_title"
             android:textColor="@color/text_primary"
-            android:textSize="17sp"
+            android:textSize="16sp"
             android:textStyle="bold" />
 
         <TextView
@@ -31,26 +31,14 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:background="@drawable/bg_btn_dark"
-            android:paddingHorizontal="11dp"
-            android:paddingVertical="5dp"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
             android:text="@string/lang_switch"
             android:textColor="#CCCCCC"
-            android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/btnSettings"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:background="@drawable/bg_btn_dark"
-            android:paddingHorizontal="11dp"
-            android:paddingVertical="5dp"
-            android:text="@string/btn_settings"
-            android:textColor="#DDDDDD"
-            android:textSize="12sp" />
+            android:textSize="11sp" />
     </LinearLayout>
 
-    <!-- 头部信息区：小屏手持机上内容过多时可上下滚动，与明细列表各占一半高度 -->
+    <!-- 头部信息区：紧凑排列，内容过多时可滚动；占 1 份高度 -->
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -58,25 +46,20 @@
         android:fillViewport="true"
         android:scrollbars="none">
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical">
-
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:paddingHorizontal="10dp">
 
-            <!-- 规则折叠卡 -->
+            <!-- 业务说明（默认收起） -->
             <LinearLayout
                 android:id="@+id/rulesCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:background="@drawable/bg_card"
-                android:padding="12dp">
+                android:padding="9dp">
 
                 <LinearLayout
                     android:id="@+id/rulesHead"
@@ -107,23 +90,24 @@
                     android:id="@+id/tvRulesBody"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:lineSpacingMultiplier="1.35"
+                    android:layout_marginTop="6dp"
+                    android:lineSpacingMultiplier="1.3"
                     android:text="@string/rules_body"
                     android:textColor="#B0B0B0"
                     android:textSize="11sp"
                     android:visibility="gone" />
             </LinearLayout>
 
-            <!-- 任务/连接状态卡 -->
+            <!-- 任务/连接状态卡（紧凑三行布局） -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:background="@drawable/bg_card"
-                android:layout_marginTop="10dp"
-                android:padding="12dp">
+                android:layout_marginTop="6dp"
+                android:padding="9dp">
 
+                <!-- 第一行：连接状态 + 设备号 + 设置 -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -138,82 +122,144 @@
 
                     <TextView
                         android:id="@+id/tvNet"
-                        android:layout_width="0dp"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="8dp"
+                        android:layout_marginStart="6dp"
                         android:text="@string/net_offline"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
 
                     <TextView
                         android:id="@+id/tvDeviceNo"
-                        android:layout_width="wrap_content"
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        android:singleLine="true"
+                        android:ellipsize="end"
                         android:text="@string/device_none"
                         android:textColor="@color/text_hint"
                         android:textSize="11sp" />
+
+                    <TextView
+                        android:id="@+id/btnSettings"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_btn_dark"
+                        android:paddingHorizontal="10dp"
+                        android:paddingVertical="4dp"
+                        android:text="@string/btn_settings"
+                        android:textColor="#DDDDDD"
+                        android:textSize="11sp" />
                 </LinearLayout>
 
-                <TextView
-                    android:id="@+id/tvTask"
-                    android:layout_width="wrap_content"
+                <!-- 第二行：任务状态 + 扫码加入任务 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="@string/task_none"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginTop="7dp">
 
+                    <TextView
+                        android:id="@+id/tvTask"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:singleLine="true"
+                        android:text="@string/task_none"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/btnJoin"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:background="@drawable/bg_btn_blue"
+                        android:gravity="center"
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="6dp"
+                        android:text="@string/btn_scan_join"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <!-- 快照 + UHF 模块信息（一行） -->
                 <TextView
                     android:id="@+id/tvSnapshot"
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="3dp"
+                    android:layout_marginTop="5dp"
+                    android:singleLine="true"
                     android:text="@string/snapshot_none"
                     android:textColor="@color/text_secondary"
                     android:textSize="11sp" />
 
                 <TextView
                     android:id="@+id/tvUhf"
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="3dp"
+                    android:layout_marginTop="2dp"
+                    android:singleLine="true"
                     android:text="@string/uhf_none"
                     android:textColor="@color/text_hint"
                     android:textSize="11sp" />
 
+                <!-- 第三行：下载库存 + 开始/停止扫描 -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:layout_marginTop="10dp">
-
-                    <TextView
-                        android:id="@+id/btnJoin"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_btn_blue"
-                        android:gravity="center"
-                        android:paddingVertical="9dp"
-                        android:text="@string/btn_scan_join"
-                        android:textColor="#FFFFFF"
-                        android:textSize="12sp" />
+                    android:layout_marginTop="8dp">
 
                     <TextView
                         android:id="@+id/btnDownload"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="44dp"
                         android:layout_weight="1"
-                        android:layout_marginStart="8dp"
                         android:background="@drawable/bg_btn_dark"
                         android:gravity="center"
-                        android:paddingVertical="9dp"
                         android:text="@string/btn_download"
                         android:textColor="#DDDDDD"
-                        android:textSize="12sp" />
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/btnTrigger"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        android:background="@drawable/bg_btn_green"
+                        android:gravity="center"
+                        android:text="@string/trigger_btn"
+                        android:textColor="#FFFFFF"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
                 </LinearLayout>
+
+                <!-- 操作提示（一行小字，无 UHF 的手机上点按开摄像头） -->
+                <TextView
+                    android:id="@+id/tvTriggerHint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:gravity="center"
+                    android:text="@string/trigger_hint"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="11sp" />
+
+                <!-- 扳机诊断行：显示最近一次硬件触发事件来源，方便适配不同固件 -->
+                <TextView
+                    android:id="@+id/tvDiag"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:singleLine="true"
+                    android:text="@string/diag_none"
+                    android:textColor="@color/text_hint"
+                    android:textSize="10sp" />
             </LinearLayout>
 
             <!-- 高价值提醒 -->
@@ -221,10 +267,10 @@
                 android:id="@+id/tvHvAlert"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="6dp"
                 android:background="@drawable/badge_orange"
                 android:gravity="center"
-                android:paddingVertical="9dp"
+                android:paddingVertical="6dp"
                 android:textColor="#FFE0B2"
                 android:textSize="12sp"
                 android:textStyle="bold"
@@ -235,7 +281,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="6dp"
                 android:weightSum="4">
 
                 <LinearLayout style="@style/HomeStat">
@@ -255,77 +301,49 @@
                     <TextView style="@style/HomeStatLabel" android:text="@string/stat_book" />
                 </LinearLayout>
             </LinearLayout>
-
-            <!-- 扳机提示 -->
-            <TextView
-                android:id="@+id/tvTriggerHint"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:background="@drawable/badge_green"
-                android:gravity="center"
-                android:paddingVertical="12dp"
-                android:text="@string/trigger_hint"
-                android:textColor="#B9F5D0"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-
-            <!-- 模拟扳机：按住=按下扳机，松开=弹起 -->
-            <TextView
-                android:id="@+id/btnTrigger"
-                android:layout_width="match_parent"
-                android:layout_height="62dp"
-                android:layout_marginTop="10dp"
-                android:background="@drawable/bg_btn_green"
-                android:gravity="center"
-                android:text="@string/trigger_btn"
-                android:textColor="#FFFFFF"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            </LinearLayout>
         </LinearLayout>
     </ScrollView>
 
-    <!-- Tab -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/bg_input"
-                android:padding="3dp">
+    <!-- Tab（固定） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginHorizontal="10dp"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/bg_input"
+        android:padding="3dp">
 
-                <TextView
-                    android:id="@+id/tabStore"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:gravity="center"
-                    android:paddingVertical="9dp"
-                    android:text="@string/tab_store"
-                    android:textColor="@color/green"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
+        <TextView
+            android:id="@+id/tabStore"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:paddingVertical="7dp"
+            android:text="@string/tab_store"
+            android:textColor="@color/green"
+            android:textSize="13sp"
+            android:textStyle="bold" />
 
-                <TextView
-                    android:id="@+id/tabAbnormal"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:gravity="center"
-                    android:paddingVertical="9dp"
-                    android:text="@string/tab_abnormal"
-                    android:textColor="@color/text_secondary"
-                android:textSize="13sp" />
-            </LinearLayout>
+        <TextView
+            android:id="@+id/tabAbnormal"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:paddingVertical="7dp"
+            android:text="@string/tab_abnormal"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+    </LinearLayout>
 
-    <!-- 明细列表（固定底部区域） -->
+    <!-- EPC 明细列表：占 1.5 份高度，区域内上下滑动 -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:layout_marginTop="6dp">
+        android:layout_weight="1.5"
+        android:layout_marginTop="4dp">
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/rvScan"
@@ -333,7 +351,7 @@
             android:layout_height="match_parent"
             android:clipToPadding="false"
             android:paddingHorizontal="10dp"
-            android:paddingBottom="10dp"
+            android:paddingBottom="8dp"
             android:scrollbars="vertical" />
 
         <TextView

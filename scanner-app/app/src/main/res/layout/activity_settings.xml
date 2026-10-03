@@ -131,6 +131,17 @@
                     android:progressTint="@color/green"
                     android:thumbTint="@color/green" />
 
+                <TextView style="@style/StLabel" android:text="@string/st_trigger" />
+                <Spinner android:id="@+id/stTriggerMode" style="@style/StSpinner"
+                    android:entries="@array/trigger_modes" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="6dp"
+                    android:text="@string/st_trigger_hint"
+                    android:textColor="@color/text_hint"
+                    android:textSize="11sp" />
+
                 <TextView style="@style/StLabel" android:text="@string/st_region" />
                 <Spinner android:id="@+id/stRegion" style="@style/StSpinner"
                     android:entries="@array/regions" />
