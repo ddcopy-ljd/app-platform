@@ -18,11 +18,9 @@ object RfidManager {
     var ready = false
         private set
 
-    // 初始化成功后缓存的模块信息（供界面展示，避免主线程串口调用）
-    var cachedVersion = ""
-        private set
-    var cachedPower = -1
-        private set
+    // 初始化后由独立线程探测的模块信息（如 "v2.3 · 20dBm"），失败为空串
+    @Volatile
+    var cachedInfo = ""
 
     @Volatile
     var scanning = false
@@ -36,11 +34,19 @@ object RfidManager {
             uhf = RFIDWithUHFUART.getInstance()
             uhf?.init(context)
             ready = true
-            cachedVersion = version()
-            cachedPower = power()
         } catch (_: Throwable) {
             ready = false
         }
+    }
+
+    /** 探测模块版本与当前功率（阻塞串口调用，仅在工作线程调用；异常返回 null）。 */
+    fun probeInfo(): String? = try {
+        val v = version()
+        val p = power()
+        listOfNotNull(v.ifBlank { null }, if (p in 1..33) "${p}dBm" else null)
+            .joinToString(" · ").ifBlank { null }
+    } catch (_: Throwable) {
+        null
     }
 
     fun version(): String = try {

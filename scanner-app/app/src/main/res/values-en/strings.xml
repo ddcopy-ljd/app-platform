@@ -70,14 +70,14 @@
     <string name="stat_global">Global</string>
     <string name="stat_book">Book</string>
 
-    <string name="trigger_hint">Hold the scan trigger to batch-scan; reads upload automatically</string>
+    <string name="trigger_hint">Tap the trigger once to start continuous scanning, tap again to stop; reads upload automatically</string>
     <string name="trigger_camera">Tap here to open the camera and continuously scan barcodes; reads upload automatically</string>
-    <string name="trigger_scanning">Scanning… reads upload automatically, no finish needed</string>
+    <string name="trigger_scanning">Scanning… reads upload automatically; tap trigger or button to stop</string>
     <string name="trigger_idle">Tap to open camera and scan the task QR to join</string>
-    <string name="trigger_btn">🎯 HOLD TO SCAN (hold = scan, release = stop)</string>
-    <string name="trigger_btn_active">🔴 SCANNING… release to stop</string>
-    <string name="trigger_btn_join">📷 Hold: scan task QR to join</string>
-    <string name="uhf_ready">UHF module: ready %1$s · power %2$d dBm</string>
+    <string name="trigger_btn">🎯 TAP TO START SCANNING</string>
+    <string name="trigger_btn_active">🔴 SCANNING… tap to stop</string>
+    <string name="trigger_btn_join">📷 Tap to scan task QR and join</string>
+    <string name="uhf_ready">UHF module: ready%1$s</string>
     <string name="uhf_none">UHF module: not found (camera barcode mode)</string>
 
     <string name="camera_title">Camera barcode stocktake (barcode = EPC)</string>

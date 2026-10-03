@@ -78,14 +78,14 @@
     <string name="stat_book">账面</string>
 
     <!-- 首页：扫描提示条 -->
-    <string name="trigger_hint">按住机身扫描扳机即可批量盘点，扫到自动上传</string>
+    <string name="trigger_hint">按一下机身扳机开始连续扫描，再按一下停止；扫到自动上传</string>
     <string name="trigger_camera">点按此处打开摄像头，对准条码连续扫描，自动上传</string>
-    <string name="trigger_scanning">扫描中…数据自动上传，无需手动结束</string>
+    <string name="trigger_scanning">扫描中…数据自动上传；再按一下扳机或按钮停止</string>
     <string name="trigger_idle">点按此处打开摄像头，扫任务二维码加入盘点</string>
-    <string name="trigger_btn">🎯 按住模拟扳机（按住扫描，松开停止）</string>
-    <string name="trigger_btn_active">🔴 扫描中…松开停止</string>
-    <string name="trigger_btn_join">📷 按住模拟扳机：扫码加入任务</string>
-    <string name="uhf_ready">UHF 模块：就绪 %1$s · 功率 %2$d dBm</string>
+    <string name="trigger_btn">🎯 点按开始扫描</string>
+    <string name="trigger_btn_active">🔴 扫描中…点按停止</string>
+    <string name="trigger_btn_join">📷 点按扫码加入盘点任务</string>
+    <string name="uhf_ready">UHF 模块：就绪%1$s</string>
     <string name="uhf_none">UHF 模块：未检测到（摄像头条码模式）</string>
 
     <!-- 摄像头连续扫码页（无 UHF 模块的手机兜底） -->

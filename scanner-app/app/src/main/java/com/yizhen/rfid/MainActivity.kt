@@ -66,7 +66,7 @@ class MainActivity : AppCompatActivity() {
 
     private var pending = LinkedHashMap<String, Int>() // 待上报 EPC->RSSI
     private var lastNetworkOk = false
-    private var triggerDown = false   // 扳机当前是否按住（防止 KeyEvent 与广播双通道重复触发）
+    private var lastTriggerDownAt = 0L
 
     private var tone: ToneGenerator? = null
     private var vibrator: Vibrator? = null
@@ -158,15 +158,8 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<TextView>(R.id.btnJoin).setOnClickListener { scanJoinQr() }
         findViewById<TextView>(R.id.btnDownload).setOnClickListener { downloadSnapshot() }
-        // 屏幕模拟扳机：按下=扣下扳机，松开/滑出=弹起
-        btnTrigger.setOnTouchListener { _, e ->
-            when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { onTriggerDown(); true }
-                MotionEvent.ACTION_UP -> { onTriggerUp(); true }
-                MotionEvent.ACTION_CANCEL -> { onTriggerUp(); true }
-                else -> true
-            }
-        }
+        // 屏幕模拟扳机：点按=扣下扳机（开始扫描），再点按=停止；与机身扳机同一套状态机
+        btnTrigger.setOnClickListener { onTriggerDown() }
         tabStore.setOnClickListener { abnormalTab = false; refreshList() }
         tabAbnormal.setOnClickListener { abnormalTab = true; refreshList() }
     }
@@ -174,10 +167,9 @@ class MainActivity : AppCompatActivity() {
     private fun initRfid() {
         net.execute {
             // 部分固件首次 init 会失败（串口被占用/未就绪），重试 3 次
-            var ok = false
             repeat(3) {
                 RfidManager.init(applicationContext)
-                if (RfidManager.ready) { ok = true; return@repeat }
+                if (RfidManager.ready) return@repeat
                 Thread.sleep(800)
             }
             main.post {
@@ -187,6 +179,14 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, R.string.demo_mode, Toast.LENGTH_SHORT).show()
                 }
                 refreshUi()
+            }
+            // 版本/功率探测是阻塞串口调用，放独立线程——即便卡死也不影响就绪判定和API线程
+            if (RfidManager.ready) {
+                Thread {
+                    val info = RfidManager.probeInfo()
+                    RfidManager.cachedInfo = info ?: ""
+                    main.post { refreshUi() }
+                }.start()
             }
         }
     }
@@ -595,14 +595,14 @@ class MainActivity : AppCompatActivity() {
                 is String -> v.equals("true", ignoreCase = true) || v == "1"
                 else -> intent.getBooleanExtra("keydown", false)
             }
-            if (down) onTriggerDown() else onTriggerUp()
+            // 只处理按下事件；部分固件按住期间连发 keydown=false 双拍，
+            // 若据此停止会导致"按住即秒停、一个标签都扫不到"
+            if (down) onTriggerDown()
         }
     }
 
     override fun onResume() {
         super.onResume()
-        // 扫码摄像头页面期间收不到松开事件，回来时复位扳机状态，避免下次按下被吞
-        triggerDown = false
         val filter = IntentFilter().apply {
             addAction("android.rfid.FUN_KEY")
             addAction("android.intent.action.FUN_KEY")
@@ -622,47 +622,22 @@ class MainActivity : AppCompatActivity() {
         try { unregisterReceiver(triggerReceiver) } catch (_: Exception) {}
     }
 
-    /** 扳机按下：任务内启动 UHF 盘存（无 UHF 的手机开摄像头扫条码）；
-     *  任务外不做状态判断，直接打开摄像头扫任务二维码加入盘点。
-     *  防抖：350ms 内的重复 down（KeyEvent+广播双通道/固件抖动）只算一次；
-     *  若已在扫描中再次按下，视为"再按一下停止"（脉冲型固件没有松开事件）。 */
+    /** 触发（硬件扳机广播/KeyEvent/屏幕按钮共用）：按一下开始连续扫描，再按一下停止。
+     *  不依赖"松开"事件——不同固件的松开语义不可靠（双拍/连发），按住即停模式已废弃。
+     *  防抖：800ms 内的重复触发只算一次（KeyEvent+广播双通道、固件连发）。 */
     private fun onTriggerDown() {
         val now = android.os.SystemClock.elapsedRealtime()
-        if (now - lastTriggerDownAt < 350) return
+        if (now - lastTriggerDownAt < 800) return
         lastTriggerDownAt = now
-        if (scanning && RfidManager.ready) {
-            triggerDown = false
-            cancelTriggerStop()
+        if (scanning) {
             pauseScan()
             return
         }
-        triggerDown = true
         if (canScan()) {
             if (RfidManager.ready) startScan() else openCameraScan()
         } else {
             scanJoinQr()
         }
-    }
-
-    /** 扳机松开：延迟 300ms 再停——部分固件按下瞬间会连发 down+false 双拍，
-     *  立即停会导致"每按一次只读到 1 个标签"。 */
-    private fun onTriggerUp() {
-        if (!triggerDown) return
-        triggerDown = false
-        if (scanning && RfidManager.ready) {
-            cancelTriggerStop()
-            val task = Runnable { if (scanning && RfidManager.ready) pauseScan() }
-            triggerStop = task
-            main.postDelayed(task, 300)
-        }
-    }
-
-    private var triggerStop: Runnable? = null
-    private var lastTriggerDownAt = 0L
-
-    private fun cancelTriggerStop() {
-        triggerStop?.let { main.removeCallbacks(it) }
-        triggerStop = null
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -672,10 +647,7 @@ class MainActivity : AppCompatActivity() {
             KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1
         )
         if (trigger) {
-            when (event.action) {
-                KeyEvent.ACTION_DOWN -> if (event.repeatCount == 0) onTriggerDown()
-                KeyEvent.ACTION_UP -> onTriggerUp()
-            }
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) onTriggerDown()
             return true
         }
         return super.dispatchKeyEvent(event)
@@ -707,10 +679,9 @@ class MainActivity : AppCompatActivity() {
             if (snapshotReady) getString(R.string.snapshot_ok, engine.snapshotCount)
             else getString(R.string.snapshot_none)
 
-        // UHF 模块状态（初始化时缓存，不在主线程访问串口）
+        // UHF 模块状态（初始化后由独立线程探测，不在主线程访问串口）
         tvUhf.text =
-            if (RfidManager.ready) getString(R.string.uhf_ready,
-                RfidManager.cachedVersion.ifBlank { "" }, RfidManager.cachedPower)
+            if (RfidManager.ready) getString(R.string.uhf_ready, RfidManager.cachedInfo)
             else getString(R.string.uhf_none)
 
         // 统计
