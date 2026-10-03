@@ -76,7 +76,7 @@
     <string name="trigger_hint">Hold the scan trigger to batch-scan; reads upload automatically</string>
     <string name="trigger_camera">Tap here to open the camera and continuously scan barcodes; reads upload automatically</string>
     <string name="trigger_scanning">Scanning… reads upload automatically, no finish needed</string>
-    <string name="trigger_idle">Scan the task QR and download the snapshot first</string>
+    <string name="trigger_idle">Tap to open camera and scan the task QR to join</string>
 
     <string name="camera_title">Camera barcode stocktake (barcode = EPC)</string>
     <string name="camera_counter">New %1$d · Duplicates %2$d</string>

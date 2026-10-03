@@ -84,7 +84,7 @@
     <string name="trigger_hint">按住机身扫描扳机即可批量盘点，扫到自动上传</string>
     <string name="trigger_camera">点按此处打开摄像头，对准条码连续扫描，自动上传</string>
     <string name="trigger_scanning">扫描中…数据自动上传，无需手动结束</string>
-    <string name="trigger_idle">请先扫码加入盘点任务并下载商品快照</string>
+    <string name="trigger_idle">点按此处打开摄像头，扫任务二维码加入盘点</string>
 
     <!-- 摄像头连续扫码页（无 UHF 模块的手机兜底） -->
     <string name="camera_title">摄像头条码盘点（条码即 EPC）</string>

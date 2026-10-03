@@ -601,7 +601,8 @@ class MainActivity : AppCompatActivity() {
             tvHv.text = getString(R.string.hv_alert, hv)
         } else tvHv.visibility = View.GONE
 
-        // 扫描提示条：C27 有 UHF 模块提示按扳机；手机无模块时点击打开摄像头
+        // 扫描提示条：任务内 C27 按扳机、手机点按开摄像头扫条码；
+        // 任务外（未加入/已结束）点按直接打开摄像头扫任务二维码加入，不做任何状态拦截
         if (canScan()) {
             tvTriggerHint.alpha = 1f
             tvTriggerHint.setText(if (scanning) R.string.trigger_scanning
@@ -610,9 +611,9 @@ class MainActivity : AppCompatActivity() {
             tvTriggerHint.setOnClickListener(
                 if (RfidManager.ready) null else View.OnClickListener { openCameraScan() })
         } else {
-            tvTriggerHint.alpha = 0.5f
+            tvTriggerHint.alpha = 1f
             tvTriggerHint.setText(R.string.trigger_idle)
-            tvTriggerHint.setOnClickListener(null)
+            tvTriggerHint.setOnClickListener { scanJoinQr() }
         }
 
         // Tab 颜色
