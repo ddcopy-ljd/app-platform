@@ -80,11 +80,18 @@
     <string name="stat_global">全局已扫</string>
     <string name="stat_book">账面</string>
 
-    <!-- 首页：控制 -->
-    <string name="btn_start">开始盘点</string>
-    <string name="btn_pause">暂停</string>
-    <string name="btn_resume">继续</string>
-    <string name="btn_finish">结束提交</string>
+    <!-- 首页：扫描提示条 -->
+    <string name="trigger_hint">按住机身扫描扳机即可批量盘点，扫到自动上传</string>
+    <string name="trigger_camera">点按此处打开摄像头，对准条码连续扫描，自动上传</string>
+    <string name="trigger_scanning">扫描中…数据自动上传，无需手动结束</string>
+    <string name="trigger_idle">请先扫码加入盘点任务并下载商品快照</string>
+
+    <!-- 摄像头连续扫码页（无 UHF 模块的手机兜底） -->
+    <string name="camera_title">摄像头条码盘点（条码即 EPC）</string>
+    <string name="camera_counter">本次新扫 %1$d · 重复 %2$d</string>
+    <string name="camera_done">完成</string>
+    <string name="camera_hint">将条码对准取景框即可连续扫描；重复条码自动去重，数据实时上传，点“完成”返回</string>
+    <string name="camera_no_permission">未授予摄像头权限，无法扫码盘点</string>
 
     <!-- 首页：Tab -->
     <string name="tab_store">本店商品</string>
@@ -103,7 +110,7 @@
     <string name="rules_title">业务说明与规则</string>
     <string name="rules_fold">收起</string>
     <string name="rules_expand">展开</string>
-    <string name="rules_body">一、任务与设备\n1. 盘点任务由主管在系统里开启，手持机才能开始盘点；没开启时【开始盘点】按钮不可点。\n2. 盘点期间，本店销售暂停，商品不能买卖、不能出入库。\n3. 点【结束提交】后，本机扫到的数据上交给系统统一核对。\n4. 任务开始时系统给每台设备编临时号（如1号、2号），任务结束释放。\n\n二、多台设备协同\n5. 手持机按设定间隔自动获取“其他设备已扫到的商品”并更新屏幕。\n6. 每次只取新增的，不重复取，省流量。\n7. 只有一台设备时不取别人数据，高价值提醒只按本机算。\n8. 多台设备时合成一张完整盘点表。\n9. 断网不影响使用，网络恢复后自动补齐。\n10. 网络正常看到全局；断网只显示本机，提醒按本机算。\n11-13. 断网数据先存本机，恢复后自动补传；非本店商品照样标红。\n\n三、商品核对\n14. 开始前下载本店全部商品清单到本地，扫描时立刻比对。\n15. 扫到非本店商品标红，挑出单独存放，结束后统一处理。\n16. 高价值商品没扫到会一直置顶提醒，重点寻找。\n\n四、数据与结果\n17. 能传就传，传不了先存，恢复后自动补传。\n18. 同一件商品重复扫只记一次。\n19. 排序：异常 &gt; 未扫高价值 &gt; 已扫高价值 &gt; 普通 &gt; 其他设备扫的。\n20. 手持机只负责扫描、核对、上传，差异结果由后台计算。\n21. 全部设备合并去重，主管核对确认后才解除销售暂停。</string>
+    <string name="rules_body">一、任务与设备\n1. 盘点任务由主管在系统里开启，设备扫码加入任务并下载商品快照后才能扫描。\n2. 盘点期间，本店销售暂停，商品不能买卖、不能出入库。\n3. 加入任务后直接按住机身扫描扳机即可批量盘点；没有 UHF 模块的手机点屏幕提示条打开摄像头扫条码，条码即 EPC。扫到的数据自动上传，无需手动开始或结束。\n4. 主管结束任务后设备自动停止扫描和上传；任务开始时系统给每台设备编临时号（如1号、2号），任务结束释放。\n\n二、多台设备协同\n5. 手持机按设定间隔自动获取“其他设备已扫到的商品”并更新屏幕。\n6. 每次只取新增的，不重复取，省流量。\n7. 只有一台设备时不取别人数据，高价值提醒只按本机算。\n8. 多台设备时合成一张完整盘点表。\n9. 断网不影响使用，网络恢复后自动补齐。\n10. 网络正常看到全局；断网只显示本机，提醒按本机算。\n11-13. 断网数据先存本机，恢复后自动补传；非本店商品照样标红。\n\n三、商品核对\n14. 开始前下载本店全部商品清单到本地，扫描时立刻比对。\n15. 扫到非本店商品标红，挑出单独存放，结束后统一处理。\n16. 高价值商品没扫到会一直置顶提醒，重点寻找。\n\n四、数据与结果\n17. 能传就传，传不了先存，恢复后自动补传。\n18. 同一件商品重复扫只记一次。\n19. 排序：异常 &gt; 未扫高价值 &gt; 已扫高价值 &gt; 普通 &gt; 其他设备扫的。\n20. 手持机只负责扫描、核对、上传，差异结果由后台计算。\n21. 全部设备合并去重，主管核对确认后才解除销售暂停。</string>
 
     <!-- 状态/提示 -->
     <string name="scanning">扫描中…</string>
@@ -112,10 +119,8 @@
     <string name="need_join">请先扫码加入盘点任务并下载快照</string>
     <string name="joined_ok">已加入任务，编号 %1$d 号机</string>
     <string name="snapshot_downloaded">快照已下载：%1$d 件</string>
-    <string name="upload_finished">本机已结束提交</string>
     <string name="task_stopped_remote">主管已结束任务，停止扫描</string>
     <string name="offline_queued">网络异常，已存待传队列</string>
     <string name="rfid_fail">RFID 模块初始化失败，请在 C27 设备上运行</string>
-    <string name="demo_mode">演示模式（无 RFID 硬件）</string>
-    <string name="confirm_finish">确认结束本机盘点并提交？提交后不能继续扫描。</string>
+    <string name="demo_mode">未检测到 UHF 模块，可点屏幕提示条用摄像头扫条码盘点</string>
 </resources>

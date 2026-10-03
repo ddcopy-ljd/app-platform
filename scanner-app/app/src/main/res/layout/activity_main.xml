@@ -239,68 +239,19 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- 控制按钮 -->
-            <LinearLayout
+            <!-- 扳机提示 -->
+            <TextView
+                android:id="@+id/tvTriggerHint"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginTop="10dp">
-
-                <TextView
-                    android:id="@+id/btnStart"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_btn_green"
-                    android:gravity="center"
-                    android:paddingVertical="13dp"
-                    android:text="@string/btn_start"
-                    android:textColor="#FFFFFF"
-                    android:textSize="15sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/btnPause"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="8dp"
-                    android:background="@drawable/bg_btn_dark"
-                    android:gravity="center"
-                    android:paddingVertical="13dp"
-                    android:text="@string/btn_pause"
-                    android:textColor="#AAAAAA"
-                    android:textSize="15sp"
-                    android:visibility="gone" />
-
-                <TextView
-                    android:id="@+id/btnResume"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="8dp"
-                    android:background="@drawable/bg_btn_blue"
-                    android:gravity="center"
-                    android:paddingVertical="13dp"
-                    android:text="@string/btn_resume"
-                    android:textColor="#FFFFFF"
-                    android:textSize="15sp"
-                    android:visibility="gone" />
-
-                <TextView
-                    android:id="@+id/btnFinish"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="8dp"
-                    android:background="@drawable/bg_btn_red"
-                    android:gravity="center"
-                    android:paddingVertical="13dp"
-                    android:text="@string/btn_finish"
-                    android:textColor="#FFFFFF"
-                    android:textSize="15sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
+                android:layout_marginTop="10dp"
+                android:background="@drawable/badge_green"
+                android:gravity="center"
+                android:paddingVertical="12dp"
+                android:text="@string/trigger_hint"
+                android:textColor="#B9F5D0"
+                android:textSize="13sp"
+                android:textStyle="bold" />
 
             <!-- Tab -->
             <LinearLayout

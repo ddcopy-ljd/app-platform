@@ -14,7 +14,6 @@ import android.view.KeyEvent
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -45,10 +44,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statAbnormal: TextView
     private lateinit var statGlobal: TextView
     private lateinit var statBook: TextView
-    private lateinit var btnStart: TextView
-    private lateinit var btnPause: TextView
-    private lateinit var btnResume: TextView
-    private lateinit var btnFinish: TextView
+    private lateinit var tvTriggerHint: TextView
     private lateinit var tabStore: TextView
     private lateinit var tabAbnormal: TextView
     private lateinit var tvEmpty: TextView
@@ -58,7 +54,6 @@ class MainActivity : AppCompatActivity() {
     private var active = false       // 任务处于进行中
     private var snapshotReady = false
     private var scanning = false
-    private var submitted = false
     private var abnormalTab = false
     private var rulesOpen = false
 
@@ -122,10 +117,7 @@ class MainActivity : AppCompatActivity() {
         statAbnormal = findViewById(R.id.statAbnormal)
         statGlobal = findViewById(R.id.statGlobal)
         statBook = findViewById(R.id.statBook)
-        btnStart = findViewById(R.id.btnStart)
-        btnPause = findViewById(R.id.btnPause)
-        btnResume = findViewById(R.id.btnResume)
-        btnFinish = findViewById(R.id.btnFinish)
+        tvTriggerHint = findViewById(R.id.tvTriggerHint)
         tabStore = findViewById(R.id.tabStore)
         tabAbnormal = findViewById(R.id.tabAbnormal)
         tvEmpty = findViewById(R.id.tvEmpty)
@@ -156,10 +148,6 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<TextView>(R.id.btnJoin).setOnClickListener { scanJoinQr() }
         findViewById<TextView>(R.id.btnDownload).setOnClickListener { downloadSnapshot() }
-        btnStart.setOnClickListener { startScan() }
-        btnPause.setOnClickListener { pauseScan() }
-        btnResume.setOnClickListener { startScan() }
-        btnFinish.setOnClickListener { confirmFinish() }
         tabStore.setOnClickListener { abnormalTab = false; refreshList() }
         tabAbnormal.setOnClickListener { abnormalTab = true; refreshList() }
     }
@@ -226,7 +214,6 @@ class MainActivity : AppCompatActivity() {
                     prefs.pullSinceId = 0
                     prefs.snapshotJson = ""
                     prefs.offlineQueue = "[]"
-                    submitted = false
                     engine.reset()
                     snapshotReady = false
                 }
@@ -294,19 +281,18 @@ class MainActivity : AppCompatActivity() {
 
     // -------------------------------- 扫描
 
-    private fun canScan() = joined && active && snapshotReady && !submitted
+    private fun canScan() = joined && active && snapshotReady
 
     /** 旧任务已完成（主管核对确认/强制终止）或旧 key 已失效：彻底退出任务态。
      *  清空保存的任务地址，下一次盘点必须重新扫码加入新任务，避免拿着旧任务直接开扫。 */
     private fun leaveTask(showHint: Boolean) {
-        val wasInTask = joined || submitted || snapshotReady || prefs.snapshotJson.isNotBlank()
+        val wasInTask = joined || snapshotReady || prefs.snapshotJson.isNotBlank()
         if (scanning) {
             scanning = false
             RfidManager.stop()
         }
         joined = false
         active = false
-        submitted = false
         snapshotReady = false
         pending.clear()
         engine.reset()
@@ -325,6 +311,7 @@ class MainActivity : AppCompatActivity() {
     private fun isDone(status: String?) = status == "已完成"
     private fun Exception.invalidTaskKey() =
         (message ?: "").let { it.contains("403") || it.contains("404") }
+    private fun Exception.taskClosed() = (message ?: "").contains("409")
 
     private fun startScan() {
         if (!canScan()) { toast(R.string.need_join); return }
@@ -349,7 +336,7 @@ class MainActivity : AppCompatActivity() {
         refreshUi()
     }
 
-    private fun onTag(epcRaw: String, rssi: Int) {
+    private fun onTag(epcRaw: String, rssi: Int, fromCamera: Boolean = false) {
         if (!scanning) return
         val epc = epcRaw.uppercase()
         if (prefs.rssiEnabled && rssi != 0 && rssi < prefs.rssiThreshold) return
@@ -363,30 +350,35 @@ class MainActivity : AppCompatActivity() {
                 pending[epc] = rssi // 重复也上传，服务端去重；流量可接受
             }
         }
-        if (prefs.readMode == 1) { scanning = false }
+        // 单次读取模式只对 UHF 扳机生效；摄像头连续扫描由扫码页自行控制
+        if (prefs.readMode == 1 && !fromCamera) { scanning = false }
         refreshUi()
     }
 
-    private fun confirmFinish() {
-        AlertDialog.Builder(this)
-            .setMessage(R.string.confirm_finish)
-            .setPositiveButton(android.R.string.ok) { _, _ -> finishDevice() }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+    // -------------------------------- 摄像头兜底扫描（无 UHF 模块的手机）
+
+    private val cameraLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) {
+        scanning = false
+        BarcodeScanActivity.onBarcode = null
+        refreshUi()
     }
 
-    private fun finishDevice() {
-        pauseScan()
-        submitted = true
-        flushUploads(blocking = true)
-        net.execute {
-            try {
-                api.finish()
-                main.post { toast(R.string.upload_finished); refreshUi() }
-            } catch (e: Exception) {
-                main.post { toast(e.message ?: "finish error"); refreshUi() }
+    /** 检测不到 UHF 设备时：点提示条打开摄像头，连续识别条码当作 EPC，
+     *  走与 RFID 完全相同的比对/去重/上传流程。 */
+    private fun openCameraScan() {
+        if (!canScan()) { toast(R.string.need_join); return }
+        scanning = true
+        BarcodeScanActivity.onBarcode = { code ->
+            if (!scanning) {
+                false // 任务已被主管结束/进入待核对：扫码页自动关闭
+            } else {
+                onTag(code, 0, fromCamera = true)
+                true
             }
         }
+        cameraLauncher.launch(android.content.Intent(this, BarcodeScanActivity::class.java))
         refreshUi()
     }
 
@@ -434,6 +426,13 @@ class MainActivity : AppCompatActivity() {
                     if (e.invalidTaskKey()) {
                         prefs.serverUrl = ""
                         leaveTask(false)
+                    } else if (e.taskClosed()) {
+                        // 主管已结束任务：服务端拒绝上传（409），立即停止扫描并丢弃待传批次
+                        active = false
+                        pending.clear()
+                        prefs.offlineQueue = "[]"
+                        if (scanning) pauseScan() else refreshUi()
+                        toast(R.string.task_stopped_remote)
                     } else {
                         lastNetworkOk = false
                         engine.online = false
@@ -552,8 +551,11 @@ class MainActivity : AppCompatActivity() {
         )
         if (trigger) {
             when (event.action) {
-                KeyEvent.ACTION_DOWN -> if (event.repeatCount == 0 && canScan() && !scanning) startScan()
-                KeyEvent.ACTION_UP -> if (scanning && prefs.readMode == 0) pauseScan()
+                KeyEvent.ACTION_DOWN -> if (event.repeatCount == 0 && canScan() && !scanning) {
+                    // 有 UHF 模块：扳机启动 RFID 盘存；无模块（手机）：调起摄像头扫条码
+                    if (RfidManager.ready) startScan() else openCameraScan()
+                }
+                KeyEvent.ACTION_UP -> if (scanning && RfidManager.ready && prefs.readMode == 0) pauseScan()
             }
             return true
         }
@@ -580,7 +582,6 @@ class MainActivity : AppCompatActivity() {
             when {
                 !joined -> R.string.task_none
                 active -> R.string.task_active
-                submitted -> R.string.upload_finished
                 else -> R.string.task_waiting
             })
         tvSnapshot.text =
@@ -600,12 +601,19 @@ class MainActivity : AppCompatActivity() {
             tvHv.text = getString(R.string.hv_alert, hv)
         } else tvHv.visibility = View.GONE
 
-        // 按钮
-        btnStart.visibility = if (scanning) View.GONE else View.VISIBLE
-        btnPause.visibility = if (scanning) View.VISIBLE else View.GONE
-        btnResume.visibility = View.GONE
-        btnFinish.visibility = if (joined) View.VISIBLE else View.INVISIBLE
-        btnStart.alpha = if (canScan()) 1f else 0.5f
+        // 扫描提示条：C27 有 UHF 模块提示按扳机；手机无模块时点击打开摄像头
+        if (canScan()) {
+            tvTriggerHint.alpha = 1f
+            tvTriggerHint.setText(if (scanning) R.string.trigger_scanning
+                else if (RfidManager.ready) R.string.trigger_hint
+                else R.string.trigger_camera)
+            tvTriggerHint.setOnClickListener(
+                if (RfidManager.ready) null else View.OnClickListener { openCameraScan() })
+        } else {
+            tvTriggerHint.alpha = 0.5f
+            tvTriggerHint.setText(R.string.trigger_idle)
+            tvTriggerHint.setOnClickListener(null)
+        }
 
         // Tab 颜色
         tabStore.setTextColor(getColor(if (!abnormalTab) R.color.green else R.color.text_secondary))

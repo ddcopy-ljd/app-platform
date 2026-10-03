@@ -73,10 +73,16 @@
     <string name="stat_global">Global</string>
     <string name="stat_book">Book</string>
 
-    <string name="btn_start">Start</string>
-    <string name="btn_pause">Pause</string>
-    <string name="btn_resume">Resume</string>
-    <string name="btn_finish">Finish &amp; Submit</string>
+    <string name="trigger_hint">Hold the scan trigger to batch-scan; reads upload automatically</string>
+    <string name="trigger_camera">Tap here to open the camera and continuously scan barcodes; reads upload automatically</string>
+    <string name="trigger_scanning">Scanning… reads upload automatically, no finish needed</string>
+    <string name="trigger_idle">Scan the task QR and download the snapshot first</string>
+
+    <string name="camera_title">Camera barcode stocktake (barcode = EPC)</string>
+    <string name="camera_counter">New %1$d · Duplicates %2$d</string>
+    <string name="camera_done">Done</string>
+    <string name="camera_hint">Aim barcodes at the viewfinder to scan continuously. Duplicates are removed automatically and reads upload in real time. Tap Done to return.</string>
+    <string name="camera_no_permission">Camera permission is required for barcode scanning</string>
 
     <string name="tab_store">Store Items</string>
     <string name="tab_abnormal">Foreign Items</string>
@@ -92,7 +98,7 @@
     <string name="rules_title">Business Rules</string>
     <string name="rules_fold">Collapse</string>
     <string name="rules_expand">Expand</string>
-    <string name="rules_body">1. A task is started by the supervisor; Start is disabled otherwise.\n2. During a task, sales and stock in/out are paused.\n3. Finish &amp; Submit uploads this device\'s reads for central reconciliation.\n4. Each device gets a temporary number for the task.\n5. The device periodically pulls items scanned by other devices.\n6. Only new records are pulled to save traffic.\n7. With one device, nothing is pulled and alerts are local.\n8. With multiple devices, records merge into one full table.\n9. Offline use is unaffected; data syncs when reconnected.\n10. Online shows the global view; offline shows only local.\n11-13. Offline reads are queued and auto-uploaded; foreign items are still flagged.\n14. The full store item list is downloaded before scanning for instant comparison.\n15. Foreign items are flagged red and set aside.\n16. Missing high-value items stay pinned on top.\n17. Send when possible, queue when not; auto-retry later.\n18. Duplicate reads count once.\n19. Order: abnormal &gt; missing HV &gt; scanned HV &gt; normal &gt; other-device.\n20. The device only scans/compares/uploads; the backend computes differences.\n21. Sales resume only after the supervisor reviews the merged result.</string>
+    <string name="rules_body">1. A task is started by the supervisor; scanning is possible only after joining via QR and downloading the snapshot.\n2. During a task, sales and stock in/out are paused.\n3. Hold the device trigger to batch-scan; on phones without a UHF module, tap the hint to scan barcodes with the camera (barcode = EPC). Reads upload automatically, with no start/finish buttons.\n4. Scanning and uploading stop automatically when the supervisor ends the task; each device gets a temporary number for the task.\n5. The device periodically pulls items scanned by other devices.\n6. Only new records are pulled to save traffic.\n7. With one device, nothing is pulled and alerts are local.\n8. With multiple devices, records merge into one full table.\n9. Offline use is unaffected; data syncs when reconnected.\n10. Online shows the global view; offline shows only local.\n11-13. Offline reads are queued and auto-uploaded; foreign items are still flagged.\n14. The full store item list is downloaded before scanning for instant comparison.\n15. Foreign items are flagged red and set aside.\n16. Missing high-value items stay pinned on top.\n17. Send when possible, queue when not; auto-retry later.\n18. Duplicate reads count once.\n19. Order: abnormal &gt; missing HV &gt; scanned HV &gt; normal &gt; other-device.\n20. The device only scans/compares/uploads; the backend computes differences.\n21. Sales resume only after the supervisor reviews the merged result.</string>
 
     <string name="scanning">Scanning…</string>
     <string name="paused">Paused</string>
@@ -100,10 +106,8 @@
     <string name="need_join">Scan the task QR and download the snapshot first</string>
     <string name="joined_ok">Joined task, device no %1$d</string>
     <string name="snapshot_downloaded">Snapshot downloaded: %1$d items</string>
-    <string name="upload_finished">This device has submitted</string>
     <string name="task_stopped_remote">Supervisor ended the task; scanning stopped</string>
     <string name="offline_queued">Network error, queued for retry</string>
     <string name="rfid_fail">RFID init failed. Please run on a C27 device.</string>
-    <string name="demo_mode">Demo mode (no RFID hardware)</string>
-    <string name="confirm_finish">Finish and submit this device? You cannot scan after submitting.</string>
+    <string name="demo_mode">No UHF module detected. Tap the hint to scan barcodes with the camera.</string>
 </resources>
