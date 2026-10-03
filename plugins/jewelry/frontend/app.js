@@ -43,8 +43,8 @@ var ST = Vue.reactive({
   labelFields: { store: true, name: true, spec: true, price: true, cert: false, barcode: true, epc_text: false },
   writeEpc: true, labelCopies: 1, labelFont: 'E:SIMSUN.FNT',
   simulatePrint: false, labelBusy: false, labelResult: null,
-  // 手持机盘点
-  stockQr: null, stockHost: '', stockBatches: [], stockDetail: null, stockBusy: false,
+  // 盘点批次历史（协同盘点结果）
+  stockBatches: [], stockDetail: null,
   coTask: null, coTaskHost: '', coBusy: false, coTimer: null,
   coQrUrl: '', _qrFor: 0, _coQrObj: '',
   // toast
@@ -463,26 +463,12 @@ function submitLabelPrint() {
    .finally(function () { ST.labelBusy = false; });
 }
 
-// ---- 手持机批量盘点 ----
-function genStockQr() {
-  ST.stockBusy = true;
-  api('POST', '/api/stocktake/setup', { host: ST.stockHost || '' }).then(function (r) {
-    ST.stockQr = r;
-    loadStockBatches();
-    toast('盘点二维码已生成，有效期 12 小时');
-  }).catch(function (e) { toast(e.message, 'error'); })
-   .finally(function () { ST.stockBusy = false; });
-}
+// ---- 盘点批次历史 ----
 function loadStockBatches() {
   api('GET', '/api/stocktake/list?limit=8').then(function (r) { ST.stockBatches = r.list || []; }).catch(function () {});
 }
 function viewStockBatch(b) {
   api('GET', '/api/stocktake/' + b.id).then(function (r) { ST.stockDetail = r; }).catch(function (e) { toast(e.message, 'error'); });
-}
-function copyStockUrl() {
-  if (!ST.stockQr) return;
-  var u = ST.stockQr.url;
-  if (navigator.clipboard) navigator.clipboard.writeText(u).then(function () { toast('接口地址已复制'); });
 }
 
 // ---- 多终端协同盘点 ----
@@ -590,8 +576,8 @@ var app = Vue.createApp({
     openInbound: openInbound, copyInbound: copyInbound, openRfid: openRfid, doRfid: doRfid,
     openLabelPrint: openLabelPrint, removeLabelItem: removeLabelItem, closeLabel: closeLabel,
     submitLabelPrint: submitLabelPrint,
-    genStockQr: genStockQr, loadStockBatches: loadStockBatches,
-    viewStockBatch: viewStockBatch, copyStockUrl: copyStockUrl,
+    loadStockBatches: loadStockBatches,
+    viewStockBatch: viewStockBatch,
     startCoTask: startCoTask, loadCoTask: loadCoTask, endCoTask: endCoTask,
     confirmCoTask: confirmCoTask, abortCoTask: abortCoTask, copyCoUrl: copyCoUrl,
     quickSale: quickSale, openDeposit: openDeposit,

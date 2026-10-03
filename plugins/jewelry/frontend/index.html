@@ -178,51 +178,10 @@
             <div class="stat-card orange"><div class="stat-label">已售</div><div class="stat-value">{{ invSum.sold.count }}</div></div>
           </div>
 
-          <!-- RFID 手持机批量盘点 -->
-          <div class="section rfid-box">
-            <div class="section-title"><span class="dot"></span>📡 RFID 手持机批量盘点</div>
-            <p class="prod-meta" style="color:#b06a00;background:#fdf3df;border:1px solid #ecd9a8;border-radius:8px;padding:6px 10px;margin-bottom:8px">⚠️ 此二维码供旧版网页/H5 单人盘点使用。C27 协同盘点 App 请使用页面下方【🧭 多终端协同盘点任务】开启后的二维码，扫此码 App 会提示无法加入。</p>
-            <div class="rfid-flow">
-              <div class="rfid-left">
-                <p class="prod-meta">在盘点页生成二维码 → 手持机扫码保存上传接口地址（免输入，12 小时有效）→ 盘完上传 EPC，自动出盘盈/盘亏/异常结果。</p>
-                <div class="rfid-host">
-                  <input v-model="stockHost" class="search-input" placeholder="主机地址（自动检测，无需填写；如 192.168.1.20:8002）">
-                  <button class="btn btn-gold btn-sm" :disabled="stockBusy" @click="genStockQr">{{ stockQr ? '重新生成二维码' : '生成盘点二维码' }}</button>
-                </div>
-                <div v-if="stockQr" class="rfid-url">
-                  <label>手持机上传接口（POST JSON：{&quot;epcs&quot;:[...],&quot;device&quot;:&quot;&quot;}）</label>
-                  <div class="url-line"><code>{{ stockQr.url }}</code><button class="btn btn-sm btn-outline" @click="copyStockUrl">复制</button></div>
-                  <a class="rfid-page-link" :href="stockQr.page_url" target="_blank">手机/浏览器人工录入页 →</a>
-                </div>
-              </div>
-              <div class="rfid-right" v-if="stockQr">
-                <img class="qr-img" :src="'/api/stocktake/qr?token=' + encodeURIComponent(stockQr.token)" alt="盘点接口二维码">
-                <div class="qr-cap">手持机扫码保存接口地址</div>
-              </div>
-            </div>
-            <div v-if="stockBatches.length" class="stock-batches">
-              <div class="section-title" style="font-size:14px;margin:14px 0 8px">最近盘点批次</div>
-              <table class="data-table">
-                <thead><tr><th>批次号</th><th>时间</th><th>设备</th><th>扫描/账面</th><th>相符</th><th>盘盈</th><th>盘亏</th><th>异常</th><th></th></tr></thead>
-                <tbody>
-                  <tr v-for="b in stockBatches" :key="b.id">
-                    <td class="mono">{{ b.batch_no }}</td><td class="small">{{ b.created }}</td><td>{{ b.device }}</td>
-                    <td>{{ b.scanned_count }} / {{ b.book_count }}</td>
-                    <td class="stock-ok">{{ b.matched_count }}</td>
-                    <td class="stock-surplus">{{ b.surplus_count }}</td>
-                    <td class="stock-shortage">{{ b.shortage_count }}</td>
-                    <td class="stock-abnormal">{{ b.abnormal_count }}</td>
-                    <td><button class="link" @click="viewStockBatch(b)">明细</button></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- 多终端协同盘点任务（主管端） -->
+          <!-- RFID / 多终端协同盘点任务（全店唯一盘点入口与二维码） -->
           <div class="section rfid-box" style="border-color:#8a6d1f">
             <div class="section-title"><span class="dot"></span>🧭 多终端协同盘点任务</div>
-            <p class="prod-meta">主管开启任务后销售/出入库自动暂停 → 各手持机扫任务二维码加入并下载快照实时比对 → 全部结束后主管核对确认，解除冻结。</p>
+            <p class="prod-meta">主管开启任务后销售/出入库自动暂停，并生成<b>唯一的盘点二维码</b>；各手持机用 App 扫此码即领取任务（自动配置服务地址、加入并下载商品快照），再在手持机上点【开始盘点】；全部结束后主管核对确认，解除冻结。</p>
 
             <!-- 无任务：开启 -->
             <div v-if="!coTask" class="rfid-host">
@@ -269,11 +228,30 @@
                 </div>
               </div>
               <div class="rfid-right">
-                <img v-if="coQrUrl" class="qr-img" :src="coQrUrl" alt="协同任务二维码">
+                <img v-if="coQrUrl" class="qr-img" :src="coQrUrl" alt="盘点任务二维码">
                 <div v-else class="qr-img" style="display:flex;align-items:center;justify-content:center;color:#B0A08C;font-size:12px">二维码加载中…</div>
-                <div class="qr-cap">手持机扫码加入任务</div>
+                <div class="qr-cap">手持机扫码领取任务<br><span style="font-size:11px;color:#8B7A6B">领取后在设备上点【开始盘点】</span></div>
                 <div class="small" style="text-align:center;margin-top:4px">全局已扫 {{ coTask.scanned_count }}</div>
               </div>
+            </div>
+
+            <!-- 最近盘点批次（历史结果，含协同盘点） -->
+            <div v-if="stockBatches.length" class="stock-batches" style="margin-top:16px">
+              <div class="section-title" style="font-size:14px;margin:0 0 8px"><span class="dot"></span>最近盘点批次</div>
+              <table class="data-table">
+                <thead><tr><th>批次号</th><th>时间</th><th>设备</th><th>扫描/账面</th><th>相符</th><th>盘盈</th><th>盘亏</th><th>异常</th><th></th></tr></thead>
+                <tbody>
+                  <tr v-for="b in stockBatches" :key="b.id">
+                    <td class="mono">{{ b.batch_no }}</td><td class="small">{{ b.created }}</td><td>{{ b.device }}</td>
+                    <td>{{ b.scanned_count }} / {{ b.book_count }}</td>
+                    <td class="stock-ok">{{ b.matched_count }}</td>
+                    <td class="stock-surplus">{{ b.surplus_count }}</td>
+                    <td class="stock-shortage">{{ b.shortage_count }}</td>
+                    <td class="stock-abnormal">{{ b.abnormal_count }}</td>
+                    <td><button class="link" @click="viewStockBatch(b)">明细</button></td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
           <div class="section"><div class="section-title"><span class="dot"></span>{{ t('inv.copyHint') }}</div>
