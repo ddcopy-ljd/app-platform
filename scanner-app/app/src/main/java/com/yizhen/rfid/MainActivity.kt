@@ -635,8 +635,9 @@ class MainActivity : AppCompatActivity() {
         triggerDown = false
         if (scanning && RfidManager.ready) {
             cancelTriggerStop()
-            triggerStop = Runnable { if (scanning && RfidManager.ready) pauseScan() }
-            main.postDelayed(triggerStop, 300)
+            val task = Runnable { if (scanning && RfidManager.ready) pauseScan() }
+            triggerStop = task
+            main.postDelayed(task, 300)
         }
     }
 
