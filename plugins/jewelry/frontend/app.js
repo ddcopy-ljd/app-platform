@@ -2,11 +2,22 @@
 
 var API = '';
 
+// ---- 响应式布局判定 ----
+// 有鼠标/触控板等精确指针的设备（台式机、笔记本）一律使用 PC 宽屏布局，
+// 不受浏览器窗口宽度、系统显示缩放(125%/150%)或 iframe 容器宽度影响；
+// 纯触屏设备（手机/手持机）再按屏宽判断。
+function isPcLayout() {
+  try {
+    if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) return true;
+  } catch (e) {}
+  return window.innerWidth >= 900;
+}
+
 // ---- 响应式状态 ----
 var ST = Vue.reactive({
   token: '', user: null, mode: 'NORMAL', tenant: '',
   tab: 'dashboard', subView: '',
-  isPc: window.innerWidth >= 900,
+  isPc: isPcLayout(),
   lang: currentLang, langKeys: LANG_KEYS, langLabels: LANG_LABELS,
   loginUser: 'admin', loginPwd: '123456',
   // data
@@ -520,7 +531,7 @@ function clearCoTimer() {
 }
 
 // ---- resize ----
-window.addEventListener('resize', function () { ST.isPc = window.innerWidth >= 900; });
+window.addEventListener('resize', function () { ST.isPc = isPcLayout(); });
 
 // ---- Vue app ----
 var app = Vue.createApp({

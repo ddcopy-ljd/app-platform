@@ -9,8 +9,19 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import android.widget.EditText
 import android.widget.Spinner
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 
 class SettingsActivity : AppCompatActivity() {
+
+    /** 扫主管端任务二维码，把完整 join 地址填入接口地址输入框（保存后生效）。 */
+    private val qrLauncher = registerForActivityResult(ScanContract()) { res ->
+        val code = res.contents?.trim().orEmpty()
+        if (code.isNotEmpty()) {
+            etUrl.setText(normalizeUrl(code))
+            Toast.makeText(this, R.string.st_url_filled, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     private lateinit var prefs: Prefs
 
@@ -39,6 +50,14 @@ class SettingsActivity : AppCompatActivity() {
 
         findViewById<TextView>(R.id.btnBack).setOnClickListener { finish() }
         findViewById<TextView>(R.id.btnStSave).setOnClickListener { save() }
+        findViewById<TextView>(R.id.stUrlScan).setOnClickListener {
+            val opts = ScanOptions()
+            opts.setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+            opts.setPrompt(getString(R.string.st_scan_prompt))
+            opts.setBeepEnabled(false)
+            opts.setOrientationLocked(false)
+            qrLauncher.launch(opts)
+        }
         findViewById<TextView>(R.id.btnReset).setOnClickListener {
             AlertDialog.Builder(this)
                 .setMessage(R.string.st_confirm_reset)
@@ -132,5 +151,12 @@ class SettingsActivity : AppCompatActivity() {
     private fun resetUi() {
         prefs.resetAll()
         loadValues()
+    }
+
+    /** 任务二维码为 http(s) 完整 join 地址（含 key，必须原样保留）；兼容缺协议头的裸地址。 */
+    private fun normalizeUrl(raw: String): String {
+        val s = raw.trim()
+        return if (s.startsWith("http://", ignoreCase = true) ||
+            s.startsWith("https://", ignoreCase = true)) s else "http://$s"
     }
 }

@@ -10,6 +10,9 @@
     <string name="st_group_server">服务端</string>
     <string name="server_url">服务端接口地址</string>
     <string name="server_url_hint">扫描任务二维码后自动填入</string>
+    <string name="st_scan_qr">扫码配置</string>
+    <string name="st_scan_prompt">对准主管电脑上的任务二维码</string>
+    <string name="st_url_filled">地址已填入，请保存</string>
     <string name="st_pull_interval">自动拉取间隔</string>
     <string name="unit_seconds">秒</string>
 
