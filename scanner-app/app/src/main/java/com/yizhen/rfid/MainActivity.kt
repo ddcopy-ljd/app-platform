@@ -102,7 +102,7 @@ class MainActivity : AppCompatActivity() {
         api = ApiClient(prefs)
         setContentView(R.layout.activity_main)
 
-        tone = ToneGenerator(AudioManager.STREAM_MUSIC, 60)
+        tone = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
         vibrator = getSystemService(VIBRATOR_SERVICE) as? Vibrator
 
         bindViews()
@@ -545,7 +545,23 @@ class MainActivity : AppCompatActivity() {
     // -------------------------------- 反馈
 
     private fun beep() {
-        try { tone?.startTone(ToneGenerator.TONE_PROP_BEEP, 60) } catch (_: Exception) {}
+        try {
+            val ok = tone?.startTone(ToneGenerator.TONE_PROP_BEEP, 150) ?: false
+            if (!ok) {
+                // ToneGenerator 失效则重建再响
+                try { tone?.release() } catch (_: Exception) {}
+                tone = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
+                tone?.startTone(ToneGenerator.TONE_PROP_BEEP, 150)
+            }
+        } catch (_: Exception) {}
+        // 轻震动兜底：媒体音量为 0 时仍有物理反馈
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator?.vibrate(VibrationEffect.createOneShot(40, 120))
+            } else {
+                @Suppress("DEPRECATION") vibrator?.vibrate(40)
+            }
+        } catch (_: Exception) {}
     }
 
     private fun abnormalFeedback() {
