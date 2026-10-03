@@ -66,11 +66,11 @@
     <string name="task_ended">Task ended</string>
     <string name="task_rescan">Task ended. Please scan the QR to join the new stocktake task</string>
     <string name="snapshot_none">Snapshot not downloaded</string>
-    <string name="snapshot_ok">Snapshot downloaded: %1$d items</string>
-    <string name="device_me">Device no: %1$d</string>
-    <string name="device_none">Device no: —</string>
-    <string name="btn_scan_join">Scan QR to join stocktake</string>
-    <string name="btn_download">Download snapshot</string>
+    <string name="snapshot_ok">Stock %1$d</string>
+    <string name="device_me">No.%1$d</string>
+    <string name="device_none">—</string>
+    <string name="btn_scan_join">Scan to join</string>
+    <string name="btn_download">Download stock</string>
 
     <string name="hv_alert">⚠ %1$d high-value item(s) not yet scanned</string>
 
@@ -87,7 +87,8 @@
     <string name="trigger_btn_active">■ STOP SCAN</string>
     <string name="trigger_btn_join">▶ START SCAN</string>
     <string name="uhf_ready">UHF module: ready%1$s</string>
-    <string name="uhf_none">UHF module: not found (camera barcode mode)</string>
+    <string name="uhf_ok">UHF</string>
+    <string name="uhf_none">No UHF</string>
     <string name="diag_none">Trigger: waiting…</string>
     <string name="diag_key">Trigger: key code=%1$d</string>
     <string name="diag_bcast">Trigger: broadcast %1$s (%2$s)</string>
@@ -101,6 +102,8 @@
 
     <string name="tab_store">Store Items</string>
     <string name="tab_abnormal">Foreign Items</string>
+    <string name="tab_store_n">Our items %1$d</string>
+    <string name="tab_abnormal_n">Foreign %1$d</string>
 
     <string name="empty_store">No store items yet</string>
     <string name="empty_abnormal">No foreign items found</string>

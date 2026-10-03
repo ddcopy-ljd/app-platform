@@ -71,11 +71,11 @@
     <string name="task_ended">任务已结束</string>
     <string name="task_rescan">任务已结束，请扫码加入新的盘点任务</string>
     <string name="snapshot_none">未下载商品快照</string>
-    <string name="snapshot_ok">已下载商品快照 %1$d 件</string>
-    <string name="device_me">本机编号：%1$d 号</string>
-    <string name="device_none">本机编号：—</string>
-    <string name="btn_scan_join">扫码加入盘点任务</string>
-    <string name="btn_download">下载快照</string>
+    <string name="snapshot_ok">库存%1$d件</string>
+    <string name="device_me">%1$d号</string>
+    <string name="device_none">—</string>
+    <string name="btn_scan_join">扫码加入</string>
+    <string name="btn_download">下载库存</string>
 
     <!-- 首页：高价值提醒条 -->
     <string name="hv_alert">⚠ 有 %1$d 件高价值商品尚未扫到</string>
@@ -95,7 +95,8 @@
     <string name="trigger_btn_active">■ 停止扫描</string>
     <string name="trigger_btn_join">▶ 开始扫描</string>
     <string name="uhf_ready">UHF 模块：就绪%1$s</string>
-    <string name="uhf_none">UHF 模块：未检测到（摄像头条码模式）</string>
+    <string name="uhf_ok">UHF</string>
+    <string name="uhf_none">无UHF</string>
     <string name="diag_none">扳机事件：等待按下…</string>
     <string name="diag_key">扳机事件：按键 code=%1$d</string>
     <string name="diag_bcast">扳机事件：广播 %1$s（%2$s）</string>
@@ -111,6 +112,8 @@
     <!-- 首页：Tab -->
     <string name="tab_store">本店商品</string>
     <string name="tab_abnormal">非本店商品</string>
+    <string name="tab_store_n">本店商品 %1$d</string>
+    <string name="tab_abnormal_n">非本店商品 %1$d</string>
 
     <!-- 列表 -->
     <string name="empty_store">暂无本店商品记录</string>

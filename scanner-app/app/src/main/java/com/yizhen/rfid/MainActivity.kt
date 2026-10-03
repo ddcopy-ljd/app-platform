@@ -43,14 +43,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvTask: TextView
     private lateinit var tvSnapshot: TextView
     private lateinit var tvUhf: TextView
-    private lateinit var tvDiag: TextView
+    private lateinit var tvPower: TextView
     private lateinit var tvDeviceNo: TextView
     private lateinit var tvHv: TextView
-    private lateinit var statSelf: TextView
-    private lateinit var statAbnormal: TextView
-    private lateinit var statGlobal: TextView
-    private lateinit var statBook: TextView
-    private lateinit var tvTriggerHint: TextView
     private lateinit var btnTrigger: TextView
     private lateinit var tabStore: TextView
     private lateinit var tabAbnormal: TextView
@@ -120,14 +115,9 @@ class MainActivity : AppCompatActivity() {
         tvTask = findViewById(R.id.tvTask)
         tvSnapshot = findViewById(R.id.tvSnapshot)
         tvUhf = findViewById(R.id.tvUhf)
-        tvDiag = findViewById(R.id.tvDiag)
+        tvPower = findViewById(R.id.tvPower)
         tvDeviceNo = findViewById(R.id.tvDeviceNo)
         tvHv = findViewById(R.id.tvHvAlert)
-        statSelf = findViewById(R.id.statSelf)
-        statAbnormal = findViewById(R.id.statAbnormal)
-        statGlobal = findViewById(R.id.statGlobal)
-        statBook = findViewById(R.id.statBook)
-        tvTriggerHint = findViewById(R.id.tvTriggerHint)
         btnTrigger = findViewById(R.id.btnTrigger)
         tabStore = findViewById(R.id.tabStore)
         tabAbnormal = findViewById(R.id.tabAbnormal)
@@ -161,7 +151,6 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.btnDownload).setOnClickListener { downloadSnapshot() }
         // 屏幕模拟扳机：点按=扣下扳机（开始扫描），再点按=停止；与机身扳机同一套状态机
         btnTrigger.setOnClickListener {
-            tvDiag.setText(R.string.diag_btn)
             onTriggerDown()
         }
         tabStore.setOnClickListener { abnormalTab = false; refreshList() }
@@ -604,8 +593,6 @@ class MainActivity : AppCompatActivity() {
                 null -> true
                 else -> intent.getBooleanExtra("keydown", true)
             }
-            // 诊断行：显示设备实际发出的广播通道
-            tvDiag.text = getString(R.string.diag_bcast, action, if (down) "down" else "up")
             // 只处理按下事件；部分固件按住期间连发 keydown=false 双拍会秒停扫描
             if (down) onTriggerDown()
         }
@@ -673,7 +660,6 @@ class MainActivity : AppCompatActivity() {
         val isTrigger = knownTrigger || physical || dpadCenter
         if (isTrigger) {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                tvDiag.text = getString(R.string.diag_key, code)
                 onTriggerDown()
             }
             return true
@@ -688,10 +674,18 @@ class MainActivity : AppCompatActivity() {
         adapter.submit(list)
         tvEmpty.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
         tvEmpty.setText(if (abnormalTab) R.string.empty_abnormal else R.string.empty_store)
+        // 页签名称带实时数量
+        tabStore.text = getString(R.string.tab_store_n, engine.listForTab(false).size)
+        tabAbnormal.text = getString(R.string.tab_abnormal_n, engine.listForTab(true).size)
+        // Tab 颜色
+        tabStore.setTextColor(getColor(if (!abnormalTab) R.color.green else R.color.text_secondary))
+        tabAbnormal.setTextColor(getColor(if (abnormalTab) R.color.red else R.color.text_secondary))
+        tabAbnormal.paint.isFakeBoldText = abnormalTab
+        tabStore.paint.isFakeBoldText = !abnormalTab
     }
 
     private fun refreshUi() {
-        // 网络（圆点已移除：用文字颜色区分在线/离线）
+        // 网络（用文字颜色区分在线/离线）
         tvNet.setText(if (lastNetworkOk) R.string.net_online else R.string.net_offline)
         tvNet.setTextColor(getColor(if (lastNetworkOk) R.color.green else R.color.text_secondary))
 
@@ -706,16 +700,10 @@ class MainActivity : AppCompatActivity() {
             if (snapshotReady) getString(R.string.snapshot_ok, engine.snapshotCount)
             else getString(R.string.snapshot_none)
 
-        // UHF 模块状态（初始化后由独立线程探测，不在主线程访问串口）
-        tvUhf.text =
-            if (RfidManager.ready) getString(R.string.uhf_ready, RfidManager.cachedInfo)
-            else getString(R.string.uhf_none)
-
-        // 统计
-        statSelf.text = engine.countSelf().toString()
-        statAbnormal.text = engine.countAbnormal().toString()
-        statGlobal.text = engine.globalScanned.toString()
-        statBook.text = engine.snapshotCount.toString()
+        // UHF 模块：就绪只显示 UHF（绿），否则无UHF（灰）；功率单独显示
+        tvUhf.setText(if (RfidManager.ready) R.string.uhf_ok else R.string.uhf_none)
+        tvUhf.setTextColor(getColor(if (RfidManager.ready) R.color.green else R.color.text_hint))
+        tvPower.text = "${prefs.power}dBm"
 
         // 高价值提醒
         val hv = engine.countHighValueUnscanned()
@@ -724,22 +712,8 @@ class MainActivity : AppCompatActivity() {
             tvHv.text = getString(R.string.hv_alert, hv)
         } else tvHv.visibility = View.GONE
 
-        // 扫描提示条：任务内 C27 按扳机、手机点按开摄像头扫条码；
-        // 任务外（未加入/已结束）点按直接打开摄像头扫任务二维码加入，不做任何状态拦截
-        if (canScan()) {
-            tvTriggerHint.alpha = 1f
-            tvTriggerHint.setText(if (scanning) R.string.trigger_scanning
-                else if (RfidManager.ready) R.string.trigger_hint
-                else R.string.trigger_camera)
-            tvTriggerHint.setOnClickListener(
-                if (RfidManager.ready) null else View.OnClickListener { openCameraScan() })
-        } else {
-            tvTriggerHint.alpha = 1f
-            tvTriggerHint.setText(R.string.trigger_idle)
-            tvTriggerHint.setOnClickListener { scanJoinQr() }
-        }
-
-        // 模拟扳机按钮：扫描中红色，待扫绿色，未加入任务蓝色（按住直接扫码加入）
+        // 扫描按钮：扫描中红色，待扫绿色，未加入任务蓝色（点按直接扫码加入）。
+        // 无 UHF 模块的手机：任务内点按即开摄像头连续扫条码（onTriggerDown 内分流）
         if (canScan()) {
             if (scanning) {
                 btnTrigger.setBackgroundResource(R.drawable.bg_btn_red)
@@ -752,12 +726,6 @@ class MainActivity : AppCompatActivity() {
             btnTrigger.setBackgroundResource(R.drawable.bg_btn_blue)
             btnTrigger.setText(R.string.trigger_btn_join)
         }
-
-        // Tab 颜色
-        tabStore.setTextColor(getColor(if (!abnormalTab) R.color.green else R.color.text_secondary))
-        tabAbnormal.setTextColor(getColor(if (abnormalTab) R.color.red else R.color.text_secondary))
-        tabAbnormal.paint.isFakeBoldText = abnormalTab
-        tabStore.paint.isFakeBoldText = !abnormalTab
 
         refreshList()
     }
