@@ -5,9 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#5C2233">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>懿珠宝管家 · 手机版</title>
+<title>懿臻珠宝云 · 手机端</title>
 <style>
+  #app{
+    display:flex;
+    flex-direction:column;
+    height:100%;
+    min-height:0;
+  }
   :root{
     --gold:#C9A961;--gold-light:#E8D5A0;--gold-pale:#F5EBD8;--gold-dark:#9C7B3A;
     --wine:#5C2233;--wine-light:#7A2E42;--wine-deep:#421824;
@@ -19,129 +24,49 @@
   }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
   html,body{height:100%;}
-  body{
-    font-family:"PingFang SC","Microsoft YaHei",-apple-system,sans-serif;
-    background:#2A0E18;color:var(--text);font-size:14px;
-    -webkit-font-smoothing:antialiased;
-    display:flex;justify-content:center;overscroll-behavior-y:none;
-  }
+  body{font-family:"PingFang SC","Microsoft YaHei",-apple-system,sans-serif;background:#2A0E18;color:var(--text);font-size:14px;-webkit-font-smoothing:antialiased;display:flex;justify-content:center;overscroll-behavior-y:none;}
   button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;}
   input,select,textarea{font-family:inherit;font-size:15px;color:var(--text);-webkit-appearance:none;appearance:none;}
   .serif{font-family:"Songti SC","STSong","SimSun",serif;}
 
-  .phone{
-    width:100%;max-width:420px;height:100vh;height:100dvh;
-    background:var(--cream);display:flex;flex-direction:column;
-    position:relative;overflow:hidden;box-shadow:0 0 60px rgba(0,0,0,.4);
-  }
+  .phone{width:100%;max-width:420px;height:100vh;height:100dvh;background:var(--cream);display:flex;flex-direction:column;position:relative;overflow:hidden;box-shadow:0 0 60px rgba(0,0,0,.4);}
 
-  /* 顶部栏 */
-  .app-bar{
-    background:linear-gradient(135deg,#65293B 0%,#5C2233 50%,#4A1B2A 100%);
-    color:#F7EFE0;padding:calc(var(--safe-top) + 12px) 16px 14px;
-    display:flex;align-items:center;gap:12px;
-    position:relative;z-index:10;flex-shrink:0;
-    box-shadow:0 2px 12px rgba(20,8,14,.25);
-  }
-  .app-bar::after{
-    content:"";position:absolute;left:0;right:0;bottom:0;height:1px;
-    background:linear-gradient(90deg,transparent,rgba(201,169,97,.5),transparent);
-  }
-  .app-bar-logo{
-    width:36px;height:36px;border-radius:50%;
-    background:linear-gradient(135deg,#F5E7B8,#E8D5A0 30%,#C9A961 60%,#9C7B3A);
-    display:flex;align-items:center;justify-content:center;
-    font-size:16px;color:#5C2233;font-weight:700;flex-shrink:0;
-    box-shadow:0 2px 8px rgba(201,169,97,.4), inset 0 1px 1px rgba(255,255,255,.6);
-  }
+  .app-bar{background:linear-gradient(135deg,#65293B 0%,#5C2233 50%,#4A1B2A 100%);color:#F7EFE0;padding:calc(var(--safe-top) + 12px) 16px 14px;display:flex;align-items:center;gap:12px;position:relative;z-index:10;flex-shrink:0;box-shadow:0 2px 12px rgba(20,8,14,.25);}
+  .app-bar::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;background:linear-gradient(90deg,transparent,rgba(201,169,97,.5),transparent);}
+  .app-bar-logo{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#F5E7B8,#E8D5A0 30%,#C9A961 60%,#9C7B3A);display:flex;align-items:center;justify-content:center;font-size:16px;color:#5C2233;font-weight:700;flex-shrink:0;box-shadow:0 2px 8px rgba(201,169,97,.4), inset 0 1px 1px rgba(255,255,255,.6);}
   .app-bar-title{flex:1;min-width:0;}
   .app-bar-name{font-size:15px;font-weight:600;letter-spacing:.5px;}
-  .app-bar-store{
-    display:inline-flex;align-items:center;gap:4px;font-size:11px;
-    color:rgba(232,213,160,.85);margin-top:2px;padding:2px 8px;
-    background:rgba(201,169,97,.15);border-radius:10px;
-    border:1px solid rgba(201,169,97,.3);cursor:pointer;max-width:100%;
-  }
+  .app-bar-store{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:rgba(232,213,160,.85);margin-top:2px;padding:2px 8px;background:rgba(201,169,97,.15);border-radius:10px;border:1px solid rgba(201,169,97,.3);cursor:pointer;max-width:100%;}
   .app-bar-store:active{background:rgba(201,169,97,.25);}
   .app-bar-store .arrow{font-size:8px;opacity:.7;}
   .app-bar-icons{display:flex;gap:6px;flex-shrink:0;}
-  .ab-icon{
-    width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.1);
-    display:flex;align-items:center;justify-content:center;
-    font-size:16px;color:#F7EFE0;position:relative;
-  }
+  .ab-icon{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;font-size:16px;color:#F7EFE0;position:relative;}
   .ab-icon:active{background:rgba(255,255,255,.2);}
-  .ab-icon .dot{
-    position:absolute;top:7px;right:7px;width:7px;height:7px;border-radius:50%;
-    background:#E85D5D;border:1.5px solid #5C2233;
-  }
+  .ab-icon .dot{position:absolute;top:7px;right:7px;width:7px;height:7px;border-radius:50%;background:#E85D5D;border:1.5px solid #5C2233;}
 
-  .page{
-    flex:1;overflow-y:auto;overflow-x:hidden;
-    -webkit-overflow-scrolling:touch;
-    padding:14px 14px calc(84px + var(--safe-bottom));
-  }
+  .page{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding:14px 14px calc(84px + var(--safe-bottom));}
 
-  .tab-bar{
-    position:absolute;left:0;right:0;bottom:0;
-    background:rgba(255,255,255,.98);backdrop-filter:blur(20px);
-    -webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);
-    display:flex;align-items:center;padding:6px 8px calc(6px + var(--safe-bottom));
-    z-index:20;box-shadow:0 -2px 16px rgba(92,34,51,.06);
-  }
-  .tab{
-    flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
-    padding:6px 2px;border-radius:8px;color:var(--text-2);font-size:10px;
-    letter-spacing:.3px;transition:all .2s;cursor:pointer;position:relative;
-  }
+  .tab-bar{position:absolute;left:0;right:0;bottom:0;background:rgba(255,255,255,.98);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);display:flex;align-items:center;padding:6px 8px calc(6px + var(--safe-bottom));z-index:20;box-shadow:0 -2px 16px rgba(92,34,51,.06);}
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;border-radius:8px;color:var(--text-2);font-size:10px;letter-spacing:.3px;transition:all .2s;cursor:pointer;position:relative;}
   .tab .tab-ico{font-size:20px;line-height:1;}
   .tab.active{color:var(--wine);font-weight:600;}
   .tab.active .tab-ico{transform:scale(1.1);}
-  .tab .tab-dot{
-    position:absolute;top:2px;right:calc(50% - 16px);
-    width:6px;height:6px;border-radius:50%;background:#E85D5D;
-  }
+  .tab .tab-dot{position:absolute;top:2px;right:calc(50% - 16px);width:6px;height:6px;border-radius:50%;background:#E85D5D;}
   .tab-center{flex:0 0 auto;position:relative;margin:0 4px;}
-  .tab-center-btn{
-    width:52px;height:52px;border-radius:50%;
-    background:linear-gradient(135deg,#E0C87F,#C9A961 50%,#B08D45);
-    display:flex;align-items:center;justify-content:center;
-    font-size:24px;color:#fff;margin-top:-20px;
-    box-shadow:0 4px 16px rgba(201,169,97,.55),0 0 0 4px rgba(255,255,255,.95),
-      inset 0 1px 2px rgba(255,255,255,.5);
-    text-shadow:0 1px 2px rgba(140,100,20,.4);transition:transform .15s;
-  }
+  .tab-center-btn{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#E0C87F,#C9A961 50%,#B08D45);display:flex;align-items:center;justify-content:center;font-size:24px;color:#fff;margin-top:-20px;box-shadow:0 4px 16px rgba(201,169,97,.55),0 0 0 4px rgba(255,255,255,.95),inset 0 1px 2px rgba(255,255,255,.5);text-shadow:0 1px 2px rgba(140,100,20,.4);transition:transform .15s;}
   .tab-center-btn:active{transform:scale(.94);}
-  .tab-center-label{
-    font-size:10px;color:var(--wine);font-weight:600;
-    text-align:center;margin-top:2px;letter-spacing:.3px;
-  }
+  .tab-center-label{font-size:10px;color:var(--wine);font-weight:600;text-align:center;margin-top:2px;letter-spacing:.3px;}
 
-  .card{
-    background:var(--card);border-radius:14px;padding:16px;
-    border:1px solid var(--border);
-    box-shadow:0 1px 2px rgba(92,34,51,.04),0 4px 16px -8px rgba(92,34,51,.08);
-    margin-bottom:12px;
-  }
+  .card{background:var(--card);border-radius:14px;padding:16px;border:1px solid var(--border);box-shadow:0 1px 2px rgba(92,34,51,.04),0 4px 16px -8px rgba(92,34,51,.08);margin-bottom:12px;}
   .card:last-child{margin-bottom:0;}
   .card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
   .card-title{font-size:14px;font-weight:600;letter-spacing:.5px;display:flex;align-items:center;gap:8px;}
-  .card-title::before{
-    content:"";width:3px;height:14px;border-radius:2px;
-    background:linear-gradient(180deg,var(--gold-light),var(--gold-dark));
-  }
+  .card-title::before{content:"";width:3px;height:14px;border-radius:2px;background:linear-gradient(180deg,var(--gold-light),var(--gold-dark));}
   .card-title small{font-weight:400;font-size:11px;color:var(--text-2);letter-spacing:.3px;}
 
   .stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
-  .stat{
-    background:var(--card);border-radius:12px;padding:14px;
-    border:1px solid var(--border);position:relative;overflow:hidden;
-    box-shadow:0 1px 2px rgba(92,34,51,.04);
-  }
-  .stat::before{
-    content:"";position:absolute;top:0;left:0;right:0;height:2px;
-    background:linear-gradient(90deg,var(--gold-light),var(--gold),var(--gold-dark));
-  }
+  .stat{background:var(--card);border-radius:12px;padding:14px;border:1px solid var(--border);position:relative;overflow:hidden;box-shadow:0 1px 2px rgba(92,34,51,.04);}
+  .stat::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--gold-light),var(--gold),var(--gold-dark));}
   .stat-label{font-size:11px;color:var(--text-2);letter-spacing:.5px;margin-bottom:6px;}
   .stat-value{font-size:22px;font-weight:700;font-family:"Songti SC",serif;color:var(--wine);letter-spacing:.5px;line-height:1.1;}
   .stat-value small{font-size:12px;font-weight:400;color:var(--text-2);margin-left:2px;}
@@ -149,28 +74,13 @@
   .up{color:var(--green);}
   .warn{color:#B8802A;}
 
-  .list-card{
-    background:var(--card);border-radius:12px;
-    border:1px solid var(--border);overflow:hidden;
-    box-shadow:0 1px 2px rgba(92,34,51,.04);margin-bottom:12px;
-  }
-  .list-item{
-    display:flex;align-items:center;gap:12px;padding:14px;position:relative;
-    border-bottom:1px solid #F4EEE0;cursor:pointer;transition:background .15s;
-  }
+  .list-card{background:var(--card);border-radius:12px;border:1px solid var(--border);overflow:hidden;box-shadow:0 1px 2px rgba(92,34,51,.04);margin-bottom:12px;}
+  .list-item{display:flex;align-items:center;gap:12px;padding:14px;position:relative;border-bottom:1px solid #F4EEE0;cursor:pointer;transition:background .15s;}
   .list-item:last-child{border-bottom:none;}
   .list-item:active{background:#FDFAF3;}
-  .list-item-ico{
-    width:42px;height:42px;border-radius:10px;
-    display:flex;align-items:center;justify-content:center;
-    font-size:20px;flex-shrink:0;
-    background:linear-gradient(135deg,#FBF4E2,#F0E2C0);border:1px solid #EAD9B0;
-  }
+  .list-item-ico{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;background:linear-gradient(135deg,#FBF4E2,#F0E2C0);border:1px solid #EAD9B0;}
   .list-item-body{flex:1;min-width:0;}
-  .list-item-title{
-    font-size:14px;font-weight:600;letter-spacing:.3px;
-    display:flex;align-items:center;gap:6px;margin-bottom:4px;
-  }
+  .list-item-title{font-size:14px;font-weight:600;letter-spacing:.3px;display:flex;align-items:center;gap:6px;margin-bottom:4px;}
   .list-item-title .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .list-item-sub{font-size:11.5px;color:var(--text-2);line-height:1.5;letter-spacing:.2px;}
   .list-item-tail{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;}
@@ -185,10 +95,7 @@
   .tag-purple{background:#F3E8F5;color:var(--purple);}
   .tag-gray{background:#F2EDE2;color:var(--text-2);}
 
-  .state{
-    display:inline-flex;align-items:center;gap:3px;
-    padding:2px 8px;border-radius:8px;font-size:10.5px;letter-spacing:.3px;line-height:1.5;
-  }
+  .state{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:8px;font-size:10.5px;letter-spacing:.3px;line-height:1.5;}
   .state::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.9;}
   .state-ok{background:#EEF3E6;color:var(--green);}
   .state-lock{background:linear-gradient(135deg,#F7EFE0,#EFE2C6);color:var(--gold-dark);border:1px solid #E5D3A8;}
@@ -197,17 +104,9 @@
   .state-doing{background:#E8EFF5;color:var(--blue);}
   .state-wait{background:#F3E8F5;color:var(--purple);}
 
-  .btn{
-    display:inline-flex;align-items:center;justify-content:center;gap:6px;
-    padding:11px 16px;border-radius:10px;font-size:13.5px;font-weight:500;
-    letter-spacing:.3px;transition:all .15s;min-height:42px;
-  }
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:11px 16px;border-radius:10px;font-size:13.5px;font-weight:500;letter-spacing:.3px;transition:all .15s;min-height:42px;}
   .btn:active{transform:scale(.97);}
-  .btn-gold{
-    background:linear-gradient(135deg,#E0C87F,#C9A961 50%,#B08D45);
-    color:#fff;box-shadow:0 2px 8px rgba(201,169,97,.4);
-    text-shadow:0 1px 1px rgba(140,100,20,.3);
-  }
+  .btn-gold{background:linear-gradient(135deg,#E0C87F,#C9A961 50%,#B08D45);color:#fff;box-shadow:0 2px 8px rgba(201,169,97,.4);text-shadow:0 1px 1px rgba(140,100,20,.3);}
   .btn-wine{background:var(--wine);color:#F5E9DA;box-shadow:0 2px 8px rgba(92,34,51,.25);}
   .btn-ghost{background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--border);}
   .btn-block{width:100%;}
@@ -215,62 +114,27 @@
   .btn-row{display:flex;gap:8px;}
   .btn-row .btn{flex:1;}
 
-  .section-title{
-    font-size:12px;color:var(--text-2);letter-spacing:1px;
-    margin:16px 4px 8px;font-weight:600;
-    display:flex;align-items:center;justify-content:space-between;
-  }
+  .section-title{font-size:12px;color:var(--text-2);letter-spacing:1px;margin:16px 4px 8px;font-weight:600;display:flex;align-items:center;justify-content:space-between;}
   .section-title:first-child{margin-top:0;}
   .section-title .more{font-size:11px;color:var(--gold-dark);letter-spacing:.3px;font-weight:400;}
 
-  .rules{
-    background:linear-gradient(135deg,#FFFDF7,#FBF4E2);
-    border:1px solid #E5D3A8;border-radius:12px;margin-bottom:12px;overflow:hidden;
-  }
-  .rules-head{
-    padding:12px 14px;display:flex;align-items:center;gap:8px;
-    cursor:pointer;user-select:none;border-bottom:1px solid transparent;transition:all .18s;
-  }
+  .rules{background:linear-gradient(135deg,#FFFDF7,#FBF4E2);border:1px solid #E5D3A8;border-radius:12px;margin-bottom:12px;overflow:hidden;}
+  .rules-head{padding:12px 14px;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;border-bottom:1px solid transparent;transition:all .18s;}
   .rules.open .rules-head{border-bottom-color:#E5D3A8;}
   .rules-head:active{background:rgba(201,169,97,.08);}
-  .rules-ico{
-    width:20px;height:20px;border-radius:50%;
-    background:linear-gradient(135deg,var(--gold-light),var(--gold-dark));
-    color:#fff;display:flex;align-items:center;justify-content:center;
-    font-size:11px;flex-shrink:0;font-weight:700;
-  }
-  .rules-count{
-    font-size:10px;color:var(--text-2);background:#F5EBD8;
-    padding:1px 6px;border-radius:6px;letter-spacing:.3px;
-  }
-  .rules-title{
-    margin-left:auto;font-size:12px;font-weight:600;letter-spacing:.5px;
-    color:var(--gold-dark);display:flex;align-items:center;gap:4px;
-  }
+  .rules-ico{width:20px;height:20px;border-radius:50%;background:linear-gradient(135deg,var(--gold-light),var(--gold-dark));color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;font-weight:700;}
+  .rules-count{font-size:10px;color:var(--text-2);background:#F5EBD8;padding:1px 6px;border-radius:6px;letter-spacing:.3px;}
+  .rules-title{margin-left:auto;font-size:12px;font-weight:600;letter-spacing:.5px;color:var(--gold-dark);display:flex;align-items:center;gap:4px;}
   .rules-tri{font-size:9px;line-height:1;transition:transform .2s;opacity:.8;}
   .rules-body{padding:0 14px;max-height:0;overflow:hidden;transition:max-height .3s,padding .3s;}
   .rules.open .rules-body{max-height:600px;padding:12px 14px 14px;}
-  .rule-item{
-    display:flex;gap:8px;padding:6px 0;font-size:11.5px;color:var(--text);
-    line-height:1.6;border-bottom:1px dashed #EFE2C6;
-  }
+  .rule-item{display:flex;gap:8px;padding:6px 0;font-size:11.5px;color:var(--text);line-height:1.6;border-bottom:1px dashed #EFE2C6;}
   .rule-item:last-child{border-bottom:none;}
-  .rule-idx{
-    flex-shrink:0;width:16px;height:16px;border-radius:4px;
-    background:#F5EBD8;color:var(--gold-dark);font-size:10px;font-weight:600;
-    display:flex;align-items:center;justify-content:center;margin-top:1px;
-  }
+  .rule-idx{flex-shrink:0;width:16px;height:16px;border-radius:4px;background:#F5EBD8;color:var(--gold-dark);font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;margin-top:1px;}
   .rule-item b{color:var(--wine);font-weight:600;}
 
-  .deposit-card{
-    background:linear-gradient(135deg,#FFFCF5,#FBF3E2);
-    border:1px solid #E5D3A8;border-radius:12px;padding:14px;
-    position:relative;overflow:hidden;margin-bottom:10px;
-  }
-  .deposit-card::before{
-    content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
-    background:linear-gradient(180deg,var(--gold-light),var(--gold-dark));
-  }
+  .deposit-card{background:linear-gradient(135deg,#FFFCF5,#FBF3E2);border:1px solid #E5D3A8;border-radius:12px;padding:14px;position:relative;overflow:hidden;margin-bottom:10px;}
+  .deposit-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,var(--gold-light),var(--gold-dark));}
   .deposit-card.urgent::before{background:linear-gradient(180deg,#E8A8A0,var(--red));}
   .deposit-card.blue::before{background:linear-gradient(180deg,#A8C5E8,var(--blue));}
   .deposit-card.purple::before{background:linear-gradient(180deg,#D8A8E8,var(--purple));}
@@ -283,10 +147,7 @@
   .dnum-v{font-size:12.5px;font-weight:700;color:var(--wine);margin-top:3px;font-family:"Songti SC",serif;letter-spacing:.2px;}
   .dnum-v.paid{color:var(--green);}
   .dnum-v.due{color:var(--red);}
-  .deposit-info{
-    font-size:11px;color:var(--text-2);line-height:1.7;
-    padding-top:10px;border-top:1px dashed #E5D3A8;margin-bottom:10px;
-  }
+  .deposit-info{font-size:11px;color:var(--text-2);line-height:1.7;padding-top:10px;border-top:1px dashed #E5D3A8;margin-bottom:10px;}
   .deposit-info b{color:var(--wine);}
   .deposit-info .urgent-text{color:var(--red);}
   .deposit-actions{display:flex;gap:8px;}
@@ -294,11 +155,7 @@
 
   .loan-item{display:flex;align-items:center;gap:12px;padding:14px;border-bottom:1px solid #F4EEE0;}
   .loan-item:last-child{border-bottom:none;}
-  .loan-dir{
-    width:44px;height:44px;border-radius:10px;flex-shrink:0;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
-    font-size:10px;letter-spacing:.5px;line-height:1.2;
-  }
+  .loan-dir{width:44px;height:44px;border-radius:10px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;letter-spacing:.5px;line-height:1.2;}
   .loan-dir .d-arrow{font-size:14px;line-height:1;}
   .loan-in{background:#EEF3E6;color:var(--green);}
   .loan-out{background:#F3E4E8;color:var(--wine);}
@@ -310,13 +167,7 @@
   .cust-item{display:flex;align-items:center;gap:12px;padding:14px;border-bottom:1px solid #F4EEE0;cursor:pointer;}
   .cust-item:last-child{border-bottom:none;}
   .cust-item:active{background:#FDFAF3;}
-  .cust-avatar{
-    width:44px;height:44px;border-radius:50%;flex-shrink:0;
-    background:linear-gradient(135deg,#E8D5A0,#C9A961);
-    display:flex;align-items:center;justify-content:center;
-    color:#5C2233;font-weight:600;font-size:16px;
-    box-shadow:0 2px 6px rgba(201,169,97,.3);
-  }
+  .cust-avatar{width:44px;height:44px;border-radius:50%;flex-shrink:0;background:linear-gradient(135deg,#E8D5A0,#C9A961);display:flex;align-items:center;justify-content:center;color:#5C2233;font-weight:600;font-size:16px;box-shadow:0 2px 6px rgba(201,169,97,.3);}
   .cust-body{flex:1;min-width:0;}
   .cust-name{font-size:14px;font-weight:600;letter-spacing:.3px;display:flex;align-items:center;gap:6px;margin-bottom:3px;}
   .cust-phone{font-size:11.5px;color:var(--text-2);font-family:monospace;}
@@ -325,110 +176,40 @@
   .cust-due{font-size:11px;color:var(--red);font-weight:600;}
 
   .search-bar{position:relative;margin-bottom:12px;}
-  .search-bar input{
-    width:100%;padding:11px 14px 11px 38px;
-    border:1px solid var(--border);border-radius:10px;
-    background:var(--card);font-size:14px;outline:none;transition:all .18s;
-  }
+  .search-bar input{width:100%;padding:11px 14px 11px 38px;border:1px solid var(--border);border-radius:10px;background:var(--card);font-size:14px;outline:none;transition:all .18s;}
   .search-bar input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,169,97,.14);}
-  .search-bar::before{
-    content:"🔍";position:absolute;left:13px;top:50%;
-    transform:translateY(-50%);font-size:14px;opacity:.45;pointer-events:none;
-  }
+  .search-bar::before{content:"🔍";position:absolute;left:13px;top:50%;transform:translateY(-50%);font-size:14px;opacity:.45;pointer-events:none;}
 
   .chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;margin-bottom:12px;-ms-overflow-style:none;scrollbar-width:none;}
   .chips::-webkit-scrollbar{display:none;}
-  .chip{
-    flex-shrink:0;padding:7px 14px;border-radius:16px;
-    background:var(--card);border:1px solid var(--border);
-    font-size:12.5px;color:var(--text-2);transition:all .15s;letter-spacing:.3px;
-  }
-  .chip.active{
-    background:linear-gradient(135deg,#F7EFE0,#EFE2C6);
-    border-color:var(--gold);color:var(--gold-dark);font-weight:600;
-  }
+  .chip{flex-shrink:0;padding:7px 14px;border-radius:16px;background:var(--card);border:1px solid var(--border);font-size:12.5px;color:var(--text-2);transition:all .15s;letter-spacing:.3px;}
+  .chip.active{background:linear-gradient(135deg,#F7EFE0,#EFE2C6);border-color:var(--gold);color:var(--gold-dark);font-weight:600;}
 
-  .sheet-mask{
-    position:fixed;inset:0;background:rgba(66,24,36,.5);
-    backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
-    display:none;align-items:flex-end;justify-content:center;z-index:1000;
-  }
+  .sheet-mask{position:fixed;inset:0;background:rgba(66,24,36,.5);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:none;align-items:flex-end;justify-content:center;z-index:1000;}
   .sheet-mask.show{display:flex;animation:fadeIn .2s;}
   @keyframes fadeIn{from{opacity:0;}}
-  .sheet{
-    background:var(--card);border-radius:20px 20px 0 0;
-    width:100%;max-width:420px;max-height:88vh;overflow:hidden;
-    display:flex;flex-direction:column;
-    animation:slideUp .28s cubic-bezier(.2,.8,.2,1);
-    padding-bottom:var(--safe-bottom);
-  }
+  .sheet{background:var(--card);border-radius:20px 20px 0 0;width:100%;max-width:420px;max-height:88vh;overflow:hidden;display:flex;flex-direction:column;animation:slideUp .28s cubic-bezier(.2,.8,.2,1);padding-bottom:var(--safe-bottom);}
   @keyframes slideUp{from{transform:translateY(100%);}}
-  .sheet-head{
-    padding:8px 16px 14px;display:flex;align-items:center;
-    justify-content:space-between;border-bottom:1px solid var(--border);
-    flex-shrink:0;position:relative;
-  }
-  .sheet-head::before{
-    content:"";position:absolute;top:6px;left:50%;transform:translateX(-50%);
-    width:40px;height:4px;border-radius:2px;background:#E5D3A8;
-  }
+  .sheet-head{padding:8px 16px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);flex-shrink:0;position:relative;}
+  .sheet-head::before{content:"";position:absolute;top:6px;left:50%;transform:translateX(-50%);width:40px;height:4px;border-radius:2px;background:#E5D3A8;}
   .sheet-head h3{font-size:15px;font-weight:600;letter-spacing:.5px;padding-top:8px;}
-  .sheet-head h3::before{
-    content:"";display:inline-block;width:3px;height:14px;margin-right:8px;
-    background:linear-gradient(180deg,var(--gold-light),var(--gold-dark));
-    border-radius:2px;vertical-align:-1px;
-  }
-  .sheet-close{
-    width:32px;height:32px;border-radius:50%;
-    display:flex;align-items:center;justify-content:center;
-    font-size:16px;color:var(--text-2);margin-top:6px;
-  }
-  .sheet-body{
-    padding:18px 16px;overflow-y:auto;
-    -webkit-overflow-scrolling:touch;flex:1;
-  }
-  .sheet-foot{
-    padding:14px 16px;border-top:1px solid var(--border);
-    display:flex;gap:10px;flex-shrink:0;background:var(--card);
-  }
+  .sheet-head h3::before{content:"";display:inline-block;width:3px;height:14px;margin-right:8px;background:linear-gradient(180deg,var(--gold-light),var(--gold-dark));border-radius:2px;vertical-align:-1px;}
+  .sheet-close{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--text-2);margin-top:6px;}
+  .sheet-body{padding:18px 16px;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;}
+  .sheet-foot{padding:14px 16px;border-top:1px solid var(--border);display:flex;gap:10px;flex-shrink:0;background:var(--card);}
   .sheet-foot .btn{flex:1;}
 
   .form-group{margin-bottom:14px;}
   .form-group:last-child{margin-bottom:0;}
-  .form-group label{
-    display:block;font-size:12px;color:var(--text-2);
-    letter-spacing:.5px;margin-bottom:6px;font-weight:500;
-  }
-  .form-group input,
-  .form-group select,
-  .form-group textarea{
-    width:100%;padding:11px 14px;border:1px solid var(--border);
-    border-radius:10px;background:#FDFAF3;outline:none;font-size:14.5px;transition:all .18s;
-  }
-  .form-group input:focus,
-  .form-group select:focus{
-    border-color:var(--gold);background:#fff;
-    box-shadow:0 0 0 3px rgba(201,169,97,.14);
-  }
+  .form-group label{display:block;font-size:12px;color:var(--text-2);letter-spacing:.5px;margin-bottom:6px;font-weight:500;}
+  .form-group input,.form-group select,.form-group textarea{width:100%;padding:11px 14px;border:1px solid var(--border);border-radius:10px;background:#FDFAF3;outline:none;font-size:14.5px;transition:all .18s;}
+  .form-group input:focus,.form-group select:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(201,169,97,.14);}
   .form-group textarea{min-height:70px;resize:none;line-height:1.5;}
   .form-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-  .form-hint{
-    padding:10px 12px;background:#FBF4E2;border-radius:8px;
-    border:1px solid #E5D3A8;font-size:11.5px;color:var(--text-2);
-    line-height:1.7;margin-top:14px;
-  }
+  .form-hint{padding:10px 12px;background:#FBF4E2;border-radius:8px;border:1px solid #E5D3A8;font-size:11.5px;color:var(--text-2);line-height:1.7;margin-top:14px;}
   .form-hint b{color:var(--wine);}
 
-  .toast{
-    position:fixed;top:calc(var(--safe-top) + 70px);left:50%;
-    transform:translateX(-50%);padding:11px 22px;border-radius:10px;
-    font-size:13px;letter-spacing:.3px;z-index:2000;
-    background:linear-gradient(135deg,var(--wine),var(--wine-deep));
-    color:#F7EFE0;border:1px solid var(--gold);
-    box-shadow:0 12px 32px -8px rgba(66,24,36,.6);
-    animation:toastIn .25s cubic-bezier(.2,.8,.2,1);
-    max-width:85vw;text-align:center;line-height:1.5;
-  }
+  .toast{position:fixed;top:calc(var(--safe-top) + 70px);left:50%;transform:translateX(-50%);padding:11px 22px;border-radius:10px;font-size:13px;letter-spacing:.3px;z-index:2000;background:linear-gradient(135deg,var(--wine),var(--wine-deep));color:#F7EFE0;border:1px solid var(--gold);box-shadow:0 12px 32px -8px rgba(66,24,36,.6);animation:toastIn .25s cubic-bezier(.2,.8,.2,1);max-width:85vw;text-align:center;line-height:1.5;}
   @keyframes toastIn{from{opacity:0;transform:translate(-50%,-10px);}}
 
   .empty{text-align:center;padding:48px 20px;color:var(--text-2);}
@@ -436,144 +217,72 @@
   .empty-text{font-size:13px;letter-spacing:.3px;}
 
   .timeline{position:relative;padding-left:20px;}
-  .timeline::before{
-    content:"";position:absolute;left:5px;top:6px;bottom:6px;width:1px;
-    background:linear-gradient(180deg,var(--gold),transparent);
-  }
+  .timeline::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:1px;background:linear-gradient(180deg,var(--gold),transparent);}
   .tl-item{position:relative;padding-bottom:14px;}
   .tl-item:last-child{padding-bottom:0;}
-  .tl-item::before{
-    content:"";position:absolute;left:-20px;top:4px;
-    width:9px;height:9px;border-radius:50%;
-    background:var(--card);border:2px solid var(--gold);
-  }
+  .tl-item::before{content:"";position:absolute;left:-20px;top:4px;width:9px;height:9px;border-radius:50%;background:var(--card);border:2px solid var(--gold);}
   .tl-item.done::before{background:var(--gold);}
   .tl-title{font-size:12.5px;font-weight:600;letter-spacing:.3px;}
   .tl-desc{font-size:11px;color:var(--text-2);margin-top:2px;line-height:1.5;}
 
   .quick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
-  .quick-item{
-    display:flex;flex-direction:column;align-items:center;gap:6px;
-    padding:12px 4px;border-radius:12px;
-    background:var(--card);border:1px solid var(--border);
-    cursor:pointer;transition:all .15s;
-  }
+  .quick-item{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px;border-radius:12px;background:var(--card);border:1px solid var(--border);cursor:pointer;transition:all .15s;}
   .quick-item:active{transform:scale(.96);background:#FDFAF3;}
-  .quick-ico{
-    width:40px;height:40px;border-radius:12px;
-    background:linear-gradient(135deg,#FBF4E2,#F0E2C0);
-    display:flex;align-items:center;justify-content:center;
-    font-size:20px;border:1px solid #EAD9B0;
-  }
+  .quick-ico{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#FBF4E2,#F0E2C0);display:flex;align-items:center;justify-content:center;font-size:20px;border:1px solid #EAD9B0;}
   .quick-label{font-size:11px;color:var(--text);letter-spacing:.2px;font-weight:500;}
 
   .mini-chart{display:flex;align-items:flex-end;gap:10px;height:110px;padding-top:8px;}
   .mini-bar-group{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;}
-  .mini-bar{
-    width:100%;max-width:22px;border-radius:6px 6px 0 0;
-    background:linear-gradient(180deg,#E8D5A0,var(--gold) 55%,var(--gold-dark));
-    box-shadow:0 2px 8px -2px rgba(201,169,97,.6);
-  }
+  .mini-bar{width:100%;max-width:22px;border-radius:6px 6px 0 0;background:linear-gradient(180deg,#E8D5A0,var(--gold) 55%,var(--gold-dark));box-shadow:0 2px 8px -2px rgba(201,169,97,.6);}
   .mini-bar-label{font-size:10px;color:var(--text-2);letter-spacing:.2px;}
 
-  .sale-card{
-    background:var(--card);border-radius:12px;padding:14px;
-    border:1px solid var(--border);margin-bottom:10px;position:relative;
-    overflow:hidden;cursor:pointer;transition:all .15s;
-    box-shadow:0 1px 2px rgba(92,34,51,.04);
-  }
+  .sale-card{background:var(--card);border-radius:12px;padding:14px;border:1px solid var(--border);margin-bottom:10px;position:relative;overflow:hidden;cursor:pointer;transition:all .15s;box-shadow:0 1px 2px rgba(92,34,51,.04);}
   .sale-card:active{transform:scale(.99);background:#FDFAF3;}
   .sale-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;gap:8px;}
   .sale-cust{font-size:14px;font-weight:600;letter-spacing:.3px;}
   .sale-id{font-size:10.5px;color:var(--text-2);font-family:monospace;margin-top:2px;}
   .sale-body{font-size:12px;color:var(--text-2);line-height:1.6;margin-bottom:10px;}
   .sale-body b{color:var(--text);font-weight:600;}
-  .sale-foot{
-    display:flex;justify-content:space-between;align-items:center;
-    padding-top:10px;border-top:1px dashed #EFE2C6;
-  }
+  .sale-foot{display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px dashed #EFE2C6;}
   .sale-amount{font-size:15px;font-weight:700;color:var(--wine);font-family:"Songti SC",serif;}
   .sale-paid{font-size:11px;color:var(--text-2);margin-top:2px;}
 
-  .profile-head{
-    background:linear-gradient(135deg,#65293B 0%,#5C2233 50%,#4A1B2A 100%);
-    border-radius:14px;padding:20px;color:#F7EFE0;
-    display:flex;align-items:center;gap:14px;margin-bottom:14px;
-    position:relative;overflow:hidden;box-shadow:0 4px 16px rgba(92,34,51,.25);
-  }
-  .profile-head::after{
-    content:"";position:absolute;right:-20px;top:-20px;width:120px;height:120px;
-    border-radius:50%;background:radial-gradient(circle,rgba(201,169,97,.25),transparent 70%);
-  }
-  .profile-avatar{
-    width:56px;height:56px;border-radius:50%;flex-shrink:0;
-    background:linear-gradient(135deg,#F5E7B8,#C9A961);
-    display:flex;align-items:center;justify-content:center;
-    color:#5C2233;font-weight:700;font-size:22px;
-    box-shadow:0 4px 12px rgba(0,0,0,.2),inset 0 1px 2px rgba(255,255,255,.6);
-    position:relative;z-index:1;
-  }
+  .profile-head{background:linear-gradient(135deg,#65293B 0%,#5C2233 50%,#4A1B2A 100%);border-radius:14px;padding:20px;color:#F7EFE0;display:flex;align-items:center;gap:14px;margin-bottom:14px;position:relative;overflow:hidden;box-shadow:0 4px 16px rgba(92,34,51,.25);}
+  .profile-head::after{content:"";position:absolute;right:-20px;top:-20px;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,rgba(201,169,97,.25),transparent 70%);}
+  .profile-avatar{width:56px;height:56px;border-radius:50%;flex-shrink:0;background:linear-gradient(135deg,#F5E7B8,#C9A961);display:flex;align-items:center;justify-content:center;color:#5C2233;font-weight:700;font-size:22px;box-shadow:0 4px 12px rgba(0,0,0,.2),inset 0 1px 2px rgba(255,255,255,.6);position:relative;z-index:1;}
   .profile-info{flex:1;min-width:0;position:relative;z-index:1;}
   .profile-name{font-size:16px;font-weight:600;letter-spacing:1px;margin-bottom:4px;}
   .profile-role{font-size:11.5px;color:rgba(232,213,160,.8);letter-spacing:.5px;}
 
-  .menu-list{
-    background:var(--card);border-radius:12px;border:1px solid var(--border);
-    overflow:hidden;box-shadow:0 1px 2px rgba(92,34,51,.04);
-  }
-  .menu-item{
-    display:flex;align-items:center;gap:12px;padding:15px 14px;
-    border-bottom:1px solid #F4EEE0;cursor:pointer;font-size:14px;
-    letter-spacing:.3px;transition:background .15s;
-  }
+  .menu-list{background:var(--card);border-radius:12px;border:1px solid var(--border);overflow:hidden;box-shadow:0 1px 2px rgba(92,34,51,.04);}
+  .menu-item{display:flex;align-items:center;gap:12px;padding:15px 14px;border-bottom:1px solid #F4EEE0;cursor:pointer;font-size:14px;letter-spacing:.3px;transition:background .15s;}
   .menu-item:last-child{border-bottom:none;}
   .menu-item:active{background:#FDFAF3;}
-  .menu-ico{
-    width:34px;height:34px;border-radius:9px;flex-shrink:0;
-    background:linear-gradient(135deg,#FBF4E2,#F0E2C0);
-    display:flex;align-items:center;justify-content:center;
-    font-size:16px;border:1px solid #EAD9B0;
-  }
+  .menu-ico{width:34px;height:34px;border-radius:9px;flex-shrink:0;background:linear-gradient(135deg,#FBF4E2,#F0E2C0);display:flex;align-items:center;justify-content:center;font-size:16px;border:1px solid #EAD9B0;}
   .menu-label{flex:1;}
   .menu-value{font-size:12px;color:var(--text-2);}
   .menu-arrow{font-size:12px;color:var(--text-2);opacity:.5;}
 
-  .store-option{
-    display:flex;align-items:center;gap:12px;padding:14px;border-radius:10px;
-    border:1px solid var(--border);margin-bottom:10px;cursor:pointer;
-    transition:all .15s;background:#fff;
-  }
+  .store-option{display:flex;align-items:center;gap:12px;padding:14px;border-radius:10px;border:1px solid var(--border);margin-bottom:10px;cursor:pointer;transition:all .15s;background:#fff;}
   .store-option.current{border-color:var(--gold);background:#FBF4E2;box-shadow:0 2px 8px rgba(201,169,97,.2);}
-  .store-option:active{transform:scale(.99);}
-  .store-option-ico{
-    width:40px;height:40px;border-radius:10px;flex-shrink:0;
-    background:linear-gradient(135deg,#F5E7B8,#C9A961);
-    display:flex;align-items:center;justify-content:center;
-    font-size:18px;color:#fff;
-  }
+  .store-option-ico{width:40px;height:40px;border-radius:10px;flex-shrink:0;background:linear-gradient(135deg,#F5E7B8,#C9A961);display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;}
   .store-option-body{flex:1;min-width:0;}
   .store-option-name{font-size:14px;font-weight:600;letter-spacing:.3px;margin-bottom:2px;}
   .store-option-meta{font-size:11px;color:var(--text-2);}
   .store-option-check{font-size:16px;color:var(--gold-dark);}
 
-  .repair-card{
-    background:linear-gradient(135deg,#FFFCF5,#FBF3E2);
-    border:1px solid #E5D3A8;border-radius:12px;padding:14px;
-    position:relative;overflow:hidden;margin-bottom:10px;
-  }
-  .repair-card::before{
-    content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
-    background:linear-gradient(180deg,#A8C5E8,var(--blue));
-  }
+  .repair-card{background:linear-gradient(135deg,#FFFCF5,#FBF3E2);border:1px solid #E5D3A8;border-radius:12px;padding:14px;position:relative;overflow:hidden;margin-bottom:10px;}
+  .repair-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#A8C5E8,var(--blue));}
   .repair-card.done::before{background:linear-gradient(180deg,#B8D8A8,var(--green));}
   .repair-card.wait::before{background:linear-gradient(180deg,#D8A8E8,var(--purple));}
 
+  .site-preview{background:linear-gradient(180deg,#FDFAF3,#fff);border:1px solid var(--border);border-radius:12px;padding:20px;text-align:center;}
+  .site-brand{font-family:"Songti SC",serif;font-size:22px;font-weight:700;color:var(--wine);letter-spacing:3px;}
+  .site-slogan{font-size:12px;color:var(--gold-dark);letter-spacing:1.5px;margin-top:6px;}
+  .site-desc{font-size:11.5px;color:var(--text-2);line-height:1.8;margin-top:12px;}
+
   @media (min-width:481px){
-    .phone{
-      margin:20px auto;height:calc(100vh - 40px);max-height:890px;
-      border-radius:32px;border:8px solid #1a0a12;
-      box-shadow:0 30px 80px rgba(0,0,0,.5),inset 0 0 0 2px #3a1420;
-    }
+    .phone{margin:20px auto;height:calc(100vh - 40px);max-height:890px;border-radius:32px;border:8px solid #1a0a12;box-shadow:0 30px 80px rgba(0,0,0,.5),inset 0 0 0 2px #3a1420;}
     .app-bar{border-radius:24px 24px 0 0;}
     .tab-bar{border-radius:0 0 24px 24px;}
   }
@@ -581,10 +290,7 @@
 </head>
 <body>
 
-<div class="phone">
-  <div id="app"></div>
-</div>
-
+<div class="phone"><div id="app"></div></div>
 <div class="sheet-mask" id="sheetMask" onclick="if(event.target===this)closeSheet()"></div>
 
 <script>
@@ -594,14 +300,13 @@ const store = {
     { id:2, name:'瑾瑜轩 · 分店A', code:'JYX-002', owner:'王敏' },
   ],
   currentStoreId: 1,
-
   products: [
-    { id:1, code:'ZB-2024-0001', name:'足金古法手镯', cat:'黄金', material:'足金999', weight:'28.6g', size:'58mm', cert:'GIA-8821', cost:14800, price:18600, status:'在库', storeId:1 },
-    { id:2, code:'ZB-2024-0002', name:'18K金钻石戒指', cat:'钻石', material:'18K金', weight:'3.2g', size:'12号', cert:'GIA-9930', cost:12600, price:16800, status:'在库', storeId:1 },
-    { id:3, code:'ZB-2024-0003', name:'翡翠镶金吊坠', cat:'翡翠', material:'A货翡翠', weight:'8.4g', size:'—', cert:'NGTC-551', cost:6200, price:8800, status:'已定', storeId:2 },
-    { id:4, code:'ZB-2024-0004', name:'PT950铂金项链', cat:'铂金', material:'PT950', weight:'12.8g', size:'45cm', cert:'PT-2201', cost:4200, price:5600, status:'在库', storeId:1 },
-    { id:5, code:'ZB-2024-0005', name:'足金转运珠手链', cat:'黄金', material:'足金999', weight:'6.5g', size:'—', cert:'—', cost:3400, price:4280, status:'借出', storeId:1 },
-    { id:6, code:'ZB-2024-0006', name:'红宝石镶钻耳钉', cat:'彩宝', material:'18K金', weight:'2.8g', size:'—', cert:'GRS-330', cost:8800, price:11800, status:'在库', storeId:2 },
+    { id:1, code:'ZB-2024-0001', name:'足金古法手镯', cat:'黄金', material:'足金999', weight:'28.6g', size:'58mm', cert:'GIA-8821', cost:14800, price:18600, status:'在库', storeId:1, cabinet:'A柜1格', certBox:'证书柜1-01' },
+    { id:2, code:'ZB-2024-0002', name:'18K金钻石戒指', cat:'钻石', material:'18K金', weight:'3.2g', size:'12号', cert:'GIA-9930', cost:12600, price:16800, status:'在库', storeId:1, cabinet:'A柜2格', certBox:'证书柜1-02' },
+    { id:3, code:'ZB-2024-0003', name:'翡翠镶金吊坠', cat:'翡翠', material:'A货翡翠', weight:'8.4g', size:'—', cert:'NGTC-551', cost:6200, price:8800, status:'已定', storeId:2, cabinet:'B柜3格', certBox:'证书柜2-05' },
+    { id:4, code:'ZB-2024-0004', name:'PT950铂金项链', cat:'铂金', material:'PT950', weight:'12.8g', size:'45cm', cert:'PT-2201', cost:4200, price:5600, status:'在库', storeId:1, cabinet:'A柜3格', certBox:'证书柜1-03' },
+    { id:5, code:'ZB-2024-0005', name:'足金转运珠手链', cat:'黄金', material:'足金999', weight:'6.5g', size:'—', cert:'—', cost:3400, price:4280, status:'借出', storeId:1, cabinet:'A柜4格', certBox:'—' },
+    { id:6, code:'ZB-2024-0006', name:'红宝石镶钻耳钉', cat:'彩宝', material:'18K金', weight:'2.8g', size:'—', cert:'GRS-330', cost:8800, price:11800, status:'在库', storeId:2, cabinet:'B柜1格', certBox:'证书柜2-01' },
   ],
   customers: [
     { id:1, name:'林雅琴', phone:'13800006688', level:'金卡', total:128600, due:0, birthday:'10-12', prefer:'黄金·古法' },
@@ -635,6 +340,21 @@ const store = {
     { id:'WW-20240915-001', factory:'深圳金辉厂', product:'足金手镯', material:'足金999', weight:'28.6g', goldPrice:560, laborFee:800, sendDate:'2024-09-15', expectedDate:'2024-09-25', receivedDate:null, status:'加工中' },
     { id:'WW-20240910-002', factory:'东莞镶嵌厂', product:'18K金钻戒改款', material:'18K金', weight:'3.2g', goldPrice:420, laborFee:1200, sendDate:'2024-09-10', expectedDate:'2024-09-22', receivedDate:'2024-09-22', status:'已收货' },
   ],
+  showcases: [
+    { id:1, productId:2, sort:1, desc:'18K金经典钻戒，日常佩戴首选' },
+    { id:2, productId:4, sort:2, desc:'PT950铂金项链，简约通勤风' },
+  ],
+  appointments: [
+    { id:'YY-20240928-001', name:'刘女士', phone:'13800001234', cat:'黄金', product:'足金古法手镯', date:'2024-09-30', slot:'14:00-15:00', remark:'希望试戴大圈口', status:'待处理' },
+    { id:'YY-20240927-002', name:'张先生', phone:'13900005678', cat:'钻石', product:'18K金钻石戒指', date:'2024-10-02', slot:'10:00-11:00', remark:'为求婚挑选', status:'已确认' },
+  ],
+  storeProfile: {
+    name:'瑾瑜轩', short:'瑾瑜轩', slogan:'匠心传承 · 一物一证',
+    desc:'瑾瑜轩专注珠宝玉石二十年，源头直采，自有工坊，终身养护。',
+    contact:'王敏', phone:'13800008888', address:'深圳市罗湖区水贝珠宝城A栋1001',
+    hours:'10:00 - 22:00', categories:['黄金','钻石','翡翠','铂金','彩宝'],
+    showcaseTitle:'新品橱窗', showcaseSubtitle:'本期精选', websiteEnabled:true
+  },
   logs: [
     { time:'2024-09-28 10:23', user:'店长 · 王敏', store:'总店', act:'开单', target:'XS-20240928-001', result:'成功' },
     { time:'2024-09-28 09:45', user:'店长 · 王敏', store:'总店', act:'收定金', target:'DJ-20240920-001', result:'成功' },
@@ -643,18 +363,15 @@ const store = {
     { time:'2024-09-27 14:12', user:'店长 · 王敏', store:'总店', act:'入库', target:'ZB-2024-0006', result:'成功' },
     { time:'2024-09-27 11:05', user:'老板 · 张总', store:'总店', act:'设置提醒', target:'DJ-20240920-001', result:'成功' },
   ],
-  nextSaleSeq: 4,
-  nextDepositSeq: 2,
-  nextProductSeq: 7,
-  nextRepairSeq: 4,
-  nextPurchaseSeq: 4,
-  nextOutsourcingSeq: 3,
+  nextSaleSeq: 4, nextDepositSeq: 2, nextProductSeq: 7, nextRepairSeq: 4,
+  nextPurchaseSeq: 4, nextOutsourcingSeq: 3, nextAppointmentSeq: 3,
 };
 
 const state = {
   tab: 'dashboard',
   subview: null,
-  rulesOpen: { dashboard:false, products:false, sales:false, deposits:false, customers:false, inventory:false, loans:false, repairs:false, purchases:false, outsourcings:false, logs:false },
+  salesTab: 'normal',
+  rulesOpen: { dashboard:false, products:false, sales:false, inventory:false, customers:false, loans:false, repairs:false, purchases:false, outsourcings:false, showcase:false, appointments:false, logs:false },
 };
 
 const $ = id => document.getElementById(id);
@@ -670,81 +387,37 @@ const nextRepairId = () => 'WX-' + today().replace(/-/g,'') + '-' + String(store
 const nextPurchaseId = () => 'CG-' + today().replace(/-/g,'') + '-' + String(store.nextPurchaseSeq++).padStart(3,'0');
 const nextOutsourcingId = () => 'WW-' + today().replace(/-/g,'') + '-' + String(store.nextOutsourcingSeq++).padStart(3,'0');
 
-function toast(msg){
-  const el = document.createElement('div');
-  el.className = 'toast';
-  el.textContent = msg;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 2000);
-}
+function toast(msg){const el=document.createElement('div');el.className='toast';el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),2000);}
+function openSheet(title,body,foot){const m=$('sheetMask');m.innerHTML=`<div class="sheet" onclick="event.stopPropagation()"><div class="sheet-head"><h3>${title}</h3><button class="sheet-close" onclick="closeSheet()">✕</button></div><div class="sheet-body">${body}</div>${foot?`<div class="sheet-foot">${foot}</div>`:''}</div>`;m.classList.add('show');document.body.style.overflow='hidden';}
+function closeSheet(){$('sheetMask').classList.remove('show');$('sheetMask').innerHTML='';document.body.style.overflow='';}
 
-function openSheet(title, body, foot){
-  const m = $('sheetMask');
-  m.innerHTML = `
-    <div class="sheet" onclick="event.stopPropagation()">
-      <div class="sheet-head">
-        <h3>${title}</h3>
-        <button class="sheet-close" onclick="closeSheet()">✕</button>
-      </div>
-      <div class="sheet-body">${body}</div>
-      ${foot ? `<div class="sheet-foot">${foot}</div>` : ''}
-    </div>`;
-  m.classList.add('show');
-  document.body.style.overflow = 'hidden';
-}
-function closeSheet(){
-  $('sheetMask').classList.remove('show');
-  $('sheetMask').innerHTML = '';
-  document.body.style.overflow = '';
-}
-
-function rulesBox(key, rules){
+function rulesBox(key,rules){
   const open = state.rulesOpen[key] === true;
-  return `
-    <div class="rules ${open ? 'open' : ''}">
-      <div class="rules-head" data-act="toggle-rules" data-key="${key}">
-        <div class="rules-ico">◈</div>
-        <div class="rules-count">${rules.length}条</div>
-        <div class="rules-title">
-          <span>业务规则</span>
-          <span class="rules-tri">${open ? '▲' : '▼'}</span>
-        </div>
-      </div>
-      <div class="rules-body">
-        ${rules.map((r, i) => `
-          <div class="rule-item">
-            <div class="rule-idx">${i+1}</div>
-            <div>${r}</div>
-          </div>
-        `).join('')}
-      </div>
-    </div>`;
+  return `<div class="rules ${open?'open':''}">
+    <div class="rules-head" data-act="toggle-rules" data-key="${key}">
+      <div class="rules-ico">◈</div><div class="rules-count">${rules.length}条</div>
+      <div class="rules-title"><span>业务规则</span><span class="rules-tri">${open?'▲':'▼'}</span></div>
+    </div>
+    <div class="rules-body">${rules.map((r,i)=>`<div class="rule-item"><div class="rule-idx">${i+1}</div><div>${r}</div></div>`).join('')}</div>
+  </div>`;
 }
 
 function render(){
-  $('app').innerHTML = `
-    ${appBar()}
-    <div class="page" id="page">${view()}</div>
-    ${tabBar()}
-  `;
+  $('app').innerHTML = `${appBar()}<div class="page" id="page">${view()}</div>${tabBar()}`;
 }
 
 function appBar(){
   const icons = state.tab === 'profile'
     ? `<div class="ab-icon" data-act="logout">⚙</div>`
-    : `<div class="ab-icon" data-act="notify">🔔<span class="dot"></span></div>
-       <div class="ab-icon" data-act="switch-store">🏛</div>`;
-  return `
-    <div class="app-bar">
-      <div class="app-bar-logo serif">懿</div>
-      <div class="app-bar-title">
-        <div class="app-bar-name serif">懿珠宝管家</div>
-        <div class="app-bar-store" data-act="switch-store">
-          🏛 ${currentStore().name} <span class="arrow">▾</span>
-        </div>
-      </div>
-      <div class="app-bar-icons">${icons}</div>
-    </div>`;
+    : `<div class="ab-icon" data-act="notify">🔔<span class="dot"></span></div><div class="ab-icon" data-act="switch-store">🏛</div>`;
+  return `<div class="app-bar">
+    <div class="app-bar-logo serif">懿</div>
+    <div class="app-bar-title">
+      <div class="app-bar-name serif">懿臻珠宝云</div>
+      <div class="app-bar-store" data-act="switch-store">🏛 ${currentStore().name} <span class="arrow">▾</span></div>
+    </div>
+    <div class="app-bar-icons">${icons}</div>
+  </div>`;
 }
 
 function tabBar(){
@@ -755,26 +428,12 @@ function tabBar(){
     { key:'customers', ico:'❀', label:'客户' },
     { key:'profile', ico:'☰', label:'我的' },
   ];
-  return `
-    <nav class="tab-bar">
-      ${tabs.map(t => {
-        if (t.key === '__center__'){
-          return `
-            <div class="tab-center" data-act="quick-actions">
-              <div class="tab-center-btn">＋</div>
-              <div class="tab-center-label">快捷</div>
-            </div>`;
-        }
-        const active = state.tab === t.key && !state.subview;
-        const hasBadge = t.key === 'dashboard' && store.deposits.length > 0;
-        return `
-          <div class="tab ${active ? 'active' : ''}" data-nav="${t.key}">
-            <div class="tab-ico">${t.ico}</div>
-            <div>${t.label}</div>
-            ${hasBadge ? '<span class="tab-dot"></span>' : ''}
-          </div>`;
-      }).join('')}
-    </nav>`;
+  return `<nav class="tab-bar">${tabs.map(t => {
+    if (t.key === '__center__') return `<div class="tab-center" data-act="quick-actions"><div class="tab-center-btn">＋</div><div class="tab-center-label">快捷</div></div>`;
+    const active = state.tab === t.key && !state.subview;
+    const hasBadge = t.key === 'dashboard' && (store.deposits.length > 0 || store.appointments.filter(a=>a.status==='待处理').length > 0);
+    return `<div class="tab ${active?'active':''}" data-nav="${t.key}"><div class="tab-ico">${t.ico}</div><div>${t.label}</div>${hasBadge?'<span class="tab-dot"></span>':''}</div>`;
+  }).join('')}</nav>`;
 }
 
 function view(){
@@ -792,17 +451,20 @@ function subview(){
   switch(state.subview){
     case 'inventory': return viewInventory();
     case 'sales': return viewSales();
-    case 'deposits': return viewDeposits();
     case 'loans': return viewLoans();
     case 'repairs': return viewRepairs();
     case 'purchases': return viewPurchases();
     case 'outsourcings': return viewOutsourcings();
+    case 'showcase': return viewShowcase();
+    case 'appointments': return viewAppointments();
+    case 'website': return viewWebsite();
+    case 'store-profile': return viewStoreProfile();
     case 'logs': return viewLogs();
     default: return viewDashboard();
   }
 }
 
-/* 看板 */
+/* ============ 看板 ============ */
 function viewDashboard(){
   const inStock = store.products.filter(p => p.status === '在库').length;
   const stockValue = store.products.filter(p => p.status === '在库').reduce((s,p) => s + p.cost, 0);
@@ -811,90 +473,47 @@ function viewDashboard(){
   const trend = [42, 58, 71, 66, 88, 95];
   const urgentDeposits = store.deposits.filter(d => daysBetween(today(), d.promisedDate) - d.reminderDays <= 0);
   const pendingRepairs = store.repairs.filter(r => r.status !== '已完成');
+  const pendingAppts = store.appointments.filter(a => a.status === '待处理');
 
   return `
-    ${rulesBox('dashboard', [
+    ${rulesBox('dashboard',[
       '<b>在售商品</b>：当前状态为“在库”的可用现货件数。',
       '<b>今日销售</b>：按业务开单日期统计，含定金转正式单，冲红单自动扣除。',
       '<b>未收欠款</b>：客户欠款余额实时汇总统算。',
-      '<b>待办提醒</b>：根据承诺交付日与设置的提前天数自动提醒催交。',
+      '<b>待办提醒</b>：定金催交付、维修催取件、到店预约待处理自动置顶。',
     ])}
-
     <div class="stats-grid">
-      <div class="stat">
-        <div class="stat-label">在售商品</div>
-        <div class="stat-value">${inStock}<small>件</small></div>
-        <div class="stat-foot">另有 1 件已定 · 1 件借出</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">库存成本</div>
-        <div class="stat-value">${(stockValue/10000).toFixed(1)}<small>万</small></div>
-        <div class="stat-foot up">▲ 环比 +6.2%</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">今日销售</div>
-        <div class="stat-value">${money(todaySales || 8800)}</div>
-        <div class="stat-foot up">▲ 本月累计 ¥42.6 万</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">未收欠款</div>
-        <div class="stat-value" style="color:var(--red)">${money(dueTotal)}</div>
-        <div class="stat-foot warn">◈ 1 位客户待催收</div>
-      </div>
+      <div class="stat"><div class="stat-label">在售商品</div><div class="stat-value">${inStock}<small>件</small></div><div class="stat-foot">另有 1 件已定 · 1 件借出</div></div>
+      <div class="stat"><div class="stat-label">库存成本</div><div class="stat-value">${(stockValue/10000).toFixed(1)}<small>万</small></div><div class="stat-foot up">▲ 环比 +6.2%</div></div>
+      <div class="stat"><div class="stat-label">今日销售</div><div class="stat-value">${money(todaySales || 8800)}</div><div class="stat-foot up">▲ 本月累计 ¥42.6 万</div></div>
+      <div class="stat"><div class="stat-label">未收欠款</div><div class="stat-value" style="color:var(--red)">${money(dueTotal)}</div><div class="stat-foot warn">◈ 1 位客户待催收</div></div>
     </div>
 
     <div class="card">
-      <div class="card-head">
-        <div class="card-title">快捷操作</div>
-      </div>
+      <div class="card-head"><div class="card-title">快捷操作</div></div>
       <div class="quick-grid">
-        <div class="quick-item" data-act="quick-sale">
-          <div class="quick-ico">✦</div>
-          <div class="quick-label">开单</div>
-        </div>
-        <div class="quick-item" data-act="quick-deposit">
-          <div class="quick-ico">◈</div>
-          <div class="quick-label">收定金</div>
-        </div>
-        <div class="quick-item" data-subview="inventory">
-          <div class="quick-ico">▣</div>
-          <div class="quick-label">盘点</div>
-        </div>
-        <div class="quick-item" data-subview="repairs">
-          <div class="quick-ico">🔧</div>
-          <div class="quick-label">维修</div>
-        </div>
+        <div class="quick-item" data-act="quick-sale"><div class="quick-ico">✦</div><div class="quick-label">开单</div></div>
+        <div class="quick-item" data-act="quick-deposit"><div class="quick-ico">◈</div><div class="quick-label">收定金</div></div>
+        <div class="quick-item" data-subview="inventory"><div class="quick-ico">▣</div><div class="quick-label">盘点</div></div>
+        <div class="quick-item" data-subview="repairs"><div class="quick-ico">🔧</div><div class="quick-label">维修</div></div>
       </div>
     </div>
 
-    ${(urgentDeposits.length || pendingRepairs.length) ? `
-      <div class="section-title">
-        待办提醒
-        <span class="more" data-subview="deposits">全部 →</span>
-      </div>
+    ${(urgentDeposits.length || pendingRepairs.length || pendingAppts.length) ? `
+      <div class="section-title">待办提醒<span class="more" data-subview="sales">全部 →</span></div>
       ${urgentDeposits.map(d => depositCard(d)).join('')}
       ${pendingRepairs.map(r => repairCard(r)).join('')}
+      ${pendingAppts.map(a => apptCard(a)).join('')}
     ` : ''}
 
     <div class="card">
-      <div class="card-head">
-        <div class="card-title">近6月销售趋势</div>
-        <small style="font-size:11px;color:var(--text-2);">单位：万元</small>
-      </div>
+      <div class="card-head"><div class="card-title">近6月销售趋势</div><small style="font-size:11px;color:var(--text-2);">单位：万元</small></div>
       <div class="mini-chart">
-        ${trend.map((v,i) => `
-          <div class="mini-bar-group">
-            <div class="mini-bar" style="height:${v}px;"></div>
-            <div class="mini-bar-label">${i+4}月</div>
-          </div>
-        `).join('')}
+        ${trend.map((v,i)=>`<div class="mini-bar-group"><div class="mini-bar" style="height:${v}px;"></div><div class="mini-bar-label">${i+4}月</div></div>`).join('')}
       </div>
     </div>
 
-    <div class="section-title">
-      最近销售
-      <span class="more" data-subview="sales">全部 →</span>
-    </div>
+    <div class="section-title">最近销售<span class="more" data-subview="sales">全部 →</span></div>
     ${store.sales.slice(0,3).map(s => saleCard(s)).join('')}
   `;
 }
@@ -903,87 +522,70 @@ function depositCard(d){
   const left = daysBetween(today(), d.promisedDate);
   const urgent = left <= d.reminderDays;
   const prod = d.prodId ? getProduct(d.prodId) : null;
-  return `
-    <div class="deposit-card ${urgent ? 'urgent' : ''}">
-      <div class="deposit-head">
-        <div style="min-width:0;">
-          <div class="deposit-cust">${d.cust}</div>
-          <div class="deposit-prod">${d.prod} ${prod ? '· ' + prod.code : ''}</div>
-        </div>
-        <span class="state ${urgent ? 'state-due' : 'state-lock'}">${urgent ? '催交付' : '生效中'}</span>
-      </div>
-      <div class="deposit-nums">
-        <div class="dnum"><div class="dnum-k">总额</div><div class="dnum-v">${money(d.total)}</div></div>
-        <div class="dnum"><div class="dnum-k">已收定</div><div class="dnum-v paid">${money(d.deposit)}</div></div>
-        <div class="dnum"><div class="dnum-k">待付尾</div><div class="dnum-v due">${money(d.balance)}</div></div>
-      </div>
-      <div class="deposit-info">
-        承诺交付：<b>${d.promisedDate}</b> 剩余 <b class="${urgent ? 'urgent-text' : ''}">${left}</b> 天<br>
-        提醒设置：提前 <b>${d.reminderDays}</b> 天提醒店员催交付
-      </div>
-      <div class="deposit-actions">
-        <button class="btn btn-ghost btn-sm" data-act="set-reminder" data-id="${d.id}">修改提醒</button>
-        <button class="btn btn-gold btn-sm" data-act="pay-balance" data-id="${d.id}">收取尾款</button>
-      </div>
-    </div>`;
+  return `<div class="deposit-card ${urgent?'urgent':''}">
+    <div class="deposit-head">
+      <div style="min-width:0;"><div class="deposit-cust">${d.cust}</div><div class="deposit-prod">${d.prod} ${prod?'· '+prod.code:''}</div></div>
+      <span class="state ${urgent?'state-due':'state-lock'}">${urgent?'催交付':'生效中'}</span>
+    </div>
+    <div class="deposit-nums">
+      <div class="dnum"><div class="dnum-k">总额</div><div class="dnum-v">${money(d.total)}</div></div>
+      <div class="dnum"><div class="dnum-k">已收定</div><div class="dnum-v paid">${money(d.deposit)}</div></div>
+      <div class="dnum"><div class="dnum-k">待付尾</div><div class="dnum-v due">${money(d.balance)}</div></div>
+    </div>
+    <div class="deposit-info">承诺交付：<b>${d.promisedDate}</b> 剩余 <b class="${urgent?'urgent-text':''}">${left}</b> 天<br>提醒设置：提前 <b>${d.reminderDays}</b> 天提醒</div>
+    <div class="deposit-actions">
+      <button class="btn btn-ghost btn-sm" data-act="set-reminder" data-id="${d.id}">修改提醒</button>
+      <button class="btn btn-gold btn-sm" data-act="pay-balance" data-id="${d.id}">收取尾款</button>
+    </div>
+  </div>`;
 }
 
 function repairCard(r){
-  const st = { '待维修':{cls:'state-wait',txt:'待维修'}, '维修中':{cls:'state-doing',txt:'维修中'}, '待取件':{cls:'state-lock',txt:'待取件'}, '已完成':{cls:'state-ok',txt:'已完成'} }[r.status] || {cls:'state',txt:r.status};
+  const st = {'待维修':{cls:'state-wait',txt:'待维修'},'维修中':{cls:'state-doing',txt:'维修中'},'待取件':{cls:'state-lock',txt:'待取件'},'已完成':{cls:'state-ok',txt:'已完成'}}[r.status]||{cls:'state',txt:r.status};
   const left = r.status === '已完成' ? null : daysBetween(today(), r.promisedDate);
-  return `
-    <div class="repair-card ${r.status === '已完成' ? 'done' : (r.status === '待维修' ? 'wait' : '')}">
-      <div class="deposit-head">
-        <div style="min-width:0;">
-          <div class="deposit-cust">${r.cust} <span style="font-size:11px;color:var(--text-2);font-weight:400;">${r.phone}</span></div>
-          <div class="deposit-prod">${r.item} · ${r.issue}</div>
-        </div>
-        <span class="state ${st.cls}">${st.txt}</span>
-      </div>
-      <div class="deposit-nums">
-        <div class="dnum"><div class="dnum-k">预估费</div><div class="dnum-v">${money(r.estimateFee)}</div></div>
-        <div class="dnum"><div class="dnum-k">实收费</div><div class="dnum-v ${r.actualFee ? 'paid' : ''}">${r.actualFee ? money(r.actualFee) : '—'}</div></div>
-        <div class="dnum"><div class="dnum-k">师傅</div><div class="dnum-v" style="font-size:12px;">${r.technician || '未分配'}</div></div>
-      </div>
-      <div class="deposit-info">
-        接件：<b>${r.receiveDate}</b> 承诺：<b>${r.promisedDate}</b>
-        ${left !== null ? ` 剩余 <b class="${left <= 1 ? 'urgent-text' : ''}">${left}</b> 天` : ` 完成：<b>${r.doneDate}</b>`}
-      </div>
-      <div class="deposit-actions">
-        ${r.status !== '已完成'
-          ? `<button class="btn btn-ghost btn-sm" data-act="repair-advance" data-id="${r.id}">
-               ${r.status === '待维修' ? '开始维修' : r.status === '维修中' ? '标记待取件' : '确认交付'}
-             </button>
-             <button class="btn btn-gold btn-sm" data-act="repair-complete" data-id="${r.id}">完成并收款</button>`
-          : `<button class="btn btn-ghost btn-sm" data-act="repair-detail" data-id="${r.id}">查看详情</button>`
-        }
-      </div>
-    </div>`;
+  return `<div class="repair-card ${r.status==='已完成'?'done':(r.status==='待维修'?'wait':'')}">
+    <div class="deposit-head">
+      <div style="min-width:0;"><div class="deposit-cust">${r.cust} <span style="font-size:11px;color:var(--text-2);font-weight:400;">${r.phone}</span></div><div class="deposit-prod">${r.item} · ${r.issue}</div></div>
+      <span class="state ${st.cls}">${st.txt}</span>
+    </div>
+    <div class="deposit-nums">
+      <div class="dnum"><div class="dnum-k">预估费</div><div class="dnum-v">${money(r.estimateFee)}</div></div>
+      <div class="dnum"><div class="dnum-k">实收费</div><div class="dnum-v ${r.actualFee?'paid':''}">${r.actualFee?money(r.actualFee):'—'}</div></div>
+      <div class="dnum"><div class="dnum-k">师傅</div><div class="dnum-v" style="font-size:12px;">${r.technician||'未分配'}</div></div>
+    </div>
+    <div class="deposit-info">接件：<b>${r.receiveDate}</b> 承诺：<b>${r.promisedDate}</b>${left!==null?` 剩余 <b class="${left<=1?'urgent-text':''}">${left}</b> 天`:` 完成：<b>${r.doneDate}</b>`}</div>
+    <div class="deposit-actions">
+      ${r.status!=='已完成'
+        ? `<button class="btn btn-ghost btn-sm" data-act="repair-advance" data-id="${r.id}">${r.status==='待维修'?'开始维修':r.status==='维修中'?'标记待取件':'确认交付'}</button><button class="btn btn-gold btn-sm" data-act="repair-complete" data-id="${r.id}">完成并收款</button>`
+        : `<button class="btn btn-ghost btn-sm" data-act="repair-detail" data-id="${r.id}">查看详情</button>`}
+    </div>
+  </div>`;
+}
+
+function apptCard(a){
+  return `<div class="deposit-card purple">
+    <div class="deposit-head">
+      <div style="min-width:0;"><div class="deposit-cust">${a.name} · 到店预约</div><div class="deposit-prod">${a.cat} · ${a.product||'—'}</div></div>
+      <span class="state state-wait">待处理</span>
+    </div>
+    <div class="deposit-info">期望日期：<b>${a.date}</b> ${a.slot}<br>联系电话：<b>${a.phone}</b>${a.remark?`<br>备注：${a.remark}`:''}</div>
+    <div class="deposit-actions">
+      <button class="btn btn-ghost btn-sm" data-act="appt-cancel" data-id="${a.id}">取消</button>
+      <button class="btn btn-gold btn-sm" data-act="appt-confirm" data-id="${a.id}">确认预约</button>
+    </div>
+  </div>`;
 }
 
 function saleCard(s){
   const st = s.status === '已完成' ? '<span class="state state-ok">已完成</span>' : s.status === '已冲红' ? '<span class="state state-due">已冲红</span>' : '<span class="state state-due">欠款</span>';
-  return `
-    <div class="sale-card" data-act="sale-detail" data-id="${s.id}">
-      <div class="sale-head">
-        <div style="min-width:0;">
-          <div class="sale-cust">${s.cust}</div>
-          <div class="sale-id">${s.id}</div>
-        </div>
-        ${st}
-      </div>
-      <div class="sale-body">${s.prod} · <b>${s.method}</b> · ${s.date}</div>
-      <div class="sale-foot">
-        <div>
-          <div class="sale-amount">${money(s.amount)}</div>
-          <div class="sale-paid">已收 ${money(s.paid)}</div>
-        </div>
-        <div class="list-item-arrow">›</div>
-      </div>
-    </div>`;
+  return `<div class="sale-card" data-act="sale-detail" data-id="${s.id}">
+    <div class="sale-head"><div style="min-width:0;"><div class="sale-cust">${s.cust}</div><div class="sale-id">${s.id}</div></div>${st}</div>
+    <div class="sale-body">${s.prod} · <b>${s.method}</b> · ${s.date}</div>
+    <div class="sale-foot"><div><div class="sale-amount">${money(s.amount)}</div><div class="sale-paid">已收 ${money(s.paid)}</div></div><div style="color:var(--text-2);opacity:.5;">›</div></div>
+  </div>`;
 }
 
-/* 商品 */
+/* ============ 商品 ============ */
 function viewProducts(){
   const statusState = s => {
     if (s === '在库') return '<span class="state state-ok">在库</span>';
@@ -992,9 +594,10 @@ function viewProducts(){
     return `<span class="state">${s}</span>`;
   };
   return `
-    ${rulesBox('products', [
+    ${rulesBox('products',[
       '<b>一物一码</b>：每件珠宝独立建档，支持标签与条码打印。',
-      '<b>状态流转</b>：在库 → 已定（定金锁定）→ 已售出（尾款转单）；在库 → 借出（调拨）。',
+      '<b>商品与证书存放位置</b>：商品记录柜台/货架/保险柜位置，证书记录对应证书柜编号，取货快速对应。',
+      '<b>状态流转</b>：在库 → 已定（定金锁定）→ 已售出；在库 → 借出。',
       '<b>成本与毛利</b>：毛利 = 售价 − 成本。',
     ])}
     <div class="search-bar"><input placeholder="搜索商品名称 / 编码 / 证书号"></div>
@@ -1005,27 +608,19 @@ function viewProducts(){
       <div class="chip">借出 ${store.products.filter(p=>p.status==='借出').length}</div>
     </div>
     <div class="list-card">
-      ${store.products.map(p => `
-        <div class="list-item" data-act="view-product" data-id="${p.id}">
-          <div class="list-item-ico">${p.cat==='黄金'?'◉':p.cat==='钻石'?'◆':p.cat==='翡翠'?'❖':p.cat==='铂金'?'◎':'✦'}</div>
-          <div class="list-item-body">
-            <div class="list-item-title">
-              <span class="name">${p.name}</span>
-              ${statusState(p.status)}
-            </div>
-            <div class="list-item-sub">${p.material} · ${p.weight}<br>${p.code}</div>
-          </div>
-          <div class="list-item-tail">
-            <div class="list-item-amount">${money(p.price)}</div>
-            <div class="list-item-arrow">›</div>
-          </div>
+      ${store.products.map(p => `<div class="list-item" data-act="view-product" data-id="${p.id}">
+        <div class="list-item-ico">${p.cat==='黄金'?'◉':p.cat==='钻石'?'◆':p.cat==='翡翠'?'❖':p.cat==='铂金'?'◎':'✦'}</div>
+        <div class="list-item-body">
+          <div class="list-item-title"><span class="name">${p.name}</span>${statusState(p.status)}</div>
+          <div class="list-item-sub">${p.material} · ${p.weight}<br>${p.code} · 📍${p.cabinet||'—'}</div>
         </div>
-      `).join('')}
+        <div class="list-item-tail"><div class="list-item-amount">${money(p.price)}</div></div>
+      </div>`).join('')}
     </div>
   `;
 }
 
-/* 库存 */
+/* ============ 库存（含盘点） ============ */
 function viewInventory(){
   const inStock = store.products.filter(p => p.status === '在库');
   const reserved = store.products.filter(p => p.status === '已定');
@@ -1036,11 +631,11 @@ function viewInventory(){
       <div style="font-size:15px;font-weight:600;">库存管理</div>
       <div style="width:50px;"></div>
     </div>
-    ${rulesBox('inventory', [
+    ${rulesBox('inventory',[
       '<b>入库日期自选</b>：增加入库单可自由选择业务日期，支持历史单据补录。',
       '<b>复制入库单</b>：支持一键复制历史入库单，微调后快速入库。',
       '<b>多样盘点</b>：支持普通条码逐件扫码盘点与高频RFID批量感应盘点。',
-      '<b>扣库存机制</b>：普通销售即扣；定金单开出不扣，付清尾款转单后才扣减。',
+      '<b>扣库存机制</b>：普通销售即扣；定金单不扣，付清尾款转单后才扣减。',
     ])}
     <div class="stats-grid">
       <div class="stat"><div class="stat-label">正常在库</div><div class="stat-value">${inStock.length}<small>件</small></div></div>
@@ -1048,9 +643,8 @@ function viewInventory(){
       <div class="stat"><div class="stat-label">借出在外</div><div class="stat-value" style="color:var(--wine)">${loanOut.length}<small>件</small></div></div>
       <div class="stat"><div class="stat-label">库存总成本</div><div class="stat-value">${(store.products.reduce((s,p)=>s+p.cost,0)/10000).toFixed(1)}<small>万</small></div></div>
     </div>
-    
     <div class="btn-row" style="margin-bottom:12px;">
-      <button class="btn btn-ghost btn-sm" data-act="inbound">▣ 入库登记</button>
+      <button class="btn btn-ghost btn-sm" data-act="inbound">▣ 入库</button>
       <button class="btn btn-ghost btn-sm" data-act="scan-normal">◈ 条码盘点</button>
       <button class="btn btn-gold btn-sm" data-act="scan-rfid" style="flex:1.2;">⤋ RFID盘点</button>
     </div>
@@ -1061,72 +655,52 @@ function viewInventory(){
         <span class="tag tag-gold" style="cursor:pointer;" data-act="copy-inbound" data-name="足金古法手镯" data-supp="自有金料" data-cost="14800">⧉ 复制上次入库单</span>
       </div>
     </div>
-    
+
     <div class="list-card">
-      ${store.products.map(p => `
-        <div class="list-item" data-act="view-product" data-id="${p.id}">
-          <div class="list-item-ico">${p.cat==='黄金'?'◉':p.cat==='钻石'?'◆':p.cat==='翡翠'?'❖':p.cat==='铂金'?'◎':'✦'}</div>
-          <div class="list-item-body">
-            <div class="list-item-title">
-              <span class="name">${p.name}</span>
-              ${p.status==='在库'?'<span class="state state-ok">在库</span>':p.status==='已定'?'<span class="state state-lock">已定</span>':'<span class="state state-loan">借出</span>'}
-            </div>
-            <div class="list-item-sub">${p.material} · ${p.weight} · ${getStore(p.storeId).name.replace('瑾瑜轩 · ','')}</div>
-          </div>
-          <div class="list-item-tail">
-            <div class="list-item-amount">${money(p.cost)}</div>
-            <button class="btn btn-ghost btn-sm" data-act="print-single" data-id="${p.id}" style="margin-top:4px;padding:3px 8px;min-height:auto;font-size:11px;">打印标签</button>
-          </div>
+      ${store.products.map(p => `<div class="list-item" data-act="view-product" data-id="${p.id}">
+        <div class="list-item-ico">${p.cat==='黄金'?'◉':p.cat==='钻石'?'◆':p.cat==='翡翠'?'❖':p.cat==='铂金'?'◎':'✦'}</div>
+        <div class="list-item-body">
+          <div class="list-item-title"><span class="name">${p.name}</span>${p.status==='在库'?'<span class="state state-ok">在库</span>':p.status==='已定'?'<span class="state state-lock">已定</span>':'<span class="state state-loan">借出</span>'}</div>
+          <div class="list-item-sub">${p.material} · ${p.weight}<br>📍 ${p.cabinet||'—'}</div>
         </div>
-      `).join('')}
+        <div class="list-item-tail">
+          <div class="list-item-amount">${money(p.cost)}</div>
+          <button class="btn btn-ghost btn-sm" data-act="print-single" data-id="${p.id}" style="margin-top:4px;padding:3px 8px;min-height:auto;font-size:11px;">打印标签</button>
+        </div>
+      </div>`).join('')}
     </div>
   `;
 }
 
-/* 销售 */
+/* ============ 销售（含定金） ============ */
 function viewSales(){
+  const tab = state.salesTab || 'normal';
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
       <button class="btn btn-ghost btn-sm" data-act="back-home">‹ 返回</button>
-      <div style="font-size:15px;font-weight:600;">销售单管理</div>
+      <div style="font-size:15px;font-weight:600;">销售开单</div>
       <div style="width:50px;"></div>
     </div>
-    ${rulesBox('sales', [
-      '<b>开单自选日期</b>：开单支持自由选择开单业务日期，方便补录。',
+    ${rulesBox('sales',[
+      '<b>开单自选日期</b>：开单支持自由选择业务日期，方便补录。',
       '<b>明细冻结与改客户</b>：开单后明细与售价不可改；客户信息可随时直接修改。',
       '<b>冲红重开</b>：如需调整货品或金额，须先冲红原单回退库存，再重新下单。',
-      '<b>库存扣减</b>：普通销售开单即刻扣减在库商品。',
+      '<b>定金不扣库存</b>：定金下单锁定商品或不锁；付清尾款后才转销售单并扣减库存。',
     ])}
+    <div class="chips">
+      <div class="chip ${tab==='normal'?'active':''}" data-act="sales-tab" data-tab="normal">销售单</div>
+      <div class="chip ${tab==='deposit'?'active':''}" data-act="sales-tab" data-tab="deposit">定金单 ${store.deposits.length?`(${store.deposits.length})`:''}</div>
+    </div>
     <div class="search-bar"><input placeholder="搜索客户 / 单号 / 商品"></div>
     <div class="btn-row" style="margin-bottom:12px;">
       <button class="btn btn-gold" data-act="quick-sale">＋ 普通开单</button>
       <button class="btn btn-wine" data-act="quick-deposit">◈ 定金下单</button>
     </div>
-    ${store.sales.map(s => saleCard(s)).join('')}
+    ${tab==='normal' ? store.sales.map(s => saleCard(s)).join('') : (store.deposits.length ? store.deposits.map(d => depositCard(d)).join('') : `<div class="empty"><div class="empty-ico">◈</div><div class="empty-text">暂无定金单</div></div>`)}
   `;
 }
 
-/* 定金尾款 */
-function viewDeposits(){
-  return `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-      <button class="btn btn-ghost btn-sm" data-act="back-home">‹ 返回</button>
-      <div style="font-size:15px;font-weight:600;">定金尾款管理</div>
-      <div style="width:50px;"></div>
-    </div>
-    ${rulesBox('deposits', [
-      '<b>定金下单不扣库存</b>：收定金可选择在库商品（锁定为已定）或登记无现货定制品，库存均不扣减。',
-      '<b>尾款转正式单</b>：付清尾款后转为正式销售单，并扣减相应库存。',
-      '<b>交付系统提醒</b>：可手工设置提前提醒天数（默认提前7天），到期系统自动提醒店员催交付。',
-    ])}
-    <button class="btn btn-wine btn-block" data-act="quick-deposit" style="margin-bottom:12px;">◈ 新建定金单</button>
-    ${store.deposits.length ? store.deposits.map(d => depositCard(d)).join('') : `
-      <div class="empty"><div class="empty-ico">◈</div><div class="empty-text">暂无定金单</div></div>
-    `}
-  `;
-}
-
-/* 借货 */
+/* ============ 借货 ============ */
 function viewLoans(){
   const loansIn = store.loans.filter(l => l.dir === 'in');
   const loansOut = store.loans.filter(l => l.dir === 'out');
@@ -1136,9 +710,9 @@ function viewLoans(){
       <div style="font-size:15px;font-weight:600;">借货管理</div>
       <div style="width:50px;"></div>
     </div>
-    ${rulesBox('loans', [
+    ${rulesBox('loans',[
       '<b>借进的货</b>：独立编号并在借货栏核算，不占用正常采购成本。',
-      '<b>借出的货</b>：直接通过调拨操作从在库移至借货栏，与销售出库隔离。',
+      '<b>借出的货</b>：通过调拨操作从在库移至借货栏，与销售出库隔离。',
       '<b>归还核销</b>：借进归还核销，借出归还自动转回在库。',
     ])}
     <div class="stats-grid">
@@ -1150,183 +724,265 @@ function viewLoans(){
       <button class="btn btn-gold" data-act="loan-out-pick">⇄ 借出登记</button>
     </div>
     <div class="list-card">
-      ${store.loans.map(l => `
-        <div class="loan-item">
-          <div class="loan-dir ${l.dir === 'in' ? 'loan-in' : 'loan-out'}">
-            <div class="d-arrow">${l.dir === 'in' ? '↓' : '↑'}</div>
-            <div>${l.dir === 'in' ? '借入' : '借出'}</div>
-          </div>
-          <div class="loan-body">
-            <div class="loan-title">${l.name}</div>
-            <div class="loan-sub">对方：<b>${l.party}</b><br>应还：<b>${l.dueDate}</b> · ${l.qty}</div>
-          </div>
-          <button class="btn btn-ghost btn-sm" data-act="loan-return" data-id="${l.id}">归还</button>
-        </div>
-      `).join('')}
+      ${store.loans.map(l => `<div class="loan-item">
+        <div class="loan-dir ${l.dir==='in'?'loan-in':'loan-out'}"><div class="d-arrow">${l.dir==='in'?'↓':'↑'}</div><div>${l.dir==='in'?'借入':'借出'}</div></div>
+        <div class="loan-body"><div class="loan-title">${l.name}</div><div class="loan-sub">对方：<b>${l.party}</b><br>应还：<b>${l.dueDate}</b> · ${l.qty}</div></div>
+        <button class="btn btn-ghost btn-sm" data-act="loan-return" data-id="${l.id}">归还</button>
+      </div>`).join('')}
     </div>
   `;
 }
 
-/* 维修管理 */
+/* ============ 维修 ============ */
 function viewRepairs(){
   const pending = store.repairs.filter(r => r.status === '待维修');
   const doing = store.repairs.filter(r => r.status === '维修中');
   const waiting = store.repairs.filter(r => r.status === '待取件');
   const totalFee = store.repairs.filter(r => r.actualFee).reduce((s,r) => s + r.actualFee, 0);
-
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
       <button class="btn btn-ghost btn-sm" data-act="back-home">‹ 返回</button>
       <div style="font-size:15px;font-weight:600;">维修管理</div>
       <div style="width:50px;"></div>
     </div>
-
-    ${rulesBox('repairs', [
+    ${rulesBox('repairs',[
       '<b>接件登记</b>：记录客户、首饰、故障描述、预估费用、承诺交付日。',
       '<b>状态流转</b>：待维修 → 维修中 → 待取件 → 已完成。',
       '<b>费用记录</b>：完成后填入实际收费，计入客户累计消费。',
     ])}
-
     <div class="stats-grid">
       <div class="stat"><div class="stat-label">待维修</div><div class="stat-value" style="color:var(--purple)">${pending.length}<small>件</small></div></div>
       <div class="stat"><div class="stat-label">维修中</div><div class="stat-value" style="color:var(--blue)">${doing.length}<small>件</small></div></div>
       <div class="stat"><div class="stat-label">待取件</div><div class="stat-value" style="color:var(--gold-dark)">${waiting.length}<small>件</small></div></div>
       <div class="stat"><div class="stat-label">维修收入</div><div class="stat-value">${money(totalFee)}</div></div>
     </div>
-
     <button class="btn btn-wine btn-block" data-act="new-repair" style="margin-bottom:12px;">🔧 新建维修单</button>
-
-    ${store.repairs.length ? store.repairs.map(r => repairCard(r)).join('') : `
-      <div class="empty"><div class="empty-ico">🔧</div><div class="empty-text">暂无维修单</div></div>
-    `}
+    ${store.repairs.length ? store.repairs.map(r => repairCard(r)).join('') : `<div class="empty"><div class="empty-ico">🔧</div><div class="empty-text">暂无维修单</div></div>`}
   `;
 }
 
-/* 采购管理 */
+/* ============ 采购 ============ */
 function viewPurchases(){
   const waiting = store.purchases.filter(p => p.status === '待发货');
   const shipping = store.purchases.filter(p => p.status === '已发货');
   const received = store.purchases.filter(p => p.status === '已入库');
   const unpaid = store.purchases.reduce((s,p) => s + (p.cost - p.paid), 0);
-  const st = { '待发货':'state-wait', '已发货':'state-doing', '已入库':'state-ok' };
-
+  const st = {'待发货':'state-wait','已发货':'state-doing','已入库':'state-ok'};
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
       <button class="btn btn-ghost btn-sm" data-act="back-home">‹ 返回</button>
       <div style="font-size:15px;font-weight:600;">采购管理</div>
       <div style="width:50px;"></div>
     </div>
-
-    ${rulesBox('purchases', [
+    ${rulesBox('purchases',[
       '<b>采购下单</b>：记录供应商、商品、数量、成本单价、预计到货日。',
       '<b>状态流转</b>：待发货 → 已发货 → 已入库（入库后自动增加库存）。',
       '<b>付款登记</b>：支持分次付款，未付清自动计入应付账目。',
     ])}
-
     <div class="stats-grid">
       <div class="stat"><div class="stat-label">待发货</div><div class="stat-value" style="color:var(--purple)">${waiting.length}<small>单</small></div></div>
       <div class="stat"><div class="stat-label">在途</div><div class="stat-value" style="color:var(--blue)">${shipping.length}<small>单</small></div></div>
       <div class="stat"><div class="stat-label">本月入库</div><div class="stat-value">${received.length}<small>单</small></div></div>
       <div class="stat"><div class="stat-label">欠供应商</div><div class="stat-value" style="color:var(--red)">${money(unpaid)}</div></div>
     </div>
-
     <button class="btn btn-wine btn-block" data-act="new-purchase" style="margin-bottom:12px;">＋ 新建采购单</button>
-
-    ${store.purchases.map(p => `
-      <div class="deposit-card ${p.status === '待发货' ? 'purple' : (p.status === '已发货' ? 'blue' : '')}">
-        <div class="deposit-head">
-          <div style="min-width:0;">
-            <div class="deposit-cust">${p.product}</div>
-            <div class="deposit-prod">供应商：${p.supplier} · ${p.id}</div>
-          </div>
-          <span class="state ${st[p.status]}">${p.status}</span>
-        </div>
-        <div class="deposit-nums">
-          <div class="dnum"><div class="dnum-k">数量</div><div class="dnum-v">${p.qty} 件</div></div>
-          <div class="dnum"><div class="dnum-k">成本</div><div class="dnum-v">${money(p.cost)}</div></div>
-          <div class="dnum"><div class="dnum-k">已付</div><div class="dnum-v ${p.paid >= p.cost ? 'paid' : 'due'}">${money(p.paid)}</div></div>
-        </div>
-        <div class="deposit-info">
-          下单：<b>${p.orderDate}</b> 预计到货：<b>${p.expectedDate}</b>${p.receivedDate ? ` 入库：<b>${p.receivedDate}</b>` : ''}
-        </div>
-        <div class="deposit-actions">
-          ${p.status === '待发货'
-            ? `<button class="btn btn-ghost btn-sm" data-act="purchase-ship" data-id="${p.id}">标记发货</button>
-               <button class="btn btn-ghost btn-sm" data-act="purchase-receive" data-id="${p.id}">直接入库</button>`
-            : p.status === '已发货'
-              ? `<button class="btn btn-gold btn-sm" data-act="purchase-receive" data-id="${p.id}">确认到货入库</button>`
-              : `<button class="btn btn-ghost btn-sm" data-act="purchase-pay" data-id="${p.id}">${p.paid >= p.cost ? '已付清' : '登记付款'}</button>`
-          }
-        </div>
+    ${store.purchases.map(p => `<div class="deposit-card ${p.status==='待发货'?'purple':(p.status==='已发货'?'blue':'')}">
+      <div class="deposit-head">
+        <div style="min-width:0;"><div class="deposit-cust">${p.product}</div><div class="deposit-prod">供应商：${p.supplier} · ${p.id}</div></div>
+        <span class="state ${st[p.status]}">${p.status}</span>
       </div>
-    `).join('')}
+      <div class="deposit-nums">
+        <div class="dnum"><div class="dnum-k">数量</div><div class="dnum-v">${p.qty} 件</div></div>
+        <div class="dnum"><div class="dnum-k">成本</div><div class="dnum-v">${money(p.cost)}</div></div>
+        <div class="dnum"><div class="dnum-k">已付</div><div class="dnum-v ${p.paid>=p.cost?'paid':'due'}">${money(p.paid)}</div></div>
+      </div>
+      <div class="deposit-info">下单：<b>${p.orderDate}</b> 预计到货：<b>${p.expectedDate}</b>${p.receivedDate?` 入库：<b>${p.receivedDate}</b>`:''}</div>
+      <div class="deposit-actions">
+        ${p.status==='待发货'
+          ? `<button class="btn btn-ghost btn-sm" data-act="purchase-ship" data-id="${p.id}">标记发货</button><button class="btn btn-ghost btn-sm" data-act="purchase-receive" data-id="${p.id}">直接入库</button>`
+          : p.status==='已发货'
+            ? `<button class="btn btn-gold btn-sm" data-act="purchase-receive" data-id="${p.id}">确认到货入库</button>`
+            : `<button class="btn btn-ghost btn-sm" data-act="purchase-pay" data-id="${p.id}">${p.paid>=p.cost?'已付清':'登记付款'}</button>`}
+      </div>
+    </div>`).join('')}
   `;
 }
 
-/* 委外加工 */
+/* ============ 委外 ============ */
 function viewOutsourcings(){
   const processing = store.outsourcings.filter(o => o.status === '加工中');
   const received = store.outsourcings.filter(o => o.status === '已收货');
   const totalLabor = store.outsourcings.reduce((s,o) => s + o.laborFee, 0);
   const totalCost = store.outsourcings.reduce((s,o) => s + (o.laborFee + o.goldPrice * parseFloat(o.weight)), 0);
-  const st = { '加工中':'state-doing', '已收货':'state-ok' };
-
+  const st = {'加工中':'state-doing','已收货':'state-ok'};
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
       <button class="btn btn-ghost btn-sm" data-act="back-home">‹ 返回</button>
       <div style="font-size:15px;font-weight:600;">委外加工</div>
       <div style="width:50px;"></div>
     </div>
-
-    ${rulesBox('outsourcings', [
+    ${rulesBox('outsourcings',[
       '<b>发料</b>：记录金料克重、金价、加工费、加工厂、预计交货日。',
       '<b>成本计算</b>：成本 = 金价 × 克重 + 加工费。',
       '<b>收货入库</b>：收货后自动入库，可用于定制订单交付。',
     ])}
-
     <div class="stats-grid">
       <div class="stat"><div class="stat-label">加工中</div><div class="stat-value" style="color:var(--blue)">${processing.length}<small>批</small></div></div>
       <div class="stat"><div class="stat-label">已收货</div><div class="stat-value" style="color:var(--green)">${received.length}<small>批</small></div></div>
       <div class="stat"><div class="stat-label">加工费用</div><div class="stat-value">${money(totalLabor)}</div></div>
       <div class="stat"><div class="stat-label">加工总成本</div><div class="stat-value">${(totalCost/10000).toFixed(2)}<small>万</small></div></div>
     </div>
-
     <button class="btn btn-wine btn-block" data-act="new-outsourcing" style="margin-bottom:12px;">＋ 新建加工单</button>
-
-    ${store.outsourcings.map(o => `
-      <div class="deposit-card ${o.status === '已收货' ? '' : 'blue'}">
-        <div class="deposit-head">
-          <div style="min-width:0;">
-            <div class="deposit-cust">${o.product}</div>
-            <div class="deposit-prod">加工厂：${o.factory} ·${o.id}</div>
-          </div>
-          <span class="state ${st[o.status]}">${o.status}</span>
-        </div>
-        <div class="deposit-nums">
-          <div class="dnum"><div class="dnum-k">克重</div><div class="dnum-v">${o.weight}</div></div>
-          <div class="dnum"><div class="dnum-k">加工费</div><div class="dnum-v">${money(o.laborFee)}</div></div>
-          <div class="dnum"><div class="dnum-k">总成本</div><div class="dnum-v">${money(o.laborFee + o.goldPrice * parseFloat(o.weight))}</div></div>
-        </div>
-        <div class="deposit-info">
-          ${o.material} · 金价 <b>¥${o.goldPrice}/g</b><br>
-          发料：<b>${o.sendDate}</b> 预计交货：<b>${o.expectedDate}</b>${o.receivedDate ? ` 收货：<b>${o.receivedDate}</b>` : ''}
-        </div>
-        <div class="deposit-actions">
-          ${o.status === '加工中'
-            ? `<button class="btn btn-ghost btn-sm" data-act="outsourcing-detail" data-id="${o.id}">查看详情</button>
-               <button class="btn btn-gold btn-sm" data-act="outsourcing-receive" data-id="${o.id}">确认收货</button>`
-            : `<button class="btn btn-ghost btn-sm" data-act="outsourcing-detail" data-id="${o.id}">查看详情</button>`
-          }
-        </div>
+    ${store.outsourcings.map(o => `<div class="deposit-card ${o.status==='已收货'?'':'blue'}">
+      <div class="deposit-head">
+        <div style="min-width:0;"><div class="deposit-cust">${o.product}</div><div class="deposit-prod">加工厂：${o.factory} · ${o.id}</div></div>
+        <span class="state ${st[o.status]}">${o.status}</span>
       </div>
-    `).join('')}
+      <div class="deposit-nums">
+        <div class="dnum"><div class="dnum-k">克重</div><div class="dnum-v">${o.weight}</div></div>
+        <div class="dnum"><div class="dnum-k">加工费</div><div class="dnum-v">${money(o.laborFee)}</div></div>
+        <div class="dnum"><div class="dnum-k">总成本</div><div class="dnum-v">${money(o.laborFee + o.goldPrice * parseFloat(o.weight))}</div></div>
+      </div>
+      <div class="deposit-info">${o.material} · 金价 <b>¥${o.goldPrice}/g</b><br>发料：<b>${o.sendDate}</b> 预计交货：<b>${o.expectedDate}</b>${o.receivedDate?` 收货：<b>${o.receivedDate}</b>`:''}</div>
+      <div class="deposit-actions">
+        ${o.status==='加工中'
+          ? `<button class="btn btn-ghost btn-sm" data-act="outsourcing-detail" data-id="${o.id}">查看详情</button><button class="btn btn-gold btn-sm" data-act="outsourcing-receive" data-id="${o.id}">确认收货</button>`
+          : `<button class="btn btn-ghost btn-sm" data-act="outsourcing-detail" data-id="${o.id}">查看详情</button>`}
+      </div>
+    </div>`).join('')}
   `;
 }
 
-/* 客户 */
+/* ============ 橱窗 ============ */
+function viewShowcase(){
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <button class="btn btn-ghost btn-sm" data-act="back-home">‹ 返回</button>
+      <div style="font-size:15px;font-weight:600;">橱窗管理</div>
+      <div style="width:50px;"></div>
+    </div>
+    ${rulesBox('showcase',[
+      '<b>最多 10 件</b>：从在库商品中选择加入新品橱窗。',
+      '<b>同步展示</b>：橱窗商品同步展示在企业迷你网站上，面向客户公开。',
+    ])}
+    <button class="btn btn-gold btn-block" data-act="add-showcase" style="margin-bottom:12px;">＋ 添加橱窗商品</button>
+    ${store.showcases.length ? store.showcases.map(s => {
+      const p = getProduct(s.productId);
+      if (!p) return '';
+      return `<div class="deposit-card">
+        <div class="deposit-head">
+          <div style="min-width:0;"><div class="deposit-cust">${p.name}</div><div class="deposit-prod">${p.code} · ${p.material} ${p.weight}</div></div>
+          <span class="tag tag-gold">排序 ${s.sort}</span>
+        </div>
+        <div class="deposit-info">${s.desc || '—'} · 参考价 <b>${money(p.price)}</b></div>
+        <div class="deposit-actions">
+          <button class="btn btn-ghost btn-sm" data-act="edit-showcase" data-id="${s.id}">编辑</button>
+          <button class="btn btn-ghost btn-sm" data-act="remove-showcase" data-id="${s.id}" style="color:var(--red);">移出</button>
+        </div>
+      </div>`;
+    }).join('') : `<div class="empty"><div class="empty-ico">✦</div><div class="empty-text">暂无橱窗商品</div></div>`}
+  `;
+}
+
+/* ============ 预约 ============ */
+function viewAppointments(){
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <button class="btn btn-ghost btn-sm" data-act="back-home">‹ 返回</button>
+      <div style="font-size:15px;font-weight:600;">到店预约</div>
+      <div style="width:50px;"></div>
+    </div>
+    ${rulesBox('appointments',[
+      '<b>来源</b>：客户从企业迷你网站提交预约看货请求，直达店内预约管理。',
+      '<b>状态流转</b>：待处理 → 已确认 → 已到店；可取消。',
+    ])}
+    ${store.appointments.length ? store.appointments.map(a => {
+      const st = {'待处理':'state-wait','已确认':'state-doing','已到店':'state-ok','已取消':'state-due'};
+      return `<div class="deposit-card ${a.status==='待处理'?'purple':(a.status==='已确认'?'blue':'')}">
+        <div class="deposit-head">
+          <div style="min-width:0;"><div class="deposit-cust">${a.name}</div><div class="deposit-prod">${a.cat} · ${a.product||'—'}</div></div>
+          <span class="state ${st[a.status]}">${a.status}</span>
+        </div>
+        <div class="deposit-info">期望：<b>${a.date}</b> ${a.slot}<br>电话：<b>${a.phone}</b>${a.remark?`<br>备注：${a.remark}`:''}</div>
+        <div class="deposit-actions">
+          ${a.status==='待处理'
+            ? `<button class="btn btn-ghost btn-sm" data-act="appt-cancel" data-id="${a.id}">取消</button><button class="btn btn-gold btn-sm" data-act="appt-confirm" data-id="${a.id}">确认预约</button>`
+            : a.status==='已确认'
+              ? `<button class="btn btn-gold btn-sm" data-act="appt-arrive" data-id="${a.id}">标记到店</button>`
+              : `<button class="btn btn-ghost btn-sm" style="flex:1;" disabled>已结束</button>`}
+        </div>
+      </div>`;
+    }).join('') : `<div class="empty"><div class="empty-ico">📅</div><div class="empty-text">暂无预约</div></div>`}
+  `;
+}
+
+/* ============ 网站 ============ */
+function viewWebsite(){
+  const sp = store.storeProfile;
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <button class="btn btn-ghost btn-sm" data-act="back-home">‹ 返回</button>
+      <div style="font-size:15px;font-weight:600;">企业迷你网站</div>
+      <div style="width:50px;"></div>
+    </div>
+    <div class="btn-row" style="margin-bottom:12px;">
+      <button class="btn btn-ghost btn-sm" data-act="copy-site-url">⧉ 复制网址</button>
+      <button class="btn ${sp.websiteEnabled?'btn-gold':'btn-ghost'} btn-sm" data-act="toggle-site">${sp.websiteEnabled?'● 已发布':'○ 已停用'}</button>
+    </div>
+    <div class="site-preview">
+      <div class="site-brand">${sp.name}</div>
+      <div class="site-slogan">${sp.slogan}</div>
+      <div style="margin:16px 0;padding:12px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);font-size:11.5px;color:var(--text-2);line-height:1.9;">
+        ${sp.desc}<br>📍 ${sp.address}<br>☎ ${sp.phone}<br>🕙 ${sp.hours}
+      </div>
+      <div style="font-size:14px;font-weight:600;letter-spacing:2px;color:var(--wine);margin-bottom:6px;">${sp.showcaseTitle}</div>
+      <div style="font-size:11px;color:var(--text-2);margin-bottom:14px;">${sp.showcaseSubtitle}</div>
+      ${store.showcases.map(s => {
+        const p = getProduct(s.productId);
+        if (!p) return '';
+        return `<div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px;text-align:left;">
+          <div style="width:100%;height:70px;background:linear-gradient(135deg,#FBF4E2,#F0E2C0);border-radius:6px;margin-bottom:8px;display:flex;align-items:center;justify-content:center;font-size:22px;">◆</div>
+          <div style="font-size:13px;font-weight:600;">${p.name}</div>
+          <div style="font-size:10px;color:var(--text-2);font-family:monospace;margin-top:2px;">${p.code}</div>
+          <div style="font-size:11px;color:var(--text-2);margin-top:4px;">${p.material} · ${p.weight}</div>
+          <div style="font-size:14px;font-weight:700;color:var(--wine);margin-top:6px;">${money(p.price)}</div>
+        </div>`;
+      }).join('')}
+      <button class="btn btn-gold btn-block" style="margin-top:16px;" data-act="site-appoint">预约看货</button>
+    </div>
+  `;
+}
+
+/* ============ 店铺资料 ============ */
+function viewStoreProfile(){
+  const sp = store.storeProfile;
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <button class="btn btn-ghost btn-sm" data-act="back-home">‹ 返回</button>
+      <div style="font-size:15px;font-weight:600;">店铺资料</div>
+      <div style="width:50px;"></div>
+    </div>
+    <div class="card">
+      <div class="form-group"><label>店铺名称</label><input value="${sp.name}"></div>
+      <div class="form-group"><label>简称</label><input value="${sp.short}"></div>
+      <div class="form-group"><label>品牌标语</label><input value="${sp.slogan}"></div>
+      <div class="form-group"><label>简介</label><textarea>${sp.desc}</textarea></div>
+      <div class="form-group"><label>联系人</label><input value="${sp.contact}"></div>
+      <div class="form-group"><label>联系电话</label><input value="${sp.phone}"></div>
+      <div class="form-group"><label>地址</label><input value="${sp.address}"></div>
+      <div class="form-group"><label>营业时间</label><input value="${sp.hours}"></div>
+      <div class="form-group"><label>经营品类</label><input value="${sp.categories.join(' / ')}"></div>
+      <div class="form-group"><label>橱窗标题</label><input value="${sp.showcaseTitle}"></div>
+      <div class="form-group"><label>橱窗副标题</label><input value="${sp.showcaseSubtitle}"></div>
+      <button class="btn btn-gold btn-block" data-act="save-profile">保存资料</button>
+    </div>
+  `;
+}
+
+/* ============ 客户 ============ */
 function viewCustomers(){
   return `
-    ${rulesBox('customers', [
+    ${rulesBox('customers',[
       '<b>累计消费与欠款</b>：销售单完成后计入消费，未付清部分计入客户欠款。',
       '<b>修改客户同步</b>：销售单开出后修改客户，自动同步更新客户库。',
     ])}
@@ -1338,25 +994,19 @@ function viewCustomers(){
       <div class="chip">有欠款 ${store.customers.filter(c=>c.due>0).length}</div>
     </div>
     <div class="list-card">
-      ${store.customers.map(c => `
-        <div class="cust-item" data-act="cust-detail" data-id="${c.id}">
-          <div class="cust-avatar">${c.name[0]}</div>
-          <div class="cust-body">
-            <div class="cust-name">
-              ${c.name}${c.level === '金卡' ? '<span class="tag tag-gold">金卡</span>' : c.level === '银卡' ? '<span class="tag tag-gray">银卡</span>' : '<span class="tag tag-gray">普通</span>'}
-            </div>
-            <div class="cust-phone">${c.phone}</div>
-          </div>
-          <div class="cust-tail">
-            <div class="cust-amount">${money(c.total)}</div>${c.due > 0 ? `<div class="cust-due">欠 ${money(c.due)}</div>` : ''}
-          </div>
+      ${store.customers.map(c => `<div class="cust-item" data-act="cust-detail" data-id="${c.id}">
+        <div class="cust-avatar">${c.name[0]}</div>
+        <div class="cust-body">
+          <div class="cust-name">${c.name}${c.level==='金卡'?'<span class="tag tag-gold">金卡</span>':c.level==='银卡'?'<span class="tag tag-gray">银卡</span>':'<span class="tag tag-gray">普通</span>'}</div>
+          <div class="cust-phone">${c.phone}</div>
         </div>
-      `).join('')}
+        <div class="cust-tail"><div class="cust-amount">${money(c.total)}</div>${c.due > 0 ? `<div class="cust-due">欠 ${money(c.due)}</div>` : ''}</div>
+      </div>`).join('')}
     </div>
   `;
 }
 
-/* 日志 */
+/* ============ 日志 ============ */
 function viewLogs(){
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
@@ -1364,313 +1014,183 @@ function viewLogs(){
       <div style="font-size:15px;font-weight:600;">操作日志</div>
       <div style="width:50px;"></div>
     </div>
-    ${rulesBox('logs', [
-      '<b>记录范围</b>：开单、收定、冲红、调拨、入库、维修等关键业务全程审计留痕。',
-    ])}
+    ${rulesBox('logs',['<b>记录范围</b>：开单、收定、冲红、调拨、入库、维修等关键业务全程审计留痕。'])}
     <div class="list-card">
-      ${store.logs.map(l => `
-        <div class="list-item" style="cursor:default;">
-          <div class="list-item-ico" style="background:${l.result==='成功'?'#EEF3E6':'#F7E8E5'};border-color:${l.result==='成功'?'#D9E8C8':'#EBC8C3'};font-size:16px;">
-            ${l.result === '成功' ? '✓' : '✕'}
-          </div>
-          <div class="list-item-body">
-            <div class="list-item-title"><span class="name">${l.act}</span></div>
-            <div class="list-item-sub">${l.user} ·${l.store}<br>${l.time} ·${l.target}</div>
-          </div>
+      ${store.logs.map(l => `<div class="list-item" style="cursor:default;">
+        <div class="list-item-ico" style="background:${l.result==='成功'?'#EEF3E6':'#F7E8E5'};border-color:${l.result==='成功'?'#D9E8C8':'#EBC8C3'};font-size:16px;">${l.result==='成功'?'✓':'✕'}</div>
+        <div class="list-item-body">
+          <div class="list-item-title"><span class="name">${l.act}</span></div>
+          <div class="list-item-sub">${l.user} · ${l.store}<br>${l.time} · ${l.target}</div>
         </div>
-      `).join('')}
+      </div>`).join('')}
     </div>
   `;
 }
 
-/* 我的 */
+/* ============ 我的 ============ */
 function viewProfile(){
   const pendingRepairs = store.repairs.filter(r => r.status !== '已完成').length;
   const shippingPurchases = store.purchases.filter(p => p.status !== '已入库').length;
   const processingOutsourcings = store.outsourcings.filter(o => o.status === '加工中').length;
-
+  const pendingAppts = store.appointments.filter(a => a.status === '待处理').length;
   return `
     <div class="profile-head">
       <div class="profile-avatar serif">张</div>
-      <div class="profile-info">
-        <div class="profile-name">张总</div>
-        <div class="profile-role">老板 · 全部门店</div>
-      </div>
+      <div class="profile-info"><div class="profile-name">张总</div><div class="profile-role">老板 · 全部门店</div></div>
     </div>
 
-    <div class="section-title">门店管理</div>
+    <div class="section-title">门店</div>
     <div class="menu-list" style="margin-bottom:14px;">
-      <div class="menu-item" data-act="switch-store">
-        <div class="menu-ico">🏛</div>
-        <div class="menu-label">当前门店</div>
-        <div class="menu-value">${currentStore().name}</div>
-        <div class="menu-arrow">›</div>
-      </div>
+      <div class="menu-item" data-act="switch-store"><div class="menu-ico">🏛</div><div class="menu-label">当前门店</div><div class="menu-value">${currentStore().name}</div><div class="menu-arrow">›</div></div>
+      <div class="menu-item" data-subview="store-profile"><div class="menu-ico">📝</div><div class="menu-label">店铺资料</div><div class="menu-arrow">›</div></div>
     </div>
 
-    <div class="section-title">功能入口</div>
+    <div class="section-title">经营</div>
     <div class="menu-list" style="margin-bottom:14px;">
-      <div class="menu-item" data-subview="inventory">
-        <div class="menu-ico">▣</div>
-        <div class="menu-label">库存管理</div>
-        <div class="menu-arrow">›</div>
-      </div>
-      <div class="menu-item" data-subview="sales">
-        <div class="menu-ico">✦</div>
-        <div class="menu-label">销售单</div>
-        <div class="menu-value">${store.sales.length} 单</div>
-        <div class="menu-arrow">›</div>
-      </div>
-      <div class="menu-item" data-subview="deposits">
-        <div class="menu-ico">◈</div>
-        <div class="menu-label">定金尾款</div>
-        <div class="menu-value">${store.deposits.length} 单</div>
-        <div class="menu-arrow">›</div>
-      </div>
-      <div class="menu-item" data-subview="loans">
-        <div class="menu-ico">⇄</div>
-        <div class="menu-label">借货管理</div>
-        <div class="menu-value">${store.loans.length} 笔</div>
-        <div class="menu-arrow">›</div>
-      </div>
+      <div class="menu-item" data-subview="sales"><div class="menu-ico">✦</div><div class="menu-label">销售 / 定金</div><div class="menu-value">${store.sales.length + store.deposits.length} 单</div><div class="menu-arrow">›</div></div>
+      <div class="menu-item" data-subview="inventory"><div class="menu-ico">▣</div><div class="menu-label">库存管理</div><div class="menu-arrow">›</div></div>
+      <div class="menu-item" data-subview="loans"><div class="menu-ico">⇄</div><div class="menu-label">借货管理</div><div class="menu-value">${store.loans.length} 笔</div><div class="menu-arrow">›</div></div>
     </div>
 
-    <div class="section-title">业务扩展</div>
+    <div class="section-title">供应链</div>
     <div class="menu-list" style="margin-bottom:14px;">
-      <div class="menu-item" data-subview="repairs">
-        <div class="menu-ico">🔧</div>
-        <div class="menu-label">维修管理</div>
-        <div class="menu-value">${pendingRepairs} 待处理</div>
-        <div class="menu-arrow">›</div>
-      </div>
-      <div class="menu-item" data-subview="purchases">
-        <div class="menu-ico">📦</div>
-        <div class="menu-label">采购管理</div>
-        <div class="menu-value">${shippingPurchases} 在途</div>
-        <div class="menu-arrow">›</div>
-      </div>
-      <div class="menu-item" data-subview="outsourcings">
-        <div class="menu-ico">⚒</div>
-        <div class="menu-label">委外加工</div>
-        <div class="menu-value">${processingOutsourcings} 加工中</div>
-        <div class="menu-arrow">›</div>
-      </div>
+      <div class="menu-item" data-subview="repairs"><div class="menu-ico">🔧</div><div class="menu-label">维修管理</div><div class="menu-value">${pendingRepairs} 待处理</div><div class="menu-arrow">›</div></div>
+      <div class="menu-item" data-subview="purchases"><div class="menu-ico">📦</div><div class="menu-label">采购管理</div><div class="menu-value">${shippingPurchases} 在途</div><div class="menu-arrow">›</div></div>
+      <div class="menu-item" data-subview="outsourcings"><div class="menu-ico">⚒</div><div class="menu-label">委外加工</div><div class="menu-value">${processingOutsourcings} 加工中</div><div class="menu-arrow">›</div></div>
     </div>
 
-    <div class="section-title">其他</div>
+    <div class="section-title">营销</div>
+    <div class="menu-list" style="margin-bottom:14px;">
+      <div class="menu-item" data-subview="showcase"><div class="menu-ico">✦</div><div class="menu-label">橱窗管理</div><div class="menu-value">${store.showcases.length} 件</div><div class="menu-arrow">›</div></div>
+      <div class="menu-item" data-subview="appointments"><div class="menu-ico">📅</div><div class="menu-label">到店预约</div><div class="menu-value">${pendingAppts} 待处理</div><div class="menu-arrow">›</div></div>
+      <div class="menu-item" data-subview="website"><div class="menu-ico">🌐</div><div class="menu-label">企业迷你网站</div><div class="menu-value">${store.storeProfile.websiteEnabled?'已发布':'未发布'}</div><div class="menu-arrow">›</div></div>
+    </div>
+
+    <div class="section-title">系统</div>
     <div class="menu-list">
-      <div class="menu-item" data-subview="logs">
-        <div class="menu-ico">✎</div>
-        <div class="menu-label">操作日志</div>
-        <div class="menu-arrow">›</div>
-      </div>
+      <div class="menu-item" data-subview="logs"><div class="menu-ico">✎</div><div class="menu-label">操作日志</div><div class="menu-arrow">›</div></div>
     </div>
   `;
 }
 
-/* 交互动作 */
+/* ============ Actions ============ */
 const actions = {
-  'toggle-rules'(el){
-    const key = el.key;
-    state.rulesOpen[key] = !state.rulesOpen[key];
-    render();
-  },
-
+  'toggle-rules'(el){ state.rulesOpen[el.key] = !state.rulesOpen[el.key]; render(); },
+  'sales-tab'(el){ state.salesTab = el.tab; render(); },
   'back-home'(){ state.subview = null; render(); },
   'notify'(){ toast('暂无新通知'); },
   'logout'(){ toast('演示环境，无需退出'); },
 
   'switch-store'(){
     openSheet('切换门店', `
-      <div style="font-size:12px;color:var(--text-2);margin-bottom:14px;">
-        选择切换门店，业务数据将同步切换展示
-      </div>
-      ${store.stores.map(s => `
-        <div class="store-option ${s.id === store.currentStoreId ? 'current' : ''}" data-act="do-switch-store" data-id="${s.id}">
-          <div class="store-option-ico">🏛</div>
-          <div class="store-option-body">
-            <div class="store-option-name">${s.name}</div>
-            <div class="store-option-meta">${s.code} · 负责人 ${s.owner}</div>
-          </div>
-          ${s.id === store.currentStoreId ? '<div class="store-option-check">✓</div>' : ''}
-        </div>
-      `).join('')}
+      <div style="font-size:12px;color:var(--text-2);margin-bottom:14px;">选择切换门店，业务数据将同步切换展示</div>
+      ${store.stores.map(s => `<div class="store-option ${s.id===store.currentStoreId?'current':''}" data-act="do-switch-store" data-id="${s.id}">
+        <div class="store-option-ico">🏛</div>
+        <div class="store-option-body"><div class="store-option-name">${s.name}</div><div class="store-option-meta">${s.code} · 负责人 ${s.owner}</div></div>
+        ${s.id===store.currentStoreId?'<div class="store-option-check">✓</div>':''}
+      </div>`).join('')}
     `);
   },
-  'do-switch-store'(el){
-    store.currentStoreId = Number(el.id);
-    closeSheet();
-    toast('已切换到 ' + currentStore().name);
-    render();
-  },
+  'do-switch-store'(el){ store.currentStoreId = Number(el.id); closeSheet(); toast('已切换到 ' + currentStore().name); render(); },
 
   'quick-actions'(){
     openSheet('快速操作', `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-        <button class="btn btn-gold" data-act="quick-sale" style="padding:16px 8px;flex-direction:column;gap:6px;">
-          <div style="font-size:22px;">✦</div><div>普通开单</div>
-        </button>
-        <button class="btn btn-wine" data-act="quick-deposit" style="padding:16px 8px;flex-direction:column;gap:6px;">
-          <div style="font-size:22px;">◈</div><div>定金下单</div>
-        </button>
-        <button class="btn btn-ghost" data-act="scan-normal" style="padding:16px 8px;flex-direction:column;gap:6px;">
-          <div style="font-size:22px;">📷</div><div>条码盘点</div>
-        </button>
-        <button class="btn btn-ghost" data-act="scan-rfid" style="padding:16px 8px;flex-direction:column;gap:6px;">
-          <div style="font-size:22px;">⤋</div><div>RFID盘点</div>
-        </button>
-        <button class="btn btn-ghost" data-act="inbound" style="padding:16px 8px;flex-direction:column;gap:6px;">
-          <div style="font-size:22px;">▣</div><div>入库登记</div>
-        </button>
-        <button class="btn btn-ghost" data-act="new-repair" style="padding:16px 8px;flex-direction:column;gap:6px;">
-          <div style="font-size:22px;">🔧</div><div>维修接件</div>
-        </button>
-        <button class="btn btn-ghost" data-act="new-purchase" style="padding:16px 8px;flex-direction:column;gap:6px;">
-          <div style="font-size:22px;">📦</div><div>采购下单</div>
-        </button>
-        <button class="btn btn-ghost" data-act="new-outsourcing" style="padding:16px 8px;flex-direction:column;gap:6px;">
-          <div style="font-size:22px;">⚒</div><div>委外加工</div>
-        </button>
-      </div>
-    `);
+        <button class="btn btn-gold" data-act="quick-sale" style="padding:16px 8px;flex-direction:column;gap:6px;"><div style="font-size:22px;">✦</div><div>普通开单</div></button>
+        <button class="btn btn-wine" data-act="quick-deposit" style="padding:16px 8px;flex-direction:column;gap:6px;"><div style="font-size:22px;">◈</div><div>定金下单</div></button>
+        <button class="btn btn-ghost" data-act="scan-normal" style="padding:16px 8px;flex-direction:column;gap:6px;"><div style="font-size:22px;">📷</div><div>条码盘点</div></button>
+        <button class="btn btn-ghost" data-act="scan-rfid" style="padding:16px 8px;flex-direction:column;gap:6px;"><div style="font-size:22px;">⤋</div><div>RFID盘点</div></button>
+        <button class="btn btn-ghost" data-act="inbound" style="padding:16px 8px;flex-direction:column;gap:6px;"><div style="font-size:22px;">▣</div><div>入库登记</div></button>
+        <button class="btn btn-ghost" data-act="new-repair" style="padding:16px 8px;flex-direction:column;gap:6px;"><div style="font-size:22px;">🔧</div><div>维修接件</div></button>
+        <button class="btn btn-ghost" data-act="new-purchase" style="padding:16px 8px;flex-direction:column;gap:6px;"><div style="font-size:22px;">📦</div><div>采购下单</div></button>
+        <button class="btn btn-ghost" data-act="new-outsourcing" style="padding:16px 8px;flex-direction:column;gap:6px;"><div style="font-size:22px;">⚒</div><div>委外加工</div></button>
+      </div>`);
   },
 
+  /* 销售 */
   'quick-sale'(){
     closeSheet();
-    const options = store.products.filter(p => p.status === '在库')
-      .map(p => `<option value="${p.id}">${p.name} · ${money(p.price)}</option>`).join('');
+    const options = store.products.filter(p => p.status === '在库').map(p => `<option value="${p.id}">${p.name} · ${money(p.price)}</option>`).join('');
     const custOptions = store.customers.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
     openSheet('新建销售单', `
       <div class="form-group"><label>客户</label><select id="sale-cust">${custOptions}</select></div>
       <div class="form-group"><label>业务开单日期（可自由选择）</label><input type="date" id="sale-date" value="${today()}"></div>
-      <div class="form-group"><label>选择在库商品</label><select id="sale-prod">${options || '<option>暂无在库商品</option>'}</select></div>
+      <div class="form-group"><label>选择在库商品</label><select id="sale-prod">${options||'<option>暂无在库商品</option>'}</select></div>
       <div class="form-grid-2">
         <div class="form-group"><label>销售金额</label><input type="number" id="sale-amount" placeholder="0.00"></div>
         <div class="form-group"><label>实收金额</label><input type="number" id="sale-paid" placeholder="0.00"></div>
       </div>
-      <div class="form-group"><label>收款方式</label>
-        <select id="sale-method"><option>现金</option><option>微信</option><option>银行卡</option><option>其他</option></select>
-      </div>
-      <div class="form-hint">◈ 开出后货品与售价<b>不可修改</b>；客户信息可随时直接修改。<br>◈ 开单<b>立即扣减库存</b>，如需重置货品请冲红原单。</div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">取消</button>
-      <button class="btn btn-gold" data-act="do-sale">确认开单</button>
-    `);
+      <div class="form-group"><label>收款方式</label><select id="sale-method"><option>现金</option><option>微信</option><option>银行卡</option><option>其他</option></select></div>
+      <div class="form-hint">◈ 开出后货品与售价<b>不可修改</b>；客户信息可随时修改。<br>◈ 开单<b>立即扣减库存</b>。</div>
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-gold" data-act="do-sale">确认开单</button>`);
   },
   'do-sale'(){
     const prodId = Number($('sale-prod').value);
     const prod = getProduct(prodId);
-    if (!prod || prod.status !== '在库'){ toast('请选择有效的在库商品'); return; }
+    if (!prod || prod.status !== '在库'){ toast('请选择在库商品'); return; }
     const cust = store.customers.find(c => c.id === Number($('sale-cust').value));
     const amount = Number($('sale-amount').value) || prod.price;
     const paid = Number($('sale-paid').value) || amount;
     const method = $('sale-method').value;
     const date = $('sale-date').value || today();
-
     prod.status = '已售出';
     store.products = store.products.filter(p => p.id !== prodId);
-    store.sales.unshift({
-      id: nextSaleId(), cust: cust.name, prod: prod.name,
-      amount, paid, method, date, type:'normal',
-      status: paid >= amount ? '已完成' : '欠款',
-    });
+    store.sales.unshift({ id: nextSaleId(), cust: cust.name, prod: prod.name, amount, paid, method, date, type:'normal', status: paid >= amount ? '已完成' : '欠款' });
     if (paid < amount) cust.due += (amount - paid);
     cust.total += amount;
-
-    store.logs.unshift({
-      time: new Date().toLocaleString('zh-CN',{hour12:false}).replace(/\//g,'-'),
-      user: '店长 · 王敏', store: currentStore().name.replace('瑾瑜轩 · ',''),
-      act: '销售开单', target: prod.name, result: '成功',
-    });
-    closeSheet();
-    toast('开单成功 · ' + prod.name + ' · 库存已扣减');
-    state.tab = 'dashboard';
-    state.subview = null;
-    render();
+    closeSheet(); toast('开单成功 · ' + prod.name); state.tab='dashboard'; state.subview=null; render();
   },
-
   'sale-detail'(el){
     const s = store.sales.find(x => x.id === el.id);
     openSheet('销售单详情', `
       <div class="form-grid-2" style="gap:12px 16px;font-size:13px;">
-        <div><span style="color:var(--text-2);font-size:11px;">销售单号</span><div style="font-weight:600;margin-top:3px;font-family:monospace;">${s.id}</div></div>
-        <div><span style="color:var(--text-2);font-size:11px;">业务日期</span><div style="font-weight:600;margin-top:3px;">${s.date}</div></div>
+        <div><span style="color:var(--text-2);font-size:11px;">单号</span><div style="font-weight:600;margin-top:3px;font-family:monospace;">${s.id}</div></div>
+        <div><span style="color:var(--text-2);font-size:11px;">日期</span><div style="font-weight:600;margin-top:3px;">${s.date}</div></div>
         <div><span style="color:var(--text-2);font-size:11px;">客户</span><div style="font-weight:600;margin-top:3px;">${s.cust}</div></div>
         <div><span style="color:var(--text-2);font-size:11px;">商品</span><div style="font-weight:600;margin-top:3px;">${s.prod}</div></div>
-        <div><span style="color:var(--text-2);font-size:11px;">销售金额</span><div style="font-weight:700;color:var(--wine);margin-top:3px;">${money(s.amount)}</div></div>
-        <div><span style="color:var(--text-2);font-size:11px;">实收金额</span><div style="font-weight:700;margin-top:3px;">${money(s.paid)}</div></div>
-        <div><span style="color:var(--text-2);font-size:11px;">收款方式</span><div style="font-weight:600;margin-top:3px;">${s.method}</div></div>
-        <div><span style="color:var(--text-2);font-size:11px;">状态</span><div style="margin-top:3px;">${s.status === '已完成' ? '<span class="state state-ok">已完成</span>' : s.status === '已冲红' ? '<span class="state state-due">已冲红</span>' : '<span class="state state-due">欠款</span>'}</div></div>
+        <div><span style="color:var(--text-2);font-size:11px;">金额</span><div style="font-weight:700;color:var(--wine);margin-top:3px;">${money(s.amount)}</div></div>
+        <div><span style="color:var(--text-2);font-size:11px;">实收</span><div style="font-weight:700;margin-top:3px;">${money(s.paid)}</div></div>
       </div>
-      <div class="form-hint">
-        ◈ 销售单开出后商品明细与售价不可改。如需调整货品，请点击下方<b>冲红作废</b>重开；客户信息可直接修改。
-      </div>
-    `, `
-      ${s.status !== '已冲红' ? `<button class="btn btn-ghost" style="color:var(--red);border-color:var(--red);" data-act="do-red-strike" data-id="${s.id}">冲红作废</button>` : ''}
-      <button class="btn btn-ghost" onclick="closeSheet()">关闭</button>
-      ${s.status !== '已冲红' ? `<button class="btn btn-gold" data-act="edit-cust" data-id="${s.id}">修改客户</button>` : ''}
-    `);
+      <div class="form-hint">◈ 明细与售价不可改。如需调整货品，请冲红重开。</div>
+    `, `${s.status!=='已冲红'?`<button class="btn btn-ghost" style="color:var(--red);border-color:var(--red);" data-act="do-red-strike" data-id="${s.id}">冲红作废</button>`:''}
+       <button class="btn btn-ghost" onclick="closeSheet()">关闭</button>
+       ${s.status!=='已冲红'?`<button class="btn btn-gold" data-act="edit-cust" data-id="${s.id}">修改客户</button>`:''}`);
   },
-
   'do-red-strike'(el){
     const s = store.sales.find(x => x.id === el.id);
-    if (!confirm(`确认冲红销售单 ${s.id}？\n冲红后该单据作废，库存将回退。`)) return;
+    if (!confirm(`确认冲红销售单 ${s.id}？`)) return;
     s.status = '已冲红';
-    store.products.push({
-      id: store.nextProductSeq++,
-      code: 'ZB-RT-' + Math.floor(Math.random()*9000+1000),
-      name: s.prod, cat: '珠宝', material: '原材质', weight: '原规格', size: '—', cert: '—',
-      cost: Math.round(s.amount * 0.7), price: s.amount, status: '在库', storeId: store.currentStoreId
-    });
-    store.logs.unshift({
-      time: new Date().toLocaleString('zh-CN',{hour12:false}).replace(/\//g,'-'),
-      user: '店长 · 王敏', store: currentStore().name.replace('瑾瑜轩 · ',''),
-      act: '冲红作废', target: s.id, result: '成功',
-    });
-    closeSheet();
-    toast('单据已冲红作废，库存已退回');
-    render();
+    store.products.push({ id: store.nextProductSeq++, code: 'ZB-RT-' + Math.floor(Math.random()*9000+1000), name: s.prod, cat:'珠宝', material:'原材质', weight:'原规格', size:'—', cert:'—', cost: Math.round(s.amount*0.7), price: s.amount, status:'在库', storeId: store.currentStoreId });
+    closeSheet(); toast('单据已冲红，库存已恢复'); render();
   },
-
   'edit-cust'(el){
     const s = store.sales.find(x => x.id === el.id);
     closeSheet();
     setTimeout(() => {
       openSheet('修改客户信息', `
-        <div class="form-hint" style="margin-bottom:14px;margin-top:0;">
-          ◈ 销售单开出后，允许随时修改客户姓名与电话，无需退单。
-        </div>
+        <div class="form-hint" style="margin-top:0;margin-bottom:14px;">◈ 销售单开出后允许修改客户姓名与电话。</div>
         <div class="form-group"><label>客户姓名</label><input id="ec-name" value="${s.cust}"></div>
-        <div class="form-group"><label>联系电话</label><input id="ec-phone" placeholder="留存联系电话" inputmode="numeric"></div>
-      `, `
-        <button class="btn btn-ghost" onclick="closeSheet()">取消</button>
-        <button class="btn btn-gold" data-act="do-edit-cust" data-id="${s.id}">保存</button>
-      `);
+        <div class="form-group"><label>联系电话</label><input id="ec-phone" placeholder="选填" inputmode="numeric"></div>
+      `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-gold" data-act="do-edit-cust" data-id="${s.id}">保存</button>`);
     }, 150);
   },
   'do-edit-cust'(el){
     const s = store.sales.find(x => x.id === el.id);
     const newName = $('ec-name').value.trim();
     if (newName) s.cust = newName;
-    closeSheet();
-    toast('客户信息已更新');
-    render();
+    closeSheet(); toast('客户信息已更新'); render();
   },
 
+  /* 定金 */
   'quick-deposit'(){
     closeSheet();
-    const options = store.products.filter(p => p.status === '在库')
-      .map(p => `<option value="${p.id}">${p.name} · ${money(p.price)}</option>`).join('');
+    const options = store.products.filter(p => p.status === '在库').map(p => `<option value="${p.id}">${p.name} · ${money(p.price)}</option>`).join('');
     const custOptions = store.customers.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
     openSheet('新建定金单', `
       <div class="form-group"><label>客户</label><select id="dep-cust">${custOptions}</select></div>
-      <div class="form-group"><label>客户电话</label><input id="dep-phone" placeholder="留存联系电话"></div>
-      <div class="form-group">
-        <label>选择在库商品（若无现货定制请选第一项）</label>
-        <select id="dep-prod">
-          <option value="">-- 店铺无现货/需修改/外定制 --</option>
-          ${options}
-        </select>
+      <div class="form-group"><label>客户电话</label><input id="dep-phone" placeholder="选填"></div>
+      <div class="form-group"><label>选择在库商品（无现货定制选第一项）</label>
+        <select id="dep-prod"><option value="">-- 店铺无现货/需修改/外定 --</option>${options}</select>
       </div>
       <div class="form-group"><label>定制/无现货商品名（无现货必填）</label><input id="dep-custom-name" placeholder="如：定制 足金古法戒指 14号"></div>
       <div class="form-grid-2">
@@ -1681,57 +1201,27 @@ const actions = {
         <div class="form-group"><label>承诺交付日期</label><input type="date" id="dep-promise" value="${new Date(Date.now()+10*86400000).toISOString().slice(0,10)}"></div>
         <div class="form-group"><label>提前提醒天数</label><input type="number" id="dep-remind" value="7"></div>
       </div>
-      <div class="form-hint">
-        ◈ 定金下单<b>不扣库存</b>；若选在库商品则锁定为“已定”。<br>
-        ◈ 全额付清尾款后转正式销售单并<b>扣减库存</b>；系统自动在承诺交付日前提前提醒。
-      </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">取消</button>
-      <button class="btn btn-wine" data-act="do-deposit">确认收定</button>
-    `);
+      <div class="form-hint">◈ 定金下单<b>不扣库存</b>；若选在库商品则锁定为“已定”。<br>◈ 付清尾款后转正式销售单并<b>扣减库存</b>。</div>
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-wine" data-act="do-deposit">确认收定</button>`);
   },
   'do-deposit'(){
     const prodId = Number($('dep-prod').value);
     const customName = $('dep-custom-name').value.trim();
-    let prod = null;
-    let prodName = '';
-
-    if (prodId){
-      prod = getProduct(prodId);
-      if (prod.status !== '在库'){ toast('该商品已不在库'); return; }
-      prodName = prod.name;
-    } else {
-      if (!customName){ toast('请填写定制或无现货商品名称'); return; }
-      prodName = customName + ' (定制)';
-    }
-
+    let prod = null, prodName = '';
+    if (prodId){ prod = getProduct(prodId); if (prod.status !== '在库'){ toast('该商品不在库'); return; } prodName = prod.name; }
+    else { if (!customName){ toast('请填写定制商品名称'); return; } prodName = customName + ' (定制/无现货)'; }
     const cust = store.customers.find(c => c.id === Number($('dep-cust').value));
     const phone = $('dep-phone').value || cust.phone;
     const total = Number($('dep-total').value) || (prod ? prod.price : 0);
     const deposit = Number($('dep-deposit').value) || 0;
-    if (deposit <= 0){ toast('请填写已收定金金额'); return; }
+    if (deposit <= 0){ toast('请填写定金金额'); return; }
     if (deposit >= total){ toast('定金应小于销售总额'); return; }
-
     if (prod) prod.status = '已定';
-
-    store.deposits.unshift({
-      id: nextDepositId(), cust: cust.name, custPhone: phone,
-      prodId: prod ? prod.id : null,
-      prod: prodName, total, deposit, balance: total - deposit,
-      promisedDate: $('dep-promise').value,
-      reminderDays: Number($('dep-remind').value) || 7,
-      status: '待付尾款', created: today(),
-    });
-
-    closeSheet();
-    toast('定金单已创建 · 库存未扣减');
-    state.subview = 'deposits';
-    render();
+    store.deposits.unshift({ id: nextDepositId(), cust: cust.name, custPhone: phone, prodId: prod ? prod.id : null, prod: prodName, total, deposit, balance: total - deposit, promisedDate: $('dep-promise').value, reminderDays: Number($('dep-remind').value) || 7, status:'待付尾款', created: today() });
+    closeSheet(); toast('定金单已创建 · 库存未扣减'); state.subview = 'sales'; state.salesTab = 'deposit'; render();
   },
-
   'pay-balance'(el){
     const d = store.deposits.find(x => x.id === el.id);
-    if (!d) return;
     openSheet('收取尾款', `
       <div style="padding:12px;background:#FBF4E2;border-radius:10px;border:1px solid #E5D3A8;margin-bottom:14px;">
         <div style="font-size:13.5px;font-weight:600;margin-bottom:8px;">${d.cust} · ${d.prod}</div>
@@ -1743,46 +1233,23 @@ const actions = {
       </div>
       <div class="form-grid-2">
         <div class="form-group"><label>本次实收</label><input type="number" id="pb-amount" value="${d.balance}"></div>
-        <div class="form-group"><label>收款方式</label>
-          <select id="pb-method"><option>现金</option><option>微信</option><option>银行卡</option><option>其他</option></select>
-        </div>
+        <div class="form-group"><label>收款方式</label><select id="pb-method"><option>现金</option><option>微信</option><option>银行卡</option><option>其他</option></select></div>
       </div>
-      <div class="form-hint">◈ 全额收清后，自动转为正式销售单并<b>扣减相应库存</b>。</div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">取消</button>
-      <button class="btn btn-gold" data-act="do-pay-balance" data-id="${d.id}">确认收款</button>
-    `);
+      <div class="form-hint">◈ 全额收清后自动转为正式销售单并<b>扣减库存</b>。</div>
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-gold" data-act="do-pay-balance" data-id="${d.id}">确认收款</button>`);
   },
   'do-pay-balance'(el){
     const d = store.deposits.find(x => x.id === el.id);
     const amt = Number($('pb-amount').value) || 0;
     const method = $('pb-method').value;
-
-    if (amt < d.balance){
-      d.deposit += amt; d.balance -= amt;
-      closeSheet();
-      toast('已收 ' + money(amt) + '，剩余尾款 ' + money(d.balance));
-      render();
-      return;
-    }
-
-    if (d.prodId){
-      store.products = store.products.filter(p => p.id !== d.prodId);
-    }
-    store.sales.unshift({
-      id: nextSaleId(), cust: d.cust, prod: d.prod,
-      amount: d.total, paid: d.total, method, date: today(),
-      type:'final', status:'已完成',
-    });
+    if (amt < d.balance){ d.deposit += amt; d.balance -= amt; closeSheet(); toast('已收 ' + money(amt) + '，剩余尾款 ' + money(d.balance)); render(); return; }
+    if (d.prodId) store.products = store.products.filter(p => p.id !== d.prodId);
+    store.sales.unshift({ id: nextSaleId(), cust: d.cust, prod: d.prod, amount: d.total, paid: d.total, method, date: today(), type:'final', status:'已完成' });
     const cust = store.customers.find(c => c.name === d.cust);
     if (cust) cust.total += d.total;
     store.deposits = store.deposits.filter(x => x.id !== d.id);
-
-    closeSheet();
-    toast('全额收清 · 已转为正式销售单并扣减库存');
-    render();
+    closeSheet(); toast('尾款已收清 · 转为正式销售单'); render();
   },
-
   'set-reminder'(el){
     const d = store.deposits.find(x => x.id === el.id);
     openSheet('修改交付提醒', `
@@ -1790,97 +1257,68 @@ const actions = {
         <div class="form-group"><label>承诺交付日期</label><input type="date" id="sr-date" value="${d.promisedDate}"></div>
         <div class="form-group"><label>提前提醒天数</label><input type="number" id="sr-days" value="${d.reminderDays}"></div>
       </div>
-      <div class="form-hint">◈ 系统将在「承诺交付日 − 提前天数」自动提醒店员催交付</div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">取消</button>
-      <button class="btn btn-gold" data-act="do-set-reminder" data-id="${d.id}">保存设置</button>
-    `);
+      <div class="form-hint">◈ 系统将在「承诺交付日 − 提前天数」自动提醒店员催交付。</div>
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-gold" data-act="do-set-reminder" data-id="${d.id}">保存</button>`);
   },
   'do-set-reminder'(el){
     const d = store.deposits.find(x => x.id === el.id);
-    d.promisedDate = $('sr-date').value;
-    d.reminderDays = Number($('sr-days').value) || 7;
-    closeSheet();
-    toast('提醒设置已更新');
-    render();
+    d.promisedDate = $('sr-date').value; d.reminderDays = Number($('sr-days').value) || 7;
+    closeSheet(); toast('提醒设置已更新'); render();
   },
 
+  /* 库存 */
   'inbound'(){
+    closeSheet();
     openSheet('入库登记', `
       <div class="form-group"><label>入库日期（自由选择）</label><input type="date" id="ib-date" value="${today()}"></div>
       <div class="form-group"><label>供应商</label><input id="ib-supplier" placeholder="如：深圳彩宝行"></div>
-      <div class="form-group"><label>商品档案关联</label>
-        <select id="ib-prod">
-          ${store.products.map(p => `<option value="${p.id}">${p.name} ·${p.code}</option>`).join('')}
-        </select>
-      </div>
+      <div class="form-group"><label>商品档案关联</label><select id="ib-prod">${store.products.map(p => `<option value="${p.id}">${p.name} · ${p.code}</option>`).join('')}</select></div>
       <div class="form-grid-2">
         <div class="form-group"><label>数量</label><input type="number" id="ib-qty" value="1"></div>
         <div class="form-group"><label>成本单价</label><input type="number" id="ib-cost" placeholder="0.00"></div>
       </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">取消</button>
-      <button class="btn btn-gold" data-act="do-inbound">确认入库</button>
-    `);
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-gold" data-act="do-inbound">确认入库</button>`);
   },
   'do-inbound'(){ closeSheet(); toast('入库成功 · 库存已更新'); render(); },
-
   'copy-inbound'(el){
     openSheet('复制入库', `
-      <div class="form-hint" style="margin-bottom:14px;margin-top:0;">
-        ◈ 已复制历史入库单，可自由选择入库日期或调整成本快速入库。
-      </div>
-      <div class="form-group"><label>入库日期（自由选择）</label><input type="date" value="${today()}"></div>
-      <div class="form-group"><label>供应商</label><input value="${el.supp || '自有金料'}"></div>
-      <div class="form-group"><label>商品名称</label><input value="${el.name || '足金古法手镯'}"></div>
+      <div class="form-hint" style="margin-top:0;margin-bottom:14px;">◈ 已复制历史入库单，可调整后快速入库。</div>
+      <div class="form-group"><label>入库日期</label><input type="date" value="${today()}"></div>
+      <div class="form-group"><label>供应商</label><input value="${el.supp||'自有金料'}"></div>
+      <div class="form-group"><label>商品名称</label><input value="${el.name||'足金古法手镯'}"></div>
       <div class="form-grid-2">
         <div class="form-group"><label>数量</label><input type="number" value="1"></div>
-        <div class="form-group"><label>成本单价</label><input type="number" value="${el.cost || 14800}"></div>
+        <div class="form-group"><label>成本单价</label><input type="number" value="${el.cost||14800}"></div>
       </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">取消</button>
-      <button class="btn btn-gold" onclick="closeSheet();toast('已基于历史单据快速入库成功')">确认入库</button>
-    `);
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-gold" onclick="closeSheet();toast('已基于历史单据快速入库')">确认入库</button>`);
   },
-
   'scan-normal'(){
+    closeSheet();
     openSheet('条码扫码盘点', `
       <div class="form-group"><label>扫码录入 / 条码检索</label><input placeholder="请对准条形码扫码..." autofocus></div>
       <div style="padding:32px 0;text-align:center;color:var(--text-2);border:1px dashed var(--gold);border-radius:10px;background:#FDFAF3;">
-        <div style="font-size:32px;margin-bottom:6px;">📷</div>
-        请将摄像头对准商品条码
+        <div style="font-size:32px;margin-bottom:6px;">📷</div>请将摄像头对准商品条码
       </div>
       <div style="margin-top:16px;display:flex;justify-content:space-between;font-size:12px;color:var(--text-2);">
-        <span>在库应盘：${store.products.length} 件</span>
-        <span>已盘：0 件</span>
+        <span>在库应盘：${store.products.length} 件</span><span>已盘：0 件</span>
       </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">结束盘点</button>
-      <button class="btn btn-gold" onclick="closeSheet();toast('条码盘点完成，账实一致')">完成盘点</button>
-    `);
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">结束盘点</button><button class="btn btn-gold" onclick="closeSheet();toast('条码盘点完成')">完成盘点</button>`);
   },
-
   'scan-rfid'(){
+    closeSheet();
     openSheet('RFID批量盘点', `
       <div style="text-align:center;padding:10px 0 16px;">
         <div style="font-size:40px;color:var(--wine);font-weight:700;font-family:'Songti SC',serif;line-height:1;">${store.products.length}</div>
         <div style="font-size:12px;color:var(--text-2);margin-top:6px;">件芯片标签已感应匹配</div>
       </div>
       <div style="background:#FDFAF3;border:1px dashed var(--gold);border-radius:10px;padding:24px 16px;text-align:center;color:var(--text-2);font-size:12.5px;">
-        <div style="font-size:28px;margin-bottom:6px;opacity:.7;">📳</div>
-        请扣动蓝牙 RFID 手持机扳机扫描
+        <div style="font-size:28px;margin-bottom:6px;opacity:.7;">📳</div>请扣动蓝牙 RFID 手持机扳机扫描
       </div>
       <div style="display:flex;justify-content:space-between;margin-top:16px;padding:0 8px;font-size:12.5px;">
-        <span>账面库存：${store.products.length}</span>
-        <span style="color:var(--green)">盘盈：0</span>
-        <span style="color:var(--red)">盘亏：0</span>
+        <span>账面：${store.products.length}</span><span style="color:var(--green)">盘盈：0</span><span style="color:var(--red)">盘亏：0</span>
       </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">取消</button>
-      <button class="btn btn-wine" onclick="closeSheet();toast('已批量完成盘点并生成差异单')">生成差异单</button>
-    `);
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-wine" onclick="closeSheet();toast('已生成盘点差异单')">生成差异单</button>`);
   },
-
   'print-single'(el){
     const p = getProduct(Number(el.id));
     openSheet('打印商品标签', `
@@ -1889,21 +1327,14 @@ const actions = {
         <div style="font-size:12px;color:#555;">${p.material} ${p.weight}</div>
         <div style="font-size:11px;color:#777;margin-top:2px;">证书号：${p.cert}</div>
         <div style="font-size:16px;font-weight:700;color:var(--wine);margin-top:10px;text-align:right;">${money(p.price)}</div>
-        <div style="font-family:monospace;font-size:10px;margin-top:8px;border-top:1px dashed #eee;padding-top:4px;display:flex;justify-content:space-between;">
-          <span>${p.code}</span>
-          <span>|||||||||</span>
-        </div>
+        <div style="font-family:monospace;font-size:10px;margin-top:8px;border-top:1px dashed #eee;padding-top:4px;display:flex;justify-content:space-between;"><span>${p.code}</span><span>|||||||||</span></div>
       </div>
       <div class="form-grid-2">
-        <div class="form-group"><label>选择打印机</label><select><option>便携蓝牙标签机</option><option>前台热敏机</option></select></div>
-        <div class="form-group"><label>打印份数</label><input type="number" value="1"></div>
+        <div class="form-group"><label>打印机</label><select><option>便携蓝牙标签机</option><option>前台热敏机</option></select></div>
+        <div class="form-group"><label>份数</label><input type="number" value="1"></div>
       </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">取消</button>
-      <button class="btn btn-gold" onclick="closeSheet();toast('已连接打印机并发送输出指令')">🖨️ 发送打印</button>
-    `);
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-gold" onclick="closeSheet();toast('已发送输出指令')">🖨️ 发送打印</button>`);
   },
-
   'view-product'(el){
     const p = getProduct(Number(el.id));
     if (!p) return;
@@ -1915,7 +1346,7 @@ const actions = {
         <div style="flex:1;">
           <div style="font-size:16px;font-weight:600;">${p.name}</div>
           <div style="font-size:11px;color:var(--text-2);font-family:monospace;margin-top:3px;">${p.code}</div>
-          <div style="margin-top:6px;">${p.status === '在库' ? '<span class="state state-ok">在库</span>' : p.status === '已定' ? '<span class="state state-lock">已定</span>' : '<span class="state state-loan">借出</span>'}</div>
+          <div style="margin-top:6px;">${p.status==='在库'?'<span class="state state-ok">在库</span>':p.status==='已定'?'<span class="state state-lock">已定</span>':'<span class="state state-loan">借出</span>'}</div>
         </div>
       </div>
       <div class="form-grid-2" style="gap:12px 16px;font-size:13px;">
@@ -1925,30 +1356,22 @@ const actions = {
         <div><span style="color:var(--text-2);font-size:11px;">尺寸</span><div style="font-weight:600;margin-top:2px;">${p.size}</div></div>
         <div><span style="color:var(--text-2);font-size:11px;">证书号</span><div style="font-weight:600;margin-top:2px;font-family:monospace;">${p.cert}</div></div>
         <div><span style="color:var(--text-2);font-size:11px;">零售价</span><div style="font-weight:700;color:var(--wine);margin-top:2px;">${money(p.price)}</div></div>
+        <div style="grid-column:1/-1;"><span style="color:var(--text-2);font-size:11px;">📍 商品存放位置</span><div style="font-weight:600;margin-top:2px;">${p.cabinet||'—'}</div></div>
+        <div style="grid-column:1/-1;"><span style="color:var(--text-2);font-size:11px;">📁 证书存放位置</span><div style="font-weight:600;margin-top:2px;">${p.certBox||'—'}</div></div>
+        <div style="grid-column:1/-1;"><span style="color:var(--text-2);font-size:11px;">成本 / 毛利</span><div style="font-weight:600;margin-top:2px;">${money(p.cost)} / <b style="color:var(--green)">${money(margin)} (${rate}%)</b></div></div>
       </div>
-    `, `
-      <button class="btn btn-ghost" data-act="print-single" data-id="${p.id}" style="padding:10px 8px;font-size:12.5px;">🖨️ 打印标签</button>
-      ${p.status === '在库' ? `<button class="btn btn-gold" data-act="sale-from-product" data-id="${p.id}">立即开单</button>` : `<button class="btn btn-ghost" onclick="closeSheet()">关闭</button>`}
-    `);
+    `, `<button class="btn btn-ghost" data-act="print-single" data-id="${p.id}" style="padding:10px 8px;font-size:12.5px;">🖨️ 打印</button>${p.status==='在库'?`<button class="btn btn-gold" data-act="sale-from-product" data-id="${p.id}">立即开单</button>`:`<button class="btn btn-ghost" onclick="closeSheet()">关闭</button>`}`);
   },
   'sale-from-product'(el){
     const p = getProduct(Number(el.id));
     if (!p || p.status !== '在库'){ toast('该商品不可开单'); return; }
     closeSheet();
-    setTimeout(() => {
-      actions['quick-sale']();
-      setTimeout(() => {
-        const sel = $('sale-prod');
-        if (sel) sel.value = String(p.id);
-        const amt = $('sale-amount');
-        const paid = $('sale-paid');
-        if (amt) amt.value = p.price;
-        if (paid) paid.value = p.price;
-      }, 100);
-    }, 150);
+    setTimeout(() => { actions['quick-sale'](); setTimeout(() => { const sel = $('sale-prod'); if (sel) sel.value = String(p.id); const amt = $('sale-amount'); const paid = $('sale-paid'); if (amt) amt.value = p.price; if (paid) paid.value = p.price; }, 80); }, 120);
   },
 
+  /* 借货 */
   'loan-in'(){
+    closeSheet();
     openSheet('借进登记', `
       <div class="form-group"><label>商品名称</label><input id="li-name" placeholder="如：18K玫瑰金项链"></div>
       <div class="form-group"><label>商品编码</label><input id="li-code" value="ZB-JH-${Math.floor(Math.random()*9000+1000)}"></div>
@@ -1956,119 +1379,74 @@ const actions = {
       <div class="form-group"><label>数量 / 克重</label><input id="li-qty" placeholder="如：1 件 / 8.2g"></div>
       <div class="form-group"><label>预计归还日</label><input type="date" id="li-due" value="${new Date(Date.now()+30*86400000).toISOString().slice(0,10)}"></div>
       <div class="form-hint">◈ 借进商品独立编号核算，存放于借货栏，不占正常采购成本。</div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">取消</button>
-      <button class="btn btn-gold" data-act="do-loan-in">确认借入</button>
-    `);
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-gold" data-act="do-loan-in">确认借入</button>`);
   },
   'do-loan-in'(){
     const name = $('li-name').value || '未命名商品';
-    store.loans.unshift({
-      id: 'JH-' + today().replace(/-/g,'') + '-' + String(store.loans.length + 1).padStart(3,'0'),
-      dir:'in', name, code: $('li-code').value,
-      party: $('li-party').value || '同行伙伴',
-      qty: $('li-qty').value || '1件', date: today(),
-      dueDate: $('li-due').value, status:'借入中',
-    });
-    closeSheet();
-    toast('借进已入库（借货栏） · ' + name);
-    render();
+    store.loans.unshift({ id:'JH-'+today().replace(/-/g,'')+'-'+String(store.loans.length+1).padStart(3,'0'), dir:'in', name, code: $('li-code').value, party: $('li-party').value || '同行伙伴', qty: $('li-qty').value || '1件', date: today(), dueDate: $('li-due').value, status:'借入中' });
+    closeSheet(); toast('借进已登记'); render();
   },
-
   'loan-out-pick'(){
-    const options = store.products.filter(p => p.status === '在库')
-      .map(p => `<option value="${p.id}">${p.name} · ${p.code}</option>`).join('');
+    closeSheet();
+    const options = store.products.filter(p => p.status === '在库').map(p => `<option value="${p.id}">${p.name} · ${p.code}</option>`).join('');
     openSheet('借出调拨登记', `
-      <div class="form-group"><label>选择在库商品进行调拨</label><select id="lo-prod">${options || '<option>暂无在库商品</option>'}</select></div>
+      <div class="form-group"><label>选择在库商品</label><select id="lo-prod">${options||'<option>暂无在库商品</option>'}</select></div>
       <div class="form-group"><label>借出对象</label><input id="lo-party" placeholder="同行 / 客户名称"></div>
       <div class="form-group"><label>预计归还日</label><input type="date" id="lo-due" value="${new Date(Date.now()+30*86400000).toISOString().slice(0,10)}"></div>
-      <div class="form-hint">◈ 借出的货通过调拨操作从在库移至借货栏，与常规销售隔离。</div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">取消</button>
-      <button class="btn btn-wine" data-act="do-loan-out">确认调拨借出</button>
-    `);
+      <div class="form-hint">◈ 借出的货通过调拨从在库移至借货栏。</div>
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-wine" data-act="do-loan-out">确认调拨借出</button>`);
   },
   'do-loan-out'(){
     const p = getProduct(Number($('lo-prod').value));
     if (!p){ toast('请选择商品'); return; }
     p.status = '借出';
-    store.loans.unshift({
-      id: 'JH-' + today().replace(/-/g,'') + '-' + String(store.loans.length + 1).padStart(3,'0'),
-      dir:'out', name:p.name, code:p.code,
-      party: $('lo-party').value || '未填写',
-      qty:'1 件 · ' + p.weight, date:today(),
-      dueDate: $('lo-due').value, status:'借出中',
-    });
-    closeSheet();
-    toast('已调拨转入借货栏 · ' + p.name);
-    render();
+    store.loans.unshift({ id:'JH-'+today().replace(/-/g,'')+'-'+String(store.loans.length+1).padStart(3,'0'), dir:'out', name:p.name, code:p.code, party: $('lo-party').value || '未填写', qty:'1 件 · ' + p.weight, date:today(), dueDate: $('lo-due').value, status:'借出中' });
+    closeSheet(); toast('已转入借货栏'); render();
   },
-
   'loan-return'(el){
     const l = store.loans.find(x => x.id === el.id);
-    if (!confirm('确认该笔借货已归还核销？')) return;
+    if (!confirm('确认该笔借货已归还？')) return;
     store.loans = store.loans.filter(x => x.id !== el.id);
-    toast('已登记归还核销 · ' + l.name);
-    render();
+    toast('已登记归还'); render();
   },
 
-  /* 维修管理 */
+  /* 维修 */
   'new-repair'(){
     closeSheet();
     const custOptions = store.customers.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
     openSheet('新建维修单', `
       <div class="form-group"><label>客户</label><select id="rp-cust">${custOptions}</select></div>
-      <div class="form-group"><label>联系电话</label><input id="rp-phone" placeholder="选填联系电话"></div>
+      <div class="form-group"><label>联系电话</label><input id="rp-phone" placeholder="选填"></div>
       <div class="form-group"><label>维修物品</label><input id="rp-item" placeholder="如：足金古法手镯"></div>
       <div class="form-group"><label>问题描述</label><textarea id="rp-issue" placeholder="如：链扣损坏，需焊接加固"></textarea></div>
       <div class="form-grid-2">
         <div class="form-group"><label>预估费用</label><input type="number" id="rp-fee" placeholder="0.00"></div>
-        <div class="form-group"><label>师傅</label><input id="rp-tech" placeholder="选填师傅姓名"></div>
+        <div class="form-group"><label>师傅</label><input id="rp-tech" placeholder="选填"></div>
       </div>
       <div class="form-grid-2">
         <div class="form-group"><label>接件日期</label><input type="date" id="rp-receive" value="${today()}"></div>
         <div class="form-group"><label>承诺交付日</label><input type="date" id="rp-promise" value="${new Date(Date.now()+7*86400000).toISOString().slice(0,10)}"></div>
       </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">取消</button>
-      <button class="btn btn-wine" data-act="do-new-repair">确认接件</button>
-    `);
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-wine" data-act="do-new-repair">确认接件</button>`);
   },
   'do-new-repair'(){
     const cust = store.customers.find(c => c.id === Number($('rp-cust').value));
     const item = $('rp-item').value.trim();
     if (!item){ toast('请填写维修物品'); return; }
     const id = nextRepairId();
-    store.repairs.unshift({
-      id, cust: cust.name, phone: $('rp-phone').value || cust.phone,
-      item, issue: $('rp-issue').value || '—',
-      estimateFee: Number($('rp-fee').value) || 0,
-      actualFee: null, receiveDate: $('rp-receive').value,
-      promisedDate: $('rp-promise').value, doneDate: null,
-      status: '待维修', technician: $('rp-tech').value || '', remark: '',
-    });
-    closeSheet();
-    toast('维修单已创建 · ' + item);
-    state.subview = 'repairs';
-    render();
+    store.repairs.unshift({ id, cust: cust.name, phone: $('rp-phone').value || cust.phone, item, issue: $('rp-issue').value || '—', estimateFee: Number($('rp-fee').value) || 0, actualFee: null, receiveDate: $('rp-receive').value, promisedDate: $('rp-promise').value, doneDate: null, status: '待维修', technician: $('rp-tech').value || '', remark: '' });
+    closeSheet(); toast('维修单已创建'); state.subview = 'repairs'; render();
   },
   'repair-advance'(el){
     const r = store.repairs.find(x => x.id === el.id);
-    if (!r) return;
     const flow = { '待维修':'维修中', '维修中':'待取件', '待取件':'已完成' };
     const next = flow[r.status];
-    if (!next) return;
-    if (next === '已完成'){
-      actions['repair-complete'](el);
-      return;
-    }
-    r.status = next;
-    toast(r.item + ' → ' + next);
-    render();
+    if (next === '已完成'){ actions['repair-complete'](el); return; }
+    r.status = next; toast(r.item + ' → ' + next); render();
   },
   'repair-complete'(el){
     const r = store.repairs.find(x => x.id === el.id);
-    if (!r) return;
+    closeSheet();
     openSheet('维修完成并收款', `
       <div style="padding:12px;background:#FBF4E2;border-radius:10px;border:1px solid #E5D3A8;margin-bottom:14px;">
         <div style="font-size:13.5px;font-weight:600;margin-bottom:6px;">${r.cust} · ${r.item}</div>
@@ -2076,27 +1454,19 @@ const actions = {
       </div>
       <div class="form-grid-2">
         <div class="form-group"><label>实际收费</label><input type="number" id="rc-fee" value="${r.estimateFee}"></div>
-        <div class="form-group"><label>收款方式</label>
-          <select id="rc-method"><option>现金</option><option>微信</option><option>银行卡</option><option>其他</option></select>
-        </div>
+        <div class="form-group"><label>收款方式</label><select id="rc-method"><option>现金</option><option>微信</option><option>银行卡</option><option>其他</option></select></div>
       </div>
       <div class="form-group"><label>备注</label><textarea id="rc-remark" placeholder="选填">${r.remark}</textarea></div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">取消</button>
-      <button class="btn btn-gold" data-act="do-repair-complete" data-id="${r.id}">确认完成</button>
-    `);
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-gold" data-act="do-repair-complete" data-id="${r.id}">确认完成</button>`);
   },
   'do-repair-complete'(el){
     const r = store.repairs.find(x => x.id === el.id);
     r.actualFee = Number($('rc-fee').value) || 0;
     r.remark = $('rc-remark').value || '';
-    r.status = '已完成';
-    r.doneDate = today();
+    r.status = '已完成'; r.doneDate = today();
     const cust = store.customers.find(c => c.name === r.cust);
     if (cust) cust.total += r.actualFee;
-    closeSheet();
-    toast('维修完成 · 收费 ' + money(r.actualFee));
-    render();
+    closeSheet(); toast('维修完成 · 收费 ' + money(r.actualFee)); render();
   },
   'repair-detail'(el){
     const r = store.repairs.find(x => x.id === el.id);
@@ -2108,14 +1478,12 @@ const actions = {
         <div><span style="color:var(--text-2);font-size:11px;">物品</span><div style="font-weight:600;margin-top:2px;">${r.item}</div></div>
         <div style="grid-column:1/-1;"><span style="color:var(--text-2);font-size:11px;">问题</span><div style="font-weight:600;margin-top:2px;">${r.issue}</div></div>
         <div><span style="color:var(--text-2);font-size:11px;">预估费</span><div style="font-weight:600;margin-top:2px;">${money(r.estimateFee)}</div></div>
-        <div><span style="color:var(--text-2);font-size:11px;">实收费</span><div style="font-weight:700;color:var(--wine);margin-top:2px;">${r.actualFee ? money(r.actualFee) : '—'}</div></div>
-        <div><span style="color:var(--text-2);font-size:11px;">师傅</span><div style="font-weight:600;margin-top:2px;">${r.technician || '未分配'}</div></div>
-        <div><span style="color:var(--text-2);font-size:11px;">交付日</span><div style="font-weight:600;margin-top:2px;">${r.promisedDate}</div></div>
+        <div><span style="color:var(--text-2);font-size:11px;">实收费</span><div style="font-weight:700;color:var(--wine);margin-top:2px;">${r.actualFee?money(r.actualFee):'—'}</div></div>
       </div>
     `, `<button class="btn btn-ghost" onclick="closeSheet()">关闭</button>`);
   },
 
-  /* 采购管理 */
+  /* 采购 */
   'new-purchase'(){
     closeSheet();
     openSheet('新建采购单', `
@@ -2129,10 +1497,7 @@ const actions = {
         <div class="form-group"><label>下单日期</label><input type="date" id="pu-order" value="${today()}"></div>
         <div class="form-group"><label>预计到货</label><input type="date" id="pu-expected" value="${new Date(Date.now()+5*86400000).toISOString().slice(0,10)}"></div>
       </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">取消</button>
-      <button class="btn btn-wine" data-act="do-new-purchase">确认下单</button>
-    `);
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-wine" data-act="do-new-purchase">确认下单</button>`);
   },
   'do-new-purchase'(){
     const product = $('pu-product').value.trim();
@@ -2140,64 +1505,42 @@ const actions = {
     const qty = Number($('pu-qty').value) || 1;
     const cost = Number($('pu-cost').value) || 0;
     const id = nextPurchaseId();
-    store.purchases.unshift({
-      id, supplier: $('pu-supplier').value || '未填写',
-      product, qty, cost: cost * qty,
-      orderDate: $('pu-order').value, expectedDate:$('pu-expected').value,
-      receivedDate: null, status:'待发货', paid:0,
-    });
-    closeSheet();
-    toast('采购单已建立 · ' + product);
-    state.subview = 'purchases';
-    render();
+    store.purchases.unshift({ id, supplier: $('pu-supplier').value || '未填写', product, qty, cost: cost * qty, orderDate: $('pu-order').value, expectedDate: $('pu-expected').value, receivedDate: null, status:'待发货', paid:0 });
+    closeSheet(); toast('采购单已建立'); state.subview = 'purchases'; render();
   },
-  'purchase-ship'(el){
-    const p = store.purchases.find(x => x.id === el.id);
-    p.status = '已发货';
-    toast('已标记发货 · ' + p.product);
-    render();
-  },
+  'purchase-ship'(el){ const p = store.purchases.find(x => x.id === el.id); p.status = '已发货'; toast('已标记发货'); render(); },
   'purchase-receive'(el){
     const p = store.purchases.find(x => x.id === el.id);
     if (!confirm(`确认「${p.product}」已到货入库？`)) return;
-    p.status = '已入库';
-    p.receivedDate = today();
-    toast('已到货入库 · 库存已更新');
-    render();
+    p.status = '已入库'; p.receivedDate = today();
+    toast('已到货入库'); render();
   },
   'purchase-pay'(el){
     const p = store.purchases.find(x => x.id === el.id);
+    closeSheet();
     openSheet('登记付款', `
       <div style="padding:12px;background:#FBF4E2;border-radius:10px;margin-bottom:14px;">
         <div style="font-weight:600;">${p.product}</div>
         <div style="font-size:11.5px;color:var(--text-2);margin-top:4px;">应付：<b>${money(p.cost)}</b> · 已付：<b style="color:var(--green)">${money(p.paid)}</b></div>
       </div>
       <div class="form-group"><label>本次付款金额</label><input type="number" id="pp-amount" value="${p.cost - p.paid}"></div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">取消</button>
-      <button class="btn btn-gold" data-act="do-purchase-pay" data-id="${p.id}">确认付款</button>
-    `);
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-gold" data-act="do-purchase-pay" data-id="${p.id}">确认付款</button>`);
   },
   'do-purchase-pay'(el){
     const p = store.purchases.find(x => x.id === el.id);
-    const amt = Number($('pp-amount').value) || 0;
-    p.paid += amt;
-    closeSheet();
-    toast('已付款 ' + money(amt));
-    render();
+    p.paid += Number($('pp-amount').value) || 0;
+    closeSheet(); toast('付款已登记'); render();
   },
 
-  /* 委外加工 */
+  /* 委外 */
   'new-outsourcing'(){
     closeSheet();
     openSheet('新建加工单', `
       <div class="form-group"><label>加工厂</label><input id="ou-factory" placeholder="如：深圳金辉厂"></div>
       <div class="form-group"><label>加工内容</label><input id="ou-product" placeholder="如：足金手镯改款"></div>
       <div class="form-grid-2">
-        <div class="form-group"><label>材质</label>
-          <select id="ou-material"><option>足金999</option><option>18K金</option><option>PT950</option><option>其他</option></select>
-        </div>
-        <div class="form-group"><label>克重</label><input id="ou-weight" placeholder="如：28.6" inputmode="decimal"></div>
+        <div class="form-group"><label>材质</label><select id="ou-material"><option>足金999</option><option>18K金</option><option>PT950</option><option>其他</option></select></div>
+        <div class="form-group"><label>克重</label><input id="ou-weight" placeholder="如：28.6"></div>
       </div>
       <div class="form-grid-2">
         <div class="form-group"><label>金价（元/g）</label><input type="number" id="ou-gold" value="560"></div>
@@ -2207,36 +1550,20 @@ const actions = {
         <div class="form-group"><label>发料日期</label><input type="date" id="ou-send" value="${today()}"></div>
         <div class="form-group"><label>预计交货</label><input type="date" id="ou-expected" value="${new Date(Date.now()+10*86400000).toISOString().slice(0,10)}"></div>
       </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">取消</button>
-      <button class="btn btn-wine" data-act="do-new-outsourcing">确认发料</button>
-    `);
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-wine" data-act="do-new-outsourcing">确认发料</button>`);
   },
   'do-new-outsourcing'(){
     const product = $('ou-product').value.trim();
     if (!product){ toast('请填写加工内容'); return; }
     const id = nextOutsourcingId();
-    store.outsourcings.unshift({
-      id, factory: $('ou-factory').value || '未填写',
-      product, material: $('ou-material').value,
-      weight: $('ou-weight').value || '0',
-      goldPrice: Number($('ou-gold').value) || 0,
-      laborFee: Number($('ou-labor').value) || 0,
-      sendDate: $('ou-send').value, expectedDate:$('ou-expected').value,
-      receivedDate: null, status:'加工中',
-    });
-    closeSheet();
-    toast('加工单已建立 · ' + product);
-    state.subview = 'outsourcings';
-    render();
+    store.outsourcings.unshift({ id, factory: $('ou-factory').value || '未填写', product, material: $('ou-material').value, weight: $('ou-weight').value || '0', goldPrice: Number($('ou-gold').value) || 0, laborFee: Number($('ou-labor').value) || 0, sendDate: $('ou-send').value, expectedDate: $('ou-expected').value, receivedDate: null, status:'加工中' });
+    closeSheet(); toast('加工单已建立'); state.subview = 'outsourcings'; render();
   },
   'outsourcing-receive'(el){
     const o = store.outsourcings.find(x => x.id === el.id);
     if (!confirm(`确认「${o.product}」已收货？`)) return;
-    o.status = '已收货';
-    o.receivedDate = today();
-    toast('已收货 · 加工完成');
-    render();
+    o.status = '已收货'; o.receivedDate = today();
+    toast('已收货'); render();
   },
   'outsourcing-detail'(el){
     const o = store.outsourcings.find(x => x.id === el.id);
@@ -2253,83 +1580,62 @@ const actions = {
     `, `<button class="btn btn-ghost" onclick="closeSheet()">关闭</button>`);
   },
 
-  /* 客户管理 */
-  'new-customer'(){
+  /* 橱窗 */
+  'add-showcase'(){
     closeSheet();
-    openSheet('新增客户', `
-      <div class="form-group"><label>客户姓名</label><input id="nc-name" placeholder="姓名"></div>
-      <div class="form-group"><label>手机号</label><input id="nc-phone" placeholder="11 位手机号" inputmode="numeric"></div>
-      <div class="form-grid-2">
-        <div class="form-group"><label>会员等级</label>
-          <select id="nc-level"><option>金卡</option><option>银卡</option><option>普通</option></select>
-        </div>
-        <div class="form-group"><label>生日</label><input id="nc-birth" placeholder="如：10-12"></div>
-      </div>
-      <div class="form-group"><label>偏好</label><input id="nc-prefer" placeholder="如：黄金·古法"></div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">取消</button>
-      <button class="btn btn-gold" data-act="do-new-customer">保存</button>
-    `);
+    const options = store.products.filter(p => p.status === '在库').map(p => `<option value="${p.id}">${p.name} · ${p.code}</option>`).join('');
+    openSheet('添加橱窗商品', `
+      <div class="form-group"><label>选择在库商品</label><select id="sc-prod">${options||'<option>暂无在库商品</option>'}</select></div>
+      <div class="form-group"><label>排序号（1-10）</label><input type="number" id="sc-sort" value="${store.showcases.length+1}"></div>
+      <div class="form-group"><label>商品描述</label><input id="sc-desc" placeholder="如：18K金经典钻戒，日常佩戴首选"></div>
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-gold" data-act="do-add-showcase">添加</button>`);
   },
-  'do-new-customer'(){
-    const name = $('nc-name').value.trim();
-    if (!name){ toast('请填写客户姓名'); return; }
-    store.customers.push({
-      id: store.customers.length + 1, name,
-      phone: $('nc-phone').value || '—',
-      level: $('nc-level').value, total:0, due:0,
-      birthday: $('nc-birth').value || '—',
-      prefer: $('nc-prefer').value || '—',
-    });
+  'do-add-showcase'(){
+    const pid = Number($('sc-prod').value);
+    if (!pid){ toast('请选择商品'); return; }
+    store.showcases.push({ id: Date.now(), productId: pid, sort: Number($('sc-sort').value) || store.showcases.length + 1, desc: $('sc-desc').value || '' });
+    closeSheet(); toast('已加入橱窗'); render();
+  },
+  'remove-showcase'(el){
+    store.showcases = store.showcases.filter(s => s.id !== Number(el.id));
+    toast('已移出橱窗'); render();
+  },
+  'edit-showcase'(el){
+    const s = store.showcases.find(x => x.id === Number(el.id));
     closeSheet();
-    toast('客户已建档 · ' + name);
-    render();
+    openSheet('编辑橱窗商品', `
+      <div class="form-group"><label>排序号</label><input type="number" id="es-sort" value="${s.sort}"></div>
+      <div class="form-group"><label>商品描述</label><input id="es-desc" value="${s.desc}"></div>
+    `, `<button class="btn btn-ghost" onclick="closeSheet()">取消</button><button class="btn btn-gold" data-act="do-edit-showcase" data-id="${s.id}">保存</button>`);
   },
-  'cust-detail'(el){
-    const c = store.customers.find(x => x.id === Number(el.id));
-    openSheet('客户详情', `
-      <div style="display:flex;gap:14px;align-items:center;margin-bottom:18px;">
-        <div class="cust-avatar" style="width:50px;height:50px;font-size:20px;">${c.name[0]}</div>
-        <div style="flex:1;">
-          <div style="font-size:16px;font-weight:600;">${c.name}</div>
-          <div style="font-size:12px;color:var(--text-2);margin-top:2px;font-family:monospace;">${c.phone}</div>
-        </div>
-        ${c.level === '金卡' ? '<span class="tag tag-gold">金卡</span>' : '<span class="tag tag-gray">' + c.level + '</span>'}
-      </div>
-      <div class="form-grid-2" style="gap:12px 16px;">
-        <div><span style="color:var(--text-2);font-size:11px;">累计消费</span><div style="font-weight:700;font-size:15px;color:var(--wine);margin-top:2px;">${money(c.total)}</div></div>
-        <div><span style="color:var(--text-2);font-size:11px;">欠款</span><div style="font-weight:700;font-size:15px;color:${c.due > 0 ? 'var(--red)' : 'var(--text-2)'};margin-top:2px;">${c.due > 0 ? money(c.due) : '无'}</div></div>
-        <div><span style="color:var(--text-2);font-size:11px;">生日</span><div style="font-weight:600;margin-top:2px;">${c.birthday}</div></div>
-        <div><span style="color:var(--text-2);font-size:11px;">偏好</span><div style="font-weight:600;margin-top:2px;">${c.prefer}</div></div>
-      </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeSheet()">关闭</button>
-      ${c.due > 0 ? `<button class="btn btn-gold" data-act="collect" data-id="${c.id}">发送催收</button>` : ''}
-    `);
+  'do-edit-showcase'(el){
+    const s = store.showcases.find(x => x.id === Number(el.id));
+    s.sort = Number($('es-sort').value) || s.sort;
+    s.desc = $('es-desc').value;
+    closeSheet(); toast('已更新'); render();
   },
-  'collect'(el){
-    const c = store.customers.find(x => x.id === Number(el.id));
-    if (!confirm(`确认向 ${c.name} 发送催收提醒？\n当前欠款：${money(c.due)}`)) return;
-    closeSheet();
-    toast('已发送催收账单给 ' + c.name);
-  },
+
+  /* 预约 */
+  'appt-confirm'(el){ const a = store.appointments.find(x => x.id === el.id); a.status = '已确认'; toast('预约已确认'); render(); },
+  'appt-cancel'(el){ const a = store.appointments.find(x => x.id === el.id); a.status = '已取消'; toast('预约已取消'); render(); },
+  'appt-arrive'(el){ const a = store.appointments.find(x => x.id === el.id); a.status = '已到店'; toast('已标记到店'); render(); },
+
+  /* 网站 */
+  'copy-site-url'(){ toast('网址已复制：jinyuxuan.yizhen.cloud'); },
+  'toggle-site'(){ store.storeProfile.websiteEnabled = !store.storeProfile.websiteEnabled; toast(store.storeProfile.websiteEnabled?'网站已发布':'网站已停用'); render(); },
+  'site-appoint'(){ toast('客户提交预约后，将进入「到店预约」列表'); },
+
+  /* 资料 */
+  'save-profile'(){ toast('店铺资料已保存'); },
 };
 
 document.addEventListener('click', e => {
   const nav = e.target.closest('[data-nav]');
   if (nav){ state.tab = nav.dataset.nav; state.subview = null; render(); return; }
   const sub = e.target.closest('[data-subview]');
-  if (sub){
-    state.subview = sub.dataset.subview;
-    render();
-    document.getElementById('page').scrollTop = 0;
-    return;
-  }
+  if (sub){ state.subview = sub.dataset.subview; render(); const p = document.getElementById('page'); if (p) p.scrollTop = 0; return; }
   const act = e.target.closest('[data-act]');
-  if (act){
-    const fn = actions[act.dataset.act];
-    if (fn){ e.preventDefault(); fn(act.dataset); }
-  }
+  if (act){ const fn = actions[act.dataset.act]; if (fn){ e.preventDefault(); fn(act.dataset); } }
 });
 
 render();

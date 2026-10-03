@@ -3,198 +3,88 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>懿珠宝管家 · 演示</title>
+<title>懿臻珠宝云 · 电脑端原型</title>
 <style>
+  #app{
+    display:flex;
+    flex-direction:column;
+    height:100vh;
+    min-height:0;
+  }
   :root{
-    --gold:#C9A961;
-    --gold-light:#E8D5A0;
-    --gold-pale:#F5EBD8;
-    --gold-dark:#9C7B3A;
-    --wine:#5C2233;
-    --wine-light:#7A2E42;
-    --wine-deep:#421824;
-    --cream:#FBF6EC;
-    --card:#FFFFFF;
-    --text:#3D2B1F;
-    --text-2:#7A6A55;
-    --border:#EADFC8;
-    --red:#A8362F;
-    --green:#5B7A3A;
-    --blue:#3A5A7A;
+    --gold:#C9A961;--gold-light:#E8D5A0;--gold-pale:#F5EBD8;--gold-dark:#9C7B3A;
+    --wine:#5C2233;--wine-light:#7A2E42;--wine-deep:#421824;
+    --cream:#FBF6EC;--card:#FFFFFF;
+    --text:#3D2B1F;--text-2:#7A6A55;--border:#EADFC8;
+    --red:#A8362F;--green:#5B7A3A;--blue:#3A5A7A;--purple:#6B3A7A;
   }
   *{box-sizing:border-box;margin:0;padding:0;}
-  body{
-    font-family:"PingFang SC","Microsoft YaHei",-apple-system,sans-serif;
-    background:var(--cream);color:var(--text);font-size:14px;
-    -webkit-font-smoothing:antialiased;
-  }
+  body{font-family:"PingFang SC","Microsoft YaHei",-apple-system,sans-serif;background:var(--cream);color:var(--text);font-size:14px;-webkit-font-smoothing:antialiased;}
   button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;}
   input,select,textarea{font-family:inherit;font-size:14px;color:var(--text);}
   table{width:100%;border-collapse:collapse;}
   .serif{font-family:"Songti SC","STSong","SimSun",serif;}
 
   .app{display:flex;min-height:100vh;}
-  .sidebar{
-    width:248px;flex-shrink:0;
-    background:linear-gradient(180deg,var(--wine) 0%,var(--wine-deep) 100%);
-    color:#F5E9DA;display:flex;flex-direction:column;position:relative;
-  }
-  .sidebar::after{
-    content:"";position:absolute;right:0;top:0;bottom:0;width:1px;
-    background:linear-gradient(180deg,transparent,var(--gold),transparent);opacity:.5;
-  }
-  .brand{
-    height:78px;display:flex;align-items:center;gap:12px;padding:0 22px;
-    border-bottom:1px solid rgba(201,169,97,.25);
-  }
-  .brand-mark{
-    width:40px;height:40px;border-radius:50%;
-    background:linear-gradient(135deg,#E8D5A0,#C9A961 45%,#9C7B3A);
-    display:flex;align-items:center;justify-content:center;
-    font-size:19px;color:#5C2233;font-weight:700;flex-shrink:0;
-    box-shadow:0 3px 10px rgba(201,169,97,.4),inset 0 1px 2px rgba(255,255,255,.6);
-  }
+  .sidebar{width:248px;flex-shrink:0;background:linear-gradient(180deg,var(--wine) 0%,var(--wine-deep) 100%);color:#F5E9DA;display:flex;flex-direction:column;position:relative;overflow-y:auto;}
+  .sidebar::after{content:"";position:absolute;right:0;top:0;bottom:0;width:1px;background:linear-gradient(180deg,transparent,var(--gold),transparent);opacity:.5;}
+  .brand{height:78px;display:flex;align-items:center;gap:12px;padding:0 22px;border-bottom:1px solid rgba(201,169,97,.25);flex-shrink:0;}
+  .brand-mark{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#E8D5A0,#C9A961 45%,#9C7B3A);display:flex;align-items:center;justify-content:center;font-size:19px;color:#5C2233;font-weight:700;flex-shrink:0;box-shadow:0 3px 10px rgba(201,169,97,.4),inset 0 1px 2px rgba(255,255,255,.6);}
   .brand-text{line-height:1.25;}
   .brand-name{font-size:16px;font-weight:600;letter-spacing:1px;color:#F7EFE0;}
   .brand-sub{font-size:10px;letter-spacing:2px;color:var(--gold);opacity:.85;margin-top:2px;}
-
-  .store-switch{
-    margin:14px 16px 10px;padding:12px 14px;border-radius:8px;
-    background:linear-gradient(135deg,rgba(201,169,97,.18),rgba(201,169,97,.08));
-    border:1px solid rgba(201,169,97,.35);
-    display:flex;align-items:center;gap:10px;cursor:pointer;
-    transition:all .18s;position:relative;
-  }
+  .store-switch{margin:14px 16px 10px;padding:12px 14px;border-radius:8px;background:linear-gradient(135deg,rgba(201,169,97,.18),rgba(201,169,97,.08));border:1px solid rgba(201,169,97,.35);display:flex;align-items:center;gap:10px;cursor:pointer;transition:all .18s;flex-shrink:0;}
   .store-switch:hover{background:rgba(201,169,97,.22);}
   .store-ico{font-size:16px;}
   .store-info{flex:1;min-width:0;}
   .store-name{font-size:13px;font-weight:600;color:#F7EFE0;letter-spacing:.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .store-arrow{font-size:10px;color:rgba(201,169,97,.7);}
-
-  .nav-item{
-    display:flex;align-items:center;gap:12px;
-    padding:11px 22px;font-size:14px;color:rgba(245,233,218,.72);
-    cursor:pointer;position:relative;transition:all .2s;
-    border-left:3px solid transparent;
-  }
+  .nav-group{padding:12px 22px 4px;font-size:10px;letter-spacing:2px;color:rgba(201,169,97,.55);}
+  .nav-item{display:flex;align-items:center;gap:12px;padding:10px 22px;font-size:13.5px;color:rgba(245,233,218,.72);cursor:pointer;position:relative;transition:all .2s;border-left:3px solid transparent;}
   .nav-item:hover{color:#F7EFE0;background:rgba(201,169,97,.08);}
-  .nav-item.active{
-    color:#F7EFE0;
-    background:linear-gradient(90deg,rgba(201,169,97,.22),transparent);
-    border-left-color:var(--gold);
-  }
-  .nav-item.active::before{
-    content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
-    background:linear-gradient(180deg,var(--gold-light),var(--gold));
-    box-shadow:0 0 12px rgba(201,169,97,.8);
-  }
+  .nav-item.active{color:#F7EFE0;background:linear-gradient(90deg,rgba(201,169,97,.22),transparent);border-left-color:var(--gold);}
+  .nav-item.active::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,var(--gold-light),var(--gold));box-shadow:0 0 12px rgba(201,169,97,.8);}
   .nav-ico{font-size:15px;width:20px;text-align:center;}
-  .nav-badge{
-    margin-left:auto;background:var(--gold);color:var(--wine-deep);
-    font-size:10px;padding:1px 7px;border-radius:8px;font-weight:600;
-  }
-  .sidebar-foot{
-    margin-top:auto;padding:16px 22px;
-    border-top:1px solid rgba(201,169,97,.25);
-    display:flex;align-items:center;gap:12px;
-  }
-  .avatar{
-    width:36px;height:36px;border-radius:50%;flex-shrink:0;
-    background:linear-gradient(135deg,#E8D5A0,#C9A961);
-    display:flex;align-items:center;justify-content:center;
-    color:#5C2233;font-weight:600;font-size:14px;
-  }
+  .nav-badge{margin-left:auto;background:var(--gold);color:var(--wine-deep);font-size:10px;padding:1px 7px;border-radius:8px;font-weight:600;}
+  .sidebar-foot{margin-top:auto;padding:16px 22px;border-top:1px solid rgba(201,169,97,.25);display:flex;align-items:center;gap:12px;flex-shrink:0;}
+  .avatar{width:36px;height:36px;border-radius:50%;flex-shrink:0;background:linear-gradient(135deg,#E8D5A0,#C9A961);display:flex;align-items:center;justify-content:center;color:#5C2233;font-weight:600;font-size:14px;}
   .foot-info{font-size:13px;line-height:1.35;color:#F5E9DA;flex:1;min-width:0;}
   .foot-info small{display:block;font-size:10px;color:rgba(201,169,97,.7);letter-spacing:.5px;margin-top:2px;}
 
   .main{flex:1;display:flex;flex-direction:column;min-width:0;}
-  .topbar{
-    min-height:78px;display:flex;align-items:center;justify-content:space-between;
-    padding:0 32px;background:var(--card);
-    border-bottom:1px solid var(--border);position:relative;gap:20px;
-  }
-  .topbar::after{
-    content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;
-    background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.6;
-  }
+  .topbar{min-height:78px;display:flex;align-items:center;justify-content:space-between;padding:0 32px;background:var(--card);border-bottom:1px solid var(--border);position:relative;gap:20px;}
+  .topbar::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.6;}
   .crumb{font-size:13px;color:var(--text-2);letter-spacing:.5px;display:flex;align-items:center;gap:12px;}
   .crumb b{color:var(--text);font-weight:600;font-size:15px;letter-spacing:.5px;}
-  .store-pill{
-    display:inline-flex;align-items:center;gap:6px;
-    padding:5px 12px;border-radius:14px;font-size:12px;
-    background:linear-gradient(135deg,#F7EFE0,#EFE2C6);
-    border:1px solid #E5D3A8;color:var(--gold-dark);letter-spacing:.5px;
-  }
+  .store-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:14px;font-size:12px;background:linear-gradient(135deg,#F7EFE0,#EFE2C6);border:1px solid #E5D3A8;color:var(--gold-dark);letter-spacing:.5px;}
   .top-actions{display:flex;align-items:center;gap:14px;}
   .top-date{font-size:12px;color:var(--text-2);letter-spacing:.5px;padding-right:12px;border-right:1px solid var(--border);}
   .content{flex:1;padding:26px 32px 40px;overflow:auto;}
 
-  .rules{
-    background:linear-gradient(135deg,#FFFDF7,#FBF4E2);
-    border:1px solid #E5D3A8;border-radius:10px;
-    padding:0;margin-bottom:18px;overflow:hidden;
-    box-shadow:0 1px 2px rgba(92,34,51,.03);
-  }
-  .rules-head{
-    padding:13px 18px;display:flex;align-items:center;gap:10px;
-    cursor:pointer;user-select:none;
-    border-bottom:1px solid transparent;transition:all .18s;
-  }
+  .rules{background:linear-gradient(135deg,#FFFDF7,#FBF4E2);border:1px solid #E5D3A8;border-radius:10px;margin-bottom:18px;overflow:hidden;box-shadow:0 1px 2px rgba(92,34,51,.03);}
+  .rules-head{padding:13px 18px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;border-bottom:1px solid transparent;transition:all .18s;}
   .rules.open .rules-head{border-bottom-color:#E5D3A8;}
   .rules-head:hover{background:rgba(201,169,97,.08);}
-  .rules-ico{
-    width:22px;height:22px;border-radius:50%;
-    background:linear-gradient(135deg,var(--gold-light),var(--gold-dark));
-    color:#fff;display:flex;align-items:center;justify-content:center;
-    font-size:12px;flex-shrink:0;font-weight:700;
-  }
+  .rules-ico{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--gold-light),var(--gold-dark));color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;font-weight:700;}
   .rules-title{font-size:13px;font-weight:600;letter-spacing:.5px;color:var(--gold-dark);}
-  .rules-count{
-    font-size:11px;color:var(--text-2);background:#F5EBD8;
-    padding:1px 8px;border-radius:8px;letter-spacing:.5px;
-  }
-  .rules-toggle{
-    margin-left:auto;font-size:12px;font-weight:600;color:var(--gold-dark);
-    display:flex;align-items:center;gap:5px;
-  }
+  .rules-count{font-size:11px;color:var(--text-2);background:#F5EBD8;padding:1px 8px;border-radius:8px;letter-spacing:.5px;}
+  .rules-toggle{margin-left:auto;font-size:12px;font-weight:600;color:var(--gold-dark);display:flex;align-items:center;gap:5px;}
   .rules-body{padding:0 18px;max-height:0;overflow:hidden;transition:max-height .3s,padding .3s;}
   .rules.open .rules-body{max-height:800px;padding:14px 18px 16px;}
-  .rule-item{
-    display:flex;gap:10px;padding:7px 0;font-size:12.5px;
-    color:var(--text);line-height:1.75;border-bottom:1px dashed #EFE2C6;
-  }
+  .rule-item{display:flex;gap:10px;padding:7px 0;font-size:12.5px;color:var(--text);line-height:1.75;border-bottom:1px dashed #EFE2C6;}
   .rule-item:last-child{border-bottom:none;}
-  .rule-idx{
-    flex-shrink:0;width:18px;height:18px;border-radius:4px;
-    background:#F5EBD8;color:var(--gold-dark);
-    font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;
-    margin-top:2px;
-  }
+  .rule-idx{flex-shrink:0;width:18px;height:18px;border-radius:4px;background:#F5EBD8;color:var(--gold-dark);font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;margin-top:2px;}
   .rule-item b{color:var(--wine);font-weight:600;}
 
-  .card{
-    background:var(--card);border-radius:10px;padding:24px;
-    border:1px solid var(--border);
-    box-shadow:0 1px 2px rgba(92,34,51,.04),0 8px 24px -12px rgba(92,34,51,.08);
-  }
+  .card{background:var(--card);border-radius:10px;padding:24px;border:1px solid var(--border);box-shadow:0 1px 2px rgba(92,34,51,.04),0 8px 24px -12px rgba(92,34,51,.08);}
   .card+.card{margin-top:18px;}
   .card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
   .card-title{font-size:16px;font-weight:600;letter-spacing:.5px;display:flex;align-items:center;gap:10px;}
-  .card-title::before{
-    content:"";width:3px;height:16px;border-radius:2px;
-    background:linear-gradient(180deg,var(--gold-light),var(--gold-dark));
-  }
+  .card-title::before{content:"";width:3px;height:16px;border-radius:2px;background:linear-gradient(180deg,var(--gold-light),var(--gold-dark));}
   .card-title small{font-weight:400;font-size:12px;color:var(--text-2);letter-spacing:.3px;}
 
-  .btn{
-    display:inline-flex;align-items:center;gap:6px;
-    padding:8px 18px;border-radius:6px;font-size:13px;letter-spacing:.5px;transition:all .18s;
-  }
-  .btn-gold{
-    background:linear-gradient(135deg,#E0C87F,#C9A961 50%,#B08D45);
-    color:#fff;box-shadow:0 2px 8px rgba(201,169,97,.35);
-    text-shadow:0 1px 1px rgba(140,100,20,.3);
-  }
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 18px;border-radius:6px;font-size:13px;letter-spacing:.5px;transition:all .18s;}
+  .btn-gold{background:linear-gradient(135deg,#E0C87F,#C9A961 50%,#B08D45);color:#fff;box-shadow:0 2px 8px rgba(201,169,97,.35);text-shadow:0 1px 1px rgba(140,100,20,.3);}
   .btn-gold:hover{box-shadow:0 4px 14px rgba(201,169,97,.55);transform:translateY(-1px);}
   .btn-wine{background:var(--wine);color:#F5E9DA;}
   .btn-wine:hover{background:var(--wine-light);}
@@ -205,33 +95,23 @@
   .tag{display:inline-block;padding:3px 10px;border-radius:10px;font-size:11px;letter-spacing:.5px;}
   .tag-gold{background:linear-gradient(135deg,#F7EFE0,#EFE2C6);color:var(--gold-dark);border:1px solid #E5D3A8;}
   .tag-gray{background:#F2EDE2;color:var(--text-2);}
-
+  .tag-blue{background:#E8EFF5;color:var(--blue);}
+  .tag-purple{background:#F3E8F5;color:var(--purple);}
   .link{color:var(--gold-dark);cursor:pointer;font-size:13px;}
   .link:hover{text-decoration:underline;color:var(--gold);}
 
-  .state{
-    display:inline-flex;align-items:center;gap:4px;
-    padding:3px 10px;border-radius:10px;font-size:11px;letter-spacing:.5px;
-  }
-  .state::before{
-    content:"";width:6px;height:6px;border-radius:50%;background:currentColor;
-    opacity:.9;
-  }
+  .state{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:10px;font-size:11px;letter-spacing:.5px;}
+  .state::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.9;}
   .state-ok{background:#EEF3E6;color:var(--green);}
   .state-lock{background:linear-gradient(135deg,#F7EFE0,#EFE2C6);color:var(--gold-dark);border:1px solid #E5D3A8;}
   .state-loan{background:#F3E4E8;color:var(--wine);}
   .state-due{background:#F7E8E5;color:var(--red);}
+  .state-doing{background:#E8EFF5;color:var(--blue);}
+  .state-wait{background:#F3E8F5;color:var(--purple);}
 
   .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:20px;}
-  .stat{
-    background:var(--card);border-radius:10px;padding:22px;
-    border:1px solid var(--border);position:relative;overflow:hidden;
-    box-shadow:0 1px 2px rgba(92,34,51,.04),0 8px 24px -12px rgba(92,34,51,.08);
-  }
-  .stat::before{
-    content:"";position:absolute;top:0;left:0;right:0;height:3px;
-    background:linear-gradient(90deg,var(--gold-light),var(--gold),var(--gold-dark));
-  }
+  .stat{background:var(--card);border-radius:10px;padding:22px;border:1px solid var(--border);position:relative;overflow:hidden;box-shadow:0 1px 2px rgba(92,34,51,.04),0 8px 24px -12px rgba(92,34,51,.08);}
+  .stat::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--gold-light),var(--gold),var(--gold-dark));}
   .stat-label{font-size:12px;color:var(--text-2);letter-spacing:.5px;margin-bottom:12px;}
   .stat-value{font-size:30px;font-weight:700;letter-spacing:1px;font-family:"Songti SC",serif;color:var(--wine);}
   .stat-value small{font-size:14px;font-weight:400;color:var(--text-2);margin-left:2px;}
@@ -239,113 +119,49 @@
   .up{color:var(--green);}
   .warn{color:#B8802A;}
 
-  table thead th{
-    text-align:left;padding:12px 14px;font-size:12px;font-weight:600;
-    color:var(--text-2);letter-spacing:.5px;
-    background:linear-gradient(180deg,#FDFAF3,#F9F3E6);
-    border-bottom:1px solid var(--border);
-  }
+  table thead th{text-align:left;padding:12px 14px;font-size:12px;font-weight:600;color:var(--text-2);letter-spacing:.5px;background:linear-gradient(180deg,#FDFAF3,#F9F3E6);border-bottom:1px solid var(--border);}
   table tbody td{padding:14px;font-size:13px;border-bottom:1px solid #F4EEE0;letter-spacing:.3px;}
   table tbody tr:hover{background:#FDFAF3;}
   table tbody tr:last-child td{border-bottom:none;}
 
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px;}
-  .prod{
-    background:var(--card);border:1px solid var(--border);border-radius:10px;
-    padding:18px;position:relative;transition:all .2s;
-  }
+  .prod{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px;position:relative;transition:all .2s;}
   .prod:hover{border-color:var(--gold);box-shadow:0 6px 20px -8px rgba(201,169,97,.5);transform:translateY(-2px);}
-  .prod-ico{
-    width:44px;height:44px;border-radius:8px;
-    background:linear-gradient(135deg,#FBF4E2,#F0E2C0);
-    display:flex;align-items:center;justify-content:center;font-size:22px;
-    margin-bottom:12px;border:1px solid #EAD9B0;
-  }
+  .prod-ico{width:44px;height:44px;border-radius:8px;background:linear-gradient(135deg,#FBF4E2,#F0E2C0);display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:12px;border:1px solid #EAD9B0;}
   .prod-name{font-size:14px;font-weight:600;letter-spacing:.5px;margin-bottom:4px;}
   .prod-code{font-size:11px;color:var(--text-2);font-family:monospace;letter-spacing:.5px;}
   .prod-meta{font-size:12px;color:var(--text-2);margin-top:10px;line-height:1.8;}
   .prod-price{font-size:17px;font-weight:700;color:var(--wine);font-family:"Songti SC",serif;margin-top:8px;}
   .prod-badge{position:absolute;top:14px;right:14px;}
 
-  .timeline{position:relative;padding-left:22px;}
-  .timeline::before{
-    content:"";position:absolute;left:5px;top:6px;bottom:6px;width:1px;
-    background:linear-gradient(180deg,var(--gold),transparent);
-  }
-  .tl-item{position:relative;padding-bottom:18px;}
-  .tl-item::before{
-    content:"";position:absolute;left:-22px;top:5px;width:11px;height:11px;border-radius:50%;
-    background:var(--card);border:2px solid var(--gold);
-  }
-  .tl-item.done::before{background:var(--gold);}
-  .tl-title{font-size:13px;font-weight:600;}
-  .tl-desc{font-size:12px;color:var(--text-2);margin-top:3px;}
-
   .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
   .field{display:flex;flex-direction:column;gap:7px;}
   .field label{font-size:12px;color:var(--text-2);letter-spacing:.5px;}
-  .field input,.field select,.field textarea{
-    padding:10px 13px;border:1px solid var(--border);border-radius:6px;
-    background:#FDFAF3;outline:none;transition:all .18s;font-size:13px;
-  }
-  .field input:focus,.field select:focus{
-    border-color:var(--gold);background:#fff;
-    box-shadow:0 0 0 3px rgba(201,169,97,.14);
-  }
+  .field input,.field select,.field textarea{padding:10px 13px;border:1px solid var(--border);border-radius:6px;background:#FDFAF3;outline:none;transition:all .18s;font-size:13px;}
+  .field input:focus,.field select:focus{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(201,169,97,.14);}
   .field-full{grid-column:1 / -1;}
 
-  .mask{
-    position:fixed;inset:0;background:rgba(66,24,36,.5);
-    backdrop-filter:blur(2px);
-    display:none;align-items:center;justify-content:center;z-index:1000;padding:24px;
-  }
+  .mask{position:fixed;inset:0;background:rgba(66,24,36,.5);backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;z-index:1000;padding:24px;}
   .mask.show{display:flex;}
-  .modal{
-    background:var(--card);border-radius:12px;width:100%;max-width:660px;
-    max-height:88vh;overflow:auto;
-    box-shadow:0 30px 80px -20px rgba(66,24,36,.5);
-    animation:pop .22s ease-out;border:1px solid var(--gold-light);
-  }
+  .modal{background:var(--card);border-radius:12px;width:100%;max-width:660px;max-height:88vh;overflow:auto;box-shadow:0 30px 80px -20px rgba(66,24,36,.5);animation:pop .22s ease-out;border:1px solid var(--gold-light);}
   @keyframes pop{from{opacity:0;transform:translateY(-14px) scale(.98);}}
-  .modal-head{
-    padding:20px 26px;border-bottom:1px solid var(--border);
-    display:flex;align-items:center;justify-content:space-between;
-    background:linear-gradient(180deg,#FDFAF3,#fff);
-  }
+  .modal-head{padding:20px 26px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:linear-gradient(180deg,#FDFAF3,#fff);}
   .modal-head h3{font-size:16px;font-weight:600;letter-spacing:.5px;}
-  .modal-head h3::before{
-    content:"";display:inline-block;width:3px;height:15px;margin-right:10px;
-    background:linear-gradient(180deg,var(--gold-light),var(--gold-dark));
-    border-radius:2px;vertical-align:-2px;
-  }
+  .modal-head h3::before{content:"";display:inline-block;width:3px;height:15px;margin-right:10px;background:linear-gradient(180deg,var(--gold-light),var(--gold-dark));border-radius:2px;vertical-align:-2px;}
   .modal-x{font-size:18px;color:var(--text-2);width:30px;height:30px;border-radius:50%;}
   .modal-x:hover{background:var(--gold-pale);color:var(--wine);}
   .modal-body{padding:26px;}
-  .modal-foot{
-    padding:18px 26px;border-top:1px solid var(--border);
-    display:flex;justify-content:flex-end;gap:12px;background:#FDFAF3;
-  }
+  .modal-foot{padding:18px 26px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:12px;background:#FDFAF3;}
 
-  .toast{
-    position:fixed;top:26px;left:50%;transform:translateX(-50%);
-    padding:13px 26px;border-radius:8px;font-size:13px;letter-spacing:.5px;z-index:2000;
-    background:linear-gradient(135deg,var(--wine),var(--wine-deep));
-    color:#F7EFE0;border:1px solid var(--gold);
-    box-shadow:0 12px 32px -8px rgba(66,24,36,.6);animation:pop .2s;
-  }
-
+  .toast{position:fixed;top:26px;left:50%;transform:translateX(-50%);padding:13px 26px;border-radius:8px;font-size:13px;letter-spacing:.5px;z-index:2000;background:linear-gradient(135deg,var(--wine),var(--wine-deep));color:#F7EFE0;border:1px solid var(--gold);box-shadow:0 12px 32px -8px rgba(66,24,36,.6);animation:pop .2s;}
   .empty{text-align:center;padding:64px 20px;color:var(--text-2);}
   .empty-ico{font-size:44px;margin-bottom:14px;opacity:.6;}
 
-  .deposit{
-    background:linear-gradient(135deg,#FFFCF5,#FBF3E2);
-    border:1px solid #E5D3A8;border-radius:10px;padding:20px;position:relative;overflow:hidden;
-  }
-  .deposit::before{
-    content:"";position:absolute;left:0;top:0;bottom:0;width:4px;
-    background:linear-gradient(180deg,var(--gold-light),var(--gold-dark));
-  }
+  .deposit{background:linear-gradient(135deg,#FFFCF5,#FBF3E2);border:1px solid #E5D3A8;border-radius:10px;padding:20px;position:relative;overflow:hidden;}
+  .deposit::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(180deg,var(--gold-light),var(--gold-dark));}
   .deposit.urgent::before{background:linear-gradient(180deg,#E8A8A0,var(--red));}
+  .deposit.blue::before{background:linear-gradient(180deg,#A8C5E8,var(--blue));}
+  .deposit.purple::before{background:linear-gradient(180deg,#D8A8E8,var(--purple));}
   .deposit-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;}
   .deposit-cust{font-size:15px;font-weight:600;letter-spacing:.5px;}
   .deposit-prod{font-size:12px;color:var(--text-2);margin-top:3px;}
@@ -357,29 +173,27 @@
   .dnum-v.due{color:var(--red);}
 
   .filters{display:flex;gap:12px;align-items:center;flex-wrap:wrap;}
-  .filters input,.filters select{
-    padding:9px 14px;border:1px solid var(--border);border-radius:6px;
-    background:#FDFAF3;outline:none;font-size:13px;
-  }
+  .filters input,.filters select{padding:9px 14px;border:1px solid var(--border);border-radius:6px;background:#FDFAF3;outline:none;font-size:13px;}
   .filters input{width:240px;}
   .filters input:focus,.filters select:focus{border-color:var(--gold);background:#fff;}
 
   .loan-row{display:flex;align-items:center;gap:14px;padding:14px;border-bottom:1px solid #F4EEE0;}
   .loan-row:last-child{border-bottom:none;}
-  .loan-dir{
-    width:56px;height:56px;border-radius:8px;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;font-size:11px;flex-shrink:0;letter-spacing:.5px;
-  }
+  .loan-dir{width:56px;height:56px;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;letter-spacing:.5px;}
   .loan-in{background:#EEF3E6;color:var(--green);}
   .loan-out{background:#F3E4E8;color:var(--wine);}
 
   .split-2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:20px;}
+  .tab-btn{padding:10px 18px;font-size:13.5px;color:var(--text-2);cursor:pointer;border-bottom:2px solid transparent;transition:all .18s;}
+  .tab-btn:hover{color:var(--wine);}
+  .tab-btn.active{color:var(--wine);font-weight:600;border-bottom-color:var(--gold);}
+  .site-preview{background:linear-gradient(180deg,#FDFAF3,#fff);border:1px solid var(--border);border-radius:10px;padding:32px;max-width:640px;margin:0 auto;text-align:center;}
+  .site-brand{font-family:"Songti SC",serif;font-size:28px;font-weight:700;color:var(--wine);letter-spacing:4px;}
+  .site-slogan{font-size:13px;color:var(--gold-dark);letter-spacing:2px;margin-top:8px;}
+  .site-desc{font-size:12.5px;color:var(--text-2);line-height:1.9;margin-top:16px;}
 
-  @media (max-width:1100px){
-    .stats{grid-template-columns:repeat(2,1fr);}
-    .form-grid{grid-template-columns:1fr;}
-    .split-2{grid-template-columns:1fr;}
-  }
+  @media (max-width:1100px){.stats{grid-template-columns:repeat(2,1fr);}.form-grid{grid-template-columns:1fr;}.split-2{grid-template-columns:1fr;}}
 </style>
 </head>
 <body>
@@ -394,14 +208,13 @@ const store = {
     { id:2, name:'瑾瑜轩 · 分店A', code:'JYX-002', owner:'王敏' },
   ],
   currentStoreId: 1,
-
   products: [
-    { id:1, code:'ZB-2024-0001', name:'足金古法手镯', cat:'黄金', material:'足金999', weight:'28.6g', size:'58mm', cert:'GIA-8821', cost:14800, price:18600, status:'在库', storeId:1 },
-    { id:2, code:'ZB-2024-0002', name:'18K金钻石戒指', cat:'钻石', material:'18K金', weight:'3.2g', size:'12号', cert:'GIA-9930', cost:12600, price:16800, status:'在库', storeId:1 },
-    { id:3, code:'ZB-2024-0003', name:'翡翠镶金吊坠', cat:'翡翠', material:'A货翡翠', weight:'8.4g', size:'—', cert:'NGTC-551', cost:6200, price:8800, status:'已定', storeId:2 },
-    { id:4, code:'ZB-2024-0004', name:'PT950铂金项链', cat:'铂金', material:'PT950', weight:'12.8g', size:'45cm', cert:'PT-2201', cost:4200, price:5600, status:'在库', storeId:1 },
-    { id:5, code:'ZB-2024-0005', name:'足金转运珠手链', cat:'黄金', material:'足金999', weight:'6.5g', size:'—', cert:'—', cost:3400, price:4280, status:'借出', storeId:1 },
-    { id:6, code:'ZB-2024-0006', name:'红宝石镶钻耳钉', cat:'彩宝', material:'18K金', weight:'2.8g', size:'—', cert:'GRS-330', cost:8800, price:11800, status:'在库', storeId:2 },
+    { id:1, code:'ZB-2024-0001', name:'足金古法手镯', cat:'黄金', material:'足金999', weight:'28.6g', size:'58mm', cert:'GIA-8821', cost:14800, price:18600, status:'在库', storeId:1, cabinet:'A柜1格', certBox:'证书柜1-01' },
+    { id:2, code:'ZB-2024-0002', name:'18K金钻石戒指', cat:'钻石', material:'18K金', weight:'3.2g', size:'12号', cert:'GIA-9930', cost:12600, price:16800, status:'在库', storeId:1, cabinet:'A柜2格', certBox:'证书柜1-02' },
+    { id:3, code:'ZB-2024-0003', name:'翡翠镶金吊坠', cat:'翡翠', material:'A货翡翠', weight:'8.4g', size:'—', cert:'NGTC-551', cost:6200, price:8800, status:'已定', storeId:2, cabinet:'B柜3格', certBox:'证书柜2-05' },
+    { id:4, code:'ZB-2024-0004', name:'PT950铂金项链', cat:'铂金', material:'PT950', weight:'12.8g', size:'45cm', cert:'PT-2201', cost:4200, price:5600, status:'在库', storeId:1, cabinet:'A柜3格', certBox:'证书柜1-03' },
+    { id:5, code:'ZB-2024-0005', name:'足金转运珠手链', cat:'黄金', material:'足金999', weight:'6.5g', size:'—', cert:'—', cost:3400, price:4280, status:'借出', storeId:1, cabinet:'A柜4格', certBox:'—' },
+    { id:6, code:'ZB-2024-0006', name:'红宝石镶钻耳钉', cat:'彩宝', material:'18K金', weight:'2.8g', size:'—', cert:'GRS-330', cost:8800, price:11800, status:'在库', storeId:2, cabinet:'B柜1格', certBox:'证书柜2-01' },
   ],
   customers: [
     { id:1, name:'林雅琴', phone:'13800006688', level:'金卡', total:128600, due:0, birthday:'10-12', prefer:'黄金·古法' },
@@ -421,288 +234,323 @@ const store = {
     { id:'JH-20240915-001', dir:'out', name:'足金转运珠手链', code:'ZB-2024-0005', party:'同城张记珠宝', qty:'1 件 / 6.5g', date:'2024-09-15', dueDate:'2024-10-15', status:'借出中' },
     { id:'JH-20240910-002', dir:'in', name:'18K玫瑰金项链', code:'ZB-2024-0099', party:'深圳金辉厂', qty:'2 件 / 8.2g', date:'2024-09-10', dueDate:'2024-10-10', status:'借入中' },
   ],
+  repairs: [
+    { id:'WX-20240920-001', cust:'林雅琴', phone:'13800006688', item:'足金古法手镯', issue:'链扣损坏，需焊接加固', estimateFee:280, actualFee:null, receiveDate:'2024-09-20', promisedDate:'2024-09-28', doneDate:null, status:'维修中', technician:'李师傅', remark:'' },
+    { id:'WX-20240922-002', cust:'吴静怡', phone:'13500004455', item:'PT950铂金项链', issue:'清洗抛光 + 补链', estimateFee:150, actualFee:null, receiveDate:'2024-09-22', promisedDate:'2024-09-25', doneDate:null, status:'待维修', technician:'', remark:'' },
+    { id:'WX-20240918-003', cust:'周文博', phone:'13700009900', item:'18K金钻戒', issue:'钻石松动，重新镶爪', estimateFee:450, actualFee:420, receiveDate:'2024-09-18', promisedDate:'2024-09-23', doneDate:'2024-09-23', status:'已完成', technician:'王师傅', remark:'已完成并交付客户' },
+  ],
+  purchases: [
+    { id:'CG-20240925-001', supplier:'深圳彩宝行', product:'红宝石镶钻耳钉', qty:1, cost:8800, orderDate:'2024-09-25', expectedDate:'2024-09-27', receivedDate:'2024-09-27', status:'已入库', paid:8800 },
+    { id:'CG-20240926-002', supplier:'自有金料（深圳厂）', product:'足金古法手镯', qty:2, cost:29600, orderDate:'2024-09-26', expectedDate:'2024-09-30', receivedDate:null, status:'已发货', paid:0 },
+    { id:'CG-20240928-003', supplier:'广州翡翠城', product:'A货翡翠挂件', qty:3, cost:18600, orderDate:'2024-09-28', expectedDate:'2024-10-05', receivedDate:null, status:'待发货', paid:5000 },
+  ],
+  outsourcings: [
+    { id:'WW-20240915-001', factory:'深圳金辉厂', product:'足金手镯', material:'足金999', weight:'28.6g', goldPrice:560, laborFee:800, sendDate:'2024-09-15', expectedDate:'2024-09-25', receivedDate:null, status:'加工中' },
+    { id:'WW-20240910-002', factory:'东莞镶嵌厂', product:'18K金钻戒改款', material:'18K金', weight:'3.2g', goldPrice:420, laborFee:1200, sendDate:'2024-09-10', expectedDate:'2024-09-22', receivedDate:'2024-09-22', status:'已收货' },
+  ],
+  showcases: [
+    { id:1, productId:2, sort:1, desc:'18K金经典钻戒，日常佩戴首选' },
+    { id:2, productId:4, sort:2, desc:'PT950铂金项链，简约通勤风' },
+  ],
+  appointments: [
+    { id:'YY-20240928-001', name:'刘女士', phone:'13800001234', cat:'黄金', product:'足金古法手镯', date:'2024-09-30', slot:'14:00-15:00', remark:'希望试戴大圈口', status:'待处理' },
+    { id:'YY-20240927-002', name:'张先生', phone:'13900005678', cat:'钻石', product:'18K金钻石戒指', date:'2024-10-02', slot:'10:00-11:00', remark:'为求婚挑选', status:'已确认' },
+  ],
+  storeProfile: {
+    name:'瑾瑜轩', short:'瑾瑜轩', slogan:'匠心传承 · 一物一证',
+    desc:'瑾瑜轩专注珠宝玉石二十年，源头直采，自有工坊，终身养护。',
+    contact:'王敏', phone:'13800008888', address:'深圳市罗湖区水贝珠宝城A栋1001',
+    hours:'10:00 - 22:00', categories:['黄金','钻石','翡翠','铂金','彩宝'],
+    showcaseTitle:'新品橱窗', showcaseSubtitle:'本期精选', websiteEnabled:true
+  },
   logs: [
     { time:'2024-09-28 10:23', user:'店长 · 王敏', store:'总店', act:'开单', target:'XS-20240928-001', result:'成功' },
     { time:'2024-09-28 09:45', user:'店长 · 王敏', store:'总店', act:'收定金', target:'DJ-20240920-001', result:'成功' },
     { time:'2024-09-27 16:30', user:'店员 · 李莉', store:'分店A', act:'借出登记', target:'JH-20240915-001', result:'成功' },
+    { time:'2024-09-27 15:20', user:'店员 · 李莉', store:'总店', act:'维修接件', target:'WX-20240920-001', result:'成功' },
     { time:'2024-09-27 14:12', user:'店长 · 王敏', store:'总店', act:'入库', target:'ZB-2024-0006', result:'成功' },
+    { time:'2024-09-27 11:05', user:'老板 · 张总', store:'总店', act:'设置提醒', target:'DJ-20240920-001', result:'成功' },
   ],
-  nextSaleSeq: 4,
-  nextDepositSeq: 2,
-  nextProductSeq: 7,
+  nextSaleSeq: 4, nextDepositSeq: 2, nextProductSeq: 7, nextRepairSeq: 4,
+  nextPurchaseSeq: 4, nextOutsourcingSeq: 3, nextAppointmentSeq: 3,
 };
 
-const state = { view:'dashboard', params:{} };
-const rulesOpenState = {}; // 默认全部收起
-
+const state = { view:'dashboard', params:{}, salesTab:'normal' };
+const rulesOpenState = {};
 const $ = id => document.getElementById(id);
 const money = n => '¥' + Number(n).toLocaleString('zh-CN');
 const getProduct = id => store.products.find(p => p.id === id);
 const getStore = id => store.stores.find(s => s.id === id);
 const currentStore = () => getStore(store.currentStoreId);
+const today = () => new Date().toISOString().slice(0,10);
+const daysBetween = (a,b) => Math.ceil((new Date(b) - new Date(a)) / 86400000);
+const nextSaleId = () => 'XS-' + today().replace(/-/g,'') + '-' + String(store.nextSaleSeq++).padStart(3,'0');
+const nextDepositId = () => 'DJ-' + today().replace(/-/g,'') + '-' + String(store.nextDepositSeq++).padStart(3,'0');
+const nextRepairId = () => 'WX-' + today().replace(/-/g,'') + '-' + String(store.nextRepairSeq++).padStart(3,'0');
+const nextPurchaseId = () => 'CG-' + today().replace(/-/g,'') + '-' + String(store.nextPurchaseSeq++).padStart(3,'0');
+const nextOutsourcingId = () => 'WW-' + today().replace(/-/g,'') + '-' + String(store.nextOutsourcingSeq++).padStart(3,'0');
+const nextAppointmentId = () => 'YY-' + today().replace(/-/g,'') + '-' + String(store.nextAppointmentSeq++).padStart(3,'0');
 
-function today(){ return new Date().toISOString().slice(0,10); }
-function daysBetween(a,b){ return Math.ceil((new Date(b) - new Date(a)) / 86400000); }
-function nextSaleId(){ return 'XS-' + today().replace(/-/g,'') + '-' + String(store.nextSaleSeq++).padStart(3,'0'); }
-function nextDepositId(){ return 'DJ-' + today().replace(/-/g,'') + '-' + String(store.nextDepositSeq++).padStart(3,'0'); }
+function toast(msg){const el=document.createElement('div');el.className='toast';el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),2200);}
+function openModal(title,body,foot){const m=$('mask');m.innerHTML=`<div class="modal" onclick="event.stopPropagation()"><div class="modal-head"><h3>${title}</h3><button class="modal-x" onclick="closeModal()">✕</button></div><div class="modal-body">${body}</div>${foot?`<div class="modal-foot">${foot}</div>`:''}</div>`;m.classList.add('show');}
+function closeModal(){$('mask').classList.remove('show');$('mask').innerHTML='';}
 
-function toast(msg){
-  const el = document.createElement('div');
-  el.className = 'toast';
-  el.textContent = msg;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 2200);
-}
-
-function openModal(title, body, foot){
-  const m = $('mask');
-  m.innerHTML = `
-    <div class="modal" onclick="event.stopPropagation()">
-      <div class="modal-head"><h3>${title}</h3><button class="modal-x" onclick="closeModal()">✕</button></div>
-      <div class="modal-body">${body}</div>
-      ${foot ? `<div class="modal-foot">${foot}</div>` : ''}
-    </div>`;
-  m.classList.add('show');
-}
-function closeModal(){ $('mask').classList.remove('show'); $('mask').innerHTML = ''; }
-
-function rulesBox(key, title, rules){
+function rulesBox(key,title,rules){
   const open = rulesOpenState[key] === true;
-  return `
-    <div class="rules ${open ? 'open' : ''}" data-rules-key="${key}">
-      <div class="rules-head" data-act="toggle-rules" data-key="${key}">
-        <div class="rules-ico">◈</div>
-        <div class="rules-title">${title}</div>
-        <div class="rules-count">${rules.length}条</div>
-        <div class="rules-toggle">
-          业务规则 <span style="font-size:10px;opacity:.8;">${open ? '▲' : '▼'}</span>
-        </div>
-      </div>
-      <div class="rules-body">
-        ${rules.map((r, i) => `
-          <div class="rule-item">
-            <div class="rule-idx">${i+1}</div>
-            <div>${r}</div>
-          </div>
-        `).join('')}
-      </div>
-    </div>`;
+  return `<div class="rules ${open?'open':''}" data-rules-key="${key}">
+    <div class="rules-head" data-act="toggle-rules" data-key="${key}">
+      <div class="rules-ico">◈</div><div class="rules-title">${title}</div>
+      <div class="rules-count">${rules.length}条</div>
+      <div class="rules-toggle">业务规则 <span style="font-size:10px;opacity:.8;">${open?'▲':'▼'}</span></div>
+    </div>
+    <div class="rules-body">${rules.map((r,i)=>`<div class="rule-item"><div class="rule-idx">${i+1}</div><div>${r}</div></div>`).join('')}</div>
+  </div>`;
 }
 
 function render(){
-  $('app').innerHTML = `
-    <div class="app">
-      <aside class="sidebar">${sidebar()}</aside>
-      <main class="main">
-        <header class="topbar">${topbar()}</header>
-        <div class="content">${view()}</div>
-      </main>
-    </div>`;
+  $('app').innerHTML = `<div class="app"><aside class="sidebar">${sidebar()}</aside><main class="main"><header class="topbar">${topbar()}</header><div class="content">${view()}</div></main></div>`;
 }
 
 function sidebar(){
   const pendingDeposits = store.deposits.length;
-  const nav = [
-    { k:'dashboard', ico:'◆', label:'经营看板' },
-    { k:'products',  ico:'❖', label:'商品管理' },
-    { k:'inventory', ico:'▣', label:'库存管理' },
-    { k:'sales',     ico:'✦', label:'销售开单' },
-    { k:'deposits',  ico:'◈', label:'定金尾款', badge: pendingDeposits },
-    { k:'loans',     ico:'⇄', label:'借货管理' },
-    { k:'customers', ico:'❀', label:'客户管理' },
-    { k:'logs',      ico:'✎', label:'操作日志' },
-  ];
+  const pendingRepairs = store.repairs.filter(r => r.status !== '已完成').length;
+  const shippingPurchases = store.purchases.filter(p => p.status !== '已入库').length;
+  const processingOuts = store.outsourcings.filter(o => o.status === '加工中').length;
+  const pendingAppts = store.appointments.filter(a => a.status === '待处理').length;
+
   return `
-    <div class="brand">
-      <div class="brand-mark serif">懿</div>
-      <div class="brand-text">
-        <div class="brand-name serif">懿珠宝管家</div>
-        <div class="brand-sub">YI JEWELRY SUITE</div>
-      </div>
-    </div>
+    <div class="brand"><div class="brand-mark serif">懿</div><div class="brand-text"><div class="brand-name serif">懿臻珠宝云</div><div class="brand-sub">YI JEWELRY CLOUD</div></div></div>
+    <div class="store-switch" data-act="switch-store"><div class="store-ico">🏛</div><div class="store-info"><div class="store-name">${currentStore().name}</div></div><div class="store-arrow">▾</div></div>
 
-    <div class="store-switch" data-act="switch-store">
-      <div class="store-ico">🏛</div>
-      <div class="store-info">
-        <div class="store-name">${currentStore().name}</div>
-      </div>
-      <div class="store-arrow">▾</div>
-    </div>
+    <div class="nav-group">经营</div>
+    <div class="nav-item ${state.view==='dashboard'?'active':''}" data-nav="dashboard"><span class="nav-ico">◆</span><span>经营看板</span></div>
+    <div class="nav-item ${state.view==='sales'?'active':''}" data-nav="sales"><span class="nav-ico">✦</span><span>销售开单</span>${pendingDeposits?`<span class="nav-badge">${pendingDeposits}</span>`:''}</div>
+    <div class="nav-item ${state.view==='inventory'?'active':''}" data-nav="inventory"><span class="nav-ico">▣</span><span>库存管理</span></div>
+    <div class="nav-item ${state.view==='products'?'active':''}" data-nav="products"><span class="nav-ico">❖</span><span>商品管理</span></div>
 
-    ${nav.map(n => `
-      <div class="nav-item ${state.view === n.k ? 'active' : ''}" data-nav="${n.k}">
-        <span class="nav-ico">${n.ico}</span>
-        <span>${n.label}</span>${n.badge ? `<span class="nav-badge">${n.badge}</span>` : ''}
-      </div>`).join('')}
+    <div class="nav-group">客户</div>
+    <div class="nav-item ${state.view==='customers'?'active':''}" data-nav="customers"><span class="nav-ico">❀</span><span>客户管理</span></div>
+    <div class="nav-item ${state.view==='loans'?'active':''}" data-nav="loans"><span class="nav-ico">⇄</span><span>借货管理</span></div>
+    <div class="nav-item ${state.view==='repairs'?'active':''}" data-nav="repairs"><span class="nav-ico">🔧</span><span>维修管理</span>${pendingRepairs?`<span class="nav-badge">${pendingRepairs}</span>`:''}</div>
 
-    <div class="sidebar-foot">
-      <div class="avatar serif">张</div>
-      <div class="foot-info">
-        张总
-        <small>老板 · 全部门店</small>
-      </div>
-    </div>`;
+    <div class="nav-group">供应链</div>
+    <div class="nav-item ${state.view==='purchases'?'active':''}" data-nav="purchases"><span class="nav-ico">📦</span><span>采购管理</span>${shippingPurchases?`<span class="nav-badge">${shippingPurchases}</span>`:''}</div>
+    <div class="nav-item ${state.view==='outsourcings'?'active':''}" data-nav="outsourcings"><span class="nav-ico">⚒</span><span>委外加工</span>${processingOuts?`<span class="nav-badge">${processingOuts}</span>`:''}</div>
+
+    <div class="nav-group">营销</div>
+    <div class="nav-item ${state.view==='showcase'?'active':''}" data-nav="showcase"><span class="nav-ico">✦</span><span>橱窗管理</span></div>
+    <div class="nav-item ${state.view==='appointments'?'active':''}" data-nav="appointments"><span class="nav-ico">📅</span><span>到店预约</span>${pendingAppts?`<span class="nav-badge">${pendingAppts}</span>`:''}</div>
+    <div class="nav-item ${state.view==='website'?'active':''}" data-nav="website"><span class="nav-ico">🌐</span><span>企业迷你网站</span></div>
+    <div class="nav-item ${state.view==='store-profile'?'active':''}" data-nav="store-profile"><span class="nav-ico">🏛</span><span>店铺资料</span></div>
+
+    <div class="nav-group">系统</div>
+    <div class="nav-item ${state.view==='logs'?'active':''}" data-nav="logs"><span class="nav-ico">✎</span><span>操作日志</span></div>
+
+    <div class="sidebar-foot"><div class="avatar serif">张</div><div class="foot-info">张总<small>老板 · 全部门店</small></div></div>`;
 }
 
 function topbar(){
   const titles = {
-    dashboard:'经营看板', products:'商品管理', inventory:'库存管理',
-    sales:'销售开单', deposits:'定金尾款', loans:'借货管理',
-    customers:'客户管理', logs:'操作日志',
+    dashboard:'经营看板', sales:'销售开单', inventory:'库存管理', products:'商品管理',
+    customers:'客户管理', loans:'借货管理', repairs:'维修管理',
+    purchases:'采购管理', outsourcings:'委外加工',
+    showcase:'橱窗管理', appointments:'到店预约', website:'企业迷你网站', 'store-profile':'店铺资料',
+    logs:'操作日志',
   };
-  return `
-    <div class="crumb">
-      <span class="store-pill">🏛 ${currentStore().name}</span>
-      <span>/</span>
-      <b>${titles[state.view] || ''}</b>
-    </div>
-    <div class="top-actions">
-      <span class="top-date">2024 年 9 月 28 日 · 周六</span>
-      <button class="btn btn-ghost btn-sm" data-act="quick-sale">＋ 快速开单</button>
-      <button class="btn btn-gold btn-sm" data-act="quick-deposit">◈ 收定金</button>
-    </div>`;
+  return `<div class="crumb"><span class="store-pill">🏛 ${currentStore().name}</span><span>/</span><b>${titles[state.view]||''}</b></div>
+    <div class="top-actions"><span class="top-date">2024 年 9 月 28 日 · 周六</span>
+    <button class="btn btn-ghost btn-sm" data-act="quick-sale">＋ 快速开单</button>
+    <button class="btn btn-gold btn-sm" data-act="quick-deposit">◈ 收定金</button></div>`;
 }
 
 function view(){
   switch(state.view){
     case 'dashboard': return viewDashboard();
-    case 'products':  return viewProducts();
+    case 'sales': return viewSales();
     case 'inventory': return viewInventory();
-    case 'sales':     return viewSales();
-    case 'deposits':  return viewDeposits();
-    case 'loans':     return viewLoans();
+    case 'products': return viewProducts();
     case 'customers': return viewCustomers();
-    case 'logs':      return viewLogs();
+    case 'loans': return viewLoans();
+    case 'repairs': return viewRepairs();
+    case 'purchases': return viewPurchases();
+    case 'outsourcings': return viewOutsourcings();
+    case 'showcase': return viewShowcase();
+    case 'appointments': return viewAppointments();
+    case 'website': return viewWebsite();
+    case 'store-profile': return viewStoreProfile();
+    case 'logs': return viewLogs();
     default: return viewDashboard();
   }
 }
 
+/* ============ 看板 ============ */
 function viewDashboard(){
   const inStock = store.products.filter(p => p.status === '在库').length;
   const stockValue = store.products.filter(p => p.status === '在库').reduce((s,p) => s + p.cost, 0);
   const todaySales = store.sales.filter(s => s.date === today() && s.status !== '已冲红').reduce((s,x) => s + x.amount, 0);
   const dueTotal = store.customers.reduce((s,c) => s + c.due, 0);
   const trend = [42, 58, 71, 66, 88, 95];
-
-  const urgentDeposits = store.deposits.filter(d => {
-    const left = daysBetween(today(), d.promisedDate) - d.reminderDays;
-    return left <= 0;
-  });
-
+  const urgentDeposits = store.deposits.filter(d => daysBetween(today(), d.promisedDate) - d.reminderDays <= 0);
   return `
-    ${rulesBox('dashboard', '看板数据口径', [
-      '<b>在售商品</b>：状态为“在库”的商品数，不含已定、借出、已完成。',
+    ${rulesBox('dashboard','看板数据口径',[
+      '<b>在售商品</b>：状态为“在库”的商品数，不含已定、借出、已售。',
       '<b>库存成本</b>：仅统计“在库”商品的成本价之和。',
       '<b>今日销售</b>：按业务开单日期统计，含定金转正式单，冲红单自动扣除。',
       '<b>未收欠款</b>：所有客户欠款余额之和。',
-      '<b>待办提醒</b>：承诺交付日 − 提醒天数 ≤ 今天 的定金单，自动标记并催促交付。',
+      '<b>待办提醒</b>：定金催交付、维修催取件、采购到货、借货逾期自动置顶。',
     ])}
-
     <div class="stats">
-      <div class="stat">
-        <div class="stat-label">在售商品</div>
-        <div class="stat-value">${inStock}<small>件</small></div>
-        <div class="stat-foot">另有 1 件已定 · 1 件借出</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">库存成本</div>
-        <div class="stat-value">${(stockValue/10000).toFixed(1)}<small>万</small></div>
-        <div class="stat-foot up">▲ 环比上月 +6.2%</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">今日销售</div>
-        <div class="stat-value">${money(todaySales || 8800)}</div>
-        <div class="stat-foot up">▲ 本月累计 ¥42.6 万</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">未收欠款</div>
-        <div class="stat-value" style="color:var(--red)">${money(dueTotal)}</div>
-        <div class="stat-foot warn">◈ 1 位客户待催收</div>
-      </div>
+      <div class="stat"><div class="stat-label">在售商品</div><div class="stat-value">${inStock}<small>件</small></div><div class="stat-foot">另有 1 件已定 · 1 件借出</div></div>
+      <div class="stat"><div class="stat-label">库存成本</div><div class="stat-value">${(stockValue/10000).toFixed(1)}<small>万</small></div><div class="stat-foot up">▲ 环比 +6.2%</div></div>
+      <div class="stat"><div class="stat-label">今日销售</div><div class="stat-value">${money(todaySales || 8800)}</div><div class="stat-foot up">▲ 本月累计 ¥42.6 万</div></div>
+      <div class="stat"><div class="stat-label">未收欠款</div><div class="stat-value" style="color:var(--red)">${money(dueTotal)}</div><div class="stat-foot warn">◈ 1 位客户待催收</div></div>
     </div>
-
     <div class="split-2">
-      <div class="card">
-        <div class="card-head"><div class="card-title">近6月销售趋势 <small>单位：万元</small></div></div>
+      <div class="card"><div class="card-head"><div class="card-title">近6月销售趋势 <small>单位：万元</small></div></div>
         <div style="display:flex;align-items:flex-end;gap:16px;height:180px;padding-top:10px;">
-          ${trend.map((v,i) => `
-            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:10px;">
-              <div style="width:100%;max-width:40px;height:${v*1.6}px;border-radius:6px 6px 0 0;
-                background:linear-gradient(180deg,#E8D5A0,var(--gold) 55%,var(--gold-dark));
-                box-shadow:0 4px 12px -4px rgba(201,169,97,.6);"></div>
-              <div style="font-size:11px;color:var(--text-2);letter-spacing:1px;">${i+4}月</div>
-            </div>`).join('')}
+          ${trend.map((v,i)=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:10px;"><div style="width:100%;max-width:40px;height:${v*1.6}px;border-radius:6px 6px 0 0;background:linear-gradient(180deg,#E8D5A0,var(--gold) 55%,var(--gold-dark));box-shadow:0 4px 12px -4px rgba(201,169,97,.6);"></div><div style="font-size:11px;color:var(--text-2);letter-spacing:1px;">${i+4}月</div></div>`).join('')}
         </div>
       </div>
-
-      <div class="card">
-        <div class="card-head">
-          <div class="card-title">待办提醒</div>
-          <span class="link" data-nav="deposits">查看全部 →</span>
-        </div>
+      <div class="card"><div class="card-head"><div class="card-title">待办提醒</div><span class="link" data-nav="sales">查看全部 →</span></div>
         ${urgentDeposits.length ? urgentDeposits.map(d => {
           const left = daysBetween(today(), d.promisedDate);
-          return `
-            <div class="deposit urgent" style="margin-bottom:12px;">
-              <div class="deposit-head">
-                <div>
-                  <div class="deposit-cust">${d.cust} · 定金待付尾款</div>
-                  <div class="deposit-prod">${d.prod}</div>
-                </div>
-                <span class="state state-due">催促交付</span>
-              </div>
-              <div class="deposit-nums">
-                <div class="dnum"><div class="dnum-k">销售总额</div><div class="dnum-v">${money(d.total)}</div></div>
-                <div class="dnum"><div class="dnum-k">已收定金</div><div class="dnum-v paid">${money(d.deposit)}</div></div>
-                <div class="dnum"><div class="dnum-k">待付尾款</div><div class="dnum-v due">${money(d.balance)}</div></div>
-              </div>
-              <div style="font-size:12px;color:var(--text-2);">
-                承诺交付日：<b style="color:var(--red)">${d.promisedDate}</b> 剩余 <b style="color:var(--red)">${left}</b> 天
-              </div>
-            </div>`;
+          return `<div class="deposit urgent" style="margin-bottom:12px;">
+            <div class="deposit-head"><div><div class="deposit-cust">${d.cust} · 定金待付尾款</div><div class="deposit-prod">${d.prod}</div></div><span class="state state-due">催促交付</span></div>
+            <div class="deposit-nums"><div class="dnum"><div class="dnum-k">销售总额</div><div class="dnum-v">${money(d.total)}</div></div><div class="dnum"><div class="dnum-k">已收定金</div><div class="dnum-v paid">${money(d.deposit)}</div></div><div class="dnum"><div class="dnum-k">待付尾款</div><div class="dnum-v due">${money(d.balance)}</div></div></div>
+            <div style="font-size:12px;color:var(--text-2);">承诺交付日：<b style="color:var(--red)">${d.promisedDate}</b> 剩余 <b style="color:var(--red)">${left}</b> 天</div>
+          </div>`;
         }).join('') : '<div class="empty"><div class="empty-ico">✦</div>暂无待办</div>'}
       </div>
     </div>
-
-    <div class="card">
-      <div class="card-head">
-        <div class="card-title">最近销售单</div>
-        <span class="link" data-nav="sales">查看全部 →</span>
-      </div>
-      <table>
-        <thead><tr><th>销售单号</th><th>客户</th><th>商品</th><th>金额</th><th>已收</th><th>状态</th><th>日期</th></tr></thead>
-        <tbody>
-          ${store.sales.slice(0,5).map(s => `
-            <tr>
-              <td style="font-family:monospace;color:var(--text-2)">${s.id}</td>
-              <td>${s.cust}</td>
-              <td>${s.prod}</td>
-              <td style="font-weight:600;color:var(--wine)">${money(s.amount)}</td>
-              <td>${money(s.paid)}</td>
-              <td>${s.status === '已完成' ? '<span class="state state-ok">已完成</span>' : s.status === '已冲红' ? '<span class="state state-due">已冲红</span>' : '<span class="state state-due">欠款</span>'}</td>
-              <td style="color:var(--text-2)">${s.date}</td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
+    <div class="card"><div class="card-head"><div class="card-title">最近销售单</div><span class="link" data-nav="sales">查看全部 →</span></div>
+      <table><thead><tr><th>销售单号</th><th>客户</th><th>商品</th><th>金额</th><th>已收</th><th>状态</th><th>日期</th></tr></thead>
+      <tbody>${store.sales.slice(0,5).map(s => `<tr><td style="font-family:monospace;color:var(--text-2)">${s.id}</td><td>${s.cust}</td><td>${s.prod}</td><td style="font-weight:600;color:var(--wine)">${money(s.amount)}</td><td>${money(s.paid)}</td><td>${s.status==='已完成'?'<span class="state state-ok">已完成</span>':s.status==='已冲红'?'<span class="state state-due">已冲红</span>':'<span class="state state-due">欠款</span>'}</td><td style="color:var(--text-2)">${s.date}</td></tr>`).join('')}</tbody></table>
     </div>`;
 }
 
-function viewProducts(){
-  const statusMap = {
-    '在库':'<span class="state state-ok">在库</span>',
-    '已定':'<span class="state state-lock">已定</span>',
-    '借出':'<span class="state state-loan">借出</span>',
-  };
+/* ============ 销售开单（含定金管理） ============ */
+function viewSales(){
+  const tab = state.salesTab || 'normal';
   return `
-    ${rulesBox('products', '商品档案与状态', [
-      '<b>一物一码</b>：每件珠宝独立建档，编码唯一，库存精确到单件。',
-      '<b>状态流转</b>：在库 → 已定（收定金）→ 已完成（付尾款转正式单）；在库 → 借出（调拨登记）。',
-      '<b>成本与毛利</b>：毛利 = 售价 − 成本，毛利率 = 毛利 ÷ 售价。',
+    ${rulesBox('sales','销售与定金规则',[
+      '<b>开单日期自选</b>：可自由选择业务日期，支持补录。',
+      '<b>单据冻结与改客户</b>：销售单开出后商品明细与售价不可修改；客户姓名、电话可随时修改。',
+      '<b>冲红重开</b>：如需调整货品或金额，先冲红作废原单，系统自动还原库存后重新下单。',
+      '<b>定金下单不扣库存</b>：收定金锁定商品为“已定”或登记定制商品，库存不扣减。',
+      '<b>尾款转正式单</b>：客户付清尾款后自动生成正式销售单并扣减库存。',
     ])}
-
     <div class="card">
-      <div class="card-head">
-        <div class="card-title">商品档案 <small>共 ${store.products.length} 件</small></div>
+      <div class="card-head"><div class="card-title">销售开单</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-gold btn-sm" data-act="quick-sale">＋ 普通开单</button>
+          <button class="btn btn-wine btn-sm" data-act="quick-deposit">◈ 收定金</button>
+        </div>
+      </div>
+      <div class="tabs">
+        <div class="tab-btn ${tab==='normal'?'active':''}" data-act="sales-tab" data-tab="normal">销售单</div>
+        <div class="tab-btn ${tab==='deposit'?'active':''}" data-act="sales-tab" data-tab="deposit">定金单 ${store.deposits.length?`(${store.deposits.length})`:''}</div>
+      </div>
+      ${tab === 'normal' ? `
+        <div class="filters" style="margin-bottom:18px;">
+          <input placeholder="搜索销售单号 / 客户 / 商品">
+          <select><option>全部状态</option><option>已完成</option><option>欠款</option><option>已冲红</option></select>
+          <select><option>全部时间</option><option>今日</option><option>本周</option><option>本月</option></select>
+        </div>
+        <table><thead><tr><th>销售单号</th><th>客户</th><th>商品</th><th>金额</th><th>已收</th><th>收款方式</th><th>日期</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody>${store.sales.map(s => `<tr>
+          <td style="font-family:monospace;color:var(--text-2)">${s.id}</td><td>${s.cust}</td><td>${s.prod}</td>
+          <td style="font-weight:600;color:var(--wine)">${money(s.amount)}</td><td>${money(s.paid)}</td>
+          <td>${s.method}</td><td style="color:var(--text-2)">${s.date}</td>
+          <td>${s.status==='已完成'?'<span class="state state-ok">已完成</span>':s.status==='已冲红'?'<span class="state state-due">已冲红</span>':'<span class="state state-due">欠款</span>'}</td>
+          <td><span class="link" data-act="sale-detail" data-id="${s.id}">详情</span> &nbsp; <span class="link" data-act="edit-cust" data-id="${s.id}">改客户</span></td>
+        </tr>`).join('')}</tbody></table>
+      ` : `
+        <div style="margin-bottom:16px;"><button class="btn btn-wine btn-sm" data-act="quick-deposit">◈ 新建定金单</button></div>
+        ${store.deposits.length ? store.deposits.map(d => {
+          const left = daysBetween(today(), d.promisedDate);
+          const urgent = left <= d.reminderDays;
+          return `<div class="deposit ${urgent?'urgent':''}" style="margin-bottom:16px;">
+            <div class="deposit-head">
+              <div><div class="deposit-cust">${d.cust} <span style="font-size:12px;font-weight:400;color:var(--text-2);margin-left:8px;">${d.custPhone}</span></div><div class="deposit-prod">${d.prod}</div></div>
+              <div style="text-align:right;"><span class="state ${urgent?'state-due':'state-lock'}">${urgent?'催促交付':'定金生效中'}</span><div style="font-size:11px;color:var(--text-2);margin-top:6px;font-family:monospace;">${d.id}</div></div>
+            </div>
+            <div class="deposit-nums"><div class="dnum"><div class="dnum-k">销售总额</div><div class="dnum-v">${money(d.total)}</div></div><div class="dnum"><div class="dnum-k">已收定金</div><div class="dnum-v paid">${money(d.deposit)}</div></div><div class="dnum"><div class="dnum-k">待付尾款</div><div class="dnum-v due">${money(d.balance)}</div></div></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-top:12px;border-top:1px dashed #E5D3A8;">
+              <div style="font-size:12px;color:var(--text-2);line-height:1.9;">承诺交付日：<b style="color:var(--wine)">${d.promisedDate}</b> 剩余 <b style="color:${urgent?'var(--red)':'var(--gold-dark)'}">${left}</b> 天<br>提醒设置：提前 <b>${d.reminderDays}</b> 天提醒</div>
+              <div style="display:flex;gap:8px;"><button class="btn btn-ghost btn-sm" data-act="set-reminder" data-id="${d.id}">修改提醒</button><button class="btn btn-gold btn-sm" data-act="pay-balance" data-id="${d.id}">收取尾款</button></div>
+            </div>
+          </div>`;
+        }).join('') : '<div class="empty"><div class="empty-ico">◈</div>暂无定金单</div>'}
+      `}
+    </div>`;
+}
+
+/* ============ 库存（含盘点） ============ */
+function viewInventory(){
+  const inStock = store.products.filter(p => p.status === '在库');
+  const reserved = store.products.filter(p => p.status === '已定');
+  const loanOut = store.products.filter(p => p.status === '借出');
+  return `
+    ${rulesBox('inventory','库存与盘点规则',[
+      '<b>入库日期自由选择</b>：可自主选择入库日期，支持补录历史单据。',
+      '<b>复制入库</b>：支持一键复制历史入库单，微调后快速入库。',
+      '<b>多模式盘点</b>：支持条码逐件盘点、RFID 批量隔空盘点，自动生成盘点差异单。',
+      '<b>库存扣减机制</b>：普通销售即扣；定金单不扣库存，付清尾款后转正式单扣减。',
+      '<b>协同盘点</b>：多台手持机可协同分区扫描，期间库存冻结。',
+    ])}
+    <div class="stats">
+      <div class="stat"><div class="stat-label">正常在库</div><div class="stat-value">${inStock.length}<small>件</small></div><div class="stat-foot">可用库存</div></div>
+      <div class="stat"><div class="stat-label">已定锁定</div><div class="stat-value" style="color:var(--gold-dark)">${reserved.length}<small>件</small></div><div class="stat-foot warn">定金客户保留中</div></div>
+      <div class="stat"><div class="stat-label">借出在外</div><div class="stat-value" style="color:var(--wine)">${loanOut.length}<small>件</small></div><div class="stat-foot">同业周转</div></div>
+      <div class="stat"><div class="stat-label">库存总成本</div><div class="stat-value">${(store.products.reduce((s,p)=>s+p.cost,0)/10000).toFixed(1)}<small>万</small></div><div class="stat-foot">含锁定与借出</div></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">库存明细</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" data-act="inbound">▣ 入库登记</button>
+          <button class="btn btn-ghost btn-sm" data-act="scan-normal">◈ 条码盘点</button>
+          <button class="btn btn-gold btn-sm" data-act="scan-rfid">⤋ RFID盘点</button>
+        </div>
+      </div>
+      <table><thead><tr><th>商品编码</th><th>商品名称</th><th>材质/克重</th><th>存放位置</th><th>成本</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody>${store.products.map(p => `<tr>
+        <td style="font-family:monospace;color:var(--text-2)">${p.code}</td><td>${p.name}</td><td>${p.material} · ${p.weight}</td>
+        <td style="font-size:12px;color:var(--text-2);">${p.cabinet||'—'}</td>
+        <td style="font-weight:600">${money(p.cost)}</td>
+        <td>${p.status==='在库'?'<span class="state state-ok">在库</span>':p.status==='已定'?'<span class="state state-lock">已定</span>':'<span class="state state-loan">借出</span>'}</td>
+        <td>${p.status==='在库'?`<span class="link" data-act="loan-out" data-id="${p.id}">借出</span> &nbsp; <span class="link" data-act="sale-from-product" data-id="${p.id}">开单</span>`:'<span style="color:var(--text-2);font-size:12px">—</span>'}</td>
+      </tr>`).join('')}</tbody></table>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">入库记录 <small>支持一键复制历史单据快速入库</small></div></div>
+      <table><thead><tr><th>入库单号</th><th>日期</th><th>商品</th><th>数量</th><th>供应商</th><th>操作</th></tr></thead>
+      <tbody>
+        <tr><td style="font-family:monospace;color:var(--text-2)">RK-20240927-006</td><td>2024-09-27</td><td>红宝石镶钻耳钉</td><td>1 件</td><td>深圳彩宝行</td><td><span class="link" data-act="copy-inbound" data-name="红宝石镶钻耳钉" data-supp="深圳彩宝行" data-cost="8800">⧉ 复制入库</span></td></tr>
+        <tr><td style="font-family:monospace;color:var(--text-2)">RK-20240926-005</td><td>2024-09-26</td><td>足金古法手镯</td><td>2 件</td><td>自有金料</td><td><span class="link" data-act="copy-inbound" data-name="足金古法手镯" data-supp="自有金料" data-cost="14800">⧉ 复制入库</span></td></tr>
+      </tbody></table>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">最近盘点批次 <small>盘点历史永久存档</small></div></div>
+      <table><thead><tr><th>批次号</th><th>扫描数</th><th>账面数</th><th>相符</th><th>盘盈</th><th>盘亏</th><th>异常</th><th>操作人</th></tr></thead>
+      <tbody>
+        <tr><td style="font-family:monospace;color:var(--text-2)">PD20240928153012</td><td>6</td><td>6</td><td style="color:var(--green)">6</td><td>0</td><td>0</td><td>0</td><td>店长 · 王敏</td></tr>
+        <tr><td style="font-family:monospace;color:var(--text-2)">PD20240926102103</td><td>5</td><td>6</td><td style="color:var(--green)">5</td><td>0</td><td style="color:var(--red)">1</td><td>0</td><td>店长 · 王敏</td></tr>
+      </tbody></table>
+    </div>`;
+}
+
+/* ============ 商品 ============ */
+function viewProducts(){
+  const statusMap = {'在库':'<span class="state state-ok">在库</span>','已定':'<span class="state state-lock">已定</span>','借出':'<span class="state state-loan">借出</span>'};
+  return `
+    ${rulesBox('products','商品档案与状态',[
+      '<b>一物一码</b>：每件珠宝独立建档，编码唯一，库存精确到单件。',
+      '<b>商品与证书存放位置</b>：商品记录柜台/货架/保险柜位置，证书记录对应证书柜/文件夹编号，取货时快速对应。',
+      '<b>状态流转</b>：在库 → 已定（收定金）→ 已售；在库 → 借出（调拨）。',
+      '<b>成本与毛利</b>：毛利 = 售价 − 成本。',
+    ])}
+    <div class="card">
+      <div class="card-head"><div class="card-title">商品档案 <small>共 ${store.products.length} 件</small></div>
         <button class="btn btn-gold btn-sm" data-act="new-product">＋ 新增商品</button>
       </div>
       <div class="filters" style="margin-bottom:18px;">
@@ -711,712 +559,552 @@ function viewProducts(){
         <select><option>全部状态</option><option>在库</option><option>已定</option><option>借出</option></select>
       </div>
       <div class="grid">
-        ${store.products.map(p => `
-          <div class="prod">
-            <div class="prod-badge">${statusMap[p.status] || p.status}</div>
-            <div class="prod-ico">${p.cat === '黄金' ? '◉' : p.cat === '钻石' ? '◆' : p.cat === '翡翠' ? '❖' : p.cat === '铂金' ? '◎' : '✦'}</div>
-            <div class="prod-name">${p.name}</div>
-            <div class="prod-code">${p.code}</div>
-            <div class="prod-meta">
-              ${p.material} · ${p.weight}<br>${p.size !== '—' ? p.size + ' · ' : ''}证书 ${p.cert}<br>${getStore(p.storeId).name}
-            </div>
-            <div class="prod-price">${money(p.price)}</div>
-            <div style="display:flex;gap:8px;margin-top:14px;">
-              <button class="btn btn-ghost btn-sm" data-act="view-product" data-id="${p.id}">详情</button>
-              <button class="btn btn-ghost btn-sm" data-act="print-single" data-id="${p.id}">打印</button>
-              ${p.status === '在库' ? `<button class="btn btn-gold btn-sm" data-act="sale-from-product" data-id="${p.id}">开单</button>` : ''}
-            </div>
-          </div>`).join('')}
-      </div>
-    </div>`;
-}
-
-function viewInventory(){
-  const inStock = store.products.filter(p => p.status === '在库');
-  const reserved = store.products.filter(p => p.status === '已定');
-  const loanOut = store.products.filter(p => p.status === '借出');
-
-  return `
-    ${rulesBox('inventory', '库存与入库规则', [
-      '<b>入库日期自由选择</b>：入库时可自主选择入库日期，支持补录历史单据。',
-      '<b>复制入库产品</b>：支持一键复制历史入库单，修改微调后快速入库。',
-      '<b>多模式盘点</b>：支持普通条码逐件扫描，以及高频 RFID 批量无感盘点，自动生成盘点差异单。',
-      '<b>库存扣减机制</b>：普通销售即扣；定金单不扣库存，付清尾款后转正式单扣减。',
-    ])}
-
-    <div class="stats">
-      <div class="stat">
-        <div class="stat-label">正常在库</div>
-        <div class="stat-value">${inStock.length}<small>件</small></div>
-        <div class="stat-foot">可用库存</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">已定锁定</div>
-        <div class="stat-value" style="color:var(--gold-dark)">${reserved.length}<small>件</small></div>
-        <div class="stat-foot warn">定金客户保留中</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">借出在外</div>
-        <div class="stat-value" style="color:var(--wine)">${loanOut.length}<small>件</small></div>
-        <div class="stat-foot">同业周转</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">库存总成本</div>
-        <div class="stat-value">${(store.products.reduce((s,p)=>s+p.cost,0)/10000).toFixed(1)}<small>万</small></div>
-        <div class="stat-foot">含锁定与借出</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-head">
-        <div class="card-title">库存明细</div>
-        <div style="display:flex;gap:8px;">
-          <button class="btn btn-ghost btn-sm" data-act="inbound">▣ 入库登记</button>
-          <button class="btn btn-ghost btn-sm" data-act="scan-normal">◈ 条码盘点</button>
-          <button class="btn btn-gold btn-sm" data-act="scan-rfid">⤋ RFID盘点</button>
-        </div>
-      </div>
-      <table>
-        <thead><tr><th>商品编码</th><th>商品名称</th><th>材质 / 克重</th><th>所在门店</th><th>成本</th><th>状态</th><th>操作</th></tr></thead>
-        <tbody>
-          ${store.products.map(p => `
-            <tr>
-              <td style="font-family:monospace;color:var(--text-2)">${p.code}</td>
-              <td>${p.name}</td>
-              <td>${p.material} ·${p.weight}</td>
-              <td>${getStore(p.storeId).name}</td>
-              <td style="font-weight:600">${money(p.cost)}</td>
-              <td>${p.status === '在库' ? '<span class="state state-ok">在库</span>'
-                : p.status === '已定' ? '<span class="state state-lock">已定</span>'
-                : '<span class="state state-loan">借出</span>'}</td>
-              <td>
-                <span class="link" data-act="print-single" data-id="${p.id}">打印标签</span>
-                &nbsp;
-                ${p.status === '在库'
-                  ? `<span class="link" data-act="loan-out" data-id="${p.id}">借出</span>
-                     &nbsp;<span class="link" data-act="sale-from-product" data-id="${p.id}">开单</span>`
-                  : '<span style="color:var(--text-2);font-size:12px">—</span>'}
-              </td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>
-
-    <div class="card">
-      <div class="card-head">
-        <div class="card-title">入库记录 <small>支持一键复制历史单据快速入库</small></div>
-      </div>
-      <table>
-        <thead><tr><th>入库单号</th><th>日期</th><th>商品名称</th><th>数量</th><th>供应商</th><th>操作</th></tr></thead>
-        <tbody>
-          <tr>
-            <td style="font-family:monospace;color:var(--text-2)">RK-20240927-006</td>
-            <td>2024-09-27</td>
-            <td>红宝石镶钻耳钉</td>
-            <td>1 件</td>
-            <td>深圳彩宝行</td>
-            <td><span class="link" data-act="copy-inbound" data-name="红宝石镶钻耳钉" data-supp="深圳彩宝行" data-cost="8800">⧉ 复制入库</span></td>
-          </tr>
-          <tr>
-            <td style="font-family:monospace;color:var(--text-2)">RK-20240926-005</td>
-            <td>2024-09-26</td>
-            <td>足金古法手镯</td>
-            <td>2 件</td>
-            <td>自有金料</td>
-            <td><span class="link" data-act="copy-inbound" data-name="足金古法手镯" data-supp="自有金料" data-cost="14800">⧉ 复制入库</span></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>`;
-}
-
-function viewSales(){
-  return `
-    ${rulesBox('sales', '开单与退单规则', [
-      '<b>开单日期自选</b>：开单时可自由选择业务日期，不限制当天。',
-      '<b>单据冻结与修改客户</b>：销售单开出后商品明细与售价不可修改；客户姓名、电话可随时修改，无需退单。',
-      '<b>冲红重开机制</b>：如需调整货品或金额，先冲红作废原单，系统自动还原库存后重新下单。',
-      '<b>开单扣库存</b>：普通销售单一旦生效，立即扣减在库商品。',
-    ])}
-
-    <div class="card">
-      <div class="card-head">
-        <div class="card-title">销售单管理</div>
-        <div style="display:flex;gap:8px;">
-          <button class="btn btn-gold btn-sm" data-act="quick-sale">＋ 普通开单</button>
-          <button class="btn btn-wine btn-sm" data-act="quick-deposit">◈ 定金下单</button>
-        </div>
-      </div>
-      <div class="filters" style="margin-bottom:18px;">
-        <input placeholder="搜索销售单号 / 客户 / 商品">
-        <select><option>全部状态</option><option>已完成</option><option>欠款</option><option>已冲红</option></select>
-        <select><option>全部时间</option><option>今日</option><option>本周</option><option>本月</option></select>
-      </div>
-      <table>
-        <thead><tr><th>销售单号</th><th>客户</th><th>商品</th><th>金额</th><th>已收</th><th>收款方式</th><th>日期</th><th>状态</th><th>操作</th></tr></thead>
-        <tbody>
-          ${store.sales.map(s => `
-            <tr>
-              <td style="font-family:monospace;color:var(--text-2)">${s.id}</td>
-              <td>${s.cust}</td>
-              <td>${s.prod}</td>
-              <td style="font-weight:600;color:var(--wine)">${money(s.amount)}</td>
-              <td>${money(s.paid)}</td>
-              <td>${s.method}</td>
-              <td style="color:var(--text-2)">${s.date}</td>
-              <td>${s.status === '已完成' ? '<span class="state state-ok">已完成</span>' : s.status === '已冲红' ? '<span class="state state-due">已冲红</span>' : '<span class="state state-due">欠款</span>'}</td>
-              <td>
-                <span class="link" data-act="sale-detail" data-id="${s.id}">详情</span>
-                &nbsp;
-                <span class="link" data-act="edit-cust" data-id="${s.id}">改客户</span>
-              </td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>`;
-}
-
-function viewDeposits(){
-  return `
-    ${rulesBox('deposits', '定金锁定与交付提醒', [
-      '<b>定金下单不扣库存</b>：收定金可选择在库商品（锁定为已定），也支持无现货定制品下单，库存均不扣减。',
-      '<b>尾款转正式销售</b>：客户付清尾款后，系统自动生成正式销售单，并扣减相应库存。',
-      '<b>手工设置提醒时间</b>：在承诺成品交付日基础上，可自由手工设置提前提醒天数（默认提前7天），到期系统自动提醒店员催交付。',
-      '<b>违约冲红</b>：定金单可直接冲红，锁定商品恢复在库。',
-    ])}
-
-    <div class="card">
-      <div class="card-head">
-        <div class="card-title">定金单管理 <small>支持在库商品锁定及无现货定制开单</small></div>
-        <button class="btn btn-wine btn-sm" data-act="quick-deposit">◈ 新建定金单</button>
-      </div>
-
-      ${store.deposits.length ? store.deposits.map(d => {
-        const left = daysBetween(today(), d.promisedDate);
-        const urgent = left <= d.reminderDays;
-        return `
-          <div class="deposit ${urgent ? 'urgent' : ''}" style="margin-bottom:16px;">
-            <div class="deposit-head">
-              <div>
-                <div class="deposit-cust">${d.cust} <span style="font-size:12px;font-weight:400;color:var(--text-2);margin-left:8px;">${d.custPhone}</span></div>
-                <div class="deposit-prod">${d.prod}</div>
-              </div>
-              <div style="text-align:right;">
-                <span class="state ${urgent ? 'state-due' : 'state-lock'}">${urgent ? '催促交付' : '定金生效中'}</span>
-                <div style="font-size:11px;color:var(--text-2);margin-top:6px;font-family:monospace;">${d.id}</div>
-              </div>
-            </div>
-            <div class="deposit-nums">
-              <div class="dnum"><div class="dnum-k">销售总额</div><div class="dnum-v">${money(d.total)}</div></div>
-              <div class="dnum"><div class="dnum-k">已收定金</div><div class="dnum-v paid">${money(d.deposit)}</div></div>
-              <div class="dnum"><div class="dnum-k">待付尾款</div><div class="dnum-v due">${money(d.balance)}</div></div>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding-top:12px;border-top:1px dashed #E5D3A8;">
-              <div style="font-size:12px;color:var(--text-2);line-height:1.9;">
-                承诺交付日：<b style="color:var(--wine)">${d.promisedDate}</b> 剩余 <b style="color:${urgent?'var(--red)':'var(--gold-dark)'}">${left}</b> 天<br>
-                提醒设置：提前 <b>${d.reminderDays}</b> 天提醒店员催促成品交付
-              </div>
-              <div style="display:flex;gap:8px;">
-                <button class="btn btn-ghost btn-sm" data-act="set-reminder" data-id="${d.id}">修改提醒</button>
-                <button class="btn btn-gold btn-sm" data-act="pay-balance" data-id="${d.id}">收取尾款</button>
-              </div>
-            </div>
-          </div>`;
-      }).join('') : '<div class="empty"><div class="empty-ico">◈</div>暂无定金单</div>'}
-    </div>`;
-}
-
-function viewLoans(){
-  const loansIn = store.loans.filter(l => l.dir === 'in');
-  const loansOut = store.loans.filter(l => l.dir === 'out');
-
-  return `
-    ${rulesBox('loans', '借货独立管理', [
-      '<b>借进的货</b>：视同进货赋予独立编号，进销存存放在借货栏目，不占用正常采购成本。',
-      '<b>借出的货</b>：直接点击调拨操作，将库存从在库转入借货栏目，与正常销售出库完全隔离。',
-      '<b>归还核销</b>：借进归还直接核减，借出归还自动恢复至正常在库。',
-    ])}
-
-    <div class="stats">
-      <div class="stat">
-        <div class="stat-label">借入中</div>
-        <div class="stat-value" style="color:var(--green)">${loansIn.length}<small>笔</small></div>
-        <div class="stat-foot">同业调货周转</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">借出中</div>
-        <div class="stat-value" style="color:var(--wine)">${loansOut.length}<small>笔</small></div>
-        <div class="stat-foot">借出待归还</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">近期到期</div>
-        <div class="stat-value">1<small>笔</small></div>
-        <div class="stat-foot warn">7日内需归还</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">借货总值</div>
-        <div class="stat-value">1.6<small>万</small></div>
-        <div class="stat-foot">按成本计</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-head">
-        <div class="card-title">借货记录 <small>借进独立记账 · 借出调拨管理</small></div>
-        <div style="display:flex;gap:8px;">
-          <button class="btn btn-ghost btn-sm" data-act="loan-in">⇄ 借进登记</button>
-          <button class="btn btn-gold btn-sm" data-act="loan-out-pick">⇄ 借出登记</button>
-        </div>
-      </div>
-
-      ${store.loans.map(l => `
-        <div class="loan-row">
-          <div class="loan-dir ${l.dir === 'in' ? 'loan-in' : 'loan-out'}">
-            <div style="font-size:18px;">${l.dir === 'in' ? '↓' : '↑'}</div>
-            <div>${l.dir === 'in' ? '借入' : '借出'}</div>
+        ${store.products.map(p => `<div class="prod">
+          <div class="prod-badge">${statusMap[p.status]||p.status}</div>
+          <div class="prod-ico">${p.cat==='黄金'?'◉':p.cat==='钻石'?'◆':p.cat==='翡翠'?'❖':p.cat==='铂金'?'◎':'✦'}</div>
+          <div class="prod-name">${p.name}</div>
+          <div class="prod-code">${p.code}</div>
+          <div class="prod-meta">${p.material} · ${p.weight}<br>${p.size!=='—'?p.size+' · ':''}证书 ${p.cert}<br><span style="color:var(--gold-dark);">📍 ${p.cabinet||'—'} · ${p.certBox||'—'}</span></div>
+          <div class="prod-price">${money(p.price)}</div>
+          <div style="display:flex;gap:8px;margin-top:14px;">
+            <button class="btn btn-ghost btn-sm" data-act="view-product" data-id="${p.id}">详情</button>
+            ${p.status==='在库'?`<button class="btn btn-gold btn-sm" data-act="sale-from-product" data-id="${p.id}">开单</button>`:''}
           </div>
-          <div style="flex:1;min-width:0;">
-            <div style="font-size:14px;font-weight:600;letter-spacing:.5px;">${l.name}</div>
-            <div style="font-size:12px;color:var(--text-2);margin-top:4px;font-family:monospace;">${l.code}</div>
-          </div>
-          <div style="width:160px;font-size:12px;color:var(--text-2);line-height:1.7;">对方：${l.party}<br>数量：${l.qty}</div>
-          <div style="width:160px;font-size:12px;color:var(--text-2);line-height:1.7;">登记：${l.date}<br>应还：<b style="color:var(--wine)">${l.dueDate}</b></div>
-          <div style="width:90px;text-align:center;">
-            <span class="state ${l.dir === 'in' ? 'state-ok' : 'state-loan'}">${l.status}</span>
-          </div>
-          <button class="btn btn-ghost btn-sm" data-act="loan-return" data-id="${l.id}">归还</button>
-        </div>
-      `).join('')}
+        </div>`).join('')}
+      </div>
     </div>`;
 }
 
+/* ============ 客户 ============ */
 function viewCustomers(){
   return `
-    ${rulesBox('customers', '客户管理规则', [
+    ${rulesBox('customers','客户管理规则',[
       '<b>累计消费与欠款</b>：自动归集销售单消费，未付清款项自动计入客户欠款。',
       '<b>开单后信息互通</b>：销售单开出后允许修改客户信息，修改后同步更新客户库。',
     ])}
-
     <div class="card">
-      <div class="card-head">
-        <div class="card-title">客户档案 <small>共 ${store.customers.length} 位</small></div>
+      <div class="card-head"><div class="card-title">客户档案 <small>共 ${store.customers.length} 位</small></div>
         <button class="btn btn-gold btn-sm" data-act="new-customer">＋ 新增客户</button>
       </div>
-      <div class="filters" style="margin-bottom:18px;">
-        <input placeholder="搜索客户姓名 / 手机号">
-        <select><option>全部等级</option><option>金卡</option><option>银卡</option><option>普通</option></select>
-      </div>
-      <table>
-        <thead><tr><th>客户姓名</th><th>手机号</th><th>会员等级</th><th>累计消费</th><th>欠款</th><th>生日</th><th>偏好</th><th>操作</th></tr></thead>
-        <tbody>
-          ${store.customers.map(c => `
-            <tr>
-              <td style="font-weight:600;letter-spacing:.5px;">${c.name}</td>
-              <td style="font-family:monospace;color:var(--text-2)">${c.phone}</td>
-              <td>${c.level === '金卡' ? '<span class="tag tag-gold">金卡</span>' : '<span class="tag tag-gray">' + c.level + '</span>'}</td>
-              <td style="font-weight:600;color:var(--wine)">${money(c.total)}</td>
-              <td>${c.due > 0 ? `<b style="color:var(--red)">${money(c.due)}</b>` : '—'}</td>
-              <td style="color:var(--text-2)">${c.birthday}</td>
-              <td style="color:var(--text-2);font-size:12px;">${c.prefer}</td>
-              <td>
-                <span class="link" data-act="cust-detail" data-id="${c.id}">详情</span>
-                ${c.due > 0 ? `&nbsp;<span class="link" data-act="collect" data-id="${c.id}" style="color:var(--red)">催收</span>` : ''}
-              </td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
+      <div class="filters" style="margin-bottom:18px;"><input placeholder="搜索客户姓名 / 手机号"><select><option>全部等级</option><option>金卡</option><option>银卡</option><option>普通</option></select></div>
+      <table><thead><tr><th>客户姓名</th><th>手机号</th><th>会员等级</th><th>累计消费</th><th>欠款</th><th>生日</th><th>偏好</th><th>操作</th></tr></thead>
+      <tbody>${store.customers.map(c => `<tr>
+        <td style="font-weight:600">${c.name}</td><td style="font-family:monospace;color:var(--text-2)">${c.phone}</td>
+        <td>${c.level==='金卡'?'<span class="tag tag-gold">金卡</span>':'<span class="tag tag-gray">'+c.level+'</span>'}</td>
+        <td style="font-weight:600;color:var(--wine)">${money(c.total)}</td>
+        <td>${c.due>0?`<b style="color:var(--red)">${money(c.due)}</b>`:'—'}</td>
+        <td style="color:var(--text-2)">${c.birthday}</td><td style="color:var(--text-2);font-size:12px;">${c.prefer}</td>
+        <td><span class="link" data-act="cust-detail" data-id="${c.id}">详情</span>${c.due>0?` &nbsp;<span class="link" data-act="collect" data-id="${c.id}" style="color:var(--red)">催收</span>`:''}</td>
+      </tr>`).join('')}</tbody></table>
     </div>`;
 }
 
+/* ============ 借货 ============ */
+function viewLoans(){
+  const loansIn = store.loans.filter(l => l.dir === 'in');
+  const loansOut = store.loans.filter(l => l.dir === 'out');
+  return `
+    ${rulesBox('loans','借货独立管理',[
+      '<b>借进的货</b>：视同进货赋予独立编号，存放在借货栏目，不占用正常采购成本。',
+      '<b>借出的货</b>：通过调拨操作从在库移入借货栏目，与销售出库隔离。',
+      '<b>归还核销</b>：借进归还核减，借出归还自动恢复至正常在库。',
+    ])}
+    <div class="stats">
+      <div class="stat"><div class="stat-label">借入中</div><div class="stat-value" style="color:var(--green)">${loansIn.length}<small>笔</small></div><div class="stat-foot">同业调货周转</div></div>
+      <div class="stat"><div class="stat-label">借出中</div><div class="stat-value" style="color:var(--wine)">${loansOut.length}<small>笔</small></div><div class="stat-foot">借出待归还</div></div>
+      <div class="stat"><div class="stat-label">近期到期</div><div class="stat-value">1<small>笔</small></div><div class="stat-foot warn">7日内需归还</div></div>
+      <div class="stat"><div class="stat-label">借货总值</div><div class="stat-value">1.6<small>万</small></div><div class="stat-foot">按成本计</div></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">借货记录</div>
+        <div style="display:flex;gap:8px;"><button class="btn btn-ghost btn-sm" data-act="loan-in">⇄ 借进登记</button><button class="btn btn-gold btn-sm" data-act="loan-out-pick">⇄ 借出登记</button></div>
+      </div>
+      ${store.loans.map(l => `<div class="loan-row">
+        <div class="loan-dir ${l.dir==='in'?'loan-in':'loan-out'}"><div style="font-size:18px;">${l.dir==='in'?'↓':'↑'}</div><div>${l.dir==='in'?'借入':'借出'}</div></div>
+        <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;">${l.name}</div><div style="font-size:12px;color:var(--text-2);margin-top:4px;font-family:monospace;">${l.code}</div></div>
+        <div style="width:160px;font-size:12px;color:var(--text-2);line-height:1.7;">对方：${l.party}<br>数量：${l.qty}</div>
+        <div style="width:160px;font-size:12px;color:var(--text-2);line-height:1.7;">登记：${l.date}<br>应还：<b style="color:var(--wine)">${l.dueDate}</b></div>
+        <div style="width:90px;text-align:center;"><span class="state ${l.dir==='in'?'state-ok':'state-loan'}">${l.status}</span></div>
+        <button class="btn btn-ghost btn-sm" data-act="loan-return" data-id="${l.id}">归还</button>
+      </div>`).join('')}
+    </div>`;
+}
+
+/* ============ 维修 ============ */
+function viewRepairs(){
+  const pending = store.repairs.filter(r => r.status === '待维修');
+  const doing = store.repairs.filter(r => r.status === '维修中');
+  const waiting = store.repairs.filter(r => r.status === '待取件');
+  const totalFee = store.repairs.filter(r => r.actualFee).reduce((s,r) => s + r.actualFee, 0);
+  const st = {'待维修':'state-wait','维修中':'state-doing','待取件':'state-lock','已完成':'state-ok'};
+  return `
+    ${rulesBox('repairs','维修流程',[
+      '<b>接件登记</b>：记录客户、物品、故障描述、预估费用、承诺交付日。',
+      '<b>状态流转</b>：待维修 → 维修中 → 待取件 → 已完成。',
+      '<b>费用记录</b>：完成后填入实际收费，计入客户累计消费和门店收入。',
+    ])}
+    <div class="stats">
+      <div class="stat"><div class="stat-label">待维修</div><div class="stat-value" style="color:var(--purple)">${pending.length}<small>件</small></div></div>
+      <div class="stat"><div class="stat-label">维修中</div><div class="stat-value" style="color:var(--blue)">${doing.length}<small>件</small></div></div>
+      <div class="stat"><div class="stat-label">待取件</div><div class="stat-value" style="color:var(--gold-dark)">${waiting.length}<small>件</small></div></div>
+      <div class="stat"><div class="stat-label">维修收入</div><div class="stat-value">${money(totalFee)}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">维修单</div><button class="btn btn-wine btn-sm" data-act="new-repair">🔧 新建维修单</button></div>
+      ${store.repairs.length ? store.repairs.map(r => {
+        const left = r.status === '已完成' ? null : daysBetween(today(), r.promisedDate);
+        return `<div class="deposit ${r.status==='已完成'?'':(r.status==='待维修'?'purple':'blue')}" style="margin-bottom:14px;">
+          <div class="deposit-head">
+            <div><div class="deposit-cust">${r.cust} <span style="font-size:12px;font-weight:400;color:var(--text-2);margin-left:8px;">${r.phone}</span></div><div class="deposit-prod">${r.item} · ${r.issue}</div></div>
+            <span class="state ${st[r.status]}">${r.status}</span>
+          </div>
+          <div class="deposit-nums">
+            <div class="dnum"><div class="dnum-k">预估费</div><div class="dnum-v">${money(r.estimateFee)}</div></div>
+            <div class="dnum"><div class="dnum-k">实收费</div><div class="dnum-v ${r.actualFee?'paid':''}">${r.actualFee?money(r.actualFee):'—'}</div></div>
+            <div class="dnum"><div class="dnum-k">师傅</div><div class="dnum-v" style="font-size:12px;">${r.technician||'未分配'}</div></div>
+          </div>
+          <div style="font-size:12px;color:var(--text-2);line-height:1.8;">接件：<b>${r.receiveDate}</b> 承诺：<b>${r.promisedDate}</b>${left!==null?` 剩余 <b style="color:${left<=1?'var(--red)':'var(--gold-dark)'}">${left}</b> 天`:` 完成：<b>${r.doneDate}</b>`}</div>
+          <div style="display:flex;gap:8px;margin-top:12px;">
+            ${r.status!=='已完成'
+              ? `<button class="btn btn-ghost btn-sm" data-act="repair-advance" data-id="${r.id}">${r.status==='待维修'?'开始维修':r.status==='维修中'?'标记待取件':'确认交付'}</button><button class="btn btn-gold btn-sm" data-act="repair-complete" data-id="${r.id}">完成并收款</button>`
+              : `<button class="btn btn-ghost btn-sm" data-act="repair-detail" data-id="${r.id}">查看详情</button>`}
+          </div>
+        </div>`;
+      }).join('') : '<div class="empty"><div class="empty-ico">🔧</div>暂无维修单</div>'}
+    </div>`;
+}
+
+/* ============ 采购 ============ */
+function viewPurchases(){
+  const waiting = store.purchases.filter(p => p.status === '待发货');
+  const shipping = store.purchases.filter(p => p.status === '已发货');
+  const received = store.purchases.filter(p => p.status === '已入库');
+  const unpaid = store.purchases.reduce((s,p) => s + (p.cost - p.paid), 0);
+  const st = {'待发货':'state-wait','已发货':'state-doing','已入库':'state-ok'};
+  return `
+    ${rulesBox('purchases','采购流程',[
+      '<b>采购下单</b>：记录供应商、商品、数量、成本单价、预计到货日。',
+      '<b>状态流转</b>：待发货 → 已发货 → 已入库（入库后自动增加库存）。',
+      '<b>付款登记</b>：支持分次付款，未付清自动计入应付账目。',
+    ])}
+    <div class="stats">
+      <div class="stat"><div class="stat-label">待发货</div><div class="stat-value" style="color:var(--purple)">${waiting.length}<small>单</small></div></div>
+      <div class="stat"><div class="stat-label">在途</div><div class="stat-value" style="color:var(--blue)">${shipping.length}<small>单</small></div></div>
+      <div class="stat"><div class="stat-label">本月入库</div><div class="stat-value">${received.length}<small>单</small></div></div>
+      <div class="stat"><div class="stat-label">欠供应商</div><div class="stat-value" style="color:var(--red)">${money(unpaid)}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">采购单</div><button class="btn btn-wine btn-sm" data-act="new-purchase">＋ 新建采购单</button></div>
+      ${store.purchases.map(p => `<div class="deposit ${p.status==='待发货'?'purple':(p.status==='已发货'?'blue':'')}" style="margin-bottom:14px;">
+        <div class="deposit-head">
+          <div><div class="deposit-cust">${p.product}</div><div class="deposit-prod">供应商：${p.supplier} · ${p.id}</div></div>
+          <span class="state ${st[p.status]}">${p.status}</span>
+        </div>
+        <div class="deposit-nums">
+          <div class="dnum"><div class="dnum-k">数量</div><div class="dnum-v">${p.qty} 件</div></div>
+          <div class="dnum"><div class="dnum-k">成本</div><div class="dnum-v">${money(p.cost)}</div></div>
+          <div class="dnum"><div class="dnum-k">已付</div><div class="dnum-v ${p.paid>=p.cost?'paid':'due'}">${money(p.paid)}</div></div>
+        </div>
+        <div style="font-size:12px;color:var(--text-2);line-height:1.8;">下单：<b>${p.orderDate}</b> 预计到货：<b>${p.expectedDate}</b>${p.receivedDate?` 入库：<b>${p.receivedDate}</b>`:''}</div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          ${p.status==='待发货'
+            ? `<button class="btn btn-ghost btn-sm" data-act="purchase-ship" data-id="${p.id}">标记发货</button><button class="btn btn-ghost btn-sm" data-act="purchase-receive" data-id="${p.id}">直接入库</button>`
+            : p.status==='已发货'
+              ? `<button class="btn btn-gold btn-sm" data-act="purchase-receive" data-id="${p.id}">确认到货入库</button>`
+              : `<button class="btn btn-ghost btn-sm" data-act="purchase-pay" data-id="${p.id}">${p.paid>=p.cost?'已付清':'登记付款'}</button>`}
+        </div>
+      </div>`).join('')}
+    </div>`;
+}
+
+/* ============ 委外加工 ============ */
+function viewOutsourcings(){
+  const processing = store.outsourcings.filter(o => o.status === '加工中');
+  const received = store.outsourcings.filter(o => o.status === '已收货');
+  const totalLabor = store.outsourcings.reduce((s,o) => s + o.laborFee, 0);
+  const totalCost = store.outsourcings.reduce((s,o) => s + (o.laborFee + o.goldPrice * parseFloat(o.weight)), 0);
+  const st = {'加工中':'state-doing','已收货':'state-ok'};
+  return `
+    ${rulesBox('outsourcings','委外加工流程',[
+      '<b>发料</b>：记录金料克重、金价、加工费、加工厂、预计交货日。',
+      '<b>成本计算</b>：成本 = 金价 × 克重 + 加工费。',
+      '<b>状态流转</b>：加工中 → 已收货（收货后自动入库）。',
+    ])}
+    <div class="stats">
+      <div class="stat"><div class="stat-label">加工中</div><div class="stat-value" style="color:var(--blue)">${processing.length}<small>批</small></div></div>
+      <div class="stat"><div class="stat-label">已收货</div><div class="stat-value" style="color:var(--green)">${received.length}<small>批</small></div></div>
+      <div class="stat"><div class="stat-label">加工费用</div><div class="stat-value">${money(totalLabor)}</div></div>
+      <div class="stat"><div class="stat-label">加工总成本</div><div class="stat-value">${(totalCost/10000).toFixed(2)}<small>万</small></div></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">加工单</div><button class="btn btn-wine btn-sm" data-act="new-outsourcing">＋ 新建加工单</button></div>
+      ${store.outsourcings.map(o => `<div class="deposit ${o.status==='已收货'?'':'blue'}" style="margin-bottom:14px;">
+        <div class="deposit-head">
+          <div><div class="deposit-cust">${o.product}</div><div class="deposit-prod">加工厂：${o.factory} · ${o.id}</div></div>
+          <span class="state ${st[o.status]}">${o.status}</span>
+        </div>
+        <div class="deposit-nums">
+          <div class="dnum"><div class="dnum-k">克重</div><div class="dnum-v">${o.weight}</div></div>
+          <div class="dnum"><div class="dnum-k">加工费</div><div class="dnum-v">${money(o.laborFee)}</div></div>
+          <div class="dnum"><div class="dnum-k">总成本</div><div class="dnum-v">${money(o.laborFee + o.goldPrice * parseFloat(o.weight))}</div></div>
+        </div>
+        <div style="font-size:12px;color:var(--text-2);line-height:1.8;">${o.material} · 金价 <b>¥${o.goldPrice}/g</b><br>发料：<b>${o.sendDate}</b> 预计交货：<b>${o.expectedDate}</b>${o.receivedDate?` 收货：<b>${o.receivedDate}</b>`:''}</div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          ${o.status==='加工中'
+            ? `<button class="btn btn-ghost btn-sm" data-act="outsourcing-detail" data-id="${o.id}">查看详情</button><button class="btn btn-gold btn-sm" data-act="outsourcing-receive" data-id="${o.id}">确认收货</button>`
+            : `<button class="btn btn-ghost btn-sm" data-act="outsourcing-detail" data-id="${o.id}">查看详情</button>`}
+        </div>
+      </div>`).join('')}
+    </div>`;
+}
+
+/* ============ 橱窗管理 ============ */
+function viewShowcase(){
+  const inStock = store.products.filter(p => p.status === '在库');
+  return `
+    ${rulesBox('showcase','橱窗规则',[
+      '<b>最多 10 件</b>：从在库商品中选择加入新品橱窗。',
+      '<b>同步展示</b>：橱窗商品同步展示在企业迷你网站上，面向客户公开。',
+    ])}
+    <div class="card">
+      <div class="card-head"><div class="card-title">橱窗商品 <small>共 ${store.showcases.length} 件</small></div>
+        <button class="btn btn-gold btn-sm" data-act="add-showcase">＋ 添加商品</button>
+      </div>
+      ${store.showcases.length ? `<div class="grid">
+        ${store.showcases.map(s => {
+          const p = getProduct(s.productId);
+          if (!p) return '';
+          return `<div class="prod">
+            <div class="prod-badge"><span class="tag tag-gold">排序 ${s.sort}</span></div>
+            <div class="prod-ico">◆</div>
+            <div class="prod-name">${p.name}</div>
+            <div class="prod-code">${p.code}</div>
+            <div class="prod-meta">${p.material} · ${p.weight}<br>${s.desc}</div>
+            <div class="prod-price">${money(p.price)}</div>
+            <div style="display:flex;gap:8px;margin-top:14px;">
+              <button class="btn btn-ghost btn-sm" data-act="edit-showcase" data-id="${s.id}">编辑描述</button>
+              <button class="btn btn-ghost btn-sm" data-act="remove-showcase" data-id="${s.id}">移出</button>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>` : '<div class="empty"><div class="empty-ico">✦</div>暂无橱窗商品</div>'}
+    </div>`;
+}
+
+/* ============ 到店预约 ============ */
+function viewAppointments(){
+  const st = {'待处理':'state-wait','已确认':'state-doing','已到店':'state-ok','已取消':'state-due'};
+  return `
+    ${rulesBox('appointments','预约规则',[
+      '<b>来源</b>：客户从企业迷你网站提交预约看货请求，直达店内预约管理。',
+      '<b>状态流转</b>：待处理 → 已确认 → 已到店；可取消。',
+    ])}
+    <div class="card">
+      <div class="card-head"><div class="card-title">预约列表 <small>共 ${store.appointments.length} 条</small></div></div>
+      <table><thead><tr><th>预约号</th><th>客户</th><th>电话</th><th>意向品类/商品</th><th>期望日期</th><th>时段</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody>${store.appointments.map(a => `<tr>
+        <td style="font-family:monospace;color:var(--text-2)">${a.id}</td>
+        <td style="font-weight:600">${a.name}</td>
+        <td style="font-family:monospace;color:var(--text-2)">${a.phone}</td>
+        <td>${a.cat} · ${a.product||'—'}</td>
+        <td>${a.date}</td><td>${a.slot}</td>
+        <td><span class="state ${st[a.status]}">${a.status}</span></td>
+        <td>
+          ${a.status==='待处理'?`<span class="link" data-act="appt-confirm" data-id="${a.id}">确认</span> &nbsp; <span class="link" data-act="appt-cancel" data-id="${a.id}" style="color:var(--red)">取消</span>`
+            : a.status==='已确认'?`<span class="link" data-act="appt-arrive" data-id="${a.id}">标记到店</span>`
+            : '<span style="color:var(--text-2);font-size:12px;">—</span>'}
+        </td>
+      </tr>`).join('')}</tbody></table>
+    </div>`;
+}
+
+/* ============ 企业迷你网站 ============ */
+function viewWebsite(){
+  const sp = store.storeProfile;
+  return `
+    <div class="card">
+      <div class="card-head"><div class="card-title">企业迷你网站预览 <small>面向客户公开展示</small></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" data-act="copy-site-url">⧉ 复制网址</button>
+          <button class="btn btn-gold btn-sm" data-act="toggle-site">${sp.websiteEnabled?'● 已发布':'○ 已停用'}</button>
+        </div>
+      </div>
+      <div class="site-preview">
+        <div class="site-brand">${sp.name}</div>
+        <div class="site-slogan">${sp.slogan}</div>
+        <div style="margin:20px 0;padding:14px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);font-size:12px;color:var(--text-2);line-height:1.9;">
+          ${sp.desc}<br>
+          📍 ${sp.address} · ☎ ${sp.phone}<br>🕙 ${sp.hours}
+        </div>
+        <div style="font-size:15px;font-weight:600;letter-spacing:2px;color:var(--wine);margin-bottom:8px;">${sp.showcaseTitle}</div>
+        <div style="font-size:12px;color:var(--text-2);margin-bottom:18px;">${sp.showcaseSubtitle}</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;">
+          ${store.showcases.map(s => {
+            const p = getProduct(s.productId);
+            if (!p) return '';
+            return `<div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:14px;text-align:left;">
+              <div style="width:100%;height:90px;background:linear-gradient(135deg,#FBF4E2,#F0E2C0);border-radius:6px;margin-bottom:10px;display:flex;align-items:center;justify-content:center;font-size:26px;">◆</div>
+              <div style="font-size:13px;font-weight:600;">${p.name}</div>
+              <div style="font-size:10.5px;color:var(--text-2);font-family:monospace;margin-top:3px;">${p.code}</div>
+              <div style="font-size:11px;color:var(--text-2);margin-top:5px;">${p.material} · ${p.weight}</div>
+              <div style="font-size:14px;font-weight:700;color:var(--wine);margin-top:6px;">${money(p.price)}</div>
+            </div>`;
+          }).join('')}
+        </div>
+        <button class="btn btn-gold" style="margin-top:24px;" data-act="site-appoint">预约看货</button>
+      </div>
+    </div>`;
+}
+
+/* ============ 店铺资料 ============ */
+function viewStoreProfile(){
+  const sp = store.storeProfile;
+  return `
+    <div class="card">
+      <div class="card-head"><div class="card-title">店铺资料</div></div>
+      <div class="form-grid">
+        <div class="field"><label>店铺名称</label><input value="${sp.name}"></div>
+        <div class="field"><label>简称</label><input value="${sp.short}"></div>
+        <div class="field field-full"><label>品牌标语</label><input value="${sp.slogan}"></div>
+        <div class="field field-full"><label>简介</label><textarea style="min-height:70px;resize:none;line-height:1.5;">${sp.desc}</textarea></div>
+        <div class="field"><label>联系人</label><input value="${sp.contact}"></div>
+        <div class="field"><label>联系电话</label><input value="${sp.phone}"></div>
+        <div class="field field-full"><label>地址</label><input value="${sp.address}"></div>
+        <div class="field"><label>营业时间</label><input value="${sp.hours}"></div>
+        <div class="field"><label>经营品类</label><input value="${sp.categories.join(' / ')}"></div>
+        <div class="field"><label>橱窗标题</label><input value="${sp.showcaseTitle}"></div>
+        <div class="field"><label>橱窗副标题</label><input value="${sp.showcaseSubtitle}"></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:12px;margin-top:20px;">
+        <button class="btn btn-ghost" data-act="save-profile">保存资料</button>
+      </div>
+    </div>`;
+}
+
+/* ============ 操作日志 ============ */
 function viewLogs(){
   return `
-    ${rulesBox('logs', '操作审计日志', [
-      '<b>全程留痕</b>：创建、开单、收定、冲红、调拨、借货等操作均记录且不可篡改。',
-    ])}
-
+    ${rulesBox('logs','操作审计日志',['<b>全程留痕</b>：创建、开单、收定、冲红、调拨、借货等操作均记录且不可篡改。'])}
     <div class="card">
-      <div class="card-head">
-        <div class="card-title">操作日志 <small>近 7 天记录</small></div>
+      <div class="card-head"><div class="card-title">操作日志 <small>近 7 天记录</small></div>
         <button class="btn btn-ghost btn-sm" onclick="toast('已导出 CSV 审计文件')">导出 CSV</button>
       </div>
-      <table>
-        <thead><tr><th>时间</th><th>操作人</th><th>门店</th><th>操作类型</th><th>目标对象</th><th>结果</th></tr></thead>
-        <tbody>
-          ${store.logs.map(l => `
-            <tr>
-              <td style="font-family:monospace;color:var(--text-2)">${l.time}</td>
-              <td>${l.user}</td>
-              <td>${l.store}</td>
-              <td>${l.act}</td>
-              <td>${l.target}</td>
-              <td><span class="state ${l.result === '成功' ? 'state-ok' : 'state-due'}">${l.result}</span></td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
+      <table><thead><tr><th>时间</th><th>操作人</th><th>门店</th><th>操作类型</th><th>目标对象</th><th>结果</th></tr></thead>
+      <tbody>${store.logs.map(l => `<tr>
+        <td style="font-family:monospace;color:var(--text-2)">${l.time}</td><td>${l.user}</td><td>${l.store}</td><td>${l.act}</td><td>${l.target}</td>
+        <td><span class="state ${l.result==='成功'?'state-ok':'state-due'}">${l.result}</span></td>
+      </tr>`).join('')}</tbody></table>
     </div>`;
 }
 
+/* ============ Actions ============ */
 const actions = {
-  'toggle-rules'(el){
-    const key = el.key;
-    rulesOpenState[key] = !rulesOpenState[key];
-    render();
-  },
+  'toggle-rules'(el){ rulesOpenState[el.key] = !rulesOpenState[el.key]; render(); },
+  'sales-tab'(el){ state.salesTab = el.tab; render(); },
 
   'switch-store'(){
     openModal('切换门店', `
       <div style="font-size:13px;color:var(--text-2);margin-bottom:16px;">选择要切换的门店，业务数据将同步切换</div>
-      ${store.stores.map(s => `
-        <div style="display:flex;align-items:center;gap:12px;padding:14px;border:1px solid ${s.id === store.currentStoreId ? 'var(--gold)' : 'var(--border)'};border-radius:8px;margin-bottom:10px;cursor:pointer;background:${s.id === store.currentStoreId ? '#FBF4E2' : '#fff'};"
-             data-act="do-switch-store" data-id="${s.id}">
-          <div style="font-size:20px;">🏛</div>
-          <div style="flex:1;">
-            <div style="font-weight:600;">${s.name}</div>
-            <div style="font-size:12px;color:var(--text-2);margin-top:2px;">${s.code} · 负责人 ${s.owner}</div>
-          </div>
-          ${s.id === store.currentStoreId ? '<span class="tag tag-gold">当前</span>' : ''}
-        </div>
-      `).join('')}
+      ${store.stores.map(s => `<div style="display:flex;align-items:center;gap:12px;padding:14px;border:1px solid ${s.id===store.currentStoreId?'var(--gold)':'var(--border)'};border-radius:8px;margin-bottom:10px;cursor:pointer;background:${s.id===store.currentStoreId?'#FBF4E2':'#fff'};" data-act="do-switch-store" data-id="${s.id}">
+        <div style="font-size:20px;">🏛</div>
+        <div style="flex:1;"><div style="font-weight:600;">${s.name}</div><div style="font-size:12px;color:var(--text-2);margin-top:2px;">${s.code} · 负责人 ${s.owner}</div></div>
+        ${s.id===store.currentStoreId?'<span class="tag tag-gold">当前</span>':''}
+      </div>`).join('')}
     `, `<button class="btn btn-ghost" onclick="closeModal()">取消</button>`);
   },
-  'do-switch-store'(el){
-    store.currentStoreId = Number(el.id);
-    closeModal();
-    toast('已切换到 ' + currentStore().name);
-    render();
-  },
+  'do-switch-store'(el){ store.currentStoreId = Number(el.id); closeModal(); toast('已切换到 ' + currentStore().name); render(); },
 
+  /* 销售 */
   'quick-sale'(){
-    const options = store.products.filter(p => p.status === '在库')
-      .map(p => `<option value="${p.id}">${p.name} · ${p.code} · ${money(p.price)}</option>`).join('');
+    const options = store.products.filter(p => p.status === '在库').map(p => `<option value="${p.id}">${p.name} · ${p.code} · ${money(p.price)}</option>`).join('');
     const custOptions = store.customers.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-
     openModal('新建销售单', `
       <div class="form-grid">
         <div class="field"><label>客户</label><select id="sale-cust">${custOptions}</select></div>
         <div class="field"><label>开单日期（可自由选择）</label><input type="date" id="sale-date" value="${today()}"></div>
-        <div class="field field-full"><label>选择在库商品</label><select id="sale-prod">${options || '<option>暂无在库商品</option>'}</select></div>
+        <div class="field field-full"><label>选择在库商品</label><select id="sale-prod">${options||'<option>暂无在库商品</option>'}</select></div>
         <div class="field"><label>销售金额</label><input type="number" id="sale-amount" placeholder="0.00"></div>
         <div class="field"><label>实收金额</label><input type="number" id="sale-paid" placeholder="0.00"></div>
-        <div class="field"><label>收款方式</label>
-          <select id="sale-method"><option>现金</option><option>微信</option><option>银行卡</option><option>其他</option></select>
-        </div>
+        <div class="field"><label>收款方式</label><select id="sale-method"><option>现金</option><option>微信</option><option>银行卡</option><option>其他</option></select></div>
         <div class="field"><label>备注</label><input id="sale-note" placeholder="选填"></div>
       </div>
-      <div style="margin-top:16px;padding:12px 14px;background:#FBF4E2;border-radius:6px;border:1px solid #E5D3A8;font-size:12px;color:var(--text-2);line-height:1.8;">
-        ◈ 开出后商品明细与售价不可修改，如需调整货品只能冲红重开。<br>
-        ◈ 客户信息后续可随时调整；开单立即扣减库存。
-      </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
-      <button class="btn btn-gold" data-act="do-sale">确认开单</button>
-    `);
+      <div style="margin-top:16px;padding:12px 14px;background:#FBF4E2;border-radius:6px;font-size:12px;color:var(--text-2);line-height:1.8;">◈ 开出后商品明细与售价不可修改；客户信息可后续修改。<br>◈ 开单立即扣减库存。</div>
+    `, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-gold" data-act="do-sale">确认开单</button>`);
   },
-
   'do-sale'(){
     const prodId = Number($('sale-prod').value);
     const prod = getProduct(prodId);
-    if (!prod || prod.status !== '在库'){ toast('请选择有效的在库商品'); return; }
+    if (!prod || prod.status !== '在库'){ toast('请选择在库商品'); return; }
     const cust = store.customers.find(c => c.id === Number($('sale-cust').value));
     const amount = Number($('sale-amount').value) || prod.price;
     const paid = Number($('sale-paid').value) || amount;
     const method = $('sale-method').value;
     const date = $('sale-date').value || today();
-
     prod.status = '已售出';
     store.products = store.products.filter(p => p.id !== prodId);
-
-    store.sales.unshift({
-      id: nextSaleId(), cust: cust.name, prod: prod.name,
-      amount, paid, method, date, type:'normal',
-      status: paid >= amount ? '已完成' : '欠款',
-    });
-
+    store.sales.unshift({ id: nextSaleId(), cust: cust.name, prod: prod.name, amount, paid, method, date, type:'normal', status: paid >= amount ? '已完成' : '欠款' });
     if (paid < amount) cust.due += (amount - paid);
     cust.total += amount;
-
-    store.logs.unshift({
-      time: new Date().toLocaleString('zh-CN',{hour12:false}).replace(/\//g,'-'),
-      user: '店长 · 王敏', store: currentStore().name.replace('瑾瑜轩 · ',''),
-      act: '销售开单', target: prod.name, result: '成功',
-    });
-
-    closeModal();
-    toast('开单成功 · ' + prod.name + ' · 库存已扣减');
-    render();
+    store.logs.unshift({ time: new Date().toLocaleString('zh-CN',{hour12:false}).replace(/\//g,'-'), user:'店长 · 王敏', store:currentStore().name.replace('瑾瑜轩 · ',''), act:'销售开单', target:prod.name, result:'成功' });
+    closeModal(); toast('开单成功 · ' + prod.name); render();
   },
-
   'sale-detail'(el){
     const s = store.sales.find(x => x.id === el.id);
     openModal('销售单详情', `
       <div class="form-grid">
         <div><span style="font-size:12px;color:var(--text-2);">销售单号</span><div style="margin-top:6px;font-weight:600;font-family:monospace;">${s.id}</div></div>
         <div><span style="font-size:12px;color:var(--text-2);">业务日期</span><div style="margin-top:6px;font-weight:600;">${s.date}</div></div>
-        <div><span style="font-size:12px;color:var(--text-2);">客户姓名</span><div style="margin-top:6px;font-weight:600;">${s.cust}</div></div>
-        <div><span style="font-size:12px;color:var(--text-2);">购买商品</span><div style="margin-top:6px;font-weight:600;">${s.prod}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">客户</span><div style="margin-top:6px;font-weight:600;">${s.cust}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">商品</span><div style="margin-top:6px;font-weight:600;">${s.prod}</div></div>
         <div><span style="font-size:12px;color:var(--text-2);">销售金额</span><div style="margin-top:6px;font-weight:700;color:var(--wine);">${money(s.amount)}</div></div>
         <div><span style="font-size:12px;color:var(--text-2);">实收金额</span><div style="margin-top:6px;font-weight:700;">${money(s.paid)}</div></div>
-        <div><span style="font-size:12px;color:var(--text-2);">收款方式</span><div style="margin-top:6px;font-weight:600;">${s.method}</div></div>
-        <div><span style="font-size:12px;color:var(--text-2);">订单状态</span><div style="margin-top:6px;">${s.status === '已完成' ? '<span class="state state-ok">已完成</span>' : s.status === '已冲红' ? '<span class="state state-due">已冲红</span>' : '<span class="state state-due">欠款</span>'}</div></div>
-      </div>
-      <div style="margin-top:18px;padding:12px;background:#FDFAF3;border-radius:6px;font-size:12px;color:var(--text-2);">
-        商品明细与售价不可直接修改。如需调整，请点击左下方“冲红作废”后重新下单。
-      </div>
-    `, `
-      ${s.status !== '已冲红' ? `<button class="btn btn-ghost" style="color:var(--red);border-color:var(--red);margin-right:auto;" data-act="do-red-strike" data-id="${s.id}">冲红作废</button>` : ''}
-      <button class="btn btn-ghost" onclick="closeModal()">关闭</button>
-      ${s.status !== '已冲红' ? `<button class="btn btn-gold" data-act="edit-cust" data-id="${s.id}">修改客户</button>` : ''}
-    `);
+      </div>`,
+      `${s.status!=='已冲红'?`<button class="btn btn-ghost" style="color:var(--red);border-color:var(--red);margin-right:auto;" data-act="do-red-strike" data-id="${s.id}">冲红作废</button>`:''}
+       <button class="btn btn-ghost" onclick="closeModal()">关闭</button>
+       ${s.status!=='已冲红'?`<button class="btn btn-gold" data-act="edit-cust" data-id="${s.id}">修改客户</button>`:''}`);
   },
-
   'do-red-strike'(el){
     const s = store.sales.find(x => x.id === el.id);
-    if (!confirm(`确认冲红销售单 ${s.id}？\n冲红后该单据作废，库存将回退。`)) return;
+    if (!confirm(`确认冲红销售单 ${s.id}？`)) return;
     s.status = '已冲红';
-    store.products.push({
-      id: store.nextProductSeq++,
-      code: 'ZB-RT-' + Math.floor(Math.random()*9000+1000),
-      name: s.prod, cat: '珠宝', material: '原材质', weight: '原克重', size: '—', cert: '—',
-      cost: Math.round(s.amount * 0.7), price: s.amount, status: '在库', storeId: store.currentStoreId
-    });
-    store.logs.unshift({
-      time: new Date().toLocaleString('zh-CN',{hour12:false}).replace(/\//g,'-'),
-      user: '店长 · 王敏', store: currentStore().name.replace('瑾瑜轩 · ',''),
-      act: '冲红作废', target: s.id, result: '成功',
-    });
-    closeModal();
-    toast('单据已冲红，相关库存已恢复');
-    render();
+    store.products.push({ id: store.nextProductSeq++, code: 'ZB-RT-' + Math.floor(Math.random()*9000+1000), name: s.prod, cat:'珠宝', material:'原材质', weight:'原克重', size:'—', cert:'—', cost: Math.round(s.amount*0.7), price: s.amount, status:'在库', storeId: store.currentStoreId });
+    closeModal(); toast('单据已冲红，库存已恢复'); render();
   },
-
   'edit-cust'(el){
     const s = store.sales.find(x => x.id === el.id);
     openModal('修改客户信息', `
-      <div style="padding:12px 14px;background:#FBF4E2;border-radius:6px;font-size:12px;color:var(--text-2);margin-bottom:18px;">
-        ◈ 销售单开出后仅允许修改客户姓名与电话，无需退单重开。
-      </div>
+      <div style="padding:12px 14px;background:#FBF4E2;border-radius:6px;font-size:12px;color:var(--text-2);margin-bottom:18px;">◈ 销售单开出后仅允许修改客户姓名与电话。</div>
       <div class="form-grid">
         <div class="field"><label>客户姓名</label><input id="ec-name" value="${s.cust}"></div>
-        <div class="field"><label>联系电话</label><input id="ec-phone" placeholder="选填联系电话"></div>
-      </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
-      <button class="btn btn-gold" data-act="do-edit-cust" data-id="${s.id}">保存更新</button>
-    `);
+        <div class="field"><label>联系电话</label><input id="ec-phone" placeholder="选填"></div>
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-gold" data-act="do-edit-cust" data-id="${s.id}">保存</button>`);
   },
   'do-edit-cust'(el){
     const s = store.sales.find(x => x.id === el.id);
     const newName = $('ec-name').value.trim();
     if (newName) s.cust = newName;
-    closeModal();
-    toast('客户信息已更新');
-    render();
+    closeModal(); toast('客户信息已更新'); render();
   },
 
+  /* 定金 */
   'quick-deposit'(){
-    const options = store.products.filter(p => p.status === '在库')
-      .map(p => `<option value="${p.id}">${p.name} · ${p.code} · ${money(p.price)}</option>`).join('');
+    const options = store.products.filter(p => p.status === '在库').map(p => `<option value="${p.id}">${p.name} · ${p.code} · ${money(p.price)}</option>`).join('');
     const custOptions = store.customers.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-
     openModal('新建定金单', `
       <div class="form-grid">
         <div class="field"><label>客户</label><select id="dep-cust">${custOptions}</select></div>
-        <div class="field"><label>客户电话</label><input id="dep-phone" placeholder="留存联系电话"></div>
-        <div class="field field-full">
-          <label>锁定商品（有货请选择；无现货或定制请选第一项并在下方填写）</label>
-          <select id="dep-prod">
-            <option value="">-- 店铺无现货/需修改/外定商品 --</option>
-            ${options}
-          </select>
+        <div class="field"><label>客户电话</label><input id="dep-phone" placeholder="选填"></div>
+        <div class="field field-full"><label>锁定商品（无现货/定制选第一项）</label>
+          <select id="dep-prod"><option value="">-- 店铺无现货/需修改/外定 --</option>${options}</select>
         </div>
-        <div class="field field-full"><label>定制/无现货商品名称（若无现货必填）</label><input id="dep-custom-name" placeholder="如：定制 足金手镯 60圈口 32g"></div>
+        <div class="field field-full"><label>定制/无现货商品名（无现货必填）</label><input id="dep-custom-name" placeholder="如：定制 足金手镯 60圈口 32g"></div>
         <div class="field"><label>整体销售额</label><input type="number" id="dep-total" placeholder="0.00"></div>
         <div class="field"><label>已收定金</label><input type="number" id="dep-deposit" placeholder="0.00"></div>
         <div class="field"><label>承诺交付日期</label><input type="date" id="dep-promise" value="${new Date(Date.now()+10*86400000).toISOString().slice(0,10)}"></div>
         <div class="field"><label>提前提醒天数</label><input type="number" id="dep-remind" value="7"></div>
       </div>
-      <div style="margin-top:16px;padding:12px 14px;background:#FBF4E2;border-radius:6px;font-size:12px;color:var(--text-2);line-height:1.8;">
-        ◈ 定金下单不扣减库存；若选在库商品则锁定为“已定”。<br>
-        ◈ 系统在承诺交付日提前设定天数自动提醒催交成品；尾款收清后才生成销售单并扣减库存。
-      </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
-      <button class="btn btn-wine" data-act="do-deposit">确认收定</button>
-    `);
+      <div style="margin-top:16px;padding:12px 14px;background:#FBF4E2;border-radius:6px;font-size:12px;color:var(--text-2);line-height:1.8;">◈ 定金单开出后，库存不扣减，商品锁定为“已定”。<br>◈ 客户付清尾款后，转为正式销售单并扣减库存。</div>
+    `, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-wine" data-act="do-deposit">确认收定</button>`);
   },
-
   'do-deposit'(){
     const prodId = Number($('dep-prod').value);
     const customName = $('dep-custom-name').value.trim();
-    let prod = null;
-    let prodName = '';
-
-    if (prodId){
-      prod = getProduct(prodId);
-      if (prod.status !== '在库'){ toast('该商品不在库'); return; }
-      prodName = prod.name;
-    } else {
-      if (!customName){ toast('请填写定制或无现货商品名称'); return; }
-      prodName = customName + ' (定制/无现货)';
-    }
-
+    let prod = null, prodName = '';
+    if (prodId){ prod = getProduct(prodId); if (prod.status !== '在库'){ toast('该商品不在库'); return; } prodName = prod.name; }
+    else { if (!customName){ toast('请填写定制商品名称'); return; } prodName = customName + ' (定制/无现货)'; }
     const cust = store.customers.find(c => c.id === Number($('dep-cust').value));
     const phone = $('dep-phone').value || cust.phone;
     const total = Number($('dep-total').value) || (prod ? prod.price : 0);
     const deposit = Number($('dep-deposit').value) || 0;
-    if (deposit <= 0){ toast('请填写已收定金金额'); return; }
-    if (deposit >= total){ toast('定金金额应小于整体销售额'); return; }
-
+    if (deposit <= 0){ toast('请填写定金金额'); return; }
+    if (deposit >= total){ toast('定金应小于销售总额'); return; }
     if (prod) prod.status = '已定';
-
-    store.deposits.unshift({
-      id: nextDepositId(), cust: cust.name, custPhone: phone,
-      prodId: prod ? prod.id : null,
-      prod: prodName, total, deposit, balance: total - deposit,
-      promisedDate: $('dep-promise').value,
-      reminderDays: Number($('dep-remind').value) || 7,
-      status: '待付尾款', created: today(),
-    });
-
-    closeModal();
-    toast('定金单已创建 · 库存未扣减');
-    state.view = 'deposits';
-    render();
+    store.deposits.unshift({ id: nextDepositId(), cust: cust.name, custPhone: phone, prodId: prod ? prod.id : null, prod: prodName, total, deposit, balance: total - deposit, promisedDate: $('dep-promise').value, reminderDays: Number($('dep-remind').value) || 7, status:'待付尾款', created: today() });
+    closeModal(); toast('定金单已创建 · 库存未扣减'); state.view = 'sales'; state.salesTab = 'deposit'; render();
   },
-
   'pay-balance'(el){
     const d = store.deposits.find(x => x.id === el.id);
-    if (!d) return;
     openModal('收取尾款', `
       <div style="padding:14px;background:#FBF4E2;border-radius:8px;border:1px solid #E5D3A8;margin-bottom:18px;">
         <div style="font-weight:600;">${d.cust} · ${d.prod}</div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px;font-size:13px;">
-          <div>销售总额：<b>${money(d.total)}</b></div>
-          <div>已收定金：<b style="color:var(--green)">${money(d.deposit)}</b></div>
-          <div>待付尾款：<b style="color:var(--red)">${money(d.balance)}</b></div>
+          <div>销售总额：<b>${money(d.total)}</b></div><div>已收定金：<b style="color:var(--green)">${money(d.deposit)}</b></div><div>待付尾款：<b style="color:var(--red)">${money(d.balance)}</b></div>
         </div>
       </div>
       <div class="form-grid">
         <div class="field"><label>本次实收金额</label><input type="number" id="pb-amount" value="${d.balance}"></div>
-        <div class="field"><label>收款方式</label>
-          <select id="pb-method"><option>现金</option><option>微信</option><option>银行卡</option><option>其他</option></select>
-        </div>
-      </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
-      <button class="btn btn-gold" data-act="do-pay-balance" data-id="${d.id}">确认收款并转正式单</button>
-    `);
+        <div class="field"><label>收款方式</label><select id="pb-method"><option>现金</option><option>微信</option><option>银行卡</option><option>其他</option></select></div>
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-gold" data-act="do-pay-balance" data-id="${d.id}">确认收款并转正式单</button>`);
   },
-
   'do-pay-balance'(el){
     const d = store.deposits.find(x => x.id === el.id);
     const amt = Number($('pb-amount').value) || 0;
     const method = $('pb-method').value;
-
-    if (amt < d.balance){
-      d.deposit += amt;
-      d.balance -= amt;
-      closeModal();
-      toast('部分尾款已收，剩余尾款 ' + money(d.balance));
-      render();
-      return;
-    }
-
-    if (d.prodId){
-      store.products = store.products.filter(p => p.id !== d.prodId);
-    }
-    store.sales.unshift({
-      id: nextSaleId(), cust: d.cust, prod: d.prod,
-      amount: d.total, paid: d.total, method, date: today(),
-      type:'final', status:'已完成',
-    });
-
+    if (amt < d.balance){ d.deposit += amt; d.balance -= amt; closeModal(); toast('已收 ' + money(amt) + '，剩余尾款 ' + money(d.balance)); render(); return; }
+    if (d.prodId) store.products = store.products.filter(p => p.id !== d.prodId);
+    store.sales.unshift({ id: nextSaleId(), cust: d.cust, prod: d.prod, amount: d.total, paid: d.total, method, date: today(), type:'final', status:'已完成' });
     const cust = store.customers.find(c => c.name === d.cust);
     if (cust) cust.total += d.total;
     store.deposits = store.deposits.filter(x => x.id !== d.id);
-
-    closeModal();
-    toast('全额付清 · 已转为正式销售单并扣减库存');
-    state.view = 'deposits';
-    render();
+    closeModal(); toast('尾款已收清 · 转为正式销售单'); render();
   },
-
   'set-reminder'(el){
     const d = store.deposits.find(x => x.id === el.id);
     openModal('修改提醒设置', `
       <div class="form-grid">
         <div class="field"><label>承诺交付日期</label><input type="date" id="sr-date" value="${d.promisedDate}"></div>
         <div class="field"><label>提前提醒天数</label><input type="number" id="sr-days" value="${d.reminderDays}"></div>
-      </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
-      <button class="btn btn-gold" data-act="do-set-reminder" data-id="${d.id}">保存设置</button>
-    `);
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-gold" data-act="do-set-reminder" data-id="${d.id}">保存</button>`);
   },
   'do-set-reminder'(el){
     const d = store.deposits.find(x => x.id === el.id);
-    d.promisedDate = $('sr-date').value;
-    d.reminderDays = Number($('sr-days').value) || 7;
-    closeModal();
-    toast('提醒设置已更新');
-    render();
+    d.promisedDate = $('sr-date').value; d.reminderDays = Number($('sr-days').value) || 7;
+    closeModal(); toast('提醒设置已更新'); render();
   },
 
+  /* 库存 */
+  'inbound'(){
+    openModal('入库登记', `
+      <div class="form-grid">
+        <div class="field"><label>入库日期（自由选择）</label><input type="date" id="ib-date" value="${today()}"></div>
+        <div class="field"><label>供应商</label><input id="ib-supplier" placeholder="如：深圳彩宝行"></div>
+        <div class="field field-full"><label>商品档案关联</label><select id="ib-prod">${store.products.map(p => `<option value="${p.id}">${p.name} · ${p.code}</option>`).join('')}</select></div>
+        <div class="field"><label>数量</label><input type="number" id="ib-qty" value="1"></div>
+        <div class="field"><label>入库成本单价</label><input type="number" id="ib-cost" placeholder="0.00"></div>
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-gold" data-act="do-inbound">确认入库</button>`);
+  },
+  'do-inbound'(){ closeModal(); toast('入库成功 · 库存已更新'); render(); },
+  'copy-inbound'(el){
+    openModal('复制入库登记', `
+      <div style="padding:10px 14px;background:#FBF4E2;border-radius:6px;font-size:12px;color:var(--text-2);margin-bottom:16px;">◈ 已复制历史入库单，修改后提交。</div>
+      <div class="form-grid">
+        <div class="field"><label>入库日期（自由选择）</label><input type="date" value="${today()}"></div>
+        <div class="field"><label>供应商</label><input value="${el.supp || '自有金料'}"></div>
+        <div class="field field-full"><label>商品名称</label><input value="${el.name || '足金古法手镯'}"></div>
+        <div class="field"><label>数量</label><input type="number" value="1"></div>
+        <div class="field"><label>成本单价</label><input type="number" value="${el.cost || 0}"></div>
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-gold" onclick="closeModal();toast('已基于历史单据快速入库')">确认提交</button>`);
+  },
   'scan-normal'(){
-    openModal('普通扫码盘点', `
-      <div class="field" style="margin-bottom:16px;">
-        <label>扫码录入 / 条码检索</label>
-        <input id="scan-code-input" placeholder="请对准条形码扫码或输入编码..." autofocus>
-      </div>
-      <div style="padding:40px 20px;text-align:center;border:1px dashed var(--gold);background:#FDFAF3;border-radius:8px;">
-        <div style="font-size:32px;margin-bottom:8px;">📷</div>
-        <div style="color:var(--text-2);font-size:13px;">等待激光扫码枪扫描商品条码...</div>
-      </div>
-      <div style="margin-top:16px;display:flex;justify-content:space-between;font-size:12px;color:var(--text-2);">
-        <span>应盘件数：${store.products.length}</span>
-        <span>已盘件数：0</span>
-      </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeModal()">结束盘点</button>
-      <button class="btn btn-gold" onclick="closeModal();toast('条码盘点完成，账实相符')">完成盘点</button>
-    `);
+    openModal('条码盘点', `
+      <div class="field" style="margin-bottom:16px;"><label>扫码录入</label><input placeholder="请对准条形码扫描..." autofocus></div>
+      <div style="padding:40px 20px;text-align:center;border:1px dashed var(--gold);background:#FDFAF3;border-radius:8px;"><div style="font-size:32px;margin-bottom:8px;">📷</div><div style="color:var(--text-2);font-size:13px;">等待扫码枪扫描商品条码...</div></div>
+      <div style="margin-top:16px;display:flex;justify-content:space-between;font-size:12px;color:var(--text-2);"><span>应盘件数：${store.products.length}</span><span>已盘件数：0</span></div>
+    `, `<button class="btn btn-ghost" onclick="closeModal()">结束盘点</button><button class="btn btn-gold" onclick="closeModal();toast('条码盘点完成，账实相符')">完成盘点</button>`);
   },
-
   'scan-rfid'(){
     openModal('RFID批量盘点', `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding:12px;background:#FDFAF3;border-radius:8px;">
-        <div>
-          <div style="font-size:12px;color:var(--text-2);">已感应标签数</div>
-          <div style="font-size:28px;font-weight:700;color:var(--wine);font-family:'Songti SC',serif;" id="rfid-count">${store.products.length} <small style="font-size:12px;color:var(--text-2)">件</small></div>
-        </div>
+        <div><div style="font-size:12px;color:var(--text-2);">已感应标签数</div><div style="font-size:28px;font-weight:700;color:var(--wine);font-family:'Songti SC',serif;">${store.products.length} <small style="font-size:12px;color:var(--text-2)">件</small></div></div>
         <button class="btn btn-wine" onclick="toast('正在驱动读写器搜索射频标签...')">⤋ 启动高频扫描</button>
       </div>
       <div style="max-height:200px;overflow:auto;border:1px solid var(--border);border-radius:6px;">
-        <table>
-          <thead><tr><th>芯片EPC</th><th>商品</th><th>在库状态</th><th>盘点结果</th></tr></thead>
-          <tbody>
-            ${store.products.map(p => `
-              <tr>
-                <td style="font-family:monospace;font-size:11px;">E280-${p.id}9F8</td>
-                <td>${p.name}</td>
-                <td>${p.status}</td>
-                <td><span class="state state-ok">已匹配</span></td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+        <table><thead><tr><th>芯片EPC</th><th>商品</th><th>在库状态</th><th>盘点结果</th></tr></thead>
+        <tbody>${store.products.map(p => `<tr><td style="font-family:monospace;font-size:11px;">E280-${p.id}9F8</td><td>${p.name}</td><td>${p.status}</td><td><span class="state state-ok">已匹配</span></td></tr>`).join('')}</tbody></table>
       </div>
-      <div style="display:flex;justify-content:space-between;margin-top:14px;font-size:12px;color:var(--text-2);">
-        <span>账面库存：${store.products.length} 件</span>
-        <span style="color:var(--green)">盘盈：0</span>
-        <span style="color:var(--red)">盘亏：0</span>
-      </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
-      <button class="btn btn-gold" onclick="closeModal();toast('RFID批量盘点完成，已生成差异分析单')">生成盘点报告</button>
-    `);
+      <div style="display:flex;justify-content:space-between;margin-top:14px;font-size:12px;color:var(--text-2);"><span>账面库存：${store.products.length} 件</span><span style="color:var(--green)">盘盈：0</span><span style="color:var(--red)">盘亏：0</span></div>
+    `, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-gold" onclick="closeModal();toast('RFID批量盘点完成，已生成差异单')">生成盘点报告</button>`);
   },
-
   'print-single'(el){
     const p = getProduct(Number(el.id));
     openModal('打印商品标签', `
@@ -1428,268 +1116,335 @@ const actions = {
         </div>
         <div style="width:200px;flex-shrink:0;">
           <div style="font-size:12px;color:var(--text-2);margin-bottom:6px;">排版预览：</div>
-          <div style="background:#fff;border:1px solid #d9d9d9;border-radius:6px;padding:12px;box-shadow:0 2px 8px rgba(0,0,0,0.06);position:relative;">
+          <div style="background:#fff;border:1px solid #d9d9d9;border-radius:6px;padding:12px;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
             <div style="font-weight:600;font-size:13px;line-height:1.3;">${p.name}</div>
             <div style="font-size:11px;color:#666;margin-top:4px;">${p.material} · ${p.weight}</div>
             <div style="font-size:10px;color:#888;margin-top:2px;">证书：${p.cert}</div>
             <div style="font-size:14px;font-weight:700;color:var(--wine);margin-top:10px;text-align:right;">${money(p.price)}</div>
-            <div style="margin-top:8px;padding-top:6px;border-top:1px dashed #eee;font-family:monospace;font-size:10px;display:flex;justify-content:space-between;">
-              <span>${p.code}</span>
-              <span>|||||||||</span>
-            </div>
+            <div style="margin-top:8px;padding-top:6px;border-top:1px dashed #eee;font-family:monospace;font-size:10px;display:flex;justify-content:space-between;"><span>${p.code}</span><span>|||||||||</span></div>
           </div>
         </div>
-      </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
-      <button class="btn btn-gold" onclick="closeModal();toast('打印指令已发送')">立即打印</button>
-    `);
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-gold" onclick="closeModal();toast('打印指令已发送')">立即打印</button>`);
   },
-
-  'inbound'(){
-    openModal('入库登记', `
-      <div class="form-grid">
-        <div class="field"><label>入库日期（自由选择）</label><input type="date" id="ib-date" value="${today()}"></div>
-        <div class="field"><label>供应商</label><input id="ib-supplier" placeholder="如：深圳彩宝行"></div>
-        <div class="field field-full"><label>商品档案关联</label>
-          <select id="ib-prod">${store.products.map(p => `<option value="${p.id}">${p.name} ·${p.code}</option>`).join('')}</select>
-        </div>
-        <div class="field"><label>数量</label><input type="number" id="ib-qty" value="1"></div>
-        <div class="field"><label>入库成本单价</label><input type="number" id="ib-cost" placeholder="0.00"></div>
-      </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
-      <button class="btn btn-gold" data-act="do-inbound">确认入库</button>
-    `);
-  },
-  'do-inbound'(){ closeModal(); toast('入库成功 · 库存已更新'); render(); },
-
-  'copy-inbound'(el){
-    openModal('复制入库登记', `
-      <div style="padding:10px 14px;background:#FBF4E2;border-radius:6px;font-size:12px;color:var(--text-2);margin-bottom:16px;">
-        ◈ 已复制历史入库单，修改日期与金额后可一键批量提交。
+  'view-product'(el){
+    const p = getProduct(Number(el.id));
+    if (!p) return;
+    const margin = p.price - p.cost;
+    const rate = p.price ? (margin / p.price * 100).toFixed(1) : 0;
+    openModal('商品详情', `
+      <div style="display:flex;gap:20px;align-items:flex-start;margin-bottom:20px;">
+        <div class="prod-ico" style="width:56px;height:56px;font-size:26px;margin:0;">◆</div>
+        <div style="flex:1;"><div style="font-size:16px;font-weight:600;">${p.name}</div><div style="font-size:12px;color:var(--text-2);font-family:monospace;margin-top:4px;">${p.code}</div></div>
       </div>
       <div class="form-grid">
-        <div class="field"><label>入库日期（自由选择）</label><input type="date" value="${today()}"></div>
-        <div class="field"><label>供应商</label><input value="${el.supp || '自有金料'}"></div>
-        <div class="field field-full"><label>商品名称</label><input value="${el.name || '足金古法手镯'}"></div>
-        <div class="field"><label>数量</label><input type="number" value="1"></div>
-        <div class="field"><label>入库成本单价</label><input type="number" value="${el.cost || 0}"></div>
-      </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
-      <button class="btn btn-gold" onclick="closeModal();toast('已基于历史单据快速入库成功')">确认提交</button>
-    `);
+        <div><span style="font-size:12px;color:var(--text-2);">材质规格</span><div style="margin-top:4px;font-weight:600;">${p.material} · ${p.weight}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">零售标价</span><div style="margin-top:4px;font-weight:700;color:var(--wine);">${money(p.price)}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">商品存放位置</span><div style="margin-top:4px;font-weight:600;">${p.cabinet||'—'}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">证书存放位置</span><div style="margin-top:4px;font-weight:600;">${p.certBox||'—'}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">成本 / 毛利</span><div style="margin-top:4px;font-weight:600;">${money(p.cost)} / <b style="color:var(--green)">${money(margin)} (${rate}%)</b></div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">当前状态</span><div style="margin-top:4px;">${p.status}</div></div>
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">关闭</button>${p.status==='在库'?`<button class="btn btn-gold" data-act="sale-from-product" data-id="${p.id}">立即开单</button>`:''}`);
   },
-
-  'loan-in'(){
-    openModal('借进登记', `
-      <div class="form-grid">
-        <div class="field"><label>商品名称</label><input id="li-name" placeholder="如：18K玫瑰金项链"></div>
-        <div class="field"><label>商品编码</label><input id="li-code" value="ZB-JH-${Math.floor(Math.random()*9000+1000)}"></div>
-        <div class="field"><label>借入来源（同业/工厂）</label><input id="li-party" placeholder="来源名称"></div>
-        <div class="field"><label>规格/克重</label><input id="li-qty" placeholder="如：1件 / 8.2g"></div>
-        <div class="field"><label>预计归还日</label><input type="date" id="li-due" value="${new Date(Date.now()+30*86400000).toISOString().slice(0,10)}"></div>
-      </div>
-      <div style="margin-top:14px;padding:10px;background:#FDFAF3;border-radius:6px;font-size:12px;color:var(--text-2);">
-        借进商品赋予独立编号并在借货栏独立核算，不占正常采购成本。
-      </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
-      <button class="btn btn-gold" data-act="do-loan-in">确认借入</button>
-    `);
-  },
-  'do-loan-in'(){
-    const name = $('li-name').value || '未命名借入商品';
-    store.loans.unshift({
-      id: 'JH-' + today().replace(/-/g,'') + '-' + String(store.loans.length + 1).padStart(3,'0'),
-      dir:'in', name, code: $('li-code').value,
-      party: $('li-party').value || '同业展厅',
-      qty: $('li-qty').value || '1件', date: today(),
-      dueDate: $('li-due').value, status:'借入中',
-    });
+  'sale-from-product'(el){
+    const p = getProduct(Number(el.id));
+    if (!p || p.status !== '在库'){ toast('该商品不可开单'); return; }
     closeModal();
-    toast('借入登记成功 · 存放于借货栏');
-    render();
+    setTimeout(() => { actions['quick-sale'](); setTimeout(() => { const sel = $('sale-prod'); if (sel) sel.value = String(p.id); const amt = $('sale-amount'); const paid = $('sale-paid'); if (amt) amt.value = p.price; if (paid) paid.value = p.price; }, 80); }, 100);
   },
-
-  'loan-out-pick'(){
-    const options = store.products.filter(p => p.status === '在库')
-      .map(p => `<option value="${p.id}">${p.name} · ${p.code}</option>`).join('');
-    openModal('借出调拨登记', `
-      <div class="field" style="margin-bottom:16px;">
-        <label>选择在库货品进行调拨</label>
-        <select id="lo-prod">${options || '<option>暂无在库商品</option>'}</select>
-      </div>
-      <div class="form-grid">
-        <div class="field"><label>借出对象</label><input id="lo-party" placeholder="同业 / 客户名称"></div>
-        <div class="field"><label>预计归还日</label><input type="date" id="lo-due" value="${new Date(Date.now()+30*86400000).toISOString().slice(0,10)}"></div>
-      </div>
-      <div style="margin-top:14px;padding:10px;background:#FDFAF3;border-radius:6px;font-size:12px;color:var(--text-2);">
-        借出的货通过调拨操作从在库移至借货栏，与常规销售出库区分。
-      </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
-      <button class="btn btn-wine" data-act="do-loan-out">确认调拨借出</button>
-    `);
-  },
-  'do-loan-out'(){
-    const p = getProduct(Number($('lo-prod').value));
-    if (!p){ toast('请选择商品'); return; }
-    p.status = '借出';
-    store.loans.unshift({
-      id: 'JH-' + today().replace(/-/g,'') + '-' + String(store.loans.length + 1).padStart(3,'0'),
-      dir:'out', name:p.name, code:p.code,
-      party: $('lo-party').value || '同业伙伴',
-      qty:'1 件 · ' + p.weight, date:today(),
-      dueDate: $('lo-due').value, status:'借出中',
-    });
-    closeModal();
-    toast('调拨完成 · 已转入借货');
-    render();
-  },
-
-  'loan-return'(el){
-    const l = store.loans.find(x => x.id === el.id);
-    if (!confirm('确认该笔借货已归还核销？')) return;
-    store.loans = store.loans.filter(x => x.id !== el.id);
-    toast('归还已核销 · ' + l.name);
-    render();
-  },
-
   'new-product'(){
     openModal('新增商品', `
       <div class="form-grid">
         <div class="field"><label>商品名称</label><input id="np-name" placeholder="如：足金古法手镯"></div>
         <div class="field"><label>商品编码</label><input id="np-code" value="ZB-2024-${String(store.nextProductSeq).padStart(4,'0')}"></div>
-        <div class="field"><label>品类</label>
-          <select id="np-cat"><option>黄金</option><option>钻石</option><option>翡翠</option><option>铂金</option><option>彩宝</option></select>
-        </div>
+        <div class="field"><label>品类</label><select id="np-cat"><option>黄金</option><option>钻石</option><option>翡翠</option><option>铂金</option><option>彩宝</option></select></div>
         <div class="field"><label>材质</label><input id="np-material" placeholder="如：足金999"></div>
         <div class="field"><label>克重</label><input id="np-weight" placeholder="如：28.6g"></div>
         <div class="field"><label>尺寸/圈口</label><input id="np-size" placeholder="如：58mm"></div>
         <div class="field"><label>证书号</label><input id="np-cert" placeholder="如：GIA-8821"></div>
+        <div class="field"><label>商品存放位置</label><input id="np-cabinet" placeholder="如：A柜1格"></div>
+        <div class="field"><label>证书存放位置</label><input id="np-certbox" placeholder="如：证书柜1-01"></div>
         <div class="field"><label>成本价</label><input type="number" id="np-cost" placeholder="0.00"></div>
         <div class="field"><label>零售价</label><input type="number" id="np-price" placeholder="0.00"></div>
-        <div class="field"><label>所在门店</label>
-          <select id="np-store">${store.stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}</select>
-        </div>
-      </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
-      <button class="btn btn-gold" data-act="do-new-product">保存档案</button>
-    `);
+        <div class="field"><label>所在门店</label><select id="np-store">${store.stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}</select></div>
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-gold" data-act="do-new-product">保存档案</button>`);
   },
   'do-new-product'(){
     const name = $('np-name').value.trim();
     if (!name){ toast('请填写商品名称'); return; }
-    store.products.push({
-      id: store.nextProductSeq++,
-      code: $('np-code').value, name,
-      cat: $('np-cat').value,
-      material: $('np-material').value || '—',
-      weight: $('np-weight').value || '—',
-      size: $('np-size').value || '—',
-      cert: $('np-cert').value || '—',
-      cost: Number($('np-cost').value) || 0,
-      price: Number($('np-price').value) || 0,
-      status: '在库',
-      storeId: Number($('np-store').value) || store.currentStoreId,
-    });
-    closeModal();
-    toast('商品已新增 · ' + name);
-    render();
+    store.products.push({ id: store.nextProductSeq++, code: $('np-code').value, name, cat: $('np-cat').value, material: $('np-material').value || '—', weight: $('np-weight').value || '—', size: $('np-size').value || '—', cert: $('np-cert').value || '—', cabinet: $('np-cabinet').value || '—', certBox: $('np-certbox').value || '—', cost: Number($('np-cost').value) || 0, price: Number($('np-price').value) || 0, status: '在库', storeId: Number($('np-store').value) || store.currentStoreId });
+    closeModal(); toast('商品已新增 · ' + name); render();
   },
 
-  'view-product'(el){
-    const p = getProduct(Number(el.id));
-    if (!p) return;
-    openModal('商品详情', `
-      <div style="display:flex;gap:20px;align-items:flex-start;margin-bottom:20px;">
-        <div class="prod-ico" style="width:56px;height:56px;font-size:26px;margin:0;">◆</div>
-        <div style="flex:1;">
-          <div style="font-size:16px;font-weight:600;">${p.name}</div>
-          <div style="font-size:12px;color:var(--text-2);font-family:monospace;margin-top:4px;">${p.code}</div>
-        </div>
-      </div>
-      <div class="form-grid">
-        <div><span style="font-size:12px;color:var(--text-2);">材质规格</span><div style="margin-top:4px;font-weight:600;">${p.material} · ${p.weight}</div></div>
-        <div><span style="font-size:12px;color:var(--text-2);">零售标价</span><div style="margin-top:4px;font-weight:700;color:var(--wine);">${money(p.price)}</div></div>
-        <div><span style="font-size:12px;color:var(--text-2);">证书编号</span><div style="margin-top:4px;font-weight:600;">${p.cert}</div></div>
-        <div><span style="font-size:12px;color:var(--text-2);">当前状态</span><div style="margin-top:4px;">${p.status}</div></div>
-      </div>
-    `, `<button class="btn btn-ghost" onclick="closeModal()">关闭</button>`);
-  },
-
-  'sale-from-product'(el){
-    const p = getProduct(Number(el.id));
-    if (!p || p.status !== '在库'){ toast('该商品不可开单'); return; }
-    actions['quick-sale']();
-    setTimeout(() => {
-      const sel = $('sale-prod');
-      if (sel) sel.value = String(p.id);
-      const amt = $('sale-amount');
-      const paid = $('sale-paid');
-      if (amt) amt.value = p.price;
-      if (paid) paid.value = p.price;
-    }, 50);
-  },
-
+  /* 客户 */
   'new-customer'(){
     openModal('新增客户', `
       <div class="form-grid">
         <div class="field"><label>客户姓名</label><input id="nc-name" placeholder="姓名"></div>
         <div class="field"><label>手机号</label><input id="nc-phone" placeholder="手机号"></div>
-        <div class="field"><label>会员等级</label>
-          <select id="nc-level"><option>金卡</option><option>银卡</option><option>普通</option></select>
-        </div>
+        <div class="field"><label>会员等级</label><select id="nc-level"><option>金卡</option><option>银卡</option><option>普通</option></select></div>
         <div class="field"><label>生日</label><input id="nc-birth" placeholder="如：10-12"></div>
         <div class="field field-full"><label>偏好</label><input id="nc-prefer" placeholder="如：黄金·古法"></div>
-      </div>
-    `, `
-      <button class="btn btn-ghost" onclick="closeModal()">取消</button>
-      <button class="btn btn-gold" data-act="do-new-customer">保存</button>
-    `);
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-gold" data-act="do-new-customer">保存</button>`);
   },
   'do-new-customer'(){
     const name = $('nc-name').value.trim();
     if (!name){ toast('请填写客户姓名'); return; }
-    store.customers.push({
-      id: store.customers.length + 1, name,
-      phone: $('nc-phone').value || '—',
-      level: $('nc-level').value, total:0, due:0,
-      birthday: $('nc-birth').value || '—',
-      prefer: $('nc-prefer').value || '—',
-    });
-    closeModal();
-    toast('客户已建档 · ' + name);
-    render();
+    store.customers.push({ id: store.customers.length + 1, name, phone: $('nc-phone').value || '—', level: $('nc-level').value, total:0, due:0, birthday: $('nc-birth').value || '—', prefer: $('nc-prefer').value || '—' });
+    closeModal(); toast('客户已建档 · ' + name); render();
   },
   'cust-detail'(el){
     const c = store.customers.find(x => x.id === Number(el.id));
     openModal('客户详情', `
-      <div class="form-grid">
-        <div><span style="font-size:12px;color:var(--text-2);">客户</span><div style="font-weight:600;margin-top:4px;">${c.name} (${c.level})</div></div>
-        <div><span style="font-size:12px;color:var(--text-2);">电话</span><div style="font-weight:600;margin-top:4px;">${c.phone}</div></div>
-        <div><span style="font-size:12px;color:var(--text-2);">累计消费</span><div style="font-weight:700;color:var(--wine);margin-top:4px;">${money(c.total)}</div></div>
-        <div><span style="font-size:12px;color:var(--text-2);">欠款</span><div style="font-weight:700;color:${c.due>0?'var(--red)':'var(--text-2)'};margin-top:4px;">${c.due>0?money(c.due):'无欠款'}</div></div>
+      <div style="display:flex;gap:16px;align-items:center;margin-bottom:24px;">
+        <div class="avatar" style="width:56px;height:56px;font-size:20px;">${c.name[0]}</div>
+        <div><div style="font-size:18px;font-weight:600;">${c.name}</div><div style="font-size:12px;color:var(--text-2);margin-top:4px;">${c.phone}</div></div>
+        <div style="margin-left:auto;">${c.level==='金卡'?'<span class="tag tag-gold">金卡</span>':'<span class="tag tag-gray">'+c.level+'</span>'}</div>
       </div>
-    `, `<button class="btn btn-ghost" onclick="closeModal()">关闭</button>`);
+      <div class="form-grid">
+        <div><span style="font-size:12px;color:var(--text-2);">累计消费</span><div style="margin-top:6px;font-weight:700;font-size:16px;color:var(--wine);">${money(c.total)}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">欠款</span><div style="margin-top:6px;font-weight:700;font-size:16px;color:${c.due>0?'var(--red)':'var(--text-2)'};">${c.due>0?money(c.due):'无'}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">生日</span><div style="margin-top:6px;font-weight:600;">${c.birthday}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">偏好</span><div style="margin-top:6px;font-weight:600;">${c.prefer}</div></div>
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">关闭</button>${c.due>0?`<button class="btn btn-gold" data-act="collect" data-id="${c.id}">发送催收</button>`:''}`);
   },
-  'collect'(el){
-    const c = store.customers.find(x => x.id === Number(el.id));
-    toast('已向 ' + c.name + ' 发送催收对账单');
-  }
+  'collect'(el){ const c = store.customers.find(x => x.id === Number(el.id)); toast('已向 ' + c.name + ' 发送催收对账单'); },
+
+  /* 借货 */
+  'loan-in'(){
+    openModal('借进登记', `
+      <div class="form-grid">
+        <div class="field"><label>商品名称</label><input id="li-name" placeholder="如：18K玫瑰金项链"></div>
+        <div class="field"><label>商品编码</label><input id="li-code" value="ZB-JH-${Math.floor(Math.random()*9000+1000)}"></div>
+        <div class="field"><label>借入来源</label><input id="li-party" placeholder="同业/工厂"></div>
+        <div class="field"><label>规格/克重</label><input id="li-qty" placeholder="如：1件 / 8.2g"></div>
+        <div class="field"><label>预计归还日</label><input type="date" id="li-due" value="${new Date(Date.now()+30*86400000).toISOString().slice(0,10)}"></div>
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-gold" data-act="do-loan-in">确认借入</button>`);
+  },
+  'do-loan-in'(){
+    const name = $('li-name').value || '未命名商品';
+    store.loans.unshift({ id:'JH-'+today().replace(/-/g,'')+'-'+String(store.loans.length+1).padStart(3,'0'), dir:'in', name, code: $('li-code').value, party: $('li-party').value || '同业展厅', qty: $('li-qty').value || '1件', date: today(), dueDate: $('li-due').value, status:'借入中' });
+    closeModal(); toast('借进登记完成'); render();
+  },
+  'loan-out-pick'(){
+    const options = store.products.filter(p => p.status === '在库').map(p => `<option value="${p.id}">${p.name} · ${p.code}</option>`).join('');
+    openModal('借出登记', `
+      <div class="field" style="margin-bottom:16px;"><label>选择在库商品</label><select id="lo-prod">${options||'<option>暂无在库商品</option>'}</select></div>
+      <div class="form-grid">
+        <div class="field"><label>借出对象</label><input id="lo-party" placeholder="同业/客户"></div>
+        <div class="field"><label>预计归还日</label><input type="date" id="lo-due" value="${new Date(Date.now()+30*86400000).toISOString().slice(0,10)}"></div>
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-wine" data-act="do-loan-out">确认借出</button>`);
+  },
+  'do-loan-out'(){
+    const p = getProduct(Number($('lo-prod').value));
+    if (!p){ toast('请选择商品'); return; }
+    p.status = '借出';
+    store.loans.unshift({ id:'JH-'+today().replace(/-/g,'')+'-'+String(store.loans.length+1).padStart(3,'0'), dir:'out', name:p.name, code:p.code, party: $('lo-party').value || '同业伙伴', qty:'1 件 · ' + p.weight, date:today(), dueDate: $('lo-due').value, status:'借出中' });
+    closeModal(); toast('借出登记完成'); render();
+  },
+  'loan-return'(el){
+    const l = store.loans.find(x => x.id === el.id);
+    if (!confirm('确认该笔借货已归还？')) return;
+    store.loans = store.loans.filter(x => x.id !== el.id);
+    toast('已登记归还 · ' + l.name); render();
+  },
+
+  /* 维修 */
+  'new-repair'(){
+    const custOptions = store.customers.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    openModal('新建维修单', `
+      <div class="form-grid">
+        <div class="field"><label>客户</label><select id="rp-cust">${custOptions}</select></div>
+        <div class="field"><label>联系电话</label><input id="rp-phone" placeholder="选填"></div>
+        <div class="field field-full"><label>维修物品</label><input id="rp-item" placeholder="如：足金古法手镯"></div>
+        <div class="field field-full"><label>问题描述</label><textarea id="rp-issue" style="min-height:60px;resize:none;" placeholder="如：链扣损坏，需焊接加固"></textarea></div>
+        <div class="field"><label>预估费用</label><input type="number" id="rp-fee" placeholder="0.00"></div>
+        <div class="field"><label>师傅</label><input id="rp-tech" placeholder="选填"></div>
+        <div class="field"><label>接件日期</label><input type="date" id="rp-receive" value="${today()}"></div>
+        <div class="field"><label>承诺交付日</label><input type="date" id="rp-promise" value="${new Date(Date.now()+7*86400000).toISOString().slice(0,10)}"></div>
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-wine" data-act="do-new-repair">确认接件</button>`);
+  },
+  'do-new-repair'(){
+    const cust = store.customers.find(c => c.id === Number($('rp-cust').value));
+    const item = $('rp-item').value.trim();
+    if (!item){ toast('请填写维修物品'); return; }
+    const id = nextRepairId();
+    store.repairs.unshift({ id, cust: cust.name, phone: $('rp-phone').value || cust.phone, item, issue: $('rp-issue').value || '—', estimateFee: Number($('rp-fee').value) || 0, actualFee: null, receiveDate: $('rp-receive').value, promisedDate: $('rp-promise').value, doneDate: null, status: '待维修', technician: $('rp-tech').value || '', remark: '' });
+    closeModal(); toast('维修单已创建'); state.view = 'repairs'; render();
+  },
+  'repair-advance'(el){
+    const r = store.repairs.find(x => x.id === el.id);
+    const flow = { '待维修':'维修中', '维修中':'待取件', '待取件':'已完成' };
+    const next = flow[r.status];
+    if (next === '已完成'){ actions['repair-complete'](el); return; }
+    r.status = next; toast(r.item + ' → ' + next); render();
+  },
+  'repair-complete'(el){
+    const r = store.repairs.find(x => x.id === el.id);
+    openModal('维修完成并收款', `
+      <div style="padding:14px;background:#FBF4E2;border-radius:8px;border:1px solid #E5D3A8;margin-bottom:16px;"><div style="font-weight:600;">${r.cust} · ${r.item}</div><div style="font-size:11.5px;color:var(--text-2);margin-top:6px;">${r.issue}</div></div>
+      <div class="form-grid">
+        <div class="field"><label>实际收费</label><input type="number" id="rc-fee" value="${r.estimateFee}"></div>
+        <div class="field"><label>收款方式</label><select id="rc-method"><option>现金</option><option>微信</option><option>银行卡</option><option>其他</option></select></div>
+        <div class="field field-full"><label>备注</label><textarea id="rc-remark" style="min-height:60px;resize:none;">${r.remark}</textarea></div>
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-gold" data-act="do-repair-complete" data-id="${r.id}">确认完成</button>`);
+  },
+  'do-repair-complete'(el){
+    const r = store.repairs.find(x => x.id === el.id);
+    r.actualFee = Number($('rc-fee').value) || 0;
+    r.remark = $('rc-remark').value || '';
+    r.status = '已完成'; r.doneDate = today();
+    const cust = store.customers.find(c => c.name === r.cust);
+    if (cust) cust.total += r.actualFee;
+    closeModal(); toast('维修完成 · 收费 ' + money(r.actualFee)); render();
+  },
+  'repair-detail'(el){
+    const r = store.repairs.find(x => x.id === el.id);
+    openModal('维修单详情', `
+      <div class="form-grid">
+        <div><span style="font-size:12px;color:var(--text-2);">单号</span><div style="margin-top:4px;font-weight:600;font-family:monospace;">${r.id}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">状态</span><div style="margin-top:4px;">${r.status}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">客户</span><div style="margin-top:4px;font-weight:600;">${r.cust}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">物品</span><div style="margin-top:4px;font-weight:600;">${r.item}</div></div>
+        <div style="grid-column:1/-1;"><span style="font-size:12px;color:var(--text-2);">问题</span><div style="margin-top:4px;font-weight:600;">${r.issue}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">预估费</span><div style="margin-top:4px;font-weight:600;">${money(r.estimateFee)}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">实收费</span><div style="margin-top:4px;font-weight:700;color:var(--wine);">${r.actualFee?money(r.actualFee):'—'}</div></div>
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">关闭</button>`);
+  },
+
+  /* 采购 */
+  'new-purchase'(){
+    openModal('新建采购单', `
+      <div class="form-grid">
+        <div class="field"><label>供应商</label><input id="pu-supplier" placeholder="如：深圳彩宝行"></div>
+        <div class="field"><label>商品名称</label><input id="pu-product" placeholder="如：红宝石镶钻耳钉"></div>
+        <div class="field"><label>数量</label><input type="number" id="pu-qty" value="1"></div>
+        <div class="field"><label>成本单价</label><input type="number" id="pu-cost" placeholder="0.00"></div>
+        <div class="field"><label>下单日期</label><input type="date" id="pu-order" value="${today()}"></div>
+        <div class="field"><label>预计到货</label><input type="date" id="pu-expected" value="${new Date(Date.now()+5*86400000).toISOString().slice(0,10)}"></div>
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-wine" data-act="do-new-purchase">确认下单</button>`);
+  },
+  'do-new-purchase'(){
+    const product = $('pu-product').value.trim();
+    if (!product){ toast('请填写商品名称'); return; }
+    const qty = Number($('pu-qty').value) || 1;
+    const cost = Number($('pu-cost').value) || 0;
+    const id = nextPurchaseId();
+    store.purchases.unshift({ id, supplier: $('pu-supplier').value || '未填写', product, qty, cost: cost * qty, orderDate: $('pu-order').value, expectedDate: $('pu-expected').value, receivedDate: null, status:'待发货', paid:0 });
+    closeModal(); toast('采购单已建立'); state.view = 'purchases'; render();
+  },
+  'purchase-ship'(el){ const p = store.purchases.find(x => x.id === el.id); p.status = '已发货'; toast('已标记发货'); render(); },
+  'purchase-receive'(el){
+    const p = store.purchases.find(x => x.id === el.id);
+    if (!confirm(`确认「${p.product}」已到货入库？`)) return;
+    p.status = '已入库'; p.receivedDate = today();
+    toast('已到货入库'); render();
+  },
+  'purchase-pay'(el){
+    const p = store.purchases.find(x => x.id === el.id);
+    openModal('登记付款', `
+      <div style="padding:14px;background:#FBF4E2;border-radius:8px;margin-bottom:16px;"><div style="font-weight:600;">${p.product}</div><div style="font-size:12px;color:var(--text-2);margin-top:6px;">应付：<b>${money(p.cost)}</b> · 已付：<b style="color:var(--green)">${money(p.paid)}</b></div></div>
+      <div class="field"><label>本次付款金额</label><input type="number" id="pp-amount" value="${p.cost - p.paid}"></div>`,
+      `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-gold" data-act="do-purchase-pay" data-id="${p.id}">确认付款</button>`);
+  },
+  'do-purchase-pay'(el){
+    const p = store.purchases.find(x => x.id === el.id);
+    p.paid += Number($('pp-amount').value) || 0;
+    closeModal(); toast('付款已登记'); render();
+  },
+
+  /* 委外 */
+  'new-outsourcing'(){
+    openModal('新建加工单', `
+      <div class="form-grid">
+        <div class="field"><label>加工厂</label><input id="ou-factory" placeholder="如：深圳金辉厂"></div>
+        <div class="field"><label>加工内容</label><input id="ou-product" placeholder="如：足金手镯改款"></div>
+        <div class="field"><label>材质</label><select id="ou-material"><option>足金999</option><option>18K金</option><option>PT950</option><option>其他</option></select></div>
+        <div class="field"><label>克重</label><input id="ou-weight" placeholder="如：28.6"></div>
+        <div class="field"><label>金价（元/g）</label><input type="number" id="ou-gold" value="560"></div>
+        <div class="field"><label>加工费</label><input type="number" id="ou-labor" placeholder="0.00"></div>
+        <div class="field"><label>发料日期</label><input type="date" id="ou-send" value="${today()}"></div>
+        <div class="field"><label>预计交货</label><input type="date" id="ou-expected" value="${new Date(Date.now()+10*86400000).toISOString().slice(0,10)}"></div>
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-wine" data-act="do-new-outsourcing">确认发料</button>`);
+  },
+  'do-new-outsourcing'(){
+    const product = $('ou-product').value.trim();
+    if (!product){ toast('请填写加工内容'); return; }
+    const id = nextOutsourcingId();
+    store.outsourcings.unshift({ id, factory: $('ou-factory').value || '未填写', product, material: $('ou-material').value, weight: $('ou-weight').value || '0', goldPrice: Number($('ou-gold').value) || 0, laborFee: Number($('ou-labor').value) || 0, sendDate: $('ou-send').value, expectedDate: $('ou-expected').value, receivedDate: null, status:'加工中' });
+    closeModal(); toast('加工单已建立'); state.view = 'outsourcings'; render();
+  },
+  'outsourcing-receive'(el){
+    const o = store.outsourcings.find(x => x.id === el.id);
+    if (!confirm(`确认「${o.product}」已收货？`)) return;
+    o.status = '已收货'; o.receivedDate = today();
+    toast('已收货'); render();
+  },
+  'outsourcing-detail'(el){
+    const o = store.outsourcings.find(x => x.id === el.id);
+    const cost = o.laborFee + o.goldPrice * parseFloat(o.weight);
+    openModal('加工单详情', `
+      <div class="form-grid">
+        <div><span style="font-size:12px;color:var(--text-2);">单号</span><div style="margin-top:4px;font-weight:600;font-family:monospace;">${o.id}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">状态</span><div style="margin-top:4px;">${o.status}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">加工厂</span><div style="margin-top:4px;font-weight:600;">${o.factory}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">内容</span><div style="margin-top:4px;font-weight:600;">${o.product}</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">规格</span><div style="margin-top:4px;font-weight:600;">${o.material} · ${o.weight}g</div></div>
+        <div><span style="font-size:12px;color:var(--text-2);">总成本</span><div style="margin-top:4px;font-weight:700;color:var(--wine);">${money(cost)}</div></div>
+      </div>`, `<button class="btn btn-ghost" onclick="closeModal()">关闭</button>`);
+  },
+
+  /* 橱窗 */
+  'add-showcase'(){
+    const options = store.products.filter(p => p.status === '在库').map(p => `<option value="${p.id}">${p.name} · ${p.code}</option>`).join('');
+    openModal('添加橱窗商品', `
+      <div class="field" style="margin-bottom:16px;"><label>选择在库商品</label><select id="sc-prod">${options||'<option>暂无在库商品</option>'}</select></div>
+      <div class="field" style="margin-bottom:16px;"><label>排序号（1-10）</label><input type="number" id="sc-sort" value="${store.showcases.length+1}"></div>
+      <div class="field"><label>商品描述</label><input id="sc-desc" placeholder="如：18K金经典钻戒，日常佩戴首选"></div>
+    `, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-gold" data-act="do-add-showcase">添加</button>`);
+  },
+  'do-add-showcase'(){
+    const pid = Number($('sc-prod').value);
+    if (!pid){ toast('请选择商品'); return; }
+    store.showcases.push({ id: Date.now(), productId: pid, sort: Number($('sc-sort').value) || store.showcases.length + 1, desc: $('sc-desc').value || '' });
+    closeModal(); toast('已加入橱窗'); render();
+  },
+  'remove-showcase'(el){
+    store.showcases = store.showcases.filter(s => s.id !== Number(el.id));
+    toast('已移出橱窗'); render();
+  },
+  'edit-showcase'(el){
+    const s = store.showcases.find(x => x.id === Number(el.id));
+    openModal('编辑橱窗商品', `
+      <div class="field" style="margin-bottom:16px;"><label>排序号</label><input type="number" id="es-sort" value="${s.sort}"></div>
+      <div class="field"><label>商品描述</label><input id="es-desc" value="${s.desc}"></div>
+    `, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-gold" data-act="do-edit-showcase" data-id="${s.id}">保存</button>`);
+  },
+  'do-edit-showcase'(el){
+    const s = store.showcases.find(x => x.id === Number(el.id));
+    s.sort = Number($('es-sort').value) || s.sort;
+    s.desc = $('es-desc').value;
+    closeModal(); toast('已更新'); render();
+  },
+
+  /* 预约 */
+  'appt-confirm'(el){ const a = store.appointments.find(x => x.id === el.id); a.status = '已确认'; toast('预约已确认'); render(); },
+  'appt-cancel'(el){ const a = store.appointments.find(x => x.id === el.id); a.status = '已取消'; toast('预约已取消'); render(); },
+  'appt-arrive'(el){ const a = store.appointments.find(x => x.id === el.id); a.status = '已到店'; toast('已标记到店'); render(); },
+
+  /* 网站 */
+  'copy-site-url'(){ toast('网址已复制：jinyuxuan.yizhen.cloud'); },
+  'toggle-site'(){ store.storeProfile.websiteEnabled = !store.storeProfile.websiteEnabled; toast(store.storeProfile.websiteEnabled ? '网站已发布' : '网站已停用'); render(); },
+  'site-appoint'(){ toast('客户提交预约请求后，将直接进入「到店预约」列表'); },
+
+  /* 资料 */
+  'save-profile'(){ toast('店铺资料已保存'); },
 };
 
 document.addEventListener('click', e => {
   const nav = e.target.closest('[data-nav]');
-  if (nav){ state.view = nav.dataset.nav; state.params = {}; render(); return; }
+  if (nav){ state.view = nav.dataset.nav; render(); return; }
   const act = e.target.closest('[data-act]');
-  if (act){
-    const fn = actions[act.dataset.act];
-    if (fn){ e.preventDefault(); fn(act.dataset); }
-  }
+  if (act){ const fn = actions[act.dataset.act]; if (fn){ e.preventDefault(); fn(act.dataset); } }
 });
 
 render();

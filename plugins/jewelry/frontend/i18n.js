@@ -20,7 +20,7 @@ var I18N = {
     'nav.customers': '客户管理', 'nav.repairs': '维修管理', 'nav.purchases': '采购管理',
     'nav.outsourcings': '委外加工', 'nav.logs': '操作日志', 'nav.appointments': '到店预约',
     'nav.profile': '店铺资料', 'nav.site': '迷你网站', 'nav.sale': '快速开单',
-    'nav.logout': '退出登录', 'nav.more': '我的', 'nav.rfid': 'RFID盘点',
+    'nav.logout': '退出登录', 'nav.more': '我的', 'nav.rfid': 'RFID盘点', 'nav.showcase': '橱窗展示',
     // login
     'login.user': '用户名', 'login.userPh': '请输入用户名', 'login.pass': '密码',
     'login.passPh': '请输入密码', 'login.submit': '登 录', 'login.hint': '演示账号：admin / 123456',
@@ -128,7 +128,7 @@ var I18N = {
     'nav.customers': 'Customers', 'nav.repairs': 'Repairs', 'nav.purchases': 'Purchasing',
     'nav.outsourcings': 'Outsourcing', 'nav.logs': 'Audit Logs', 'nav.appointments': 'Appointments',
     'nav.profile': 'Store Profile', 'nav.site': 'Mini Site', 'nav.sale': 'New Sale',
-    'nav.logout': 'Sign Out', 'nav.more': 'Me', 'nav.rfid': 'RFID Count',
+    'nav.logout': 'Sign Out', 'nav.more': 'Me', 'nav.rfid': 'RFID Count', 'nav.showcase': 'Showcase',
     // login
     'login.user': 'Username', 'login.userPh': 'Enter username', 'login.pass': 'Password',
     'login.passPh': 'Enter password', 'login.submit': 'Sign In', 'login.hint': 'Demo: admin / 123456',
