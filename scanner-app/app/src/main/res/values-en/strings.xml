@@ -8,10 +8,7 @@
 
     <string name="st_group_server">Server</string>
     <string name="server_url">Server API URL</string>
-    <string name="server_url_hint">Auto-filled after scanning the task QR</string>
-    <string name="st_scan_qr">Scan QR</string>
-    <string name="st_scan_prompt">Aim at the task QR on the supervisor PC</string>
-    <string name="st_url_filled">Address filled — tap Save</string>
+    <string name="server_url_hint">Auto-filled when joining via QR on the Home screen; usually no edit needed</string>
     <string name="qr_legacy_hint">This is the old single-user stocktake QR and cannot be used for collaborative stocktake.\nStart a task in the "Collaborative Stocktake Task" card on the PC, then scan THAT QR code.</string>
     <string name="qr_unknown_hint">Unrecognized QR code. Please scan the "Collaborative Stocktake Task" QR code.</string>
     <string name="qr_invalid_key">Invalid task key or task ended. Please rescan the latest collaborative task QR code.</string>
