@@ -63,12 +63,13 @@
     <string name="task_active">任务进行中</string>
     <string name="task_waiting">待主管核对</string>
     <string name="task_ended">任务已结束</string>
+    <string name="task_rescan">任务已结束，请扫码加入新的盘点任务</string>
     <string name="snapshot_none">未下载商品快照</string>
     <string name="snapshot_ok">已下载商品快照 %1$d 件</string>
     <string name="device_me">本机编号：%1$d 号</string>
-    <string name="btn_scan_join">扫码加入任务</string>
+    <string name="device_none">本机编号：—</string>
+    <string name="btn_scan_join">扫码加入盘点任务</string>
     <string name="btn_download">下载快照</string>
-    <string name="btn_join">重新连接</string>
 
     <!-- 首页：高价值提醒条 -->
     <string name="hv_alert">⚠ 有 %1$d 件高价值商品尚未扫到</string>

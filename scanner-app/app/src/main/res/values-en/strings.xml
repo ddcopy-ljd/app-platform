@@ -58,12 +58,13 @@
     <string name="task_active">Task in progress</string>
     <string name="task_waiting">Waiting for review</string>
     <string name="task_ended">Task ended</string>
+    <string name="task_rescan">Task ended. Please scan the QR to join the new stocktake task</string>
     <string name="snapshot_none">Snapshot not downloaded</string>
     <string name="snapshot_ok">Snapshot downloaded: %1$d items</string>
     <string name="device_me">Device no: %1$d</string>
-    <string name="btn_scan_join">Scan QR to join</string>
+    <string name="device_none">Device no: —</string>
+    <string name="btn_scan_join">Scan QR to join stocktake</string>
     <string name="btn_download">Download snapshot</string>
-    <string name="btn_join">Reconnect</string>
 
     <string name="hv_alert">⚠ %1$d high-value item(s) not yet scanned</string>
 
