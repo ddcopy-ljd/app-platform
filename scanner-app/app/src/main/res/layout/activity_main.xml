@@ -253,6 +253,19 @@
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
+            <!-- 模拟扳机：按住=按下扳机，松开=弹起 -->
+            <TextView
+                android:id="@+id/btnTrigger"
+                android:layout_width="match_parent"
+                android:layout_height="62dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_btn_green"
+                android:gravity="center"
+                android:text="@string/trigger_btn"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
             <!-- Tab -->
             <LinearLayout
                 android:layout_width="match_parent"

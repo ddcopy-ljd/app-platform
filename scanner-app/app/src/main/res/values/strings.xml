@@ -85,6 +85,9 @@
     <string name="trigger_camera">点按此处打开摄像头，对准条码连续扫描，自动上传</string>
     <string name="trigger_scanning">扫描中…数据自动上传，无需手动结束</string>
     <string name="trigger_idle">点按此处打开摄像头，扫任务二维码加入盘点</string>
+    <string name="trigger_btn">🎯 按住模拟扳机（按住扫描，松开停止）</string>
+    <string name="trigger_btn_active">🔴 扫描中…松开停止</string>
+    <string name="trigger_btn_join">📷 按住模拟扳机：扫码加入任务</string>
 
     <!-- 摄像头连续扫码页（无 UHF 模块的手机兜底） -->
     <string name="camera_title">摄像头条码盘点（条码即 EPC）</string>

@@ -15,6 +15,7 @@ import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
@@ -49,6 +50,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statGlobal: TextView
     private lateinit var statBook: TextView
     private lateinit var tvTriggerHint: TextView
+    private lateinit var btnTrigger: TextView
     private lateinit var tabStore: TextView
     private lateinit var tabAbnormal: TextView
     private lateinit var tvEmpty: TextView
@@ -123,6 +125,7 @@ class MainActivity : AppCompatActivity() {
         statGlobal = findViewById(R.id.statGlobal)
         statBook = findViewById(R.id.statBook)
         tvTriggerHint = findViewById(R.id.tvTriggerHint)
+        btnTrigger = findViewById(R.id.btnTrigger)
         tabStore = findViewById(R.id.tabStore)
         tabAbnormal = findViewById(R.id.tabAbnormal)
         tvEmpty = findViewById(R.id.tvEmpty)
@@ -153,6 +156,15 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<TextView>(R.id.btnJoin).setOnClickListener { scanJoinQr() }
         findViewById<TextView>(R.id.btnDownload).setOnClickListener { downloadSnapshot() }
+        // 屏幕模拟扳机：按下=扣下扳机，松开/滑出=弹起
+        btnTrigger.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { onTriggerDown(); true }
+                MotionEvent.ACTION_UP -> { onTriggerUp(); true }
+                MotionEvent.ACTION_CANCEL -> { onTriggerUp(); true }
+                else -> true
+            }
+        }
         tabStore.setOnClickListener { abnormalTab = false; refreshList() }
         tabAbnormal.setOnClickListener { abnormalTab = true; refreshList() }
     }
@@ -676,6 +688,20 @@ class MainActivity : AppCompatActivity() {
             tvTriggerHint.alpha = 1f
             tvTriggerHint.setText(R.string.trigger_idle)
             tvTriggerHint.setOnClickListener { scanJoinQr() }
+        }
+
+        // 模拟扳机按钮：扫描中红色，待扫绿色，未加入任务蓝色（按住直接扫码加入）
+        if (canScan()) {
+            if (scanning) {
+                btnTrigger.setBackgroundResource(R.drawable.bg_btn_red)
+                btnTrigger.setText(R.string.trigger_btn_active)
+            } else {
+                btnTrigger.setBackgroundResource(R.drawable.bg_btn_green)
+                btnTrigger.setText(R.string.trigger_btn)
+            }
+        } else {
+            btnTrigger.setBackgroundResource(R.drawable.bg_btn_blue)
+            btnTrigger.setText(R.string.trigger_btn_join)
         }
 
         // Tab 颜色
