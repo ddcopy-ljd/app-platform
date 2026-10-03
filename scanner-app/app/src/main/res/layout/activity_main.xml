@@ -114,17 +114,10 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical">
 
-                    <View
-                        android:id="@+id/dotNet"
-                        android:layout_width="9dp"
-                        android:layout_height="9dp"
-                        android:background="@drawable/dot_gray" />
-
                     <TextView
                         android:id="@+id/tvNet"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="6dp"
                         android:text="@string/net_offline"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />

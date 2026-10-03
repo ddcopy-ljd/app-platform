@@ -40,7 +40,6 @@ class MainActivity : AppCompatActivity() {
 
     // 视图
     private lateinit var tvNet: TextView
-    private lateinit var dotNet: View
     private lateinit var tvTask: TextView
     private lateinit var tvSnapshot: TextView
     private lateinit var tvUhf: TextView
@@ -118,7 +117,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun bindViews() {
         tvNet = findViewById(R.id.tvNet)
-        dotNet = findViewById(R.id.dotNet)
         tvTask = findViewById(R.id.tvTask)
         tvSnapshot = findViewById(R.id.tvSnapshot)
         tvUhf = findViewById(R.id.tvUhf)
@@ -693,10 +691,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshUi() {
-        // 网络
+        // 网络（圆点已移除：用文字颜色区分在线/离线）
         tvNet.setText(if (lastNetworkOk) R.string.net_online else R.string.net_offline)
-        dotNet.setBackgroundResource(
-            if (lastNetworkOk) R.drawable.dot_green else R.drawable.dot_gray)
+        tvNet.setTextColor(getColor(if (lastNetworkOk) R.color.green else R.color.text_secondary))
 
         // 任务
         tvTask.setText(
