@@ -876,8 +876,8 @@ def biz_config_update(request: Request, body: BizConfigUpdate):
 def category_list(request: Request):
     _require_auth(request)
     with _db(request) as conn:
-        rows = conn.execute("SELECT code,names,sort_order FROM categories ORDER BY sort_order,code").fetchall()
-        return [{"code": r[0], "names": json.loads(r[1] or "{}"), "sort_order": r[2]} for r in rows]
+        rows = conn.execute("SELECT code,names,sort_order,label_template_id FROM categories ORDER BY sort_order,code").fetchall()
+        return [{"code": r[0], "names": json.loads(r[1] or "{}"), "sort_order": r[2], "label_template_id": r[3]} for r in rows]
 
 
 class CategoryUpdate(BaseModel):
@@ -931,6 +931,120 @@ def category_delete(request: Request, code: str):
         conn.execute("DELETE FROM categories WHERE code=?", (code,))
         conn.commit()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- 标签模板 CRUD
+
+class LabelTemplateIn(BaseModel):
+    name: str = ""
+    size_width: float = 70
+    size_height: float = 35
+    definition: dict | str = "{}"
+    cols: int = 1
+    gap: float = 0
+    copies: int = 1
+    default_printer: str = ""
+    is_rfid: int = 0
+
+
+def _tpl_row(r) -> dict:
+    d = dict(r)
+    if isinstance(d.get("definition"), str):
+        try:
+            d["definition"] = json.loads(d["definition"])
+        except (json.JSONDecodeError, TypeError):
+            d["definition"] = {}
+    return d
+
+
+@app.get("/api/label-templates")
+def label_templates_list(request: Request):
+    _require_auth(request)
+    with _db(request) as conn:
+        rows = conn.execute("SELECT * FROM label_templates ORDER BY id").fetchall()
+        return {"list": [_tpl_row(r) for r in rows]}
+
+
+@app.post("/api/label-templates")
+def label_template_create(body: LabelTemplateIn, request: Request):
+    op = _require_auth(request)
+    with _db(request) as conn:
+        definition = body.definition if isinstance(body.definition, str) else json.dumps(body.definition, ensure_ascii=False)
+        cur = conn.execute(
+            "INSERT INTO label_templates(name,size_width,size_height,definition,cols,gap,copies,default_printer,is_rfid) VALUES(?,?,?,?,?,?,?,?,?)",
+            (body.name, body.size_width, body.size_height, definition, body.cols, body.gap, body.copies, body.default_printer, body.is_rfid),
+        )
+        conn.commit()
+        _log(conn, op["username"], "新建标签模板", body.name)
+        return {"ok": True, "id": cur.lastrowid}
+
+
+@app.put("/api/label-templates/{tid}")
+def label_template_update(tid: int, body: LabelTemplateIn, request: Request):
+    op = _require_auth(request)
+    with _db(request) as conn:
+        definition = body.definition if isinstance(body.definition, str) else json.dumps(body.definition, ensure_ascii=False)
+        conn.execute(
+            "UPDATE label_templates SET name=?,size_width=?,size_height=?,definition=?,cols=?,gap=?,copies=?,default_printer=?,is_rfid=? WHERE id=?",
+            (body.name, body.size_width, body.size_height, definition, body.cols, body.gap, body.copies, body.default_printer, body.is_rfid, tid),
+        )
+        conn.commit()
+        _log(conn, op["username"], "更新标签模板", f"#{tid} {body.name}")
+        return {"ok": True}
+
+
+@app.delete("/api/label-templates/{tid}")
+def label_template_delete(tid: int, request: Request):
+    op = _require_auth(request)
+    with _db(request) as conn:
+        used = conn.execute("SELECT COUNT(*) FROM categories WHERE label_template_id=?", (tid,)).fetchone()[0]
+        if used:
+            raise HTTPException(400, f"该模板已被 {used} 个分类绑定，请先解绑")
+        conn.execute("DELETE FROM label_templates WHERE id=?", (tid,))
+        conn.commit()
+        _log(conn, op["username"], "删除标签模板", f"#{tid}")
+        return {"ok": True}
+
+
+@app.post("/api/label-templates/{tid}/preview")
+def label_template_preview(tid: int, request: Request, product_id: int = 1):
+    _require_auth(request)
+    with _db(request) as conn:
+        tpl = conn.execute("SELECT * FROM label_templates WHERE id=?", (tid,)).fetchone()
+        if not tpl:
+            raise HTTPException(404, "模板不存在")
+        p = conn.execute("SELECT * FROM products WHERE id=?", (product_id,)).fetchone()
+        if not p:
+            raise HTTPException(404, "商品不存在")
+        prof = conn.execute("SELECT name FROM tenant_profiles ORDER BY id DESC LIMIT 1").fetchone()
+        store_name = prof["name"] if prof and prof["name"] else ""
+        product = dict(p)
+        product["rfid_epc"] = product.get("rfid_epc") or _gen_epc(product["code"])
+        zpl = rfid_print.build_label_zpl(product, store_name=store_name, template=dict(tpl))
+        return {"ok": True, "zpl": zpl, "product": product}
+
+
+# ---------------------------------------------------------------- 分类绑定模板
+
+class CategoryTemplateIn(BaseModel):
+    label_template_id: int | None = None
+
+
+@app.put("/api/categories/{code}/template")
+def category_bind_template(code: str, body: CategoryTemplateIn, request: Request):
+    op = _require_auth(request)
+    with _db(request) as conn:
+        cat = conn.execute("SELECT code FROM categories WHERE code=?", (code,)).fetchone()
+        if not cat:
+            raise HTTPException(404, "分类不存在")
+        if body.label_template_id is not None:
+            tpl = conn.execute("SELECT id FROM label_templates WHERE id=?", (body.label_template_id,)).fetchone()
+            if not tpl:
+                raise HTTPException(404, "模板不存在")
+        conn.execute("UPDATE categories SET label_template_id=? WHERE code=?", (body.label_template_id, code))
+        conn.commit()
+        _log(conn, op["username"], "分类绑定模板", f"{code} -> {body.label_template_id}")
+        return {"ok": True}
 
 
 @app.post("/api/products/{pid}/generate-epc")
@@ -1214,6 +1328,7 @@ class LabelPrintIn(BaseModel):
     write_epc: bool = True
     font: str = rfid_print.DEFAULT_FONT
     simulate: bool = False  # True 时只生成 ZPL 不实际发送
+    template_id: int | None = None  # 指定模板后按模板 slots 排版，忽略 fields
 
 
 @app.post("/api/print/labels")
@@ -1221,7 +1336,6 @@ def print_labels(body: LabelPrintIn, request: Request):
     op = _require_auth(request)
     if not body.product_ids:
         raise HTTPException(400, "请至少选择一件商品")
-    fields = {f for f in body.fields if f in rfid_print.FIELD_OPTIONS}
     with _db(request) as conn:
         prof = conn.execute("SELECT name FROM tenant_profiles ORDER BY id DESC LIMIT 1").fetchone()
         store_name = prof["name"] if prof and prof["name"] else ""
@@ -1232,6 +1346,26 @@ def print_labels(body: LabelPrintIn, request: Request):
         if len(rows) != len(set(body.product_ids)):
             raise HTTPException(404, "部分商品不存在")
         products = [dict(r) for r in rows]
+
+        # 模板解析：优先显式 template_id，否则按商品分类自动查找绑定模板
+        template = None
+        if body.template_id:
+            tpl = conn.execute("SELECT * FROM label_templates WHERE id=?", (body.template_id,)).fetchone()
+            if tpl:
+                template = dict(tpl)
+        else:
+            # 单类别时尝试自动匹配
+            cat_codes = {p.get("category_code", "") for p in products}
+            if len(cat_codes) == 1:
+                cc = cat_codes.pop()
+                if cc:
+                    tpl = conn.execute(
+                        "SELECT lt.* FROM categories c JOIN label_templates lt ON lt.id = c.label_template_id WHERE c.code=?",
+                        (cc,),
+                    ).fetchone()
+                    if tpl:
+                        template = dict(tpl)
+
         jobs = []
         for p in products:
             epc = p.get("rfid_epc") or _gen_epc(p["code"])
@@ -1240,12 +1374,22 @@ def print_labels(body: LabelPrintIn, request: Request):
             p["rfid_epc"] = epc
             _inv(conn, p["id"], epc, "rfid", op["username"], body.copies)
             jobs.append({"id": p["id"], "code": p["code"], "name": p["name"], "rfid_epc": epc})
-        zpl = rfid_print.build_batch_zpl(
-            products, fields=fields, store_name=store_name,
-            font=(body.font or ""), write_epc=body.write_epc, copies=body.copies,
-        )
+
+        if template:
+            # 模板驱动：slots 布局
+            zpl = rfid_print.build_batch_zpl(
+                products, store_name=store_name,
+                write_epc=body.write_epc, copies=body.copies, template=template,
+            )
+        else:
+            # 旧版 fields 集合
+            fields = {f for f in body.fields if f in rfid_print.FIELD_OPTIONS}
+            zpl = rfid_print.build_batch_zpl(
+                products, fields=fields, store_name=store_name,
+                font=(body.font or ""), write_epc=body.write_epc, copies=body.copies,
+            )
+
         sent = False
-        error = ""
         if not body.simulate:
             if not body.printer:
                 raise HTTPException(400, "未选择打印机（无打印机时可勾选“仅生成指令”）")
@@ -1256,10 +1400,12 @@ def print_labels(body: LabelPrintIn, request: Request):
                 raise HTTPException(500, f"发送打印机失败：{e}")
         conn.commit()
         _log(conn, op["username"], "RFID标签排版打印",
-             f"{len(jobs)}件×{body.copies}张 {body.printer or '仅生成指令'}")
+             f"{len(jobs)}件×{body.copies}张 {body.printer or '仅生成指令'}"
+             + (f" 模板#{template['id']}" if template else ""))
         return {
             "ok": True, "sent": sent, "count": len(jobs) * body.copies,
             "printer": body.printer or "", "jobs": jobs, "zpl": zpl,
+            "template_id": template["id"] if template else None,
         }
 
 

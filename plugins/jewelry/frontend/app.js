@@ -47,6 +47,13 @@ var ST = Vue.reactive({
   labelFields: { store: true, name: true, spec: true, price: true, cert: false, barcode: true, epc_text: false },
   writeEpc: true, labelCopies: 1, labelFont: 'E:SIMSUN.FNT',
   simulatePrint: false, labelBusy: false, labelResult: null,
+  // 标签模板设计器
+  labelTemplates: [],      // 模板列表
+  tplDlg: false,           // 模板设计器弹窗
+  tplEdit: null,           // 当前编辑的模板 {id,name,size_width,size_height,definition:{slots:[...]}}
+  tplSelIdx: -1,           // 画布中选中的 slot 索引
+  labelTplId: null,        // 打印时使用的模板 ID
+  labelUseTpl: false,      // 是否使用模板模式（true=模板 slots，false=字段复选框）
   // 盘点批次历史（协同盘点结果）
   stockBatches: [], stockDetail: null, batchProd: null,
   coTask: null, coTaskHost: '', coBusy: false, coTimer: null,
@@ -333,6 +340,7 @@ function refreshAll() {
   api('GET', '/api/categories').then(function (r) { ST.cats = r || []; }).catch(function () {});
   api('GET', '/api/biz-config').then(function (r) { ST.bizConfig = r; }).catch(function () {});
   api('GET', '/api/languages').then(function (r) { ST.languages = r || []; }).catch(function () {});
+  loadTemplates();
 }
 
 function loadSubList() {
@@ -674,17 +682,201 @@ var FIELD_LABEL_I18N_KEYS = {
 };
 function fieldLabelText(k) { return FIELD_LABEL_I18N_KEYS[k] ? t(FIELD_LABEL_I18N_KEYS[k]) : (FIELD_LABELS[k] || k); }
 
+// ---- 标签模板设计器 ----
+// 可用字段定义：key, 显示名(i18n key), 渲染类型, 默认字体
+var LABEL_FIELDS = [
+  { key: 'name',     i18n: 'label.fld.name',     type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 30, h: 30 } },
+  { key: 'spec',     i18n: 'label.fld.spec',     type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 22, h: 22 } },
+  { key: 'price',    i18n: 'label.fld.price',    type: 'ascii', defFont: { type: 'ascii', w: 42, h: 42 } },
+  { key: 'barcode',  i18n: 'label.fld.barcode',  type: 'barcode', defFont: { type: 'barcode', h: 64 } },
+  { key: 'code',     i18n: 'label.fld.code',     type: 'ascii', defFont: { type: 'ascii', w: 22, h: 22 } },
+  { key: 'cert',     i18n: 'label.fld.cert',     type: 'ascii', defFont: { type: 'ascii', w: 20, h: 20 } },
+  { key: 'epc_text', i18n: 'label.fld.epcText',  type: 'ascii', defFont: { type: 'ascii', w: 18, h: 18 } },
+  { key: 'store',    i18n: 'label.fld.store',    type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 20, h: 20 } },
+  { key: 'category', i18n: 'label.fld.category', type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 18, h: 18 } },
+  { key: 'material', i18n: 'label.fld.material', type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 18, h: 18 } },
+  { key: 'weight',   i18n: 'label.fld.weight',   type: 'ascii', defFont: { type: 'ascii', w: 18, h: 18 } },
+  { key: 'size',     i18n: 'label.fld.size',     type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 18, h: 18 } },
+  { key: 'cost',     i18n: 'label.fld.cost',     type: 'ascii', defFont: { type: 'ascii', w: 18, h: 18 } },
+];
+
+function labelFieldText(k) {
+  var f = LABEL_FIELDS.find(function (x) { return x.key === k; });
+  return f ? t(f.i18n) : k;
+}
+
+// 模板 CRUD
+function loadTemplates() {
+  api('GET', '/api/label-templates').then(function (r) {
+    ST.labelTemplates = r.list || [];
+  }).catch(function () {});
+}
+
+function openTplDesigner(tpl) {
+  if (tpl) {
+    ST.tplEdit = JSON.parse(JSON.stringify(tpl));
+    if (typeof ST.tplEdit.definition === 'string') {
+      try { ST.tplEdit.definition = JSON.parse(ST.tplEdit.definition); } catch (e) { ST.tplEdit.definition = {}; }
+    }
+    if (!ST.tplEdit.definition || typeof ST.tplEdit.definition !== 'object') ST.tplEdit.definition = {};
+    if (!ST.tplEdit.definition.slots) ST.tplEdit.definition.slots = [];
+  } else {
+    ST.tplEdit = {
+      id: null, name: '', size_width: 70, size_height: 35,
+      definition: { slots: [], write_epc: true },
+      cols: 1, gap: 0, copies: 1, default_printer: '', is_rfid: 1,
+    };
+  }
+  ST.tplSelIdx = -1;
+  ST.tplDlg = true;
+}
+
+function closeTplDesigner() { ST.tplDlg = false; ST.tplEdit = null; ST.tplSelIdx = -1; }
+
+function saveTemplate() {
+  var tpl = ST.tplEdit;
+  if (!tpl || !tpl.name) { toast(t('tpl.nameRequired'), 'error'); return; }
+  var body = {
+    name: tpl.name, size_width: tpl.size_width, size_height: tpl.size_height,
+    definition: JSON.stringify(tpl.definition), cols: tpl.cols, gap: tpl.gap,
+    copies: tpl.copies, default_printer: tpl.default_printer, is_rfid: tpl.is_rfid,
+  };
+  if (tpl.id) {
+    api('PUT', '/api/label-templates/' + tpl.id, body).then(function () {
+      toast(t('tpl.saved')); closeTplDesigner(); loadTemplates(); loadProfile();
+    }).catch(function (e) { toast(e.message, 'error'); });
+  } else {
+    api('POST', '/api/label-templates', body).then(function (r) {
+      toast(t('tpl.saved')); closeTplDesigner(); loadTemplates(); loadProfile();
+    }).catch(function (e) { toast(e.message, 'error'); });
+  }
+}
+
+function delTemplate(id) {
+  if (!confirm(t('tpl.confirmDel'))) return;
+  api('DELETE', '/api/label-templates/' + id).then(function () {
+    toast(t('tpl.deleted')); loadTemplates(); loadProfile();
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+
+// 分类绑定模板
+function bindCatTemplate(code, tplId) {
+  api('PUT', '/api/categories/' + code + '/template', { label_template_id: tplId || null }).then(function () {
+    toast(t('tpl.bindOk'));
+    api('GET', '/api/categories').then(function (r) { ST.cats = r || []; }).catch(function () {});
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+
+// 画布 slot 操作
+function addSlotToCanvas(fieldKey) {
+  if (!ST.tplEdit) return;
+  var field = LABEL_FIELDS.find(function (f) { return f.key === fieldKey; });
+  if (!field) return;
+  var slots = ST.tplEdit.definition.slots;
+  // 默认放在画布左上角附近，依次错开
+  var baseX = 24 + (slots.length % 5) * 40;
+  var baseY = 24 + Math.floor(slots.length / 5) * 40;
+  slots.push({
+    field: fieldKey,
+    x: baseX, y: baseY,
+    w: field.type === 'barcode' ? 300 : 200,
+    h: field.type === 'barcode' ? 80 : (field.defFont.h || 24) + 8,
+    font: JSON.parse(JSON.stringify(field.defFont)),
+  });
+  ST.tplSelIdx = slots.length - 1;
+}
+
+function removeSlot(idx) {
+  if (!ST.tplEdit) return;
+  ST.tplEdit.definition.slots.splice(idx, 1);
+  if (ST.tplSelIdx >= idx) ST.tplSelIdx = Math.max(-1, ST.tplSelIdx - 1);
+}
+
+function updateSlot(idx, prop, value) {
+  if (!ST.tplEdit || !ST.tplEdit.definition.slots[idx]) return;
+  var slot = ST.tplEdit.definition.slots[idx];
+  if (prop.indexOf('.') > 0) {
+    var parts = prop.split('.');
+    var obj = slot;
+    for (var i = 0; i < parts.length - 1; i++) {
+      if (!obj[parts[i]]) obj[parts[i]] = {};
+      obj = obj[parts[i]];
+    }
+    obj[parts[parts.length - 1]] = value;
+  } else {
+    slot[prop] = value;
+  }
+}
+
+// 拖拽：mousedown 开始，mousemove 移动，mouseup 结束
+var _dragState = null;
+function startDragSlot(e, idx) {
+  if (!ST.tplEdit || !ST.tplEdit.definition.slots[idx]) return;
+  e.preventDefault();
+  ST.tplSelIdx = idx;
+  var slot = ST.tplEdit.definition.slots[idx];
+  _dragState = {
+    idx: idx,
+    startX: e.clientX, startY: e.clientY,
+    origX: slot.x, origY: slot.y,
+    scale: _getCanvasScale(),
+  };
+  document.addEventListener('mousemove', _onDragMove);
+  document.addEventListener('mouseup', _onDragEnd);
+}
+
+function _getCanvasScale() {
+  var el = document.querySelector('.tpl-canvas');
+  if (!el || !ST.tplEdit) return 1;
+  var w = ST.tplEdit.size_width || 70;
+  var dotsW = Math.round(w * 300 / 25.4); // mm → 300dpi dots
+  return el.clientWidth / dotsW;
+}
+
+// 画布像素比例：画布 CSS 宽度固定为 mm*4 px，1 dot = 4*25.4/300 px
+function tplDotScale() { return 4 * 25.4 / 300; }
+
+function _onDragMove(e) {
+  if (!_dragState || !ST.tplEdit) return;
+  var dx = (e.clientX - _dragState.startX) / _dragState.scale;
+  var dy = (e.clientY - _dragState.startY) / _dragState.scale;
+  var slot = ST.tplEdit.definition.slots[_dragState.idx];
+  if (slot) {
+    slot.x = Math.max(0, Math.round(_dragState.origX + dx));
+    slot.y = Math.max(0, Math.round(_dragState.origY + dy));
+  }
+}
+
+function _onDragEnd() {
+  _dragState = null;
+  document.removeEventListener('mousemove', _onDragMove);
+  document.removeEventListener('mouseup', _onDragEnd);
+}
+
+// 模板预览（生成 ZPL）
+function previewTemplate() {
+  if (!ST.tplEdit || !ST.tplEdit.id) { toast(t('tpl.saveFirst'), 'error'); return; }
+  var pid = ST.products.length ? ST.products[0].id : 1;
+  api('POST', '/api/label-templates/' + ST.tplEdit.id + '/preview?product_id=' + pid, {}).then(function (r) {
+    ST.labelResult = { sent: false, count: 1, printer: '', jobs: [{ id: r.product.id, code: r.product.code, name: r.product.name, rfid_epc: r.product.rfid_epc }], zpl: r.zpl };
+    toast(t('tpl.previewOk'));
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+
 function openLabelPrint(p) {
   ST.labelDlg = true;
   ST.labelResult = null;
+  ST.labelTplId = null;
+  ST.labelUseTpl = false;
   if (p && !ST.labelItems.some(function (x) { return x.id === p.id; })) {
-    ST.labelItems.push({ id: p.id, code: p.code, name: p.name });
+    ST.labelItems.push({ id: p.id, code: p.code, name: p.name, category_code: p.category_code });
   }
+  // 若已选商品属于同一类别且该类别绑定了模板，自动加载模板
+  _autoPickTemplate();
   api('GET', '/api/print/printers').then(function (r) {
     var list = r.printers || [];
     ST.printSupported = r.supported;
     if (r.supported) {
-      // 先定值、后赋选项列表，避免 select options 未渲染时 v-model 落空
       if (!ST.printerName) {
         ST.printerName = list.find(function (n) { return /735|DASCOM/i.test(n); }) || list[0] || '';
       }
@@ -695,19 +887,39 @@ function openLabelPrint(p) {
     }
   }).catch(function () {});
 }
+
+function _autoPickTemplate() {
+  if (!ST.labelItems.length) return;
+  var codes = new Set(ST.labelItems.map(function (x) { return x.category_code; }).filter(Boolean));
+  if (codes.size !== 1) return;
+  var code = codes.values().next().value;
+  var cat = (ST.cats || []).find(function (c) { return c.code === code; });
+  if (cat && cat.label_template_id) {
+    ST.labelTplId = cat.label_template_id;
+    ST.labelUseTpl = true;
+  }
+}
+
 function removeLabelItem(id) {
   ST.labelItems = ST.labelItems.filter(function (x) { return x.id !== id; });
+  _autoPickTemplate();
 }
 function closeLabel() { ST.labelDlg = false; }
 function submitLabelPrint() {
   if (!ST.labelItems.length) { toast(t('toast.pickLabel'), 'error'); return; }
   ST.labelBusy = true;
-  var fields = Object.keys(ST.labelFields).filter(function (k) { return ST.labelFields[k]; });
-  api('POST', '/api/print/labels', {
+  var body = {
     product_ids: ST.labelItems.map(function (x) { return x.id; }),
-    printer: ST.printerName, copies: ST.labelCopies || 1, fields: fields,
-    write_epc: ST.writeEpc, font: ST.labelFont || '', simulate: ST.simulatePrint || !ST.printSupported,
-  }).then(function (r) {
+    printer: ST.printerName, copies: ST.labelCopies || 1,
+    write_epc: ST.writeEpc, font: ST.labelFont || '',
+    simulate: ST.simulatePrint || !ST.printSupported,
+  };
+  if (ST.labelUseTpl && ST.labelTplId) {
+    body.template_id = ST.labelTplId;
+  } else {
+    body.fields = Object.keys(ST.labelFields).filter(function (k) { return ST.labelFields[k]; });
+  }
+  api('POST', '/api/print/labels', body).then(function (r) {
     ST.labelResult = r;
     toast(r.sent ? t('toast.printSent') : t('toast.zplDone'));
     refreshAll();
@@ -841,13 +1053,14 @@ var app = Vue.createApp({
     // 原始分类对象（带 code/names），供商品表单与筛选chips使用
     catList: function () { return ST.cats || []; },
     FIELD_LABELS: function () { return FIELD_LABELS; },
+    LABEL_FIELDS: function () { return LABEL_FIELDS; },
   },
   methods: {
     t: t, fmt: fmt, fmtY: fmtY, dateFmt: dateFmt,
     statusClass: statusClass,
     statusText: statusText, methodText: methodText, levelText: levelText,
     directionText: directionText, coStatusText: coStatusText, resultText: resultText,
-    fieldLabelText: fieldLabelText,
+    fieldLabelText: fieldLabelText, labelFieldText: labelFieldText,
     doLogin: doLogin, doLogout: doLogout,
     go: go, openSubView: openSubView, setLang: setLang,
     openSheet: openSheet, closeSheet: closeSheet, submitSheet: submitSheet,
@@ -875,6 +1088,12 @@ var app = Vue.createApp({
     openCustomer: openCustomer,
     setAppt: setAppt, saveProfile: saveProfile, exportLogs: exportLogs,
     loadAppt: loadAppt, loadProfile: loadProfile,
+    // 标签模板设计器
+    openTplDesigner: openTplDesigner, closeTplDesigner: closeTplDesigner,
+    saveTemplate: saveTemplate, delTemplate: delTemplate, bindCatTemplate: bindCatTemplate,
+    addSlotToCanvas: addSlotToCanvas, removeSlot: removeSlot, updateSlot: updateSlot,
+    startDragSlot: startDragSlot, previewTemplate: previewTemplate, loadTemplates: loadTemplates,
+    tplDotScale: tplDotScale,
   }
 });
 

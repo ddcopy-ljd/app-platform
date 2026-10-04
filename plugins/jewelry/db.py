@@ -358,6 +358,8 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("stores", "name_i18n", "TEXT DEFAULT '{}'"),
         ("tenant_profiles", "showcase_title", "TEXT DEFAULT '新品橱窗'"),
         ("tenant_profiles", "showcase_subtitle", "TEXT DEFAULT '本周臻品 · 限量发售'"),
+        ("label_templates", "definition", "TEXT DEFAULT '{}'"),
+        ("categories", "label_template_id", "INTEGER DEFAULT NULL"),
     ]
     for table, col, decl in alters:
         if not _has_column(conn, table, col):
