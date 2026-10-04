@@ -49,6 +49,7 @@ var ST = Vue.reactive({
   // RFID 标签排版打印
   labelDlg: false,
   labelItems: [],          // 已选商品 [{id,code,name}]
+  printSel: {},            // 商品列表勾选待打印：{productId: true}
   printers: [], printerName: '', printSupported: true,
   labelFields: { store: true, name: true, spec: true, price: true, cert: false, barcode: true, epc_text: false },
   writeEpc: true, labelCopies: 1, labelFont: 'E:SIMSUN.FNT',
@@ -265,6 +266,14 @@ function todoCount() {
   return (ST.remindData.deposits || []).length +
          (ST.remindData.loansOverdue || []).length +
          (ST.remindData.repairsPending || []).length;
+}
+
+function printSelCount() {
+  return ST.products.filter(function (p) { return ST.printSel[p.id]; }).length;
+}
+function printAllChecked() {
+  var list = filteredProducts();
+  return list.length > 0 && list.every(function (p) { return ST.printSel[p.id]; });
 }
 
 // 库存页「在库商品」列表：在库 + 名称/编码/EPC 过滤
@@ -1166,17 +1175,39 @@ function previewTemplate() {
   }).catch(function (e) { toast(e.message, 'error'); });
 }
 
-function openLabelPrint(p) {
+// 商品列表勾选待打印
+function togglePrintSel(id) {
+  var m = Object.assign({}, ST.printSel);
+  if (m[id]) delete m[id]; else m[id] = true;
+  ST.printSel = m;
+}
+function togglePrintAll() {
+  var list = filteredProducts();
+  var allOn = list.length > 0 && list.every(function (p) { return ST.printSel[p.id]; });
+  var m = {};
+  if (!allOn) list.forEach(function (p) { m[p.id] = true; });
+  ST.printSel = m;
+}
+function openPrintSelected() {
+  var list = ST.products.filter(function (p) { return ST.printSel[p.id]; });
+  if (!list.length) { toast(t('toast.pickLabel'), 'error'); return; }
+  openLabelPrint(list);
+}
+
+function _labelItemOf(p) {
+  return { id: p.id, code: p.code, name: p.name,
+    product_type_code: p.product_type_code, category_code: p.category_code,
+    rfid_epc: p.rfid_epc || '' };
+}
+
+function openLabelPrint(items) {
   ST.labelDlg = true;
   ST.labelResult = null;
   ST.labelTplId = null;
   ST.labelUseTpl = true;
   if (!ST.labelTemplates.length) loadTemplates();
-  if (p && !ST.labelItems.some(function (x) { return x.id === p.id; })) {
-    ST.labelItems.push({ id: p.id, code: p.code, name: p.name,
-      product_type_code: p.product_type_code, category_code: p.category_code,
-      rfid_epc: p.rfid_epc || '' });
-  }
+  var arr = Array.isArray(items) ? items : (items ? [items] : []);
+  ST.labelItems = arr.map(_labelItemOf);
   // 若已选商品属于同一品类且该品类绑定了模板，自动加载模板
   _autoPickTemplate();
   api('GET', '/api/print/printers').then(function (r) {
@@ -1210,7 +1241,16 @@ function removeLabelItem(id) {
   ST.labelItems = ST.labelItems.filter(function (x) { return x.id !== id; });
   _autoPickTemplate();
 }
-function closeLabel() { ST.labelDlg = false; }
+function closeLabel() { ST.labelDlg = false; ST.printSel = {}; }
+
+// 按商品品类解析其绑定的标签模板
+function _tplOfItem(it) {
+  var tc = it.product_type_code;
+  if (!tc) return null;
+  var o = (ST.productTypes || []).find(function (c) { return c.code === tc; });
+  var tid = o && o.label_template_id;
+  return tid ? (ST.labelTemplates.find(function (x) { return x.id === tid; }) || null) : null;
+}
 
 // ---- 标签打印预览（与后端 rfid_print._field_value / 固定布局保持一致）----
 function _labelVal(field, it, store) {
@@ -1237,20 +1277,20 @@ function _labelVal(field, it, store) {
   return '';
 }
 
-// 返回每个已选商品的预览数据：{id, code, name, epc, slots:[{x,y,w,h,type,val,fw,fh,bh}]}（单位：点 827×413）
+// 返回每个已选商品的预览数据：{id, code, epc, slots:[...]}（单位：点 827×413）
 function labelPreview() {
   if (!ST.labelItems.length) return [];
   var store = (ST.profile && ST.profile.name) || '';
-  var tpl = ST.labelTplId ? ST.labelTemplates.find(function (x) { return x.id === ST.labelTplId; }) : null;
-  var def = null;
-  if (tpl) {
-    try { def = typeof tpl.definition === 'string' ? JSON.parse(tpl.definition) : (tpl.definition || {}); }
-    catch (e) { def = null; }
-  }
   return ST.labelItems.map(function (it) {
     var p = ST.products.find(function (x) { return x.id === it.id; }) || it;
     var slots = [];
-    if (ST.labelUseTpl && def && def.slots && def.slots.length) {
+    var tpl = _tplOfItem(it);
+    var def = null;
+    if (tpl) {
+      try { def = typeof tpl.definition === 'string' ? JSON.parse(tpl.definition) : (tpl.definition || {}); }
+      catch (e) { def = null; }
+    }
+    if (def && def.slots && def.slots.length) {
       def.slots.forEach(function (s0) {
         var val = _labelVal(s0.field, it, store);
         if (!val) return;
@@ -1284,8 +1324,11 @@ function submitLabelPrint() {
     write_epc: ST.writeEpc, font: ST.labelFont || '',
     simulate: ST.simulatePrint || !ST.printSupported,
   };
-  if (ST.labelUseTpl && ST.labelTplId) {
-    body.template_id = ST.labelTplId;
+  // 仅当每件商品都绑定同一模板时才传 template_id；混打/含无模板商品时由后端逐件解析
+  var perTpl = ST.labelItems.map(function (it) { var t0 = _tplOfItem(it); return t0 ? t0.id : 0; });
+  var firstTpl = perTpl[0];
+  if (firstTpl && perTpl.every(function (id) { return id === firstTpl; })) {
+    body.template_id = firstTpl;
   } else {
     body.fields = Object.keys(ST.labelFields).filter(function (k) { return ST.labelFields[k]; });
   }
@@ -1409,6 +1452,7 @@ var app = Vue.createApp({
   data: function () { return ST; },
   computed: {
     filteredProducts: filteredProducts,
+    printSelCount: printSelCount, printAllChecked: printAllChecked,
     invStockList: invStockList,
     todoCount: todoCount,
     frozen: isFrozen,
@@ -1457,6 +1501,7 @@ var app = Vue.createApp({
     saveBizConfig: saveBizConfig,
     openInbound: openInbound, copyInbound: copyInbound, openRfid: openRfid, doRfid: doRfid,
     openLabelPrint: openLabelPrint, removeLabelItem: removeLabelItem, closeLabel: closeLabel,
+    togglePrintSel: togglePrintSel, togglePrintAll: togglePrintAll, openPrintSelected: openPrintSelected,
     submitLabelPrint: submitLabelPrint, labelPreview: labelPreview,
     loadStockBatches: loadStockBatches,
     viewStockBatch: viewStockBatch, viewBatchProduct: viewBatchProduct,

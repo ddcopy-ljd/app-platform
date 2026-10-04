@@ -133,6 +133,7 @@
             </details>
             <div class="biz-actions">
               <button class="btn btn-sm btn-outline" @click="openRfid">RFID {{ t('inv.scan') }}</button>
+              <button class="btn btn-sm btn-outline" :disabled="!printSelCount" @click="openPrintSelected">🏷 {{ t('act.printSel') }}<span v-if="printSelCount"> ({{ printSelCount }})</span></button>
               <button class="btn btn-primary btn-sm" :disabled="frozen" @click="addProduct">+ {{ t('act.add') }}</button>
             </div>
           </div>
@@ -144,6 +145,7 @@
           <div class="table-wrap table-wide" v-if="isPc">
             <table class="data-table table-products">
               <thead><tr>
+                <th class="th-check"><input type="checkbox" :checked="printAllChecked" @change="togglePrintAll" :title="t('act.printSel')"></th>
                 <th class="th-img"></th>
                 <th class="th-code">{{ t('lbl.code') }}</th>
                 <th class="th-name">{{ t('lbl.name') }}</th>
@@ -160,6 +162,7 @@
               </tr></thead>
               <tbody>
                 <tr v-for="p in filteredProducts" :key="p.id">
+                  <td class="cell-check"><input type="checkbox" :checked="!!printSel[p.id]" @change="togglePrintSel(p.id)"></td>
                   <td class="cell-img"><img v-if="p.image_ts" :src="productImageUrl(p)" class="prod-thumb-img" alt=""><span v-else class="prod-thumb-ph">💎</span></td>
                   <td class="cell-code mono">{{ p.code }}</td>
                   <td class="cell-name">{{ p.name }}</td>
@@ -175,7 +178,6 @@
                   <td class="cell-op nowrap">
                     <button class="link" :disabled="frozen" @click="editProduct(p)">{{ t('act.edit') }}</button>
                     <button class="link" :disabled="frozen" @click="copyProduct(p)">{{ t('act.copyNew') }}</button>
-                    <button class="link" @click="openLabelPrint(p)">{{ t('act.labelPrint') }}</button>
                     <button class="link danger" :disabled="frozen" @click="delProduct(p.id)">{{ t('act.del') }}</button>
                   </td>
                 </tr>
@@ -185,6 +187,7 @@
           <div class="card-list" v-else>
             <div class="card-item" v-for="p in filteredProducts" :key="p.id">
               <div class="product-card" @click="editProduct(p)">
+                <input type="checkbox" class="card-print-check" :checked="!!printSel[p.id]" @click.stop @change="togglePrintSel(p.id)" :title="t('act.printSel')">
                 <div class="prod-thumb"><img v-if="p.image_ts" :src="productImageUrl(p)" class="prod-thumb-img" alt=""><template v-else>💎</template></div>
                 <div class="prod-info">
                   <div class="prod-name">{{ p.name }}<span class="tag tag-hv" v-if="p.high_value">⭐{{ t('lbl.highValue') }}</span><span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span></div>
@@ -194,7 +197,6 @@
               </div>
               <div class="row-actions">
                 <button class="btn btn-sm btn-outline" :disabled="frozen" @click="copyProduct(p)">{{ t('act.copyNew') }}</button>
-                <button class="btn btn-sm btn-outline" @click="openLabelPrint(p)">{{ t('act.labelPrint') }}</button>
                 <button class="btn btn-sm btn-outline" :disabled="frozen" @click="delProduct(p.id)" style="color:var(--danger);border-color:var(--danger)">{{ t('act.del') }}</button>
               </div>
             </div>
@@ -211,7 +213,6 @@
             </details>
             <div class="biz-actions">
               <button class="btn btn-sm btn-outline" @click="openRfid">RFID {{ t('inv.scan') }}</button>
-              <button class="btn btn-sm btn-outline" @click="openLabelPrint()">{{ t('act.labelLayout') }}</button>
               <button class="btn btn-primary btn-sm" :disabled="frozen" @click="openInbound">+ {{ t('inv.in') }}</button>
           </div>
           </div>
@@ -898,7 +899,7 @@
         <div class="form-group">
           <label>{{ t('label.pick') }}</label>
           <div class="label-items">
-            <span class="label-chip" v-for="it in labelItems" :key="it.id">{{ it.code }} {{ it.name }} <b @click="removeLabelItem(it.id)">✕</b></span>
+            <span class="label-chip" v-for="it in labelItems" :key="it.id">{{ it.code }} <b @click="removeLabelItem(it.id)">✕</b></span>
             <span v-if="!labelItems.length" class="prod-meta">{{ t('label.empty') }}</span>
           </div>
         </div>
@@ -927,7 +928,7 @@
           </div>
           <div class="label-epc-list">
             <div class="log-item" v-for="lv in labelPreview()" :key="'epc-' + lv.id">
-              <span>{{ lv.code }} {{ lv.name }}</span>
+              <span class="mono">{{ lv.code }}</span>
               <span class="mono small">{{ lv.epc || t('label.epcAuto') }}</span>
             </div>
           </div>
@@ -948,7 +949,7 @@
         </div>
         <div v-if="labelResult" class="label-result">
           <div class="stock-ok">✔ {{ labelResult.sent ? t('label.sent') + ' ' + labelResult.count + ' ' + t('label.sheetsTo') + ' ' + labelResult.printer : t('label.genSim') + ' ' + labelResult.count + ' ' + t('label.sheetsCmd') }}</div>
-          <div class="log-item" v-for="j in labelResult.jobs" :key="j.id"><span>{{ j.code }} {{ j.name }}</span><span class="mono small">{{ j.rfid_epc }}</span></div>
+          <div class="log-item" v-for="j in labelResult.jobs" :key="j.id"><span class="mono">{{ j.code }}</span><span class="mono small">{{ j.rfid_epc }}</span></div>
           <details><summary>{{ t('label.viewZpl') }}</summary><pre class="zpl-pre">{{ labelResult.zpl }}</pre></details>
         </div>
       </div>

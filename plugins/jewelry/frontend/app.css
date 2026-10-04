@@ -192,6 +192,7 @@ a { text-decoration: none; color: inherit; }
 
 /* ---------- product ---------- */
 .product-card { display: flex; align-items: center; gap: 12px; }
+.card-print-check { width: 16px !important; height: 16px; flex-shrink: 0; accent-color: var(--gold, #c9a227); cursor: pointer; }
 .prod-thumb { width: 48px; height: 48px; border-radius: var(--radius-sm); background: var(--cream); display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
 .prod-info { flex: 1; min-width: 0; }
 .prod-name { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
@@ -534,6 +535,8 @@ select.lang-code {
 .table-products th { white-space: nowrap; }
 /* 缩略图列（4:3） */
 .table-products .th-img { width: 56px; }
+.table-products .th-check, .table-products td.cell-check { width: 34px; min-width: 34px; text-align: center; }
+.table-products .th-check input, .table-products td.cell-check input { width: 15px; height: 15px; cursor: pointer; vertical-align: middle; accent-color: var(--gold, #c9a227); }
 .table-products td.cell-img { width: 56px; padding: 5px 6px; text-align: center; }
 .table-products .cell-img .prod-thumb-img { width: 48px; height: 36px; border-radius: 6px; }
 .table-products .cell-img .prod-thumb-ph {

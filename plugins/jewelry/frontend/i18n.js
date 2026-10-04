@@ -168,7 +168,7 @@ var I18N = {
     'q.products': '商品', 'q.inventory': '库存', 'q.sales': '销售', 'q.deposits': '定金',
     'q.loans': '借货', 'q.repairs': '维修', 'q.customers': '客户', 'q.logs': '日志',
     // 商品/库存按钮
-    'act.labelPrint': '打印', 'act.labelLayout': '🏷 标签排版',
+    'act.labelPrint': '打印', 'act.printSel': '打印', 'act.labelLayout': '🏷 标签排版',
     'act.genEpc': '生成EPC', 'act.addNew': '新增', 'act.accept': '接件', 'act.purchase': '采购',
     'act.sendOut': '发料', 'act.addCustomer': '客户', 'act.updateStatus': '更新状态',
     'act.returnWriteOff': '归还/核销', 'act.confirmReceive': '确认入库', 'act.receiveStock': '收货入库',
@@ -423,7 +423,7 @@ var I18N = {
     'act.confirmReceive': 'Confirm Receive',
     'act.genEpc': 'Generate EPC',
     'act.labelLayout': '🏷 Label Layout',
-    'act.labelPrint': 'Print',
+    'act.labelPrint': 'Print', 'act.printSel': 'Print',
     'act.purchase': 'Purchase',
     'act.receiveShort': 'Receive',
     'act.receiveStock': 'Receive Stock',

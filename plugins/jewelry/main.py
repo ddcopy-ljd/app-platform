@@ -1582,24 +1582,21 @@ def print_labels(body: LabelPrintIn, request: Request):
         for p in products:
             p.pop("image", None)
 
-        # 模板解析：优先显式 template_id，否则按商品品类自动查找绑定模板
-        template = None
+        # 模板解析：显式 template_id 对全部商品生效；否则每件商品按自身品类绑定的模板逐件解析
+        explicit_tpl = None
         if body.template_id:
             tpl = conn.execute("SELECT * FROM label_templates WHERE id=?", (body.template_id,)).fetchone()
             if tpl:
-                template = dict(tpl)
-        else:
-            # 单品类时尝试自动匹配
-            type_codes = {p.get("product_type_code", "") for p in products}
-            if len(type_codes) == 1:
-                tc = type_codes.pop()
-                if tc:
-                    tpl = conn.execute(
-                        "SELECT lt.* FROM product_types pt JOIN label_templates lt ON lt.id = pt.label_template_id WHERE pt.code=?",
-                        (tc,),
-                    ).fetchone()
-                    if tpl:
-                        template = dict(tpl)
+                explicit_tpl = dict(tpl)
+
+        def _bound_tpl(type_code: str):
+            if not type_code:
+                return None
+            row = conn.execute(
+                "SELECT lt.* FROM product_types pt JOIN label_templates lt ON lt.id = pt.label_template_id WHERE pt.code=?",
+                (type_code,),
+            ).fetchone()
+            return dict(row) if row else None
 
         jobs = []
         for p in products:
@@ -1610,19 +1607,26 @@ def print_labels(body: LabelPrintIn, request: Request):
             _inv(conn, p["id"], epc, "rfid", op["username"], body.copies)
             jobs.append({"id": p["id"], "code": p["code"], "name": p["name"], "rfid_epc": epc})
 
-        if template:
-            # 模板驱动：slots 布局
-            zpl = rfid_print.build_batch_zpl(
-                products, store_name=store_name,
-                write_epc=body.write_epc, copies=body.copies, template=template,
-            )
-        else:
-            # 旧版 fields 集合
-            fields = {f for f in body.fields if f in rfid_print.FIELD_OPTIONS}
-            zpl = rfid_print.build_batch_zpl(
-                products, fields=fields, store_name=store_name,
-                font=(body.font or ""), write_epc=body.write_epc, copies=body.copies,
-            )
+        # 逐件生成：显式模板优先，否则按各商品品类绑定模板，无模板回退默认字段布局
+        fields = {f for f in body.fields if f in rfid_print.FIELD_OPTIONS}
+        copies = max(1, body.copies)
+        zpl_parts = []
+        used_template_ids = set()
+        for p in products:
+            tpl_i = explicit_tpl or _bound_tpl(p.get("product_type_code") or "")
+            if tpl_i:
+                used_template_ids.add(tpl_i["id"])
+                one = rfid_print.build_label_zpl(
+                    p, store_name=store_name, write_epc=body.write_epc, template=tpl_i,
+                )
+            else:
+                one = rfid_print.build_label_zpl(
+                    p, fields=fields, store_name=store_name,
+                    font=(body.font or ""), write_epc=body.write_epc,
+                )
+            zpl_parts.append(one.replace("^PQ1", f"^PQ{copies}"))
+        zpl = "".join(zpl_parts)
+        tpl_desc = f" 模板#{explicit_tpl['id']}" if explicit_tpl else (" 各自品类模板" if used_template_ids else "")
 
         sent = False
         if not body.simulate:
@@ -1634,13 +1638,12 @@ def print_labels(body: LabelPrintIn, request: Request):
             except Exception as e:
                 raise HTTPException(500, f"发送打印机失败：{e}")
         conn.commit()
-        _log(conn, op["username"], "RFID标签排版打印",
-             f"{len(jobs)}件×{body.copies}张 {body.printer or '仅生成指令'}"
-             + (f" 模板#{template['id']}" if template else ""))
+        _log(conn, op["username"], "RFID标签打印",
+             f"{len(jobs)}件×{body.copies}张 {body.printer or '仅生成指令'}" + tpl_desc)
         return {
             "ok": True, "sent": sent, "count": len(jobs) * body.copies,
             "printer": body.printer or "", "jobs": jobs, "zpl": zpl,
-            "template_id": template["id"] if template else None,
+            "template_id": explicit_tpl["id"] if explicit_tpl else None,
         }
 
 
