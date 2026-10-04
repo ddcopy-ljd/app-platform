@@ -19,3 +19,14 @@ Thumbs.db
 
 # 本地下载的构建产物
 scanner-apk/
+
+
+node_modules/
+.git/
+dist/
+build/
+target/
+venv/
+*.log
+# Gradle 本地缓存（本地编译产生）
+.gradle/
