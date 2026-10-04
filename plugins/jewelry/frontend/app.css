@@ -418,7 +418,9 @@ a { text-decoration: none; color: inherit; }
 .label-inner { position: relative; width: 70mm; height: 35mm; flex-shrink: 0; background: #fff; border: 1px solid #d9c9a3; border-radius: 2px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.07); container-type: inline-size; }
 .lp-remove { position: absolute; top: -9px; right: -9px; z-index: 2; width: 20px; height: 20px; line-height: 18px; text-align: center; border-radius: 50%; background: #8a6d1f; color: #fff; font-size: 11px; cursor: pointer; opacity: 0; transition: opacity .15s; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
 .label-preview-item:hover .lp-remove { opacity: 1; }
-.lp-slot { position: absolute; overflow: hidden; white-space: nowrap; color: #111; font-family: Arial, 'Segoe UI', sans-serif; line-height: 1.08; }
+.lp-slot { position: absolute; z-index: 1; overflow: hidden; white-space: nowrap; color: #111; font-family: Arial, 'Segoe UI', sans-serif; line-height: 1.08; }
+/* 打印预览底图：只显示不打印（不进入 ZPL），铺满标签，槽位在其上 */
+.lp-bg { z-index: 0; }
 .lp-cn { font-family: 'SimSun', '宋体', serif; font-weight: 600; }
 .lp-ascii { font-weight: 500; }
 .lp-barcode { display: flex; flex-direction: column; justify-content: space-between; }
@@ -654,8 +656,11 @@ tr.row-flash, tr.row-flash:hover { background-color: #FFF3CD !important; transit
 .card-item.row-flash { background-color: #FFF3CD !important; transition: background-color .6s ease; }
 
 /* ---------- 标签打印模板设计器 ---------- */
+.tpl-bgbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
 .tpl-canvas { position: relative; background: #fff; border: 1.5px solid var(--border, #ddd); border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 1px #f5f5f5; background-image: linear-gradient(#f2f2f2 1px, transparent 1px), linear-gradient(90deg, #f2f2f2 1px, transparent 1px); background-size: 20px 20px; }
-.tpl-slot { position: absolute; border: 1px dashed #b08d2e; background: rgba(212,175,55,.12); color: #6b5410; font-size: 12px; display: flex; align-items: center; justify-content: center; cursor: move; user-select: none; border-radius: 3px; overflow: hidden; white-space: nowrap; }
+/* 底图：填满模板区域，不可拖动；旋转 90/270 时由 JS 交换宽高使其旋转后仍覆盖整个区域 */
+.tpl-bg { z-index: 0; }
+.tpl-slot { position: absolute; z-index: 1; border: 1px dashed #b08d2e; background: rgba(212,175,55,.12); color: #6b5410; font-size: 12px; display: flex; align-items: center; justify-content: center; cursor: move; user-select: none; border-radius: 3px; overflow: hidden; white-space: nowrap; }
 .tpl-slot:hover { background: rgba(212,175,55,.22); }
 .tpl-slot.active { border: 1.5px solid #c0392b; background: rgba(192,57,43,.10); box-shadow: 0 0 0 2px rgba(192,57,43,.15); }
 

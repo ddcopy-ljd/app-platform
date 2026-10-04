@@ -907,6 +907,7 @@
             <div class="label-preview-item" v-for="lv in labelPreview()" :key="lv.id">
               <span class="lp-remove" :title="t('act.remove')" @click="removeLabelItem(lv.id)">✕</span>
               <div class="label-inner">
+                <img v-if="lv.bg_image" class="lp-bg" :src="lv.bg_image" :style="lpBgStyle(lv)" alt="">
                 <div v-for="(s, si) in lv.slots" :key="si" class="lp-slot"
                      :class="'lp-' + s.type"
                      :style="{ left: (s.x*100/827)+'cqw', top: (s.y*100/827)+'cqw', width: (s.w*100/827)+'cqw', height: (s.h*100/827)+'cqw', fontSize: (s.fh*100/827)+'cqw' }">
@@ -965,12 +966,20 @@
         </div>
         <!-- 中：画布 -->
         <div style="flex:1;min-width:300px">
-          <div class="form-row" style="margin-bottom:8px;gap:8px;align-items:flex-end">
+          <div class="form-row" style="margin-bottom:8px;gap:8px;align-items:flex-end;flex-wrap:wrap">
             <div class="form-group" style="flex:2;min-width:220px;margin-bottom:0"><label>{{ t('tpl.name') }}</label><input v-model="tplEdit.name" :placeholder="t('tpl.namePh')"></div>
             <div class="form-group" style="margin-bottom:0"><label>{{ t('tpl.width') }}(mm)</label><input type="number" v-model.number="tplEdit.size_width" min="20" max="120" style="width:84px"></div>
             <div class="form-group" style="margin-bottom:0"><label>{{ t('tpl.height') }}(mm)</label><input type="number" v-model.number="tplEdit.size_height" min="10" max="80" style="width:84px"></div>
           </div>
+          <div class="tpl-bgbar">
+            <button class="btn btn-sm btn-outline" @click="uploadTplBg">{{ t('tpl.bgUpload') }}</button>
+            <button class="btn btn-sm btn-outline" :disabled="!tplEdit.definition.bg_image" @click="rotateTplBg">{{ t('tpl.bgRotate') }}</button>
+            <button class="btn btn-sm btn-outline btn-danger" :disabled="!tplEdit.definition.bg_image" @click="removeTplBg">{{ t('tpl.bgRemove') }}</button>
+            <span class="hint" v-if="!tplEdit.definition.bg_image">{{ t('tpl.bgHint') }}</span>
+            <span class="hint" v-else>{{ t('tpl.bgOn') }} · {{ tplEdit.definition.bg_rotate }}°</span>
+          </div>
           <div class="tpl-canvas" :style="{ width: (tplEdit.size_width||70)*4+'px', height: (tplEdit.size_height||35)*4+'px' }">
+            <img v-if="tplEdit.definition.bg_image" class="tpl-bg" :src="tplEdit.definition.bg_image" :style="tplBgStyle()" alt="">
             <div class="tpl-slot"
                  v-for="(s,i) in tplEdit.definition.slots" :key="i"
                  :class="{active: tplSelIdx===i}"

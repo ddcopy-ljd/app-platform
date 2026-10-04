@@ -1047,13 +1047,81 @@ function openTplDesigner(tpl) {
   } else {
     ST.tplEdit = {
       id: null, name: '', size_width: 70, size_height: 35,
-      definition: { slots: [], write_epc: true },
+      definition: { slots: [], write_epc: true, bg_image: '', bg_rotate: 0 },
       cols: 1, gap: 0, copies: 1, default_printer: '', is_rfid: 1,
     };
   }
+  if (typeof ST.tplEdit.definition.bg_image !== 'string') ST.tplEdit.definition.bg_image = '';
+  if (![0, 90, 180, 270].includes(Number(ST.tplEdit.definition.bg_rotate))) ST.tplEdit.definition.bg_rotate = 0;
   ST.tplSelIdx = -1;
   ST.tplPreview = null;
   ST.tplDlg = true;
+}
+
+// 底图：上传 PNG / 旋转 90° / 移除（不可拖动，始终填满模板区域）
+var _tplBgInput = null;
+function uploadTplBg() {
+  if (!ST.tplEdit) return;
+  if (!_tplBgInput) {
+    _tplBgInput = document.createElement('input');
+    _tplBgInput.type = 'file';
+    _tplBgInput.accept = 'image/png,image/*';
+    _tplBgInput.style.display = 'none';
+    _tplBgInput.addEventListener('change', onTplBgChosen);
+    document.body.appendChild(_tplBgInput);
+  }
+  _tplBgInput.value = '';
+  _tplBgInput.click();
+}
+function onTplBgChosen(e) {
+  var f = e.target.files && e.target.files[0];
+  if (!f) return;
+  if (!/^image\//.test(f.type)) { toast(t('tpl.bgNotImg'), 'error'); return; }
+  if (f.size > 4 * 1024 * 1024) { toast(t('tpl.bgTooBig'), 'error'); return; }
+  var reader = new FileReader();
+  reader.onload = function (ev) {
+    ST.tplEdit.definition.bg_image = ev.target.result;
+    ST.tplEdit.definition.bg_rotate = 0;
+  };
+  reader.readAsDataURL(f);
+}
+function rotateTplBg() {
+  if (!ST.tplEdit || !ST.tplEdit.definition.bg_image) return;
+  ST.tplEdit.definition.bg_rotate = (Number(ST.tplEdit.definition.bg_rotate) + 90) % 360;
+}
+function removeTplBg() {
+  if (!ST.tplEdit) return;
+  ST.tplEdit.definition.bg_image = '';
+  ST.tplEdit.definition.bg_rotate = 0;
+}
+// 底图在设计器画布中的样式：旋转 90/270 时交换宽高，使旋转后仍填满模板区域
+function tplBgStyle() {
+  var t = ST.tplEdit;
+  if (!t || !t.definition.bg_image) return { display: 'none' };
+  var rot = Number(t.definition.bg_rotate) || 0;
+  var w = (t.size_width || 70) * 4;
+  var h = (t.size_height || 35) * 4;
+  var swap = (rot === 90 || rot === 270);
+  return {
+    position: 'absolute', left: '50%', top: '50%',
+    width: (swap ? h : w) + 'px',
+    height: (swap ? w : h) + 'px',
+    transform: 'translate(-50%,-50%) rotate(' + rot + 'deg)',
+    objectFit: 'fill', pointerEvents: 'none', display: 'block'
+  };
+}
+// 底图在打印预览（70mm×35mm）中的样式
+function lpBgStyle(lv) {
+  if (!lv || !lv.bg_image) return { display: 'none' };
+  var rot = Number(lv.bg_rotate) || 0;
+  var swap = (rot === 90 || rot === 270);
+  return {
+    position: 'absolute', left: '50%', top: '50%',
+    width: swap ? '35mm' : '70mm',
+    height: swap ? '70mm' : '35mm',
+    transform: 'translate(-50%,-50%) rotate(' + rot + 'deg)',
+    objectFit: 'fill', pointerEvents: 'none', display: 'block'
+  };
 }
 
 function closeTplDesigner() { ST.tplDlg = false; ST.tplEdit = null; ST.tplSelIdx = -1; ST.tplPreview = null; }
@@ -1120,6 +1188,14 @@ function removeSlot(idx) {
 function updateSlot(idx, prop, value) {
   if (!ST.tplEdit || !ST.tplEdit.definition.slots[idx]) return;
   var slot = ST.tplEdit.definition.slots[idx];
+  if (prop === 'x' || prop === 'y') {
+    var dotsW = Math.round((ST.tplEdit.size_width || 70) * 300 / 25.4);
+    var dotsH = Math.round((ST.tplEdit.size_height || 35) * 300 / 25.4);
+    var maxX = Math.max(0, dotsW - (slot.w || 0));
+    var maxY = Math.max(0, dotsH - (slot.h || 0));
+    slot[prop] = Math.min(prop === 'x' ? maxX : maxY, Math.max(0, Number(value) || 0));
+    return;
+  }
   if (prop.indexOf('.') > 0) {
     var parts = prop.split('.');
     var obj = slot;
@@ -1167,8 +1243,12 @@ function _onDragMove(e) {
   var dy = (e.clientY - _dragState.startY) / _dragState.scale;
   var slot = ST.tplEdit.definition.slots[_dragState.idx];
   if (slot) {
-    slot.x = Math.max(0, Math.round(_dragState.origX + dx));
-    slot.y = Math.max(0, Math.round(_dragState.origY + dy));
+    var dotsW = Math.round((ST.tplEdit.size_width || 70) * 300 / 25.4);
+    var dotsH = Math.round((ST.tplEdit.size_height || 35) * 300 / 25.4);
+    var maxX = Math.max(0, dotsW - (slot.w || 0));
+    var maxY = Math.max(0, dotsH - (slot.h || 0));
+    slot.x = Math.min(maxX, Math.max(0, Math.round(_dragState.origX + dx)));
+    slot.y = Math.min(maxY, Math.max(0, Math.round(_dragState.origY + dy)));
   }
 }
 
@@ -1324,7 +1404,10 @@ function labelPreview() {
       if (F.epc_text && p.rfid_epc) slots.push({ x: 420, y: 373, w: 380, h: 18, type: 'ascii', val: _labelVal('epc_text', it, store), fw: 18, fh: 18 });
       if (F.store && store) slots.push({ x: 24, y: 377, w: 380, h: 20, type: 'cn', val: store, fw: 20, fh: 20 });
     }
-    return { id: it.id, code: it.code, name: it.name, epc: p.rfid_epc || it.rfid_epc || '', slots: slots };
+    return { id: it.id, code: it.code, name: it.name, epc: p.rfid_epc || it.rfid_epc || '',
+      slots: slots,
+      bg_image: (def && def.bg_image) || '',
+      bg_rotate: (def && Number(def.bg_rotate)) || 0 };
   });
 }
 
@@ -1535,6 +1618,8 @@ var app = Vue.createApp({
     addSlotToCanvas: addSlotToCanvas, removeSlot: removeSlot, updateSlot: updateSlot,
     startDragSlot: startDragSlot, previewTemplate: previewTemplate, loadTemplates: loadTemplates,
     tplDotScale: tplDotScale,
+    uploadTplBg: uploadTplBg, rotateTplBg: rotateTplBg, removeTplBg: removeTplBg,
+    tplBgStyle: tplBgStyle, lpBgStyle: lpBgStyle,
   }
 });
 
