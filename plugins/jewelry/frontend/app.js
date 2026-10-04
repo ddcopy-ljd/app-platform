@@ -352,7 +352,7 @@ function resultText(r) {
 
 // ---- language ----
 function setLang(lang) {
-  switchLang(lang);
+  switchLang(typeof canonLang === 'function' ? canonLang(lang) : lang);
   ST.lang = currentLang;
 }
 

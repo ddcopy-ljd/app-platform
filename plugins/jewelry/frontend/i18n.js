@@ -429,10 +429,20 @@ function t(key) {
   return dict[key] != null ? dict[key] : (I18N.zh[key] != null ? I18N.zh[key] : key);
 }
 
+// 语言键规范化：'zh' 等历史/简写键统一为界面标准键（zh-Hans/en/it），
+// 避免状态值与下拉选项(zh-Hans/en/it)不匹配导致语言选择器显示空白
+function canonLang(k) {
+  k = (k || '').trim();
+  if (k === 'zh' || k === 'zh-CN' || k === 'zh-SG') return 'zh-Hans';
+  if (LANG_KEYS.indexOf(k) >= 0) return k;
+  return '';
+}
+
 function detectLang() {
   var saved = null;
   try { saved = localStorage.getItem('yi_lang'); } catch (e) {}
-  if (saved && (I18N[saved] || LANG_MAP[saved])) return saved;
+  saved = canonLang(saved);
+  if (saved) return saved;
   var nav = (navigator.language || '').toLowerCase();
   if (nav.indexOf('zh') === 0) return 'zh-Hans';
   if (nav.indexOf('it') === 0) return 'it';
@@ -441,10 +451,12 @@ function detectLang() {
 }
 
 function switchLang(lang) {
-  if (I18N[lang] || LANG_MAP[lang]) {
+  lang = canonLang(lang);
+  if (lang) {
     currentLang = lang;
     try { localStorage.setItem('yi_lang', lang); } catch (e) {}
   }
 }
 
 currentLang = detectLang();
+switchLang(currentLang);   // 回写规范键，清理历史脏值（如 'zh'）
