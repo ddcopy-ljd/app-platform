@@ -107,7 +107,7 @@ class WebActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        stockStop()
+        stopStockScan()
         stopEpcSingle()
         try { tone?.release() } catch (_: Exception) {}
         main.removeCallbacksAndMessages(null)
@@ -195,7 +195,7 @@ class WebActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun beep() {
-            main.post { beep() }
+            main.post { this@WebActivity.beep() }
         }
 
         @JavascriptInterface
