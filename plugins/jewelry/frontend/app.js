@@ -52,7 +52,7 @@ var ST = Vue.reactive({
   printers: [], printerName: '', printSupported: true,
   labelFields: { store: true, name: true, spec: true, price: true, cert: false, barcode: true, epc_text: false },
   writeEpc: true, labelCopies: 1, labelFont: 'E:SIMSUN.FNT',
-  simulatePrint: false, labelBusy: false, labelResult: null,
+  simulatePrint: true, labelBusy: false, labelResult: null,
   // 标签模板设计器
   labelTemplates: [],      // 模板列表
   tplDlg: false,           // 模板设计器弹窗
@@ -1257,7 +1257,8 @@ function labelPreview() {
         var f = s0.font || {};
         slots.push({ x: +s0.x || 0, y: +s0.y || 0, w: +s0.w || 200, h: +s0.h || 30,
           type: (f.type || 'ascii'), val: String(val),
-          fw: +f.w || 24, fh: +f.h || 24, bh: +f.h || 64 });
+          fw: +f.w || 24, fh: +f.h || 24, bh: +f.h || 64,
+          below: (f.type || 'ascii') === 'barcode' });  // 模板条码 ^BCN,Y 人类可读数字印在条码下方
       });
     } else {
       var F = ST.labelFields, y = 24;

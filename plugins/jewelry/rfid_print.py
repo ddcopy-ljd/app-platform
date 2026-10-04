@@ -116,15 +116,15 @@ def _render_slot(slot: dict, product: dict, store_name: str) -> list[str]:
     lines = [f"^FO{x},{y}"]
 
     if font_type == "cn":
-        # 中文使用机内字体
-        lines.append(f"^A@N,{font_w},{font_h},{font_name}^FD{value}^FS")
+        # 中文使用机内字体（^A@N,高度,宽度,字体名）
+        lines.append(f"^A@N,{font_h},{font_w},{font_name}^FD{value}^FS")
     elif font_type == "barcode":
         # Code128 条码，h 控制条码高度
         bh = int(font.get("h", 64))
         lines.append(f"^BY2^BCN,{bh},Y,N,N^FD{value}^FS")
     else:
-        # ASCII 内置字体
-        lines.append(f"^A0N,{font_w},{font_h}^FD{value}^FS")
+        # ASCII 内置字体（^A0N,高度,宽度）
+        lines.append(f"^A0N,{font_h},{font_w}^FD{value}^FS")
 
     return lines
 

@@ -901,10 +901,6 @@
             <span class="label-chip" v-for="it in labelItems" :key="it.id">{{ it.code }} {{ it.name }} <b @click="removeLabelItem(it.id)">✕</b></span>
             <span v-if="!labelItems.length" class="prod-meta">{{ t('label.empty') }}</span>
           </div>
-          <select class="mt-sm" @change="if($event.target.value){openLabelPrint(products.find(function(p){return p.id===+$event.target.value}));$event.target.value=''}">
-            <option value="">{{ t('label.add') }}</option>
-            <option v-for="p in products.filter(function(x){return x.status==='在库'})" :key="p.id" :value="p.id">{{ p.code }} {{ p.name }}</option>
-          </select>
         </div>
         <div class="form-group" v-if="labelTplId">
           <label>{{ t('tpl.currentTpl') }}</label>
@@ -920,8 +916,9 @@
                    :class="'lp-' + s.type"
                    :style="{ left: (s.x*100/827)+'cqw', top: (s.y*100/827)+'cqw', width: (s.w*100/827)+'cqw', height: (s.h*100/827)+'cqw', fontSize: (s.fh*100/827)+'cqw' }">
                 <template v-if="s.type === 'barcode'">
-                  <div class="lp-bartext">{{ s.val }}</div>
+                  <div class="lp-bartext" v-if="!s.below">{{ s.val }}</div>
                   <div class="lp-bars" :style="{ height: (s.bh*100/827)+'cqw' }"></div>
+                  <div class="lp-bartext" v-if="s.below">{{ s.val }}</div>
                 </template>
                 <template v-else>{{ s.val }}</template>
               </div>
