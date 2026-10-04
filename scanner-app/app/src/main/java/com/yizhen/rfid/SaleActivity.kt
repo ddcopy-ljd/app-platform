@@ -130,8 +130,8 @@ class SaleActivity : AppCompatActivity() {
 
     private fun doScan(type: String) {
         when (type.lowercase()) {
-            "barcode" -> launchCamera(ScanOptions.ONE_D_CODE_FORMATS, "barcode")
-            "qrcode" -> launchCamera(ScanOptions.QR_CODE_FORMATS, "qrcode")
+            "barcode" -> launchCamera(ScanOptions.ONE_D_CODE_TYPES, "barcode")
+            "qrcode" -> launchCamera(listOf(ScanOptions.QR_CODE), "qrcode")
             "epc" -> startEpcScan()
             else -> toast(R.string.sale_scan_type_unknown)
         }
@@ -164,7 +164,7 @@ class SaleActivity : AppCompatActivity() {
         if (!RfidManager.ready) {
             // 无 UHF 模块：退化为摄像头扫条码（与盘点页兜底策略一致）
             toast(R.string.demo_mode)
-            launchCamera(ScanOptions.ONE_D_CODE_FORMATS, "barcode")
+            launchCamera(ScanOptions.ONE_D_CODE_TYPES, "barcode")
             return
         }
         jsState(true)
