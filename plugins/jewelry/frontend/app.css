@@ -272,6 +272,9 @@ a { text-decoration: none; color: inherit; }
 .btn-small.btn-danger { color: #c0392b; border-color: #e6b8b0; }
 .card-title { font-size: 16px; font-weight: 700; color: var(--wine); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid var(--gold); }
 .hint { font-size: 13px; color: var(--text2); margin: 6px 0 12px; }
+/* 商品名称旁的语言微下拉（选项绿=已录入 红=未录入） */
+.lang-mini { border: none; background: transparent; font-size: 14px; font-weight: 600; cursor: pointer; padding: 0 2px; margin-left: 2px; }
+.lang-mini option { font-size: 14px; }
 .btn:active { transform: scale(.97); }
 
 /* ---------- empty ---------- */

@@ -139,14 +139,14 @@
           <div class="search-wrap mt-sm"><input class="search-input" v-model="prodQ" :placeholder="t('ph.searchProd')"><button class="btn btn-sm btn-outline" @click="prodQ=''">{{ t('act.clear') }}</button></div>
           <div class="cat-chips">
             <div class="cat-chip" :class="{active:!prodCat}" @click="prodCat=''">{{ t('cat.all') }}</div>
-            <div class="cat-chip" v-for="c in cats" :key="c" :class="{active:prodCat===c}" @click="prodCat=c">{{ c }}</div>
+            <div class="cat-chip" v-for="c in catList" :key="c.code" :class="{active:prodCat===c.code}" @click="prodCat=c.code">{{ catNameOf(c) }}</div>
           </div>
           <div class="table-wrap" v-if="isPc">
             <table class="data-table">
               <thead><tr><th>编码</th><th>名称</th><th>品类</th><th>克重</th><th>售价</th><th>成本</th><th>状态</th><th>EPC</th><th>橱窗</th><th>高价值</th><th></th></tr></thead>
               <tbody>
                 <tr v-for="p in filteredProducts" :key="p.id">
-                  <td>{{ p.code }}</td><td>{{ p.name }}</td><td>{{ p.category }}</td><td>{{ p.weight }}g</td>
+                  <td>{{ p.code }}</td><td>{{ p.name }}</td><td>{{ productCatName(p) }}</td><td>{{ p.weight }}g</td>
                   <td>￥{{ fmt(p.price) }}</td><td>￥{{ fmt(p.cost) }}</td>
                   <td><span class="tag" :class="statusClass(p.status)">{{ p.status }}</span></td>
                   <td class="mono">{{ p.rfid_epc||'—' }}</td>
@@ -168,7 +168,7 @@
                 <div class="prod-thumb">💎</div>
                 <div class="prod-info">
                   <div class="prod-name">{{ p.name }}<span class="tag tag-hv" v-if="p.high_value">⭐高价值</span><span class="tag" :class="statusClass(p.status)">{{ p.status }}</span></div>
-                  <div class="prod-meta">{{ p.code }} · {{ p.material }} · {{ p.weight }}g</div>
+                  <div class="prod-meta">{{ p.code }} · {{ productCatName(p) }} · {{ p.material }} · {{ p.weight }}g</div>
                 </div>
                 <div class="prod-price2"><div class="pp">￥{{ fmt(p.price) }}</div></div>
               </div>
@@ -299,7 +299,7 @@
                 <thead><tr><th>编码</th><th>名称</th><th>品类</th><th>材质</th><th>克重</th><th>尺寸</th><th>售价</th><th>成本</th><th>EPC</th><th>高价值</th><th></th></tr></thead>
                 <tbody>
                   <tr v-for="p in invStockList" :key="'c'+p.id" :class="{'row-flash': flashIds.indexOf(p.id)>=0}">
-                    <td>{{ p.code }}</td><td>{{ p.name }}</td><td>{{ p.category }}</td><td>{{ p.material || '—' }}</td>
+                    <td>{{ p.code }}</td><td>{{ p.name }}</td><td>{{ productCatName(p) }}</td><td>{{ p.material || '—' }}</td>
                     <td>{{ p.weight }}g</td><td>{{ p.size || '—' }}</td>
                     <td>￥{{ fmt(p.price) }}</td><td>￥{{ fmt(p.cost) }}</td>
                     <td class="mono">{{ p.rfid_epc||'—' }}</td>
@@ -320,7 +320,7 @@
                       <span class="tag tag-hv" v-if="p.high_value">⭐{{ t('lbl.highValue') }}</span>
                       <span class="prod-meta">{{ p.code }}</span>
                     </div>
-                    <div class="prod-meta" style="margin-top:4px">{{ p.category }} · {{ p.material || '—' }} · {{ p.weight }}g<span v-if="p.size"> · {{ p.size }}</span></div>
+                    <div class="prod-meta" style="margin-top:4px">{{ productCatName(p) }} · {{ p.material || '—' }} · {{ p.weight }}g<span v-if="p.size"> · {{ p.size }}</span></div>
                     <div class="prod-meta" style="margin-top:2px">
                       <span style="color:var(--gold);font-weight:600">￥{{ fmt(p.price) }}</span>
                       <span style="margin-left:8px">成本 ￥{{ fmt(p.cost) }}</span>
@@ -708,8 +708,25 @@
             <div class="form-group"><label>日期</label><input v-model="sheetData.biz_date" type="date"></div></div>
         </template>
         <template v-if="sheetMode==='product'||sheetMode==='inbound'">
-          <div class="form-row"><div class="form-group"><label>编码</label><input v-model="sheetData.code"></div><div class="form-group"><label>名称</label><input v-model="sheetData.name"></div></div>
-          <div class="form-row"><div class="form-group"><label>品类</label><select v-model="sheetData.category"><option v-for="c in cats" :key="c">{{ c }}</option></select></div><div class="form-group"><label>材质</label><input v-model="sheetData.material"></div></div>
+          <div class="form-row">
+            <div class="form-group"><label>编码</label><input v-model="sheetData.code"></div>
+            <div class="form-group" v-if="sheetMode==='product'">
+              <label>名称 <select class="lang-mini" v-model="sheetNameLang" title="选择名称语言：绿色=已录入，红色=未录入">
+                <option v-for="lk in langKeys" :key="lk" :value="lk" :style="{color: langNameFilled(lk) ? '#1a7f37' : '#c0392b'}">{{ langLabels[lk] }}</option>
+              </select></label>
+              <input :value="sheetNameGet()" @input="sheetNameSet($event.target.value)">
+            </div>
+            <div class="form-group" v-else><label>名称</label><input v-model="sheetData.name"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>品类</label>
+              <select v-if="sheetMode==='product'" v-model="sheetData.category_code">
+                <option v-for="c in catList" :key="c.code" :value="c.code">{{ catNameOf(c) }}</option>
+              </select>
+              <select v-else v-model="sheetData.category"><option v-for="c in cats" :key="c">{{ c }}</option></select>
+            </div>
+            <div class="form-group"><label>材质</label><input v-model="sheetData.material"></div>
+          </div>
           <div class="form-row"><div class="form-group"><label>克重</label><input v-model.number="sheetData.weight" type="number"></div><div class="form-group"><label>尺寸</label><input v-model="sheetData.size"></div></div>
           <div class="form-row"><div class="form-group"><label>成本</label><input v-model.number="sheetData.cost" type="number"></div><div class="form-group"><label>售价</label><input v-model.number="sheetData.price" type="number"></div></div>
           <div class="form-group"><label>证书号</label><input v-model="sheetData.cert"></div>
@@ -869,7 +886,7 @@
       </div>
       <div class="pv-grid">
         <div class="pv-cell"><label>{{ t('lbl.code') }}</label><div>{{ batchProd.code }}</div></div>
-        <div class="pv-cell"><label>{{ t('lbl.category') }}</label><div>{{ batchProd.category }}</div></div>
+        <div class="pv-cell"><label>{{ t('lbl.category') }}</label><div>{{ productCatName(batchProd) }}</div></div>
         <div class="pv-cell"><label>{{ t('lbl.material') }}</label><div>{{ batchProd.material || '—' }}</div></div>
         <div class="pv-cell"><label>{{ t('lbl.weight') }}</label><div>{{ batchProd.weight }}g</div></div>
         <div class="pv-cell"><label>{{ t('lbl.size') }}</label><div>{{ batchProd.size || '—' }}</div></div>

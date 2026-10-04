@@ -26,6 +26,7 @@ var ST = Vue.reactive({
   products: [], prodTotal: 0, prodCat: '', prodQ: '',
   cats: [], bizConfig: { epc_prefix: 'E280', seq_bits: 8 }, languages: [],
   catEdit: { code: '', names: { zh: '', en: '' }, sort_order: 0 }, catEditMode: 'new',
+  sheetNameLang: currentLang,   // 商品表单当前编辑名称的语言（随全局语言初始化）
   deposits: [], depTotal: 0,
   sales: [], saleTotal: 0,
   subList: [], subTotal: 0, subPage: 1,
@@ -122,16 +123,71 @@ function catCodeByName(name) {
   var c = (ST.cats || []).find(function (x) { return (x.names && x.names.zh) === name; });
   return c ? c.code : '';
 }
-// 根据 code 取中文名
+function catObj(code) {
+  return (ST.cats || []).find(function (x) { return x.code === code; }) || null;
+}
+// 根据 code 取中文名（兼容旧列 category）
 function catNameByCode(code) {
   var c = (ST.cats || []).find(function (x) { return x.code === code; });
   return c && c.names ? (c.names.zh || c.code) : (code || '');
+}
+// 界面语言码(zh-Hans/en)归一化为分类名 JSON 的键(zh/en)
+function normLang(k) { return (typeof LANG_MAP === 'object' && LANG_MAP[k]) || k || 'zh'; }
+// 分类对象按指定（或全局）语言显示名称：当前语言 → 中文 → 英文 → 编码
+function catNameOf(c, langKey) {
+  if (!c) return '';
+  var n = c.names || {};
+  return n[normLang(langKey || ST.lang)] || n.zh || n.en || c.code;
+}
+// 商品行展示用：优先 category_code 对应语言名，旧数据回退 category 文本
+function productCatName(p) {
+  if (!p) return '';
+  if (p.category_code) {
+    var c = (ST.cats || []).find(function (x) { return x.code === p.category_code; });
+    if (c) return catNameOf(c);
+  }
+  return p.category || '';
+}
+// 确保商品数据带 category_code（旧数据/中文品类名兜底）
+function ensureCatCode(d) {
+  if (!d.category_code) d.category_code = catCodeByName(d.category) || '';
+  return d.category_code;
+}
+
+// ---- 商品名称多语言编辑（主名称列为中文，其它语言存 name_i18n JSON 串）----
+function parseNameI18n() {
+  try { return JSON.parse((ST.sheetData && ST.sheetData.name_i18n) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+// 名称输入框当前值：中文编辑主列 name，其它语言读写 name_i18n
+function sheetNameGet() {
+  var d = ST.sheetData || {};
+  if (normLang(ST.sheetNameLang) === 'zh') return d.name || '';
+  return parseNameI18n()[normLang(ST.sheetNameLang)] || '';
+}
+function sheetNameSet(v) {
+  var d = ST.sheetData;
+  if (normLang(ST.sheetNameLang) === 'zh') { d.name = v; return; }
+  var m = parseNameI18n(), key = normLang(ST.sheetNameLang);
+  if (v) m[key] = v; else delete m[key];
+  d.name_i18n = JSON.stringify(m);
+}
+// 语言下拉项颜色：已录入绿色，未录入红色
+function langNameFilled(langKey) {
+  var d = ST.sheetData || {};
+  if (normLang(langKey) === 'zh') return !!(d.name && String(d.name).trim());
+  var v = parseNameI18n()[normLang(langKey)];
+  return !!(v && String(v).trim());
 }
 
 // ---- computed-like getters ----
 function filteredProducts() {
   var list = ST.products || [];
-  if (ST.prodCat) list = list.filter(function (p) { return p.category === ST.prodCat; });
+  if (ST.prodCat) list = list.filter(function (p) {
+    // 按分类编号筛选；旧数据无 code 时用其中文品类名映射
+    return p.category_code === ST.prodCat ||
+           (!p.category_code && catCodeByName(p.category) === ST.prodCat);
+  });
   if (ST.prodQ) {
     var q = ST.prodQ.toLowerCase();
     list = list.filter(function (p) {
@@ -288,21 +344,29 @@ function openInbound() {
 
 function addProduct() {
   if (checkFrozen()) return;
-  openSheet('product', t('sheet.product'), { code: '', name: '', category: '黄金', material: '', weight: 0, size: '', cert: '', cost: 0, price: 0, status: '在库', rfid_epc: '', showcase_public: 0, high_value: 0 });
+  ST.sheetNameLang = ST.lang;
+  var d = { code: '', name: '', name_i18n: '{}', category: catNameByCode('01') || '黄金', category_code: '01', material: '', weight: 0, size: '', cert: '', cost: 0, price: 0, status: '在库', rfid_epc: '', showcase_public: 0, high_value: 0 };
+  if (!catObj('01')) d.category_code = (ST.cats[0] && ST.cats[0].code) || '';
+  openSheet('product', t('sheet.product'), d);
 }
 
 function editProduct(p) {
   if (checkFrozen()) return;
-  openSheet('product', t('sheet.product'), Object.assign({}, p));
+  ST.sheetNameLang = ST.lang;
+  var d = Object.assign({}, p);
+  ensureCatCode(d);
+  openSheet('product', t('sheet.product'), d);
 }
 
 // 复制新增：以现有商品为模板预填表单，编码/EPC 留空，保存即建档新品
 function copyProduct(p) {
   if (checkFrozen()) return;
+  ST.sheetNameLang = ST.lang;
   var d = Object.assign({}, p);
   delete d.id;
   d.code = '';
   d.rfid_epc = '';
+  ensureCatCode(d);
   openSheet('product', t('act.copyNew') + ' - ' + (p.name || ''), d);
   toast(t('act.copyNew') + ': ' + t('toast.fillCode'), 'info');
 }
@@ -440,9 +504,11 @@ function submitSheet() {
     }).catch(function (e) { toast(e.message, 'error'); });
   } else if (ST.sheetMode === 'product') {
     if (!d.code || !d.name) { toast(t('toast.fillCode'), 'error'); return; }
+    var cc2 = ensureCatCode(d);
+    var catZh = catNameByCode(cc2) || d.category || '其他';
     var m2 = d.id ? 'PUT' : 'POST';
     var u2 = d.id ? '/api/products/' + d.id : '/api/products';
-    api(m2, u2, { code: d.code || '', name: d.name || '', category: d.category || '黄金', category_code: catCodeByName(d.category) || d.category_code || '', name_i18n: d.name_i18n || '{}', material: d.material || '', weight: Number(d.weight) || 0, size: d.size || '', cert: d.cert || '', cost: Number(d.cost) || 0, price: Number(d.price) || 0, status: d.status || '在库', rfid_epc: d.rfid_epc || '', showcase_public: d.showcase_public || 0, high_value: d.high_value || 0 }).then(function () {
+    api(m2, u2, { code: d.code || '', name: d.name || '', category: catZh, category_code: cc2 || '', name_i18n: d.name_i18n || '{}', material: d.material || '', weight: Number(d.weight) || 0, size: d.size || '', cert: d.cert || '', cost: Number(d.cost) || 0, price: Number(d.price) || 0, status: d.status || '在库', rfid_epc: d.rfid_epc || '', showcase_public: d.showcase_public || 0, high_value: d.high_value || 0 }).then(function () {
       toast(t('toast.saveOk')); closeSheet(); refreshAll();
     }).catch(function (e) { toast(e.message, 'error'); });
   } else if (ST.sheetMode === 'inbound') {
@@ -723,6 +789,8 @@ var app = Vue.createApp({
       var list = (ST.cats || []).map(function (c) { return (c.names && c.names.zh) || c.code; });
       return list.length ? list : CATS;
     },
+    // 原始分类对象（带 code/names），供商品表单与筛选chips使用
+    catList: function () { return ST.cats || []; },
     FIELD_LABELS: function () { return FIELD_LABELS; },
   },
   methods: {
@@ -735,6 +803,8 @@ var app = Vue.createApp({
     addProduct: addProduct, editProduct: editProduct, delProduct: delProduct, printLabel: printLabel,
     copyProduct: copyProduct, generateEpc: generateEpc,
     catNameByCode: catNameByCode, catCodeByName: catCodeByName,
+    catNameOf: catNameOf, productCatName: productCatName,
+    sheetNameGet: sheetNameGet, sheetNameSet: sheetNameSet, langNameFilled: langNameFilled,
     resetCatEdit: resetCatEdit, editCat: editCat, saveCat: saveCat, delCat: delCat,
     saveBizConfig: saveBizConfig,
     openInbound: openInbound, copyInbound: copyInbound, openRfid: openRfid, doRfid: doRfid,
