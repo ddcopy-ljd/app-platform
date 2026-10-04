@@ -52,6 +52,7 @@ var ST = Vue.reactive({
   tplDlg: false,           // 模板设计器弹窗
   tplEdit: null,           // 当前编辑的模板 {id,name,size_width,size_height,definition:{slots:[...]}}
   tplSelIdx: -1,           // 画布中选中的 slot 索引
+  tplPreview: null,        // 设计器内 ZPL 预览结果 {product, zpl}
   labelTplId: null,        // 打印时使用的模板 ID
   labelUseTpl: false,      // 是否使用模板模式（true=模板 slots，false=字段复选框）
   // 盘点批次历史（协同盘点结果）
@@ -447,7 +448,7 @@ function generateEpc() {
   }).catch(function (e) { toast(e.message, 'error'); });
 }
 
-// ---------------- 店铺资料：分类管理 ----------------
+// ---------------- 店铺管理：分类管理 ----------------
 function resetCatEdit() {
   ST.catEdit = { code: '', names: { zh: '', en: '' }, sort_order: (ST.cats || []).length + 1 };
   ST.catEditMode = 'new';
@@ -455,6 +456,17 @@ function resetCatEdit() {
 function editCat(c) {
   ST.catEditMode = 'edit';
   ST.catEdit = { code: c.code, names: Object.assign({}, c.names || { zh: '', en: '' }), sort_order: c.sort_order || 0 };
+  // 编辑表单位于分类卡片底部，点击后自动滚动过去并高亮，避免"点了没反应"
+  setTimeout(function () {
+    var el = document.getElementById('cat-edit-form');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.remove('cat-edit-flash');
+      // 触发重绘以重启动画
+      void el.offsetWidth;
+      el.classList.add('cat-edit-flash');
+    }
+  }, 60);
 }
 function saveCat() {
   var ce = ST.catEdit;
@@ -477,7 +489,7 @@ function delCat(code) {
   }).catch(function (e) { toast(e.message, 'error'); });
 }
 
-// ---------------- 店铺资料：EPC 规则 ----------------
+// ---------------- 店铺管理：EPC 规则 ----------------
 function saveBizConfig() {
   var cfg = ST.bizConfig;
   api('PUT', '/api/biz-config', { epc_prefix: (cfg.epc_prefix || '').trim().toUpperCase(), seq_bits: Number(cfg.seq_bits) || 8 }).then(function () {
@@ -728,10 +740,11 @@ function openTplDesigner(tpl) {
     };
   }
   ST.tplSelIdx = -1;
+  ST.tplPreview = null;
   ST.tplDlg = true;
 }
 
-function closeTplDesigner() { ST.tplDlg = false; ST.tplEdit = null; ST.tplSelIdx = -1; }
+function closeTplDesigner() { ST.tplDlg = false; ST.tplEdit = null; ST.tplSelIdx = -1; ST.tplPreview = null; }
 
 function saveTemplate() {
   var tpl = ST.tplEdit;
@@ -858,7 +871,7 @@ function previewTemplate() {
   if (!ST.tplEdit || !ST.tplEdit.id) { toast(t('tpl.saveFirst'), 'error'); return; }
   var pid = ST.products.length ? ST.products[0].id : 1;
   api('POST', '/api/label-templates/' + ST.tplEdit.id + '/preview?product_id=' + pid, {}).then(function (r) {
-    ST.labelResult = { sent: false, count: 1, printer: '', jobs: [{ id: r.product.id, code: r.product.code, name: r.product.name, rfid_epc: r.product.rfid_epc }], zpl: r.zpl };
+    ST.tplPreview = { product: r.product, zpl: r.zpl };
     toast(t('tpl.previewOk'));
   }).catch(function (e) { toast(e.message, 'error'); });
 }
@@ -1069,6 +1082,7 @@ var app = Vue.createApp({
     copyProduct: copyProduct, generateEpc: generateEpc,
     catNameByCode: catNameByCode, catCodeByName: catCodeByName,
     catNameOf: catNameOf, productCatName: productCatName, catText: catText,
+    normLang: normLang,
     sheetNameGet: sheetNameGet, sheetNameSet: sheetNameSet, langNameFilled: langNameFilled,
     resetCatEdit: resetCatEdit, editCat: editCat, saveCat: saveCat, delCat: delCat,
     saveBizConfig: saveBizConfig,

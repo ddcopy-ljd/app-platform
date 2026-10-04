@@ -19,7 +19,7 @@ var I18N = {
     'nav.sales': '销售开单', 'nav.deposits': '定金尾款', 'nav.loans': '借货管理',
     'nav.customers': '客户管理', 'nav.repairs': '维修管理', 'nav.purchases': '采购管理',
     'nav.outsourcings': '委外加工', 'nav.logs': '操作日志', 'nav.appointments': '到店预约',
-    'nav.profile': '店铺资料', 'nav.site': '迷你网站', 'nav.sale': '快速开单',
+    'nav.profile': '店铺管理', 'nav.site': '迷你网站', 'nav.sale': '快速开单',
     'nav.logout': '退出登录', 'nav.more': '我的', 'nav.rfid': 'RFID盘点', 'nav.showcase': '橱窗展示',
     // login
     'login.user': '用户名', 'login.userPh': '请输入用户名', 'login.pass': '密码',
@@ -100,7 +100,7 @@ var I18N = {
     'toast.saveFirst': '请先保存商品再生成EPC', 'toast.epcGenOk': 'EPC 已生成：', 'toast.epcReused': '已存在EPC：',
     'toast.fillCatCode': '请填写分类编码', 'toast.fillCatName': '请填写分类名称（中文或英文）',
     'toast.returnOk': '已归还，库存已恢复', 'toast.receiveOk': '已收货入库',
-    'toast.custSaveOk': '客户已保存', 'toast.profileSaveOk': '店铺资料已保存',
+    'toast.custSaveOk': '客户已保存', 'toast.profileSaveOk': '店铺信息已保存',
     'toast.exportOk': '已导出CSV', 'toast.apptAcceptOk': '预约已接受',
     // 标签打印/协同盘点补充提示（zh only，英文待后续补齐）
     'toast.pickLabel': '请先选择要打印的商品',
@@ -151,9 +151,9 @@ var I18N = {
     'biz.outsourcings': '委外加工跟踪从发料到回收：发料（加工中）→ 收货入库。\n成本 = 金价 × 克重 + 工费，系统自动核算。\n【收货入库】后自动生成商品档案与 RFID EPC，进入在库。',
     'biz.customers': '客户档案在销售/定金开单时按「姓名+手机号」自动建档，也可手工新增。\n系统自动累计每位客户的消费总额与欠款（销售单实收不足部分）。\n等级、生日、偏好信息用于会员分层营销与回访。',
     'biz.appointments': '客人在迷你网站（/site）自助提交到店预约，在此集中查看与跟进。\n状态流转：已联系 → 已到店 → 已成交，点按钮即更新。\n预约含期望到店日期与时段，便于安排接待。',
-    'biz.profile': '店铺资料（名称、口号、简介、电话、地址、营业时间）会同步展示到迷你网站。\n修改后点保存即生效，客人打开 /site 即可看到最新信息。',
+    'biz.profile': '「店铺管理」维护跨门店共享的基础数据，对所有门店生效：\n1. 店铺资料（名称、口号、简介、电话、地址、营业时间）会同步展示到迷你网站，修改保存后客人打开 /site 即可看到；\n2. EPC 编码规则、商品分类、标签打印模板为全平台统一配置，各门店共用。',
     'biz.logs': '全店关键操作自动留痕：谁、在什么时间、对什么做了什么。\n可按时间回溯业务变动，支持一键导出 CSV 备查。',
-    'biz.more': '「我的」汇集个人中心入口：客户、借货、维修、采购、委外、日志等管理页，以及店铺资料与迷你网站预览。\n电脑端这些功能在左侧导航直达。',
+    'biz.more': '「我的」汇集个人中心入口：客户、借货、维修、采购、委外、日志等管理页，以及店铺管理与迷你网站预览。\n电脑端这些功能在左侧导航直达。',
     // 通用
     'common.yes': '是', 'common.no': '否', 'common.copy': '复制', 'common.refresh': '刷新',
     'common.detail': '明细', 'common.op': '操作', 'common.time': '时间', 'common.device': '设备',
@@ -203,12 +203,12 @@ var I18N = {
     // 预约
     'appt.want': '期望：', 'appt.contacted': '已联系', 'appt.arrived': '已到店', 'appt.done': '已成交',
     'appt.pending': '待联系', 'appt.emptyM': '暂无预约，访客可从公开页 /site 自助提交',
-    // 店铺资料 / EPC / 分类管理
+    // 店铺管理 / EPC / 分类管理
     'pf.name': '名称', 'pf.slogan': '口号', 'pf.intro': '简介', 'pf.phone': '电话',
     'pf.hours': '营业时间', 'pf.address': '地址', 'pf.previewSite': '预览迷你网站',
     'epc.title': 'EPC 编码规则', 'epc.prefix': '前缀', 'epc.seqBits': '序号位数（1-8）',
     'epc.hint': 'EPC = 前缀 + 分类码 + 序号（十六进制）。例如 E280 + 01 + 00000001', 'epc.save': '保存规则',
-    'cat.mgrTitle': '商品分类管理', 'cat.title': '商品分类', 'cat.zhName': '中文名', 'cat.enName': '英文名',
+    'cat.mgrTitle': '商品分类管理', 'cat.title': '商品分类', 'cat.name': '名称', 'cat.zhName': '中文名', 'cat.enName': '英文名',
     'cat.sort': '排序', 'cat.saveEdit': '保存修改', 'cat.addNew': '新增分类', 'cat.codePh': '如 08',
     // 标签排版弹窗
     'label.title': '🏷 RFID 标签排版打印',
@@ -230,13 +230,13 @@ var I18N = {
     'tpl.designer': '模板设计器', 'tpl.name': '模板名称', 'tpl.namePh': '如：黄金标签 70×35',
     'tpl.size': '标签尺寸(mm)', 'tpl.width': '宽', 'tpl.height': '高',
     'tpl.writeEpc': '写入 RFID 芯片 EPC',
-    'tpl.fields': '字段（点击添加到画布）', 'tpl.props': '字段属性',
+    'tpl.fields': '点击字段添加到画布', 'tpl.props': '字段属性',
     'tpl.selSlot': '点击画布中的字段框进行编辑', 'tpl.removeSlot': '移除该字段',
     'tpl.posX': 'X(dots)', 'tpl.posY': 'Y(dots)', 'tpl.slotW': '宽(dots)', 'tpl.slotH': '高(dots)',
     'tpl.fontType': '字体类型', 'tpl.fontName': '中文字体名', 'tpl.fontW': '字宽', 'tpl.fontH': '字高',
     'tpl.font.cn': '中文', 'tpl.font.ascii': 'ASCII', 'tpl.font.barcode': '条码',
     'tpl.hint': '提示：拖动字段框调整位置；坐标单位为打印机 dots（300dpi，70×35mm = 827×413 dots）',
-    'tpl.preview': '生成预览 ZPL', 'tpl.boundTpl': '打印模板', 'tpl.none': '— 未绑定 —',
+    'tpl.preview': '预览 ZPL（不打印）', 'tpl.previewHint': '用第一件在库商品按当前已保存的排版试生成 ZPL 打印指令，只显示不发送打印机，用于检查字段位置是否正确。修改排版后需先保存再预览。', 'tpl.previewResult': '预览结果', 'tpl.boundTpl': '打印模板', 'tpl.none': '— 未绑定 —',
     'tpl.useTpl': '模板排版', 'tpl.useCustom': '自定义字段', 'tpl.currentTpl': '命中模板',
     'tpl.nameRequired': '请先填写模板名称', 'tpl.saved': '模板已保存',
     'tpl.confirmDel': '确定删除该模板？删除后分类需重新绑定', 'tpl.deleted': '模板已删除',
@@ -262,7 +262,7 @@ var I18N = {
     'nav.sales': 'Sales', 'nav.deposits': 'Deposits', 'nav.loans': 'Loans',
     'nav.customers': 'Customers', 'nav.repairs': 'Repairs', 'nav.purchases': 'Purchasing',
     'nav.outsourcings': 'Outsourcing', 'nav.logs': 'Audit Logs', 'nav.appointments': 'Appointments',
-    'nav.profile': 'Store Profile', 'nav.site': 'Mini Site', 'nav.sale': 'New Sale',
+    'nav.profile': 'Store Management', 'nav.site': 'Mini Site', 'nav.sale': 'New Sale',
     'nav.logout': 'Sign Out', 'nav.more': 'Me', 'nav.rfid': 'RFID Count', 'nav.showcase': 'Showcase',
     // login
     'login.user': 'Username', 'login.userPh': 'Enter username', 'login.pass': 'Password',

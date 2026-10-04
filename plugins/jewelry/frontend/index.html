@@ -490,7 +490,7 @@
           </div>
         </section>
 
-        <section v-if="!isPc && tab==='profile'" v-if="profile">
+        <section v-if="!isPc && tab==='profile' && profile">
           <details class="biz-guide">
             <summary>📖 {{ t('biz.title') }}</summary>
             <div class="biz-body">{{ t('biz.profile') }}</div>
@@ -515,8 +515,8 @@
           <div class="card-item">
             <div class="card-title">{{ t('cat.title') }}</div>
             <div v-for="c in catList" :key="c.code" class="flex-between" style="padding:6px 0;border-bottom:1px solid #eee">
-              <span><b class="mono">{{ c.code }}</b> {{ catNameOf(c) }} <span style="color:#999">{{ c.names.en||'' }}</span></span>
-              <span><button class="btn-small" @click="editCat(c)">{{ t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delCat(c.code)">{{ t('act.del') }}</button></span>
+              <span><b class="mono">{{ c.code }}</b> {{ catNameOf(c) }}</span>
+              <span><button class="btn-small" :class="{'btn-gold': catEditMode==='edit' && catEdit.code===c.code}" @click="(catEditMode==='edit' && catEdit.code===c.code) ? resetCatEdit() : editCat(c)">{{ (catEditMode==='edit' && catEdit.code===c.code) ? '取消' : t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delCat(c.code)">{{ t('act.del') }}</button></span>
             </div>
             <div v-for="c in catList" :key="'tpl-'+c.code" class="flex-between" style="padding:6px 0;border-bottom:1px solid #eee">
               <span style="color:#666">{{ t('tpl.boundTpl') }} · <b class="mono">{{ c.code }}</b></span>
@@ -530,11 +530,13 @@
               <span>🏷 {{ tp.name }} <span style="color:#999">{{ tp.size_width }}×{{ tp.size_height }}mm</span></span>
               <span><button class="btn-small" @click="openTplDesigner(tp)">{{ t('tpl.design') }}</button> <button class="btn-small btn-danger" @click="delTemplate(tp.id)">{{ t('act.del') }}</button></span>
             </div>
-            <div class="form-group" style="margin-top:8px"><label>{{ t('lbl.code') }}</label><input v-model="catEdit.code" :disabled="catEditMode==='edit'"></div>
-            <div class="form-row"><div class="form-group"><label>{{ t('cat.zhName') }}</label><input v-model="catEdit.names.zh"></div><div class="form-group"><label>{{ t('cat.enName') }}</label><input v-model="catEdit.names.en"></div></div>
-            <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="catEdit.sort_order" type="number"></div>
-            <button class="btn btn-gold btn-block" @click="saveCat">{{ catEditMode==='edit'?t('cat.saveEdit'):t('cat.addNew') }}</button>
-            <button class="btn btn-outline btn-block" v-if="catEditMode==='edit'" @click="resetCatEdit" style="margin-top:6px">{{ t('act.cancel') }}</button>
+            <div id="cat-edit-form" style="margin-top:10px;padding:8px;border:1px solid #eee;border-radius:6px">
+              <div class="form-group"><label>{{ t('lbl.code') }}</label><input v-model="catEdit.code" :disabled="catEditMode==='edit'"></div>
+              <div class="form-group"><label>{{ t('cat.name') }}（{{ langLabels[lang] || lang }}）</label><input :value="catEdit.names[normLang(lang)] || ''" @input="catEdit.names[normLang(lang)]=$event.target.value"></div>
+              <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="catEdit.sort_order" type="number"></div>
+              <button class="btn btn-gold btn-block" @click="saveCat">{{ catEditMode==='edit'?t('cat.saveEdit'):t('cat.addNew') }}</button>
+              <button class="btn btn-outline btn-block" v-if="catEditMode==='edit'" @click="resetCatEdit" style="margin-top:6px">{{ t('act.cancel') }}</button>
+            </div>
           </div>
         </section>
         <section v-if="isPc && tab==='logs'">
@@ -589,12 +591,11 @@
           <div class="card-item">
             <div class="card-title">{{ t('cat.mgrTitle') }}</div>
             <table class="data-table" style="margin-bottom:12px">
-              <thead><tr><th>{{ t('lbl.code') }}</th><th>{{ t('cat.zhName') }}</th><th>{{ t('cat.enName') }}</th><th>{{ t('cat.sort') }}</th><th>{{ t('tpl.boundTpl') }}</th><th>{{ t('common.op') }}</th></tr></thead>
+              <thead><tr><th>{{ t('lbl.code') }}</th><th>{{ t('cat.name') }}</th><th>{{ t('cat.sort') }}</th><th>{{ t('tpl.boundTpl') }}</th><th>{{ t('common.op') }}</th></tr></thead>
               <tbody>
                 <tr v-for="c in catList" :key="c.code">
                   <td class="mono">{{ c.code }}</td>
-                  <td>{{ c.names.zh }}</td>
-                  <td>{{ c.names.en || '—' }}</td>
+                  <td>{{ catNameOf(c) }}</td>
                   <td>{{ c.sort_order }}</td>
                   <td>
                     <select :value="c.label_template_id||''" @change="bindCatTemplate(c.code, $event.target.value?+$event.target.value:null)">
@@ -602,7 +603,7 @@
                       <option v-for="tp in labelTemplates" :key="tp.id" :value="tp.id">{{ tp.name }}</option>
                     </select>
                   </td>
-                  <td><button class="btn-small" @click="editCat(c)">{{ t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delCat(c.code)">{{ t('act.del') }}</button></td>
+                  <td><button class="btn-small" :class="{'btn-gold': catEditMode==='edit' && catEdit.code===c.code}" @click="(catEditMode==='edit' && catEdit.code===c.code) ? resetCatEdit() : editCat(c)">{{ (catEditMode==='edit' && catEdit.code===c.code) ? '取消' : t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delCat(c.code)">{{ t('act.del') }}</button></td>
                 </tr>
               </tbody>
             </table>
@@ -618,14 +619,15 @@
               </tbody>
             </table>
             <div v-else class="prod-meta" style="margin-bottom:12px">{{ t('tpl.empty') }}</div>
-            <div class="form-row">
+            <div id="cat-edit-form" class="form-row" style="margin-top:10px;padding:10px;border:1px solid #eee;border-radius:6px">
               <div class="form-group"><label>{{ t('lbl.code') }}</label><input v-model="catEdit.code" :disabled="catEditMode==='edit'" :placeholder="t('cat.codePh')"></div>
-              <div class="form-group"><label>{{ t('cat.zhName') }}</label><input v-model="catEdit.names.zh"></div>
-              <div class="form-group"><label>{{ t('cat.enName') }}</label><input v-model="catEdit.names.en"></div>
+              <div class="form-group"><label>{{ t('cat.name') }}（{{ langLabels[lang] || lang }}）</label><input :value="catEdit.names[normLang(lang)] || ''" @input="catEdit.names[normLang(lang)]=$event.target.value"></div>
               <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="catEdit.sort_order" type="number"></div>
+              <div class="form-group" style="flex:0 0 auto;align-self:flex-end;display:flex;gap:8px">
+                <button class="btn btn-gold" @click="saveCat">{{ catEditMode==='edit' ? t('cat.saveEdit') : t('cat.addNew') }}</button>
+                <button class="btn btn-outline" v-if="catEditMode==='edit'" @click="resetCatEdit">{{ t('act.cancel') }}</button>
+              </div>
             </div>
-            <button class="btn btn-gold" @click="saveCat">{{ catEditMode==='edit' ? t('cat.saveEdit') : t('cat.addNew') }}</button>
-            <button class="btn btn-outline" v-if="catEditMode==='edit'" @click="resetCatEdit" style="margin-left:8px">{{ t('act.cancel') }}</button>
           </div>
         </section>
 
@@ -884,24 +886,24 @@
 
   <!-- 标签打印模板设计器弹窗 -->
   <div class="modal-mask" v-if="tplDlg" @click.self="closeTplDesigner">
-    <div class="modal-box modal-lg" style="width:min(960px,96vw)">
+    <div class="modal-box modal-lg" style="width:min(1060px,96vw)">
       <div class="sheet-head"><h3>{{ t('tpl.designer') }}</h3><span class="sheet-close" @click="closeTplDesigner">✕</span></div>
       <div class="sheet-body" style="display:flex;gap:12px;flex-wrap:wrap">
         <!-- 左：字段工具栏 -->
         <div style="width:180px;flex-shrink:0">
-          <div class="card-title">{{ t('tpl.fields') }}</div>
-          <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">
+          <div class="hint" style="font-weight:600;color:#8a6d1f;margin-bottom:6px">{{ t('tpl.fields') }}</div>
+          <div style="display:flex;flex-direction:column;gap:4px">
             <button class="btn btn-sm btn-outline" v-for="f in LABEL_FIELDS" :key="f.key" @click="addSlotToCanvas(f.key)">
               {{ labelFieldText(f.key) }} <span style="color:#999">({{ t('tpl.font.'+f.type) }})</span>
             </button>
           </div>
         </div>
         <!-- 中：画布 -->
-        <div style="flex:1;min-width:260px">
-          <div class="form-row" style="margin-bottom:8px">
-            <div class="form-group"><label>{{ t('tpl.name') }}</label><input v-model="tplEdit.name" :placeholder="t('tpl.namePh')"></div>
-            <div class="form-group"><label>{{ t('tpl.width') }}(mm)</label><input type="number" v-model.number="tplEdit.size_width" min="20" max="120"></div>
-            <div class="form-group"><label>{{ t('tpl.height') }}(mm)</label><input type="number" v-model.number="tplEdit.size_height" min="10" max="80"></div>
+        <div style="flex:1;min-width:300px">
+          <div class="form-row" style="margin-bottom:8px;gap:8px;align-items:flex-end">
+            <div class="form-group" style="flex:2;min-width:220px;margin-bottom:0"><label>{{ t('tpl.name') }}</label><input v-model="tplEdit.name" :placeholder="t('tpl.namePh')"></div>
+            <div class="form-group" style="margin-bottom:0"><label>{{ t('tpl.width') }}(mm)</label><input type="number" v-model.number="tplEdit.size_width" min="20" max="120" style="width:84px"></div>
+            <div class="form-group" style="margin-bottom:0"><label>{{ t('tpl.height') }}(mm)</label><input type="number" v-model.number="tplEdit.size_height" min="10" max="80" style="width:84px"></div>
           </div>
           <div class="tpl-canvas" :style="{ width: (tplEdit.size_width||70)*4+'px', height: (tplEdit.size_height||35)*4+'px' }">
             <div class="tpl-slot"
@@ -913,28 +915,32 @@
             </div>
           </div>
           <div class="hint" style="margin-top:6px">{{ t('tpl.hint') }}</div>
+          <div v-if="tplPreview" style="margin-top:10px">
+            <div class="card-title">{{ t('tpl.previewResult') }} · {{ tplPreview.product.code }} {{ tplPreview.product.name }}</div>
+            <pre class="zpl-pre" style="max-height:170px;overflow:auto;margin:0">{{ tplPreview.zpl }}</pre>
+          </div>
         </div>
         <!-- 右：属性面板 -->
-        <div style="width:200px;flex-shrink:0">
+        <div class="tpl-props" style="width:280px;flex-shrink:0">
           <div class="card-title">{{ t('tpl.props') }}</div>
           <div v-if="tplSelIdx>=0 && tplEdit.definition.slots[tplSelIdx]" style="margin-top:6px">
-            <div class="form-group">
+            <div class="tpl-prop-row">
               <label>{{ t('tpl.posX') }}</label>
               <input type="number" :value="tplEdit.definition.slots[tplSelIdx].x" @input="updateSlot(tplSelIdx, 'x', +$event.target.value)">
             </div>
-            <div class="form-group">
+            <div class="tpl-prop-row">
               <label>{{ t('tpl.posY') }}</label>
               <input type="number" :value="tplEdit.definition.slots[tplSelIdx].y" @input="updateSlot(tplSelIdx, 'y', +$event.target.value)">
             </div>
-            <div class="form-group">
+            <div class="tpl-prop-row">
               <label>{{ t('tpl.slotW') }}</label>
               <input type="number" :value="tplEdit.definition.slots[tplSelIdx].w" @input="updateSlot(tplSelIdx, 'w', +$event.target.value)">
             </div>
-            <div class="form-group">
+            <div class="tpl-prop-row">
               <label>{{ t('tpl.slotH') }}</label>
               <input type="number" :value="tplEdit.definition.slots[tplSelIdx].h" @input="updateSlot(tplSelIdx, 'h', +$event.target.value)">
             </div>
-            <div class="form-group">
+            <div class="tpl-prop-row">
               <label>{{ t('tpl.fontType') }}</label>
               <select :value="tplEdit.definition.slots[tplSelIdx].font.type" @change="updateSlot(tplSelIdx, 'font.type', $event.target.value)">
                 <option value="cn">{{ t('tpl.font.cn') }}</option>
@@ -942,26 +948,33 @@
                 <option value="barcode">{{ t('tpl.font.barcode') }}</option>
               </select>
             </div>
-            <div class="form-group" v-if="tplEdit.definition.slots[tplSelIdx].font.type==='cn'">
+            <div class="tpl-prop-row" v-if="tplEdit.definition.slots[tplSelIdx].font.type==='cn'">
               <label>{{ t('tpl.fontName') }}</label>
               <input :value="tplEdit.definition.slots[tplSelIdx].font.name" @input="updateSlot(tplSelIdx, 'font.name', $event.target.value)">
             </div>
-            <div class="form-row">
-              <div class="form-group"><label>{{ t('tpl.fontW') }}</label><input type="number" :value="tplEdit.definition.slots[tplSelIdx].font.w" @input="updateSlot(tplSelIdx, 'font.w', +$event.target.value)"></div>
-              <div class="form-group"><label>{{ t('tpl.fontH') }}</label><input type="number" :value="tplEdit.definition.slots[tplSelIdx].font.h" @input="updateSlot(tplSelIdx, 'font.h', +$event.target.value)"></div>
+            <div class="tpl-prop-row">
+              <label>{{ t('tpl.fontW') }}</label>
+              <input type="number" :value="tplEdit.definition.slots[tplSelIdx].font.w" @input="updateSlot(tplSelIdx, 'font.w', +$event.target.value)">
+            </div>
+            <div class="tpl-prop-row">
+              <label>{{ t('tpl.fontH') }}</label>
+              <input type="number" :value="tplEdit.definition.slots[tplSelIdx].font.h" @input="updateSlot(tplSelIdx, 'font.h', +$event.target.value)">
             </div>
             <button class="btn btn-sm btn-danger btn-block" style="margin-top:6px" @click="removeSlot(tplSelIdx)">{{ t('tpl.removeSlot') }}</button>
           </div>
           <div v-else class="hint">{{ t('tpl.selSlot') }}</div>
-          <div class="form-group" style="margin-top:12px">
+          <div style="margin-top:12px">
             <label class="field-chip"><input type="checkbox" v-model="tplEdit.definition.write_epc"> {{ t('tpl.writeEpc') }}</label>
           </div>
         </div>
       </div>
-      <div class="sheet-foot" style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn btn-outline" @click="closeTplDesigner">{{ t('act.cancel') }}</button>
-        <button class="btn btn-gold" @click="previewTemplate" :disabled="!tplEdit.id">{{ t('tpl.preview') }}</button>
-        <button class="btn btn-gold" @click="saveTemplate">{{ t('act.save') }}</button>
+      <div class="sheet-foot" style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+        <span class="hint" style="text-align:left;flex:1;min-width:260px">{{ t('tpl.previewHint') }}</span>
+        <span style="display:flex;gap:8px;flex-shrink:0">
+          <button class="btn btn-outline" @click="closeTplDesigner">{{ t('act.cancel') }}</button>
+          <button class="btn btn-gold" @click="previewTemplate" :disabled="!tplEdit.id">{{ t('tpl.preview') }}</button>
+          <button class="btn btn-gold" @click="saveTemplate">{{ t('act.save') }}</button>
+        </span>
       </div>
     </div>
   </div>
