@@ -3,14 +3,14 @@
  */
 
 var LANG_MAP = {
-  'zh-Hans': 'zh', 'zh': 'zh', 'en': 'en'
+  'zh-Hans': 'zh', 'zh': 'zh', 'en': 'en', 'it': 'it'
 };
 
 var LANG_LABELS = {
-  'zh-Hans': '简体中文', 'en': 'English'
+  'zh-Hans': '简体中文', 'en': 'English', 'it': 'Italiano'
 };
 
-var LANG_KEYS = ['zh-Hans', 'en'];
+var LANG_KEYS = ['zh-Hans', 'en', 'it'];
 
 var I18N = {
   zh: {
@@ -207,9 +207,24 @@ var I18N = {
     'pf.name': '名称', 'pf.slogan': '口号', 'pf.intro': '简介', 'pf.phone': '电话',
     'pf.hours': '营业时间', 'pf.address': '地址', 'pf.previewSite': '预览迷你网站',
     'epc.title': 'EPC 编码规则', 'epc.prefix': '前缀', 'epc.seqBits': '序号位数（1-8）',
-    'epc.hint': 'EPC = 前缀 + 分类码 + 序号（十六进制）。例如 E280 + 01 + 00000001', 'epc.save': '保存规则',
+    'epc.hint': 'EPC = 前缀 + 品类码 + 序号（十六进制）。例如 E280 + 01 + 00000001；新商品保存时自动生成', 'epc.save': '保存规则',
     'cat.mgrTitle': '商品分类管理', 'cat.title': '商品分类', 'cat.name': '名称', 'cat.zhName': '中文名', 'cat.enName': '英文名',
     'cat.sort': '排序', 'cat.saveEdit': '保存修改', 'cat.addNew': '新增分类', 'cat.codePh': '如 08',
+    // 商品品类（戒指/项链…）与材质
+    'type.mgrTitle': '商品品类管理', 'type.title': '商品品类', 'type.addNew': '新增品类',
+    'type.namePh': '如：戒指', 'type.codePh': '如 10', 'type.confirmDel': '该品类下仍有商品，不能删除',
+    'mat.GOLD': 'GOLD', 'mat.PLATINUM': 'PLATINUM', 'mat.SILVER': 'SILVER',
+    'mat.DIAMOND': 'DIAMOND', 'mat.JADEITE': 'JADEITE', 'mat.COLORED_GEMSTONE': 'COLORED_GEMSTONE',
+    'mat.PEARL': 'PEARL', 'mat.OTHER': 'OTHER',
+    'mat.cn.GOLD': '黄金', 'mat.cn.PLATINUM': '铂金', 'mat.cn.SILVER': '白银',
+    'mat.cn.DIAMOND': '钻石', 'mat.cn.JADEITE': '翡翠', 'mat.cn.COLORED_GEMSTONE': '彩宝',
+    'mat.cn.PEARL': '珍珠', 'mat.cn.OTHER': '其他',
+    // 商品图片裁切
+    'img.upload': '上传商品图片', 'img.change': '更换图片', 'img.remove': '删除图片',
+    'img.cropTitle': '裁切商品图片', 'img.landscape': '横向 4:3', 'img.portrait': '竖向 3:4',
+    'img.hint': '拖动调整位置，滚轮缩放；商品居中后确认，长边 700px，JPG 保存',
+    'img.reSelect': '重新选择', 'img.confirm': '确认裁切', 'img.saved': '图片已保存', 'img.removed': '图片已删除',
+    'img.saveFirst': '请先保存商品后再上传图片',
     // 标签排版弹窗
     'label.title': '🏷 RFID 标签排版打印',
     'label.pick': '打印商品（70×35mm / 300dpi · 得实 DL-735RE）',
@@ -385,7 +400,21 @@ var I18N = {
     'biz.profile': 'Store profile (name, slogan, intro, phone, address, hours) is synced to the mini website.\nClick Save after changes; visitors will see the latest info when opening /site.',
     'biz.logs': 'Key shop operations are automatically logged: who, when, what action, on which target.\nYou can trace business changes over time and export CSV with one click.',
     'biz.more': '"Me" gathers personal-center entries: customers, loans, repairs, purchases, outsourcing, logs, store profile and mini-site preview.\nOn PC these are accessible directly from the left sidebar.',
-  }
+    // product types / materials / image
+    'type.mgrTitle': 'Product Types', 'type.title': 'Product Type', 'type.addNew': 'Add Type',
+    'type.namePh': 'e.g. Ring', 'type.codePh': 'e.g. 10', 'type.confirmDel': 'Products still use this type; cannot delete',
+    'mat.cn.GOLD': 'Gold', 'mat.cn.PLATINUM': 'Platinum', 'mat.cn.SILVER': 'Silver',
+    'mat.cn.DIAMOND': 'Diamond', 'mat.cn.JADEITE': 'Jadeite', 'mat.cn.COLORED_GEMSTONE': 'Colored Gemstone',
+    'mat.cn.PEARL': 'Pearl', 'mat.cn.OTHER': 'Other',
+    'img.upload': 'Upload Image', 'img.change': 'Change Image', 'img.remove': 'Remove Image',
+    'img.cropTitle': 'Crop Product Image', 'img.landscape': 'Landscape 4:3', 'img.portrait': 'Portrait 3:4',
+    'img.hint': 'Drag to position, scroll to zoom; center the item and confirm. Long edge 700px, saved as JPG',
+    'img.reSelect': 'Re-select', 'img.confirm': 'Confirm Crop', 'img.saved': 'Image saved', 'img.removed': 'Image removed',
+    'img.saveFirst': 'Save the product before uploading an image',
+  },
+
+  // 意大利语暂未翻译，缺词自动回退中文
+  it: {}
 };
 
 var currentLang = 'zh';
@@ -403,6 +432,7 @@ function detectLang() {
   if (saved && (I18N[saved] || LANG_MAP[saved])) return saved;
   var nav = (navigator.language || '').toLowerCase();
   if (nav.indexOf('zh') === 0) return 'zh-Hans';
+  if (nav.indexOf('it') === 0) return 'it';
   if (nav.indexOf('en') === 0) return 'en';
   return 'zh-Hans';
 }

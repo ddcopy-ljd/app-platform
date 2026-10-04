@@ -139,14 +139,15 @@
           <div class="search-wrap mt-sm"><input class="search-input" v-model="prodQ" :placeholder="t('ph.searchProd')"><button class="btn btn-sm btn-outline" @click="prodQ=''">{{ t('act.clear') }}</button></div>
           <div class="cat-chips">
             <div class="cat-chip" :class="{active:!prodCat}" @click="prodCat=''">{{ t('cat.all') }}</div>
-            <div class="cat-chip" v-for="c in catList" :key="c.code" :class="{active:prodCat===c.code}" @click="prodCat=c.code">{{ catNameOf(c) }}</div>
+            <div class="cat-chip" v-for="o in typeList" :key="o.code" :class="{active:prodCat===o.code}" @click="prodCat=o.code">{{ catNameOf(o) }}</div>
           </div>
           <div class="table-wrap" v-if="isPc">
             <table class="data-table">
-              <thead><tr><th>{{ t('lbl.code') }}</th><th>{{ t('lbl.name') }}</th><th>{{ t('lbl.category') }}</th><th>{{ t('lbl.weight') }}</th><th>{{ t('lbl.price') }}</th><th>{{ t('lbl.cost') }}</th><th>{{ t('lbl.status') }}</th><th>EPC</th><th>{{ t('th.showcase') }}</th><th>{{ t('th.highValue') }}</th><th></th></tr></thead>
+              <thead><tr><th></th><th>{{ t('lbl.code') }}</th><th>{{ t('lbl.name') }}</th><th>{{ t('lbl.category') }}</th><th>{{ t('lbl.material') }}</th><th>{{ t('lbl.weight') }}</th><th>{{ t('lbl.price') }}</th><th>{{ t('lbl.cost') }}</th><th>{{ t('lbl.status') }}</th><th>EPC</th><th>{{ t('th.showcase') }}</th><th>{{ t('th.highValue') }}</th><th></th></tr></thead>
               <tbody>
                 <tr v-for="p in filteredProducts" :key="p.id">
-                  <td>{{ p.code }}</td><td>{{ p.name }}</td><td>{{ productCatName(p) }}</td><td>{{ p.weight }}g</td>
+                  <td class="cell-img"><img v-if="p.image_ts" :src="productImageUrl(p)" class="prod-thumb-img" alt=""><span v-else class="prod-thumb-ph">💎</span></td>
+                  <td>{{ p.code }}</td><td>{{ p.name }}</td><td>{{ productTypeName(p) }}</td><td>{{ materialText(p.material) || '—' }}</td><td>{{ p.weight }}g</td>
                   <td>￥{{ fmt(p.price) }}</td><td>￥{{ fmt(p.cost) }}</td>
                   <td><span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span></td>
                   <td class="mono">{{ p.rfid_epc||'—' }}</td>
@@ -165,10 +166,10 @@
           <div class="card-list" v-else>
             <div class="card-item" v-for="p in filteredProducts" :key="p.id">
               <div class="product-card" @click="editProduct(p)">
-                <div class="prod-thumb">💎</div>
+                <div class="prod-thumb"><img v-if="p.image_ts" :src="productImageUrl(p)" class="prod-thumb-img" alt=""><template v-else>💎</template></div>
                 <div class="prod-info">
                   <div class="prod-name">{{ p.name }}<span class="tag tag-hv" v-if="p.high_value">⭐{{ t('lbl.highValue') }}</span><span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span></div>
-                  <div class="prod-meta">{{ p.code }} · {{ productCatName(p) }} · {{ p.material }} · {{ p.weight }}g</div>
+                  <div class="prod-meta">{{ p.code }} · {{ productTypeName(p) }} · {{ materialText(p.material) || '—' }} · {{ p.weight }}g</div>
                 </div>
                 <div class="prod-price2"><div class="pp">￥{{ fmt(p.price) }}</div></div>
               </div>
@@ -299,7 +300,7 @@
                 <thead><tr><th>{{ t('lbl.code') }}</th><th>{{ t('lbl.name') }}</th><th>{{ t('lbl.category') }}</th><th>{{ t('lbl.material') }}</th><th>{{ t('lbl.weight') }}</th><th>{{ t('lbl.size') }}</th><th>{{ t('lbl.price') }}</th><th>{{ t('lbl.cost') }}</th><th>EPC</th><th>{{ t('th.highValue') }}</th><th></th></tr></thead>
                 <tbody>
                   <tr v-for="p in invStockList" :key="'c'+p.id" :class="{'row-flash': flashIds.indexOf(p.id)>=0}">
-                    <td>{{ p.code }}</td><td>{{ p.name }}</td><td>{{ productCatName(p) }}</td><td>{{ p.material || '—' }}</td>
+                    <td>{{ p.code }}</td><td>{{ p.name }}</td><td>{{ productTypeName(p) }}</td><td>{{ materialText(p.material) || '—' }}</td>
                     <td>{{ p.weight }}g</td><td>{{ p.size || '—' }}</td>
                     <td>￥{{ fmt(p.price) }}</td><td>￥{{ fmt(p.cost) }}</td>
                     <td class="mono">{{ p.rfid_epc||'—' }}</td>
@@ -320,7 +321,7 @@
                       <span class="tag tag-hv" v-if="p.high_value">⭐{{ t('lbl.highValue') }}</span>
                       <span class="prod-meta">{{ p.code }}</span>
                     </div>
-                    <div class="prod-meta" style="margin-top:4px">{{ productCatName(p) }} · {{ p.material || '—' }} · {{ p.weight }}g<span v-if="p.size"> · {{ p.size }}</span></div>
+                    <div class="prod-meta" style="margin-top:4px">{{ productTypeName(p) }} · {{ materialText(p.material) || '—' }} · {{ p.weight }}g<span v-if="p.size"> · {{ p.size }}</span></div>
                     <div class="prod-meta" style="margin-top:2px">
                       <span style="color:var(--gold);font-weight:600">￥{{ fmt(p.price) }}</span>
                       <span style="margin-left:8px">{{ t('common.cost') }} ￥{{ fmt(p.cost) }}</span>
@@ -513,14 +514,14 @@
           </div>
 
           <div class="card-item">
-            <div class="card-title">{{ t('cat.title') }}</div>
-            <div v-for="c in catList" :key="c.code" class="flex-between" style="padding:6px 0;border-bottom:1px solid #eee">
-              <span><b class="mono">{{ c.code }}</b> {{ catNameOf(c) }}</span>
-              <span><button class="btn-small" :class="{'btn-gold': catEditMode==='edit' && catEdit.code===c.code}" @click="(catEditMode==='edit' && catEdit.code===c.code) ? resetCatEdit() : editCat(c)">{{ (catEditMode==='edit' && catEdit.code===c.code) ? '取消' : t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delCat(c.code)">{{ t('act.del') }}</button></span>
+            <div class="card-title">{{ t('type.mgrTitle') }}</div>
+            <div v-for="o in typeList" :key="o.code" class="flex-between" style="padding:6px 0;border-bottom:1px solid #eee">
+              <span><b class="mono">{{ o.code }}</b> {{ catNameOf(o) }}</span>
+              <span><button class="btn-small" :class="{'btn-gold': typeEditMode==='edit' && typeEdit.code===o.code}" @click="(typeEditMode==='edit' && typeEdit.code===o.code) ? resetTypeEdit() : editType(o)">{{ (typeEditMode==='edit' && typeEdit.code===o.code) ? '取消' : t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delType(o.code)">{{ t('act.del') }}</button></span>
             </div>
-            <div v-for="c in catList" :key="'tpl-'+c.code" class="flex-between" style="padding:6px 0;border-bottom:1px solid #eee">
-              <span style="color:#666">{{ t('tpl.boundTpl') }} · <b class="mono">{{ c.code }}</b></span>
-              <select :value="c.label_template_id||''" @change="bindCatTemplate(c.code, $event.target.value?+$event.target.value:null)">
+            <div v-for="o in typeList" :key="'tpl-'+o.code" class="flex-between" style="padding:6px 0;border-bottom:1px solid #eee">
+              <span style="color:#666">{{ t('tpl.boundTpl') }} · <b class="mono">{{ o.code }}</b></span>
+              <select :value="o.label_template_id||''" @change="bindTypeTemplate(o.code, $event.target.value?+$event.target.value:null)">
                 <option value="">{{ t('tpl.none') }}</option>
                 <option v-for="tp in labelTemplates" :key="tp.id" :value="tp.id">{{ tp.name }}</option>
               </select>
@@ -530,12 +531,14 @@
               <span>🏷 {{ tp.name }} <span style="color:#999">{{ tp.size_width }}×{{ tp.size_height }}mm</span></span>
               <span><button class="btn-small" @click="openTplDesigner(tp)">{{ t('tpl.design') }}</button> <button class="btn-small btn-danger" @click="delTemplate(tp.id)">{{ t('act.del') }}</button></span>
             </div>
-            <div id="cat-edit-form" style="margin-top:10px;padding:8px;border:1px solid #eee;border-radius:6px">
-              <div class="form-group"><label>{{ t('lbl.code') }}</label><input v-model="catEdit.code" :disabled="catEditMode==='edit'"></div>
-              <div class="form-group"><label>{{ t('cat.name') }}（{{ langLabels[lang] || lang }}）</label><input :value="catEdit.names[normLang(lang)] || ''" @input="catEdit.names[normLang(lang)]=$event.target.value"></div>
-              <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="catEdit.sort_order" type="number"></div>
-              <button class="btn btn-gold btn-block" @click="saveCat">{{ catEditMode==='edit'?t('cat.saveEdit'):t('cat.addNew') }}</button>
-              <button class="btn btn-outline btn-block" v-if="catEditMode==='edit'" @click="resetCatEdit" style="margin-top:6px">{{ t('act.cancel') }}</button>
+            <div id="type-edit-form" style="margin-top:10px;padding:8px;border:1px solid #eee;border-radius:6px">
+              <div class="form-group"><label>{{ t('lbl.code') }}</label><input v-model="typeEdit.code" :disabled="typeEditMode==='edit'" :placeholder="t('type.codePh')"></div>
+              <div class="form-group"><label>{{ t('cat.zhName') }}</label><input v-model="typeEdit.names.zh" :placeholder="t('type.namePh')"></div>
+              <div class="form-group"><label>{{ t('cat.enName') }}</label><input v-model="typeEdit.names.en" placeholder="Ring"></div>
+              <div class="form-group"><label>Italiano</label><input v-model="typeEdit.names.it" placeholder="Anello"></div>
+              <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="typeEdit.sort_order" type="number"></div>
+              <button class="btn btn-gold btn-block" @click="saveType">{{ typeEditMode==='edit'?t('cat.saveEdit'):t('type.addNew') }}</button>
+              <button class="btn btn-outline btn-block" v-if="typeEditMode==='edit'" @click="resetTypeEdit" style="margin-top:6px">{{ t('act.cancel') }}</button>
             </div>
           </div>
         </section>
@@ -587,23 +590,23 @@
             <button class="btn btn-gold" @click="saveBizConfig">{{ t('epc.save') }}</button>
           </div>
 
-          <!-- 商品分类管理 -->
+          <!-- 商品品类管理（戒指/项链…，标签模板按品类绑定） -->
           <div class="card-item">
-            <div class="card-title">{{ t('cat.mgrTitle') }}</div>
+            <div class="card-title">{{ t('type.mgrTitle') }}</div>
             <table class="data-table" style="margin-bottom:12px">
               <thead><tr><th>{{ t('lbl.code') }}</th><th>{{ t('cat.name') }}</th><th>{{ t('cat.sort') }}</th><th>{{ t('tpl.boundTpl') }}</th><th>{{ t('common.op') }}</th></tr></thead>
               <tbody>
-                <tr v-for="c in catList" :key="c.code">
-                  <td class="mono">{{ c.code }}</td>
-                  <td>{{ catNameOf(c) }}</td>
-                  <td>{{ c.sort_order }}</td>
+                <tr v-for="o in typeList" :key="o.code">
+                  <td class="mono">{{ o.code }}</td>
+                  <td>{{ catNameOf(o) }}</td>
+                  <td>{{ o.sort_order }}</td>
                   <td>
-                    <select :value="c.label_template_id||''" @change="bindCatTemplate(c.code, $event.target.value?+$event.target.value:null)">
+                    <select :value="o.label_template_id||''" @change="bindTypeTemplate(o.code, $event.target.value?+$event.target.value:null)">
                       <option value="">{{ t('tpl.none') }}</option>
                       <option v-for="tp in labelTemplates" :key="tp.id" :value="tp.id">{{ tp.name }}</option>
                     </select>
                   </td>
-                  <td><button class="btn-small" :class="{'btn-gold': catEditMode==='edit' && catEdit.code===c.code}" @click="(catEditMode==='edit' && catEdit.code===c.code) ? resetCatEdit() : editCat(c)">{{ (catEditMode==='edit' && catEdit.code===c.code) ? '取消' : t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delCat(c.code)">{{ t('act.del') }}</button></td>
+                  <td><button class="btn-small" :class="{'btn-gold': typeEditMode==='edit' && typeEdit.code===o.code}" @click="(typeEditMode==='edit' && typeEdit.code===o.code) ? resetTypeEdit() : editType(o)">{{ (typeEditMode==='edit' && typeEdit.code===o.code) ? '取消' : t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delType(o.code)">{{ t('act.del') }}</button></td>
                 </tr>
               </tbody>
             </table>
@@ -619,13 +622,17 @@
               </tbody>
             </table>
             <div v-else class="prod-meta" style="margin-bottom:12px">{{ t('tpl.empty') }}</div>
-            <div id="cat-edit-form" class="form-row" style="margin-top:10px;padding:10px;border:1px solid #eee;border-radius:6px">
-              <div class="form-group"><label>{{ t('lbl.code') }}</label><input v-model="catEdit.code" :disabled="catEditMode==='edit'" :placeholder="t('cat.codePh')"></div>
-              <div class="form-group"><label>{{ t('cat.name') }}（{{ langLabels[lang] || lang }}）</label><input :value="catEdit.names[normLang(lang)] || ''" @input="catEdit.names[normLang(lang)]=$event.target.value"></div>
-              <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="catEdit.sort_order" type="number"></div>
-              <div class="form-group" style="flex:0 0 auto;align-self:flex-end;display:flex;gap:8px">
-                <button class="btn btn-gold" @click="saveCat">{{ catEditMode==='edit' ? t('cat.saveEdit') : t('cat.addNew') }}</button>
-                <button class="btn btn-outline" v-if="catEditMode==='edit'" @click="resetCatEdit">{{ t('act.cancel') }}</button>
+            <div id="type-edit-form" style="margin-top:10px;padding:10px;border:1px solid #eee;border-radius:6px">
+              <div class="form-row">
+                <div class="form-group"><label>{{ t('lbl.code') }}</label><input v-model="typeEdit.code" :disabled="typeEditMode==='edit'" :placeholder="t('type.codePh')"></div>
+                <div class="form-group"><label>{{ t('cat.zhName') }}</label><input v-model="typeEdit.names.zh" :placeholder="t('type.namePh')"></div>
+                <div class="form-group"><label>{{ t('cat.enName') }}</label><input v-model="typeEdit.names.en" placeholder="Ring"></div>
+                <div class="form-group"><label>Italiano</label><input v-model="typeEdit.names.it" placeholder="Anello"></div>
+                <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="typeEdit.sort_order" type="number"></div>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-gold" @click="saveType">{{ typeEditMode==='edit' ? t('cat.saveEdit') : t('type.addNew') }}</button>
+                <button class="btn btn-outline" v-if="typeEditMode==='edit'" @click="resetTypeEdit">{{ t('act.cancel') }}</button>
               </div>
             </div>
           </div>
@@ -743,8 +750,8 @@
           <div class="form-row">
             <div class="form-group"><label>{{ t('lbl.code') }}</label><input v-model="sheetData.code"></div>
             <div class="form-group" v-if="sheetMode==='product'">
-              <label>{{ t('lbl.name') }} <select class="lang-mini" v-model="sheetNameLang" :title="t('form.nameLangTitle')">
-                <option v-for="lk in langKeys" :key="lk" :value="lk" :style="{color: langNameFilled(lk) ? '#1a7f37' : '#c0392b'}">{{ langLabels[lk] }}</option>
+              <label>{{ t('lbl.name') }} <select class="lang-mini lang-code" v-model="sheetNameLang" :title="t('form.nameLangTitle')">
+                <option v-for="lk in langKeys" :key="lk" :value="lk" :style="{color: langNameFilled(lk) ? '#1a7f37' : '#c0392b'}">{{ normLang(lk) }}</option>
               </select></label>
               <input :value="sheetNameGet()" @input="sheetNameSet($event.target.value)">
             </div>
@@ -752,20 +759,35 @@
           </div>
           <div class="form-row">
             <div class="form-group"><label>{{ t('lbl.category') }}</label>
-              <select v-if="sheetMode==='product'" v-model="sheetData.category_code">
-                <option v-for="c in catList" :key="c.code" :value="c.code">{{ catNameOf(c) }}</option>
+              <select v-model="sheetData.product_type_code">
+                <option v-for="o in typeList" :key="o.code" :value="o.code">{{ catNameOf(o) }}</option>
               </select>
-              <select v-else v-model="sheetData.category"><option v-for="c in cats" :key="c">{{ c }}</option></select>
             </div>
-            <div class="form-group"><label>{{ t('lbl.material') }}</label><input v-model="sheetData.material"></div>
+            <div class="form-group"><label>{{ t('lbl.material') }}</label>
+              <select v-model="sheetData.material">
+                <option value=""></option>
+                <option v-for="m in materials" :key="m" :value="m">{{ m }}</option>
+              </select>
+            </div>
           </div>
           <div class="form-row"><div class="form-group"><label>{{ t('lbl.weight') }}</label><input v-model.number="sheetData.weight" type="number"></div><div class="form-group"><label>{{ t('lbl.size') }}</label><input v-model="sheetData.size"></div></div>
           <div class="form-row"><div class="form-group"><label>{{ t('lbl.cost') }}</label><input v-model.number="sheetData.cost" type="number"></div><div class="form-group"><label>{{ t('lbl.price') }}</label><input v-model.number="sheetData.price" type="number"></div></div>
           <div class="form-group"><label>{{ t('lbl.cert') }}</label><input v-model="sheetData.cert"></div>
           <div class="form-row" v-if="sheetMode==='product'"><div class="form-group"><label>{{ t('lbl.status') }}</label><select v-model="sheetData.status"><option value="在库">{{ t('st.inStock') }}</option><option value="已定">{{ t('st.reserved') }}</option><option value="已售">{{ t('st.sold') }}</option><option value="借出">{{ t('st.loaned') }}</option></select></div>
             <div class="form-group"><label>RFID EPC</label><div style="display:flex;gap:6px"><input v-model="sheetData.rfid_epc" style="flex:1"><button type="button" class="btn-small" @click="generateEpc" :disabled="!sheetData.id">{{ t('act.genEpc') }}</button></div></div></div>
-          <div class="form-group" v-if="sheetMode==='product'"><label><input type="checkbox" v-model="sheetData.showcase_public" :true-value="1" :false-value="0"> {{ t('act.allowShowcase') }}</label></div>
-          <div class="form-group" v-if="sheetMode==='product'"><label><input type="checkbox" v-model="sheetData.high_value" :true-value="1" :false-value="0"> {{ t('form.hvHint') }}</label></div>
+          <div class="img-edit" v-if="sheetMode==='product'">
+            <div class="img-edit-thumb">
+              <img v-if="sheetData.image_ts" :src="productImageUrl(sheetData)" alt="">
+              <span v-else>4:3</span>
+            </div>
+            <div class="img-edit-ops">
+              <button type="button" class="btn-small" @click="chooseProductImage(sheetData.id)">{{ sheetData.image_ts ? t('img.change') : t('img.upload') }}</button>
+              <button type="button" class="btn-small btn-ghost" v-if="sheetData.image_ts" @click="removeProductImage(sheetData.id)">{{ t('img.remove') }}</button>
+              <em v-if="!sheetData.id">{{ t('img.saveFirst') }}</em>
+            </div>
+          </div>
+          <div class="check-row" v-if="sheetMode==='product'"><label><input type="checkbox" v-model="sheetData.showcase_public" :true-value="1" :false-value="0"> {{ t('act.allowShowcase') }}</label></div>
+          <div class="check-row" v-if="sheetMode==='product'"><label><input type="checkbox" v-model="sheetData.high_value" :true-value="1" :false-value="0"> {{ t('form.hvHint') }}</label></div>
         </template>
         <template v-if="sheetMode==='deposit'">
           <div class="form-row"><div class="form-group"><label>{{ t('lbl.customer') }}</label><input v-model="sheetData.customer"></div><div class="form-group"><label>{{ t('lbl.phone') }}</label><input v-model="sheetData.phone"></div></div>
@@ -824,6 +846,32 @@
   </div>
 
   <!-- RFID 标签排版打印弹窗 -->
+  <div class="modal-mask" v-if="imgCrop.show" @click.self="closeImgCrop">
+    <div class="modal-card img-crop-card" @click.stop>
+      <div class="modal-head">
+        <span>{{ t('img.cropTitle') }}</span>
+        <button class="sheet-close" @click="closeImgCrop">×</button>
+      </div>
+      <div class="img-crop-tools">
+        <button type="button" class="btn-small" :class="{active: imgCrop.orient==='landscape'}" @click="setImgOrient('landscape')">{{ t('img.landscape') }}</button>
+        <button type="button" class="btn-small" :class="{active: imgCrop.orient==='portrait'}" @click="setImgOrient('portrait')">{{ t('img.portrait') }}</button>
+      </div>
+      <div class="img-crop-frame-wrap">
+        <div id="img-crop-frame" class="img-crop-frame" :class="imgCrop.orient"
+             @pointerdown="cropPointerDown($event)" @wheel.prevent="cropWheel($event)">
+          <img v-if="imgCrop.src" :src="imgCrop.src" :style="cropImgStyle()" draggable="false" alt="">
+        </div>
+      </div>
+      <p class="img-crop-hint">{{ t('img.hint') }}</p>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-outline" @click="chooseProductImage(imgCrop.pid)">{{ t('img.reSelect') }}</button>
+        <span style="flex:1"></span>
+        <button type="button" class="btn btn-outline" @click="closeImgCrop">{{ t('act.cancel') }}</button>
+        <button type="button" class="btn btn-primary" :disabled="imgCrop.busy" @click="confirmImgCrop">{{ t('img.confirm') }}</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-mask" v-if="labelDlg" @click.self="closeLabel">
     <div class="modal-box label-sheet">
       <div class="sheet-head"><h3>{{ t('label.title') }}</h3><span class="sheet-close" @click="closeLabel">✕</span></div>
@@ -1023,8 +1071,8 @@
       </div>
       <div class="pv-grid">
         <div class="pv-cell"><label>{{ t('lbl.code') }}</label><div>{{ batchProd.code }}</div></div>
-        <div class="pv-cell"><label>{{ t('lbl.category') }}</label><div>{{ productCatName(batchProd) }}</div></div>
-        <div class="pv-cell"><label>{{ t('lbl.material') }}</label><div>{{ batchProd.material || '—' }}</div></div>
+        <div class="pv-cell"><label>{{ t('lbl.category') }}</label><div>{{ productTypeName(batchProd) }}</div></div>
+        <div class="pv-cell"><label>{{ t('lbl.material') }}</label><div>{{ materialText(batchProd.material) || '—' }}</div></div>
         <div class="pv-cell"><label>{{ t('lbl.weight') }}</label><div>{{ batchProd.weight }}g</div></div>
         <div class="pv-cell"><label>{{ t('lbl.size') }}</label><div>{{ batchProd.size || '—' }}</div></div>
         <div class="pv-cell"><label>{{ t('lbl.cert') }}</label><div>{{ batchProd.cert || '—' }}</div></div>

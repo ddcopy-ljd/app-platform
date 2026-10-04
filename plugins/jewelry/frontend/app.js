@@ -26,6 +26,12 @@ var ST = Vue.reactive({
   products: [], prodTotal: 0, prodCat: '', prodQ: '',
   cats: [], bizConfig: { epc_prefix: 'E280', seq_bits: 8 }, languages: [],
   catEdit: { code: '', names: { zh: '', en: '' }, sort_order: 0 }, catEditMode: 'new',
+  // 商品品类（戒指/项链…）
+  productTypes: [],
+  typeEdit: { code: '', names: { zh: '', en: '', it: '' }, sort_order: 0 }, typeEditMode: 'new',
+  // 商品图片裁切弹窗
+  imgCrop: { show: false, pid: 0, src: '', orient: 'landscape', busy: false,
+             iw: 0, ih: 0, zoom: 1, tx: 0, ty: 0 },
   sheetNameLang: currentLang,   // 商品表单当前编辑名称的语言（随全局语言初始化）
   deposits: [], depTotal: 0,
   sales: [], saleTotal: 0,
@@ -126,6 +132,9 @@ var SUB_TITLES = {
 };
 var CATS = ['黄金', '钻石', '铂金', '翡翠', '彩宝', '其他'];
 
+// 业界标准英文材质受控词表（库内存英文码）
+var MATERIALS = ['GOLD', 'PLATINUM', 'SILVER', 'DIAMOND', 'JADEITE', 'COLORED_GEMSTONE', 'PEARL', 'OTHER'];
+
 // 根据分类中文名取 code
 function catCodeByName(name) {
   var c = (ST.cats || []).find(function (x) { return (x.names && x.names.zh) === name; });
@@ -158,13 +167,50 @@ function productCatName(p) {
 }
 // 看板品类占比：后端按中文品类名分组，按当前语言显示
 function catText(name) {
-  var c = (ST.cats || []).find(function (x) { return x.names && x.names.zh === name; });
+  var c = (ST.productTypes || []).find(function (x) { return x.names && x.names.zh === name; });
   return c ? catNameOf(c) : (name || '');
 }
 // 确保商品数据带 category_code（旧数据/中文品类名兜底）
 function ensureCatCode(d) {
   if (!d.category_code) d.category_code = catCodeByName(d.category) || '';
   return d.category_code;
+}
+
+// ---- 商品品类（戒指/项链…）----
+function typeObj(code) {
+  return (ST.productTypes || []).find(function (x) { return x.code === code; }) || null;
+}
+function typeNameByCode(code) {
+  var o = typeObj(code);
+  return o ? catNameOf(o) : (code || '');
+}
+// 商品行展示品类：优先 product_type_code 字典名，其次冗余列 product_type
+function productTypeName(p) {
+  if (!p) return '';
+  if (p.product_type_code) {
+    var o = typeObj(p.product_type_code);
+    if (o) return catNameOf(o);
+  }
+  return p.product_type || '';
+}
+// 确保表单数据带 product_type_code（旧数据兜底归 99 其他）
+function ensureTypeCode(d) {
+  if (!d.product_type_code) {
+    var o = (ST.productTypes || []).find(function (x) {
+      return (x.names && (x.names.zh === d.product_type || x.names.en === d.product_type));
+    });
+    d.product_type_code = o ? o.code : ((ST.productTypes[0] && ST.productTypes[0].code) || '99');
+  }
+  return d.product_type_code;
+}
+// 材质统一展示业界标准英文码（库内英文，界面也显示英文）
+function materialText(code) {
+  if (!code) return '';
+  return String(code).trim().toUpperCase();
+}
+function productImageUrl(p) {
+  if (!p || !p.id) return '';
+  return API + '/api/products/' + p.id + '/image' + (p.image_ts ? '?v=' + encodeURIComponent(p.image_ts) : '');
 }
 
 // ---- 商品名称多语言编辑（主名称列为中文，其它语言存 name_i18n JSON 串）----
@@ -197,9 +243,8 @@ function langNameFilled(langKey) {
 function filteredProducts() {
   var list = ST.products || [];
   if (ST.prodCat) list = list.filter(function (p) {
-    // 按分类编号筛选；旧数据无 code 时用其中文品类名映射
-    return p.category_code === ST.prodCat ||
-           (!p.category_code && catCodeByName(p.category) === ST.prodCat);
+    // 按商品品类筛选
+    return p.product_type_code === ST.prodCat;
   });
   if (ST.prodQ) {
     var q = ST.prodQ.toLowerCase();
@@ -314,7 +359,7 @@ function go(tab) {
   ST.subView = '';
   if (tab === 'inventory') { loadInv(); loadStockBatches(); loadCoTask(); }
   if (tab === 'appointments') loadAppt();
-  if (tab === 'profile') loadProfile();
+  if (tab === 'profile') { loadProfile(); loadProductTypes(); }
 }
 
 function openSubView(name) {
@@ -339,6 +384,7 @@ function refreshAll() {
   api('GET', '/api/sales?page=1&size=100').then(function (r) { ST.sales = r.items; ST.saleTotal = r.total; }).catch(function () {});
   api('GET', '/api/products/options?status=在库').then(function (r) { ST.stockOptions = r.items; }).catch(function () {});
   api('GET', '/api/categories').then(function (r) { ST.cats = r || []; }).catch(function () {});
+  api('GET', '/api/product-types').then(function (r) { ST.productTypes = r || []; }).catch(function () {});
   api('GET', '/api/biz-config').then(function (r) { ST.bizConfig = r; }).catch(function () {});
   api('GET', '/api/languages').then(function (r) { ST.languages = r || []; }).catch(function () {});
   loadTemplates();
@@ -392,14 +438,17 @@ function closeSheet() { ST.sheetMode = ''; ST.sheetData = {}; }
 
 function openInbound() {
   if (checkFrozen()) return;
-  openSheet('inbound', t('sheet.inbound'), { code: '', name: '', category: '黄金', material: '', weight: 0, size: '', cert: '', cost: 0, price: 0, rfid_epc: '', biz_date: new Date().toISOString().slice(0, 10) });
+  openSheet('inbound', t('sheet.inbound'), { code: '', name: '', category: '', category_code: '', product_type: '', product_type_code: (ST.productTypes[0] && ST.productTypes[0].code) || '99', material: '', weight: 0, size: '', cert: '', cost: 0, price: 0, rfid_epc: '', biz_date: new Date().toISOString().slice(0, 10) });
 }
 
 function addProduct() {
   if (checkFrozen()) return;
   ST.sheetNameLang = ST.lang;
-  var d = { code: '', name: '', name_i18n: '{}', category: catNameByCode('01') || '黄金', category_code: '01', material: '', weight: 0, size: '', cert: '', cost: 0, price: 0, status: '在库', rfid_epc: '', showcase_public: 0, high_value: 0 };
-  if (!catObj('01')) d.category_code = (ST.cats[0] && ST.cats[0].code) || '';
+  var d = { code: '', name: '', name_i18n: '{}',
+            category: '', category_code: '',
+            product_type_code: (ST.productTypes[0] && ST.productTypes[0].code) || '99', product_type: '',
+            material: '', weight: 0, size: '', cert: '', cost: 0, price: 0,
+            status: '在库', rfid_epc: '', showcase_public: 0, high_value: 0, origin: '' };
   openSheet('product', t('sheet.product'), d);
 }
 
@@ -407,19 +456,20 @@ function editProduct(p) {
   if (checkFrozen()) return;
   ST.sheetNameLang = ST.lang;
   var d = Object.assign({}, p);
-  ensureCatCode(d);
+  ensureTypeCode(d);
   openSheet('product', t('sheet.product'), d);
 }
 
-// 复制新增：以现有商品为模板预填表单，编码/EPC 留空，保存即建档新品
+// 复制新增：以现有商品为模板预填表单，编码/EPC/图片留空，保存即建档新品
 function copyProduct(p) {
   if (checkFrozen()) return;
   ST.sheetNameLang = ST.lang;
   var d = Object.assign({}, p);
   delete d.id;
+  delete d.image_ts;
   d.code = '';
   d.rfid_epc = '';
-  ensureCatCode(d);
+  ensureTypeCode(d);
   openSheet('product', t('act.copyNew') + ' - ' + (p.name || ''), d);
   toast(t('act.copyNew') + ': ' + t('toast.fillCode'), 'info');
 }
@@ -486,6 +536,216 @@ function delCat(code) {
   api('DELETE', '/api/categories/' + code).then(function () {
     toast(t('toast.delOk'));
     api('GET', '/api/categories').then(function (r) { ST.cats = r || []; });
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+
+// ---------------- 店铺管理：商品品类（戒指/项链…） ----------------
+function loadProductTypes() {
+  api('GET', '/api/product-types').then(function (r) { ST.productTypes = r || []; }).catch(function () {});
+}
+function resetTypeEdit() {
+  ST.typeEdit = { code: '', names: { zh: '', en: '', it: '' }, sort_order: (ST.productTypes || []).length + 1 };
+  ST.typeEditMode = 'new';
+}
+function editType(o) {
+  ST.typeEditMode = 'edit';
+  ST.typeEdit = { code: o.code, names: Object.assign({ zh: '', en: '', it: '' }, o.names || {}), sort_order: o.sort_order || 0 };
+  setTimeout(function () {
+    var el = document.getElementById('type-edit-form');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.remove('cat-edit-flash');
+      void el.offsetWidth;
+      el.classList.add('cat-edit-flash');
+    }
+  }, 60);
+}
+function saveType() {
+  var te = ST.typeEdit;
+  if (!te.code.trim()) { toast(t('toast.fillCatCode'), 'error'); return; }
+  if (!(te.names.zh || te.names.en)) { toast(t('toast.fillCatName'), 'error'); return; }
+  var body = { code: te.code.trim(),
+    names: { zh: te.names.zh || '', en: te.names.en || '', it: te.names.it || '' },
+    sort_order: Number(te.sort_order) || 0 };
+  var method = ST.typeEditMode === 'edit' ? 'PUT' : 'POST';
+  var url = ST.typeEditMode === 'edit' ? '/api/product-types/' + te.code : '/api/product-types';
+  api(method, url, body).then(function () {
+    toast(t('toast.saveOk'));
+    resetTypeEdit();
+    loadProductTypes();
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+function delType(code) {
+  if (!confirm('Delete product type ' + code + '?')) return;
+  api('DELETE', '/api/product-types/' + code).then(function () {
+    toast(t('toast.delOk'));
+    loadProductTypes();
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+function bindTypeTemplate(code, tplId) {
+  api('PUT', '/api/product-types/' + code + '/template', { label_template_id: tplId || null }).then(function () {
+    toast(t('tpl.bindOk'));
+    loadProductTypes();
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+
+// ---------------- 商品图片：4:3 裁切（可横/竖，长边 700px，商品居中可人工调整，JPG q75） ----------------
+var IMG_LONG_EDGE = 700;
+var IMG_QUALITY = 0.75;
+var _imgFileInput = null;
+var _cropImg = null;      // 已加载的原图 Image
+var _cropDrag = null;     // 拖拽状态
+
+function chooseProductImage(pid) {
+  if (!pid) { toast(t('toast.saveFirst'), 'error'); return; }
+  if (!_imgFileInput) {
+    _imgFileInput = document.createElement('input');
+    _imgFileInput.type = 'file';
+    _imgFileInput.accept = 'image/*';
+    _imgFileInput.style.display = 'none';
+    _imgFileInput.addEventListener('change', onProductImageChosen);
+    document.body.appendChild(_imgFileInput);
+  }
+  _imgFileInput.value = '';
+  _imgFileInput.dataset.pid = String(pid);
+  _imgFileInput.click();
+}
+function onProductImageChosen(e) {
+  var input = e.target;
+  var f = input.files && input.files[0];
+  if (!f) return;
+  if (!/^image\//.test(f.type)) { return; }
+  if (f.size > 20 * 1024 * 1024) { toast('图片不能超过 20MB', 'error'); return; }
+  var reader = new FileReader();
+  reader.onload = function (ev) { openImgCrop(Number(input.dataset.pid), ev.target.result); };
+  reader.readAsDataURL(f);
+}
+function openImgCrop(pid, src) {
+  var ic = ST.imgCrop;
+  ic.pid = pid; ic.src = src; ic.orient = ic.orient || 'landscape';
+  ic.zoom = 1; ic.tx = 0; ic.ty = 0; ic.busy = false;
+  ic.iw = 0; ic.ih = 0;
+  ic.show = true;
+  _cropImg = new Image();
+  _cropImg.onload = function () {
+    ic.iw = _cropImg.naturalWidth;
+    ic.ih = _cropImg.naturalHeight;
+    Vue.nextTick(resetImgCrop);
+  };
+  _cropImg.src = src;
+}
+function closeImgCrop() { ST.imgCrop.show = false; ST.imgCrop.src = ''; ST.imgCrop.busy = false; _cropImg = null; }
+function imgFrameSize() {
+  var el = document.getElementById('img-crop-frame');
+  return { w: el ? el.clientWidth : 480, h: el ? el.clientHeight : 360 };
+}
+// 按 cover 方式铺满裁切框并居中
+function resetImgCrop() {
+  var ic = ST.imgCrop;
+  if (!ic.iw) return;
+  var f = imgFrameSize();
+  ic.base = Math.max(f.w / ic.iw, f.h / ic.ih);
+  ic.zoom = 1;
+  var dw = ic.iw * ic.base, dh = ic.ih * ic.base;
+  ic.tx = (f.w - dw) / 2;
+  ic.ty = (f.h - dh) / 2;
+}
+function setImgOrient(o) {
+  ST.imgCrop.orient = o;
+  Vue.nextTick(resetImgCrop);
+}
+function cropImgStyle() {
+  var ic = ST.imgCrop;
+  if (!ic.base) return {};
+  var dw = ic.iw * ic.base * ic.zoom;
+  var dh = ic.ih * ic.base * ic.zoom;
+  return { width: dw + 'px', height: dh + 'px', transform: 'translate(' + ic.tx + 'px,' + ic.ty + 'px)' };
+}
+function _clampPan() {
+  var ic = ST.imgCrop, f = imgFrameSize();
+  var dw = ic.iw * ic.base * ic.zoom, dh = ic.ih * ic.base * ic.zoom;
+  // 图片必须始终覆盖裁切框：可拖动范围 [框-图, 0]
+  ic.tx = Math.min(0, Math.max(f.w - dw, ic.tx));
+  ic.ty = Math.min(0, Math.max(f.h - dh, ic.ty));
+}
+function cropPointerDown(e) {
+  if (!_cropImg) return;
+  e.preventDefault();
+  _cropDrag = { x: e.clientX, y: e.clientY, tx: ST.imgCrop.tx, ty: ST.imgCrop.ty };
+  window.addEventListener('pointermove', cropPointerMove);
+  window.addEventListener('pointerup', cropPointerUp);
+}
+function cropPointerMove(e) {
+  if (!_cropDrag) return;
+  var ic = ST.imgCrop;
+  ic.tx = _cropDrag.tx + (e.clientX - _cropDrag.x);
+  ic.ty = _cropDrag.ty + (e.clientY - _cropDrag.y);
+  _clampPan();
+}
+function cropPointerUp() {
+  _cropDrag = null;
+  window.removeEventListener('pointermove', cropPointerMove);
+  window.removeEventListener('pointerup', cropPointerUp);
+}
+function cropWheel(e) {
+  if (!_cropImg) return;
+  e.preventDefault();
+  var ic = ST.imgCrop, f = imgFrameSize();
+  var old = ic.zoom;
+  var nz = old * (e.deltaY < 0 ? 1.1 : 1 / 1.1);
+  nz = Math.max(1, Math.min(5, nz));
+  if (nz === old) return;
+  // 以画面中心为锚点缩放
+  var cx = f.w / 2, cy = f.h / 2;
+  ic.tx = cx - (cx - ic.tx) * (nz / old);
+  ic.ty = cy - (cy - ic.ty) * (nz / old);
+  ic.zoom = nz;
+  _clampPan();
+}
+function confirmImgCrop() {
+  var ic = ST.imgCrop;
+  if (!_cropImg || ic.busy) return;
+  var landscape = ic.orient === 'landscape';
+  var outW = landscape ? IMG_LONG_EDGE : Math.round(IMG_LONG_EDGE * 3 / 4);
+  var outH = landscape ? Math.round(IMG_LONG_EDGE * 3 / 4) : IMG_LONG_EDGE;
+  var scale = ic.base * ic.zoom;
+  var sx = -ic.tx / scale, sy = -ic.ty / scale;
+  var sw = imgFrameSize().w / scale, sh = imgFrameSize().h / scale;
+  var canvas = document.createElement('canvas');
+  canvas.width = outW; canvas.height = outH;
+  var ctx = canvas.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, outW, outH);
+  ctx.drawImage(_cropImg, sx, sy, sw, sh, 0, 0, outW, outH);
+  ic.busy = true;
+  var done = function (dataUrl) {
+    api('PUT', '/api/products/' + ic.pid + '/image', { data: dataUrl }).then(function (r) {
+      var ts = r.image_ts;
+      var p = (ST.products || []).find(function (x) { return x.id === ic.pid; });
+      if (p) p.image_ts = ts;
+      if (ST.sheetData && ST.sheetData.id === ic.pid) ST.sheetData.image_ts = ts;
+      toast(t('img.saved'));
+      closeImgCrop();
+    }).catch(function (e) { toast(e.message, 'error'); ST.imgCrop.busy = false; });
+  };
+  if (canvas.toBlob) {
+    canvas.toBlob(function (blob) {
+      var fr = new FileReader();
+      fr.onload = function () { done(fr.result); };
+      fr.readAsDataURL(blob);
+    }, 'image/jpeg', IMG_QUALITY);
+  } else {
+    done(canvas.toDataURL('image/jpeg', IMG_QUALITY));
+  }
+}
+function removeProductImage(pid) {
+  if (!confirm(t('img.remove') + '?')) return;
+  api('DELETE', '/api/products/' + pid + '/image').then(function () {
+    var p = (ST.products || []).find(function (x) { return x.id === pid; });
+    if (p) p.image_ts = '';
+    if (ST.sheetData && ST.sheetData.id === pid) ST.sheetData.image_ts = '';
+    toast(t('img.removed'));
   }).catch(function (e) { toast(e.message, 'error'); });
 }
 
@@ -568,16 +828,43 @@ function submitSheet() {
     }).catch(function (e) { toast(e.message, 'error'); });
   } else if (ST.sheetMode === 'product') {
     if (!d.code || !d.name) { toast(t('toast.fillCode'), 'error'); return; }
+    var tc = ensureTypeCode(d);
+    var typeZh = typeNameByCode(tc) || d.product_type || '其他';
     var cc2 = ensureCatCode(d);
-    var catZh = catNameByCode(cc2) || d.category || '其他';
+    var catZh = catNameByCode(cc2) || d.category || typeZh;
     var m2 = d.id ? 'PUT' : 'POST';
     var u2 = d.id ? '/api/products/' + d.id : '/api/products';
-    api(m2, u2, { code: d.code || '', name: d.name || '', category: catZh, category_code: cc2 || '', name_i18n: d.name_i18n || '{}', material: d.material || '', weight: Number(d.weight) || 0, size: d.size || '', cert: d.cert || '', cost: Number(d.cost) || 0, price: Number(d.price) || 0, status: d.status || '在库', rfid_epc: d.rfid_epc || '', showcase_public: d.showcase_public || 0, high_value: d.high_value || 0 }).then(function () {
-      toast(t('toast.saveOk')); closeSheet(); refreshAll();
+    var body2 = { code: d.code || '', name: d.name || '', name_i18n: d.name_i18n || '{}',
+      category: catZh, category_code: cc2 || '',
+      product_type_code: tc || '99', product_type: typeZh,
+      material: (d.material || '').toUpperCase(), weight: Number(d.weight) || 0, size: d.size || '',
+      cert: d.cert || '', cost: Number(d.cost) || 0, price: Number(d.price) || 0,
+      status: d.status || '在库', rfid_epc: d.rfid_epc || '', store_id: d.store_id || 1,
+      showcase_public: d.showcase_public || 0, showcase_order: d.showcase_order || 0,
+      showcase_desc: d.showcase_desc || '', origin: d.origin || '', high_value: d.high_value || 0 };
+    api(m2, u2, body2).then(function (r) {
+      // 新建后保留表单并带出 id/EPC，可立即上传商品图片；再次保存按编辑处理
+      if (!d.id) {
+        d.id = r.id;
+        d.rfid_epc = r.rfid_epc || d.rfid_epc;
+        toast(t('toast.saveOk') + (r.rfid_epc ? ' EPC: ' + r.rfid_epc : ''));
+        refreshAll();
+      } else {
+        d.rfid_epc = r.rfid_epc || d.rfid_epc;
+        toast(t('toast.saveOk'));
+        closeSheet(); refreshAll();
+      }
     }).catch(function (e) { toast(e.message, 'error'); });
   } else if (ST.sheetMode === 'inbound') {
     if (!d.name) { toast(t('toast.fillProduct'), 'error'); return; }
-    api('POST', '/api/inventory/inbound', { code: d.code || '', name: d.name, category: d.category || '黄金', material: d.material || '', weight: Number(d.weight) || 0, size: d.size || '', cert: d.cert || '', cost: Number(d.cost) || 0, price: Number(d.price) || 0, rfid_epc: d.rfid_epc || '', biz_date: d.biz_date || '' }).then(function (r) {
+    var itc = ensureTypeCode(d);
+    api('POST', '/api/inventory/inbound', { code: d.code || '', name: d.name,
+      category: d.category || '', category_code: d.category_code || '',
+      product_type_code: itc, product_type: typeNameByCode(itc),
+      material: (d.material || '').toUpperCase(),
+      weight: Number(d.weight) || 0, size: d.size || '', cert: d.cert || '',
+      cost: Number(d.cost) || 0, price: Number(d.price) || 0,
+      rfid_epc: d.rfid_epc || '', biz_date: d.biz_date || '' }).then(function (r) {
       toast(t('toast.saveOk') + ' ' + r.code + ' EPC:' + r.rfid_epc); closeSheet(); refreshAll(); loadInv();
     }).catch(function (e) { toast(e.message, 'error'); });
   } else if (ST.sheetMode === 'loan') {
@@ -882,9 +1169,10 @@ function openLabelPrint(p) {
   ST.labelTplId = null;
   ST.labelUseTpl = false;
   if (p && !ST.labelItems.some(function (x) { return x.id === p.id; })) {
-    ST.labelItems.push({ id: p.id, code: p.code, name: p.name, category_code: p.category_code });
+    ST.labelItems.push({ id: p.id, code: p.code, name: p.name,
+      product_type_code: p.product_type_code, category_code: p.category_code });
   }
-  // 若已选商品属于同一类别且该类别绑定了模板，自动加载模板
+  // 若已选商品属于同一品类且该品类绑定了模板，自动加载模板
   _autoPickTemplate();
   api('GET', '/api/print/printers').then(function (r) {
     var list = r.printers || [];
@@ -903,12 +1191,12 @@ function openLabelPrint(p) {
 
 function _autoPickTemplate() {
   if (!ST.labelItems.length) return;
-  var codes = new Set(ST.labelItems.map(function (x) { return x.category_code; }).filter(Boolean));
+  var codes = new Set(ST.labelItems.map(function (x) { return x.product_type_code; }).filter(Boolean));
   if (codes.size !== 1) return;
   var code = codes.values().next().value;
-  var cat = (ST.cats || []).find(function (c) { return c.code === code; });
-  if (cat && cat.label_template_id) {
-    ST.labelTplId = cat.label_template_id;
+  var o = (ST.productTypes || []).find(function (c) { return c.code === code; });
+  if (o && o.label_template_id) {
+    ST.labelTplId = o.label_template_id;
     ST.labelUseTpl = true;
   }
 }
@@ -1065,6 +1353,9 @@ var app = Vue.createApp({
     },
     // 原始分类对象（带 code/names），供商品表单与筛选chips使用
     catList: function () { return ST.cats || []; },
+    // 商品品类（戒指/项链…）
+    typeList: function () { return ST.productTypes || []; },
+    materials: function () { return MATERIALS; },
     FIELD_LABELS: function () { return FIELD_LABELS; },
     LABEL_FIELDS: function () { return LABEL_FIELDS; },
   },
@@ -1082,9 +1373,18 @@ var app = Vue.createApp({
     copyProduct: copyProduct, generateEpc: generateEpc,
     catNameByCode: catNameByCode, catCodeByName: catCodeByName,
     catNameOf: catNameOf, productCatName: productCatName, catText: catText,
+    typeNameByCode: typeNameByCode, productTypeName: productTypeName,
+    materialText: materialText, productImageUrl: productImageUrl,
     normLang: normLang,
     sheetNameGet: sheetNameGet, sheetNameSet: sheetNameSet, langNameFilled: langNameFilled,
     resetCatEdit: resetCatEdit, editCat: editCat, saveCat: saveCat, delCat: delCat,
+    resetTypeEdit: resetTypeEdit, editType: editType, saveType: saveType, delType: delType,
+    bindTypeTemplate: bindTypeTemplate,
+    // 商品图片裁切上传
+    chooseProductImage: chooseProductImage, closeImgCrop: closeImgCrop,
+    setImgOrient: setImgOrient, cropImgStyle: cropImgStyle,
+    cropPointerDown: cropPointerDown, cropWheel: cropWheel,
+    confirmImgCrop: confirmImgCrop, removeProductImage: removeProductImage,
     saveBizConfig: saveBizConfig,
     openInbound: openInbound, copyInbound: copyInbound, openRfid: openRfid, doRfid: doRfid,
     openLabelPrint: openLabelPrint, removeLabelItem: removeLabelItem, closeLabel: closeLabel,

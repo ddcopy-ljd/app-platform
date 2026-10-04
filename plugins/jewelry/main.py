@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -186,6 +187,58 @@ def _gen_epc(code: str) -> str:
     return f"E280{raw}{code[-4:].upper().ljust(4, '0')}"[:28]
 
 
+# 业界标准英文材质（受控词表，库内直接存英文，展示层做中/英/意映射）
+MATERIAL_CODES = ["GOLD", "PLATINUM", "SILVER", "DIAMOND", "JADEITE",
+                  "COLORED_GEMSTONE", "PEARL", "OTHER"]
+
+
+def _epc_cfg(conn: sqlite3.Connection) -> tuple[str, int]:
+    cfg = conn.execute("SELECT epc_prefix,seq_bits FROM biz_config WHERE id=1").fetchone()
+    return (cfg[0], cfg[1]) if cfg else ("E280", 8)
+
+
+def _gen_type_epc(conn: sqlite3.Connection, type_code: str) -> str:
+    """EPC = 前缀 + 品类码 + 十六进制递增序号（各品类独立计数）。"""
+    prefix, seq_bits = _epc_cfg(conn)
+    code = (type_code or "99").strip() or "99"
+    row = conn.execute(
+        "SELECT MAX(CAST(SUBSTR(rfid_epc, ?) AS INTEGER)) FROM products WHERE rfid_epc LIKE ?",
+        (len(prefix) + len(code) + 1, f"{prefix}{code}%"),
+    ).fetchone()
+    seq = (row[0] or 0) + 1
+    if seq > 16 ** seq_bits - 1:
+        raise HTTPException(400, "该品类 EPC 序号已用尽，请调大序号位数")
+    return f"{prefix}{code}{seq:0{seq_bits}X}"
+
+
+# 列表/详情不回传图片 BLOB（图片走专用接口），用 image_ts 判断是否有图
+_PRODUCT_COLS = (
+    "id,code,name,name_i18n,category,category_code,material,product_type,product_type_code,"
+    "weight,size,cert,cost,price,status,store_id,rfid_epc,"
+    "showcase_public,showcase_order,showcase_desc,showcase_desc_i18n,origin,high_value,"
+    "image_ts,created"
+)
+
+
+def _resolve_type(conn: sqlite3.Connection, code: str, zh_name: str = "") -> tuple[str, str]:
+    """按品类码补全中文名；码无效时归入 99 其他。"""
+    code = (code or "").strip()
+    r = conn.execute("SELECT names FROM product_types WHERE code=?", (code,)).fetchone() if code else None
+    if r:
+        try:
+            return code, (json.loads(r[0] or "{}").get("zh") or zh_name or code)
+        except Exception:
+            return code, zh_name or code
+    r = conn.execute("SELECT names FROM product_types WHERE code='99'").fetchone()
+    zh = "其他"
+    if r:
+        try:
+            zh = json.loads(r[0] or "{}").get("zh") or "其他"
+        except Exception:
+            pass
+    return "99", zh
+
+
 # ---------------------------------------------------------------- 前端 / 静态
 
 @app.get("/api/health")
@@ -206,8 +259,8 @@ def public_site(request: Request):
     with _db(request) as conn:
         prof = conn.execute("SELECT * FROM tenant_profiles ORDER BY id DESC LIMIT 1").fetchone()
         rows = conn.execute(
-            """SELECT id, code, name, category, material, weight, size, price, cert, status,
-                      origin, showcase_order, showcase_desc
+            """SELECT id, code, name, product_type, material, weight, size, price, cert, status,
+                      origin, showcase_order, showcase_desc, image_ts
                  FROM products
                 WHERE showcase_public=1 AND status='在库'
                 ORDER BY (showcase_order=0) ASC, showcase_order ASC, id DESC
@@ -233,19 +286,23 @@ def public_site(request: Request):
             if r["size"]: parts.append(f"尺寸：{r['size']}")
             if r["price"]: parts.append(f"参考价：¥{float(r['price']):,.0f}")
             desc = "｜".join(parts)
-        cat = r["category"] or "珠宝"
+        cat = r["product_type"] or "珠宝"
         tags_html = f"<span class='tag-cat'>{cat}</span>"
         if r["cert"]:
             tags_html += f"<span class='tag-cert'>附权威证书</span>"
         price_text = f"¥{float(r['price']):,.0f}" if r["price"] and float(r["price"]) > 0 else "<i>到店咨询</i>"
         # 货号行：便于客户到店时报货号描述商品
         code_html = f"<p class='sc-code'>货号 <b>{r['code']}</b></p>" if r["code"] else ""
-        # 首字母占位的视觉 LOGO
-        avatar_ch = (r["name"] or "臻")[:1]
+        if r["image_ts"]:
+            cover_html = f"<img class='sc-img' src='/api/products/{r['id']}/image' alt='{r['name']}' loading='lazy'>"
+        else:
+            # 首字母占位的视觉 LOGO
+            avatar_ch = (r["name"] or "臻")[:1]
+            cover_html = f"<div class='sc-avatar'>{avatar_ch}</div>"
         items_html.append(
             f"""<article class='sc-card'>
   <div class='sc-cover'>
-    <div class='sc-avatar'>{avatar_ch}</div>
+    {cover_html}
     <div class='sc-badges'>{tags_html}</div>
   </div>
   <div class='sc-body'>
@@ -358,6 +415,10 @@ body {{ margin: 0; font-family: "PingFang SC","Microsoft YaHei","Hiragino Sans G
   box-shadow: 0 6px 20px rgba(0,0,0,.22), inset 0 2px 4px rgba(255,255,255,.6);
   position: relative; z-index: 1;
   font-family: "PingFang SC","Microsoft YaHei",serif;
+}}
+.sc-img {{
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; z-index: 1;
 }}
 .sc-badges {{
   position: absolute; top: 10px; left: 10px; right: 10px; display: flex; gap: 6px; flex-wrap: wrap; z-index: 2;
@@ -723,7 +784,7 @@ def dashboard_category_sales(request: Request):
     _require_auth(request)
     with _db(request) as conn:
         rows = conn.execute("""
-            SELECT COALESCE(p.category, '其他') cat, COALESCE(SUM(s.amount),0) a, COUNT(*) n
+            SELECT COALESCE(NULLIF(p.product_type,''), '其他') cat, COALESCE(SUM(s.amount),0) a, COUNT(*) n
             FROM sales s LEFT JOIN products p ON p.id = s.product_id
             WHERE s.status!='已冲红' AND s.biz_date >= date('now','start of month','-5 months')
             GROUP BY cat ORDER BY a DESC
@@ -820,6 +881,8 @@ class ProductIn(BaseModel):
     rfid_epc: str = ""
     name_i18n: str = "{}"
     category_code: str = ""
+    product_type: str = ""
+    product_type_code: str = ""
     showcase_public: int = 0
     showcase_order: int = 0
     showcase_desc: str = ""
@@ -933,6 +996,97 @@ def category_delete(request: Request, code: str):
     return {"ok": True}
 
 
+# ---------------------------------------------------------------- 商品品类（戒指/项链…）
+
+class ProductTypeIn(BaseModel):
+    code: str = ""
+    names: dict = Field(default_factory=dict)
+    sort_order: int = 0
+
+
+@app.get("/api/product-types")
+def product_type_list(request: Request):
+    _require_auth(request)
+    with _db(request) as conn:
+        rows = conn.execute(
+            "SELECT code,names,sort_order,label_template_id FROM product_types ORDER BY sort_order,code"
+        ).fetchall()
+        return [{"code": r[0], "names": json.loads(r[1] or "{}"),
+                 "sort_order": r[2], "label_template_id": r[3]} for r in rows]
+
+
+@app.post("/api/product-types")
+def product_type_create(request: Request, body: ProductTypeIn):
+    _require_auth(request)
+    code = (body.code or "").strip()
+    if not code:
+        raise HTTPException(400, "品类编码不能为空")
+    if not (body.names.get("zh") or body.names.get("en")):
+        raise HTTPException(400, "至少填写中文或英文名称")
+    with _db(request) as conn:
+        if conn.execute("SELECT 1 FROM product_types WHERE code=?", (code,)).fetchone():
+            raise HTTPException(400, "品类编码已存在")
+        conn.execute(
+            "INSERT INTO product_types(code,names,sort_order) VALUES(?,?,?)",
+            (code, json.dumps(body.names, ensure_ascii=False), body.sort_order),
+        )
+        conn.commit()
+    return {"ok": True, "code": code}
+
+
+@app.put("/api/product-types/{code}")
+def product_type_update(request: Request, code: str, body: ProductTypeIn):
+    _require_auth(request)
+    if not (body.names.get("zh") or body.names.get("en")):
+        raise HTTPException(400, "至少填写中文或英文名称")
+    with _db(request) as conn:
+        if not conn.execute("SELECT 1 FROM product_types WHERE code=?", (code,)).fetchone():
+            raise HTTPException(404, "品类不存在")
+        conn.execute(
+            "UPDATE product_types SET names=?, sort_order=? WHERE code=?",
+            (json.dumps(body.names, ensure_ascii=False), body.sort_order, code),
+        )
+        # 同步历史商品冗余的品类中文名
+        zh = body.names.get("zh") or body.names.get("en") or code
+        conn.execute("UPDATE products SET product_type=? WHERE product_type_code=?", (zh, code))
+        conn.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/product-types/{code}")
+def product_type_delete(request: Request, code: str):
+    _require_auth(request)
+    if code == "99":
+        raise HTTPException(400, "「其他」为兜底品类，不能删除")
+    with _db(request) as conn:
+        used = conn.execute("SELECT COUNT(*) FROM products WHERE product_type_code=?", (code,)).fetchone()[0]
+        if used:
+            raise HTTPException(400, f"该品类下仍有 {used} 件商品，不能删除")
+        conn.execute("DELETE FROM product_types WHERE code=?", (code,))
+        conn.commit()
+    return {"ok": True}
+
+
+class ProductTypeTemplateIn(BaseModel):
+    label_template_id: int | None = None
+
+
+@app.put("/api/product-types/{code}/template")
+def product_type_bind_template(code: str, body: ProductTypeTemplateIn, request: Request):
+    op = _require_auth(request)
+    with _db(request) as conn:
+        if not conn.execute("SELECT code FROM product_types WHERE code=?", (code,)).fetchone():
+            raise HTTPException(404, "品类不存在")
+        if body.label_template_id is not None and not conn.execute(
+            "SELECT id FROM label_templates WHERE id=?", (body.label_template_id,)
+        ).fetchone():
+            raise HTTPException(404, "模板不存在")
+        conn.execute("UPDATE product_types SET label_template_id=? WHERE code=?", (body.label_template_id, code))
+        conn.commit()
+        _log(conn, op["username"], "品类绑定模板", f"{code} -> {body.label_template_id}")
+        return {"ok": True}
+
+
 # ---------------------------------------------------------------- 标签模板 CRUD
 
 class LabelTemplateIn(BaseModel):
@@ -998,8 +1152,9 @@ def label_template_delete(tid: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
         used = conn.execute("SELECT COUNT(*) FROM categories WHERE label_template_id=?", (tid,)).fetchone()[0]
+        used += conn.execute("SELECT COUNT(*) FROM product_types WHERE label_template_id=?", (tid,)).fetchone()[0]
         if used:
-            raise HTTPException(400, f"该模板已被 {used} 个分类绑定，请先解绑")
+            raise HTTPException(400, f"该模板已被 {used} 个分类/品类绑定，请先解绑")
         conn.execute("DELETE FROM label_templates WHERE id=?", (tid,))
         conn.commit()
         _log(conn, op["username"], "删除标签模板", f"#{tid}")
@@ -1019,7 +1174,8 @@ def label_template_preview(tid: int, request: Request, product_id: int = 1):
         prof = conn.execute("SELECT name FROM tenant_profiles ORDER BY id DESC LIMIT 1").fetchone()
         store_name = prof["name"] if prof and prof["name"] else ""
         product = dict(p)
-        product["rfid_epc"] = product.get("rfid_epc") or _gen_epc(product["code"])
+        product.pop("image", None)
+        product["rfid_epc"] = product.get("rfid_epc") or _gen_type_epc(conn, product.get("product_type_code") or "99")
         zpl = rfid_print.build_label_zpl(product, store_name=store_name, template=dict(tpl))
         return {"ok": True, "zpl": zpl, "product": product}
 
@@ -1049,30 +1205,18 @@ def category_bind_template(code: str, body: CategoryTemplateIn, request: Request
 
 @app.post("/api/products/{pid}/generate-epc")
 def product_generate_epc(pid: int, request: Request):
-    """按 EPC 前缀+分类码+递增序号 生成并回写 RFID EPC。"""
+    """按 EPC 前缀+品类码+递增序号 生成并回写 RFID EPC（已有则直接复用）。"""
     _require_auth(request)
     with _db(request) as conn:
-        cfg = conn.execute("SELECT epc_prefix,seq_bits FROM biz_config WHERE id=1").fetchone()
-        prefix, seq_bits = (cfg[0], cfg[1]) if cfg else ("E280", 8)
-        p = conn.execute("SELECT category_code, rfid_epc FROM products WHERE id=?", (pid,)).fetchone()
+        p = conn.execute("SELECT product_type_code, rfid_epc FROM products WHERE id=?", (pid,)).fetchone()
         if not p:
             raise HTTPException(404, "商品不存在")
         if p["rfid_epc"]:
             return {"ok": True, "epc": p["rfid_epc"], "reused": True}
-        cat_code = p["category_code"] or "00"
-        like = f"{prefix}{cat_code}%"
-        row = conn.execute(
-            "SELECT MAX(CAST(SUBSTR(rfid_epc, ?) AS INTEGER)) FROM products WHERE rfid_epc LIKE ?",
-            (len(prefix) + len(cat_code) + 1, like),
-        ).fetchone()
-        seq = (row[0] or 0) + 1
-        max_seq = 16 ** seq_bits - 1
-        if seq > max_seq:
-            raise HTTPException(400, "该分类序号已用尽，请调大序号位数")
-        epc = f"{prefix}{cat_code}{seq:0{seq_bits}X}"
+        epc = _gen_type_epc(conn, p["product_type_code"] or "99")
         conn.execute("UPDATE products SET rfid_epc=? WHERE id=?", (epc, pid))
         conn.commit()
-        return {"ok": True, "epc": epc, "seq": seq}
+        return {"ok": True, "epc": epc}
 
 
 @app.get("/api/products")
@@ -1089,7 +1233,7 @@ def product_list(request: Request, q: str = "", status: str = "", page: int = 1,
         cond = ("WHERE " + " AND ".join(where)) if where else ""
         total = conn.execute(f"SELECT COUNT(*) n FROM products {cond}", args).fetchone()["n"]
         rows = conn.execute(
-            f"SELECT * FROM products {cond} ORDER BY id DESC LIMIT ? OFFSET ?",
+            f"SELECT {_PRODUCT_COLS} FROM products {cond} ORDER BY id DESC LIMIT ? OFFSET ?",
             args + [size, (page - 1) * size],
         ).fetchall()
         return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
@@ -1110,7 +1254,7 @@ def product_options(request: Request, status: str = "在库"):
 def product_detail(pid: int, request: Request):
     _require_auth(request)
     with _db(request) as conn:
-        row = conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
+        row = conn.execute(f"SELECT {_PRODUCT_COLS} FROM products WHERE id=?", (pid,)).fetchone()
         if not row:
             raise HTTPException(404, "商品不存在")
         return dict(row)
@@ -1123,19 +1267,24 @@ def product_create(body: ProductIn, request: Request):
         _assert_stock_unfrozen(conn)
         if conn.execute("SELECT 1 FROM products WHERE code=?", (body.code,)).fetchone():
             raise HTTPException(400, "商品编码已存在")
-        epc = body.rfid_epc or ""
+        type_code, type_name = _resolve_type(conn, body.product_type_code, body.product_type)
+        epc = (body.rfid_epc or "").strip()
+        if not epc:
+            epc = _gen_type_epc(conn, type_code)  # 新商品保存即自动生成 EPC
         cur = conn.execute(
-            """INSERT INTO products(code,name,name_i18n,category,category_code,material,weight,size,cert,cost,price,status,store_id,rfid_epc,
+            """INSERT INTO products(code,name,name_i18n,category,category_code,material,product_type,product_type_code,
+                                     weight,size,cert,cost,price,status,store_id,rfid_epc,
                                      showcase_public,showcase_order,showcase_desc,origin,high_value)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (body.code, body.name, body.name_i18n, body.category, body.category_code, body.material, body.weight, body.size, body.cert,
-             body.cost, body.price, body.status, body.store_id, epc,
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (body.code, body.name, body.name_i18n, body.category, body.category_code,
+             (body.material or "").strip().upper(), type_name, type_code,
+             body.weight, body.size, body.cert, body.cost, body.price, body.status, body.store_id, epc,
              body.showcase_public, body.showcase_order, body.showcase_desc, body.origin, body.high_value),
         )
         _inv(conn, cur.lastrowid, epc, "in", op["username"])
         conn.commit()
         _log(conn, op["username"], "新增商品", body.code)
-        return {"id": cur.lastrowid}
+        return {"id": cur.lastrowid, "rfid_epc": epc}
 
 
 @app.put("/api/products/{pid}")
@@ -1143,21 +1292,26 @@ def product_update(pid: int, body: ProductIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
         _assert_stock_unfrozen(conn)
-        if not conn.execute("SELECT 1 FROM products WHERE id=?", (pid,)).fetchone():
+        row = conn.execute("SELECT rfid_epc FROM products WHERE id=?", (pid,)).fetchone()
+        if not row:
             raise HTTPException(404, "商品不存在")
         if conn.execute("SELECT 1 FROM products WHERE code=? AND id<>?", (body.code, pid)).fetchone():
             raise HTTPException(400, "商品编码已存在")
+        type_code, type_name = _resolve_type(conn, body.product_type_code, body.product_type)
+        epc = (body.rfid_epc or "").strip() or row["rfid_epc"]
         conn.execute(
-            """UPDATE products SET code=?,name=?,name_i18n=?,category=?,category_code=?,material=?,weight=?,size=?,cert=?,
+            """UPDATE products SET code=?,name=?,name_i18n=?,category=?,category_code=?,material=?,
+               product_type=?,product_type_code=?,weight=?,size=?,cert=?,
                cost=?,price=?,status=?,store_id=?,rfid_epc=?,showcase_public=?,
                showcase_order=?,showcase_desc=?,origin=?,high_value=? WHERE id=?""",
-            (body.code, body.name, body.name_i18n, body.category, body.category_code, body.material, body.weight, body.size, body.cert,
-             body.cost, body.price, body.status, body.store_id, body.rfid_epc, body.showcase_public,
-             body.showcase_order, body.showcase_desc, body.origin, body.high_value, pid),
+            (body.code, body.name, body.name_i18n, body.category, body.category_code,
+             (body.material or "").strip().upper(), type_name, type_code,
+             body.weight, body.size, body.cert, body.cost, body.price, body.status, body.store_id, epc,
+             body.showcase_public, body.showcase_order, body.showcase_desc, body.origin, body.high_value, pid),
         )
         conn.commit()
         _log(conn, op["username"], "修改商品", f"#{pid} {body.code}")
-        return {"ok": True}
+        return {"ok": True, "rfid_epc": epc}
 
 
 @app.delete("/api/products/{pid}")
@@ -1174,6 +1328,64 @@ def product_delete(pid: int, request: Request):
         conn.commit()
         _log(conn, op["username"], "删除商品", f"#{pid}")
         return {"ok": True}
+
+
+# ---------------------------------------------------------------- 商品图片（前端 Canvas 裁切后传 base64 JPEG）
+
+class ProductImageIn(BaseModel):
+    data: str  # data:image/jpeg;base64,....
+
+
+def _decode_image_data(data: str) -> bytes:
+    if "," in data:
+        data = data.split(",", 1)[1]
+    try:
+        raw = base64.b64decode(data, validate=True)
+    except Exception:
+        raise HTTPException(400, "图片数据无效")
+    if len(raw) < 64 or len(raw) > 3 * 1024 * 1024:
+        raise HTTPException(400, "图片大小需在 3MB 以内")
+    if raw[:2] != b"\xff\xd8":
+        raise HTTPException(400, "仅支持 JPEG 图片")
+    return raw
+
+
+@app.put("/api/products/{pid}/image")
+def product_image_update(pid: int, body: ProductImageIn, request: Request):
+    op = _require_auth(request)
+    raw = _decode_image_data(body.data)
+    with _db(request) as conn:
+        if not conn.execute("SELECT 1 FROM products WHERE id=?", (pid,)).fetchone():
+            raise HTTPException(404, "商品不存在")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute("UPDATE products SET image=?, image_ts=? WHERE id=?", (raw, ts, pid))
+        conn.commit()
+        _log(conn, op["username"], "上传商品图片", f"#{pid}")
+        return {"ok": True, "image_ts": ts}
+
+
+@app.delete("/api/products/{pid}/image")
+def product_image_delete(pid: int, request: Request):
+    op = _require_auth(request)
+    with _db(request) as conn:
+        conn.execute("UPDATE products SET image=NULL, image_ts='' WHERE id=?", (pid,))
+        conn.commit()
+        _log(conn, op["username"], "删除商品图片", f"#{pid}")
+        return {"ok": True}
+
+
+@app.get("/api/products/{pid}/image")
+def product_image_get(pid: int, request: Request):
+    """公开读取（橱窗/外部分享页 <img> 无鉴权头），用 image_ts 做缓存标识。"""
+    with _db(request) as conn:
+        row = conn.execute("SELECT image,image_ts FROM products WHERE id=?", (pid,)).fetchone()
+        if not row or not row["image"]:
+            raise HTTPException(404, "暂无图片")
+        return Response(
+            content=bytes(row["image"]),
+            media_type="image/jpeg",
+            headers={"Cache-Control": "no-cache", "ETag": f'"{row["image_ts"]}"'},
+        )
 
 
 class PrintLabelIn(BaseModel):
@@ -1218,7 +1430,10 @@ def inventory_summary(request: Request):
 class InboundIn(BaseModel):
     code: str = ""
     name: str
-    category: str = "黄金"
+    category: str = ""
+    category_code: str = ""
+    product_type: str = ""
+    product_type_code: str = "99"
     material: str = ""
     weight: float = 0
     size: str = ""
@@ -1237,11 +1452,14 @@ def inventory_inbound(body: InboundIn, request: Request):
         code = body.code.strip() or _next_code(conn)
         if conn.execute("SELECT 1 FROM products WHERE code=?", (code,)).fetchone():
             raise HTTPException(400, "商品编码已存在")
-        epc = body.rfid_epc or _gen_epc(code)
+        type_code, type_name = _resolve_type(conn, body.product_type_code, body.product_type)
+        epc = (body.rfid_epc or "").strip() or _gen_type_epc(conn, type_code)
         cur = conn.execute(
-            """INSERT INTO products(code,name,category,material,weight,size,cert,cost,price,status,store_id,rfid_epc,showcase_public)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0)""",
-            (code, body.name, body.category, body.material, body.weight, body.size, body.cert, body.cost, body.price, "在库", 1, epc),
+            """INSERT INTO products(code,name,category,category_code,material,product_type,product_type_code,
+                                    weight,size,cert,cost,price,status,store_id,rfid_epc,showcase_public)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'在库',?, ?,0)""",
+            (code, body.name, body.category, body.category_code, (body.material or "").strip().upper(),
+             type_name, type_code, body.weight, body.size, body.cert, body.cost, body.price, 1, epc),
         )
         _inv(conn, cur.lastrowid, epc, "in", op["username"])
         conn.commit()
@@ -1258,16 +1476,20 @@ def inventory_copy(pid: int, request: Request):
         if not src:
             raise HTTPException(404, "源商品不存在")
         code = _next_code(conn)
-        epc = _gen_epc(code)
+        type_code = src["product_type_code"] or "99"
+        epc = _gen_type_epc(conn, type_code)
         cur = conn.execute(
-            """INSERT INTO products(code,name,category,material,weight,size,cert,cost,price,status,store_id,rfid_epc,showcase_public)
-               VALUES(?,?,?,?,?,?,?,?,?,'在库',?, ?,0)""",
-            (code, src["name"], src["category"], src["material"], src["weight"], src["size"], src["cert"], src["cost"], src["price"], src["store_id"], epc),
+            """INSERT INTO products(code,name,name_i18n,category,category_code,material,product_type,product_type_code,
+                                    weight,size,cert,cost,price,status,store_id,rfid_epc,showcase_public,origin,high_value)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'在库',?, ?,0,?,?)""",
+            (code, src["name"], src["name_i18n"], src["category"], src["category_code"], src["material"],
+             src["product_type"], type_code, src["weight"], src["size"], src["cert"], src["cost"], src["price"],
+             src["store_id"], epc, src["origin"], src["high_value"]),
         )
         _inv(conn, cur.lastrowid, epc, "in", op["username"])
         conn.commit()
         _log(conn, op["username"], "复制入库", f"{src['code']}→{code}")
-        return {"id": cur.lastrowid, "code": code}
+        return {"id": cur.lastrowid, "code": code, "rfid_epc": epc}
 
 
 class RfidScanIn(BaseModel):
@@ -1346,29 +1568,31 @@ def print_labels(body: LabelPrintIn, request: Request):
         if len(rows) != len(set(body.product_ids)):
             raise HTTPException(404, "部分商品不存在")
         products = [dict(r) for r in rows]
+        for p in products:
+            p.pop("image", None)
 
-        # 模板解析：优先显式 template_id，否则按商品分类自动查找绑定模板
+        # 模板解析：优先显式 template_id，否则按商品品类自动查找绑定模板
         template = None
         if body.template_id:
             tpl = conn.execute("SELECT * FROM label_templates WHERE id=?", (body.template_id,)).fetchone()
             if tpl:
                 template = dict(tpl)
         else:
-            # 单类别时尝试自动匹配
-            cat_codes = {p.get("category_code", "") for p in products}
-            if len(cat_codes) == 1:
-                cc = cat_codes.pop()
-                if cc:
+            # 单品类时尝试自动匹配
+            type_codes = {p.get("product_type_code", "") for p in products}
+            if len(type_codes) == 1:
+                tc = type_codes.pop()
+                if tc:
                     tpl = conn.execute(
-                        "SELECT lt.* FROM categories c JOIN label_templates lt ON lt.id = c.label_template_id WHERE c.code=?",
-                        (cc,),
+                        "SELECT lt.* FROM product_types pt JOIN label_templates lt ON lt.id = pt.label_template_id WHERE pt.code=?",
+                        (tc,),
                     ).fetchone()
                     if tpl:
                         template = dict(tpl)
 
         jobs = []
         for p in products:
-            epc = p.get("rfid_epc") or _gen_epc(p["code"])
+            epc = p.get("rfid_epc") or _gen_type_epc(conn, p.get("product_type_code") or "99")
             if not p.get("rfid_epc"):
                 conn.execute("UPDATE products SET rfid_epc=? WHERE id=?", (epc, p["id"]))
             p["rfid_epc"] = epc
@@ -2592,8 +2816,8 @@ def showcase_list(request: Request):
     _require_auth(request)
     with _db(request) as conn:
         in_showcase = conn.execute(
-            """SELECT id, code, name, category, material, weight, size, price, origin,
-                      showcase_order, showcase_desc, status, showcase_public
+            """SELECT id, code, name, product_type, material, weight, size, price, origin,
+                      showcase_order, showcase_desc, status, showcase_public, image_ts
                  FROM products
                 WHERE showcase_public=1 AND status='在库'
                 ORDER BY (showcase_order=0) ASC, showcase_order ASC, id DESC
@@ -2606,7 +2830,8 @@ def showcase_list(request: Request):
                 d["showcase_desc"] = _default_desc(d)
             in_items.append(d)
         others = conn.execute(
-            """SELECT id, code, name, category, material, weight, size, price, origin, status, showcase_public
+            """SELECT id, code, name, product_type, material, weight, size, price, origin, status,
+                      showcase_public, image_ts
                  FROM products
                 WHERE showcase_public=0 AND status='在库'
                 ORDER BY id DESC

@@ -82,7 +82,7 @@ def _field_value(field: str, product: dict, store_name: str) -> str:
         v = _ascii_safe(p.get("rfid_epc", ""))
         return f"EPC {v[-12:]}" if v else ""
     if field == "category":
-        return _cn(p.get("category", ""))
+        return _cn(p.get("product_type") or p.get("category", ""))
     if field == "material":
         return _cn(p.get("material", ""))
     if field == "weight":

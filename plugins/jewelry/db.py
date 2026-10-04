@@ -44,6 +44,14 @@ CREATE TABLE IF NOT EXISTS categories (
   sort_order INTEGER DEFAULT 0
 );
 
+-- 商品品类（戒指/项链/手镯…，按产品形态划分，可配置，绑定标签模板）
+CREATE TABLE IF NOT EXISTS product_types (
+  code TEXT PRIMARY KEY,
+  names TEXT NOT NULL DEFAULT '{}',
+  sort_order INTEGER DEFAULT 0,
+  label_template_id INTEGER DEFAULT NULL
+);
+
 CREATE TABLE IF NOT EXISTS products (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   code TEXT UNIQUE NOT NULL,
@@ -52,6 +60,10 @@ CREATE TABLE IF NOT EXISTS products (
   category TEXT DEFAULT '黄金',
   category_code TEXT DEFAULT '',
   material TEXT DEFAULT '',
+  product_type TEXT DEFAULT '',
+  product_type_code TEXT DEFAULT '',
+  image BLOB,
+  image_ts TEXT DEFAULT '',
   weight REAL DEFAULT 0,
   size TEXT DEFAULT '',
   cert TEXT DEFAULT '',
@@ -360,6 +372,10 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("tenant_profiles", "showcase_subtitle", "TEXT DEFAULT '本周臻品 · 限量发售'"),
         ("label_templates", "definition", "TEXT DEFAULT '{}'"),
         ("categories", "label_template_id", "INTEGER DEFAULT NULL"),
+        ("products", "product_type", "TEXT DEFAULT ''"),
+        ("products", "product_type_code", "TEXT DEFAULT ''"),
+        ("products", "image", "BLOB"),
+        ("products", "image_ts", "TEXT DEFAULT ''"),
     ]
     for table, col, decl in alters:
         if not _has_column(conn, table, col):
@@ -367,6 +383,7 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
     _seed_base_dicts(conn)
     _backfill_category_code(conn)
+    _migrate_material_and_type(conn)
     conn.commit()
 
 
@@ -390,6 +407,88 @@ def _seed_base_dicts(conn: sqlite3.Connection) -> None:
     conn.executemany(
         "INSERT OR IGNORE INTO categories(code,names,sort_order) VALUES(?,?,?)", categories
     )
+    # 商品品类（产品形态：戒指/项链…，中英意三语）
+    product_types = [
+        ("01", '{"zh":"戒指","en":"Ring","it":"Anello"}', 1),
+        ("02", '{"zh":"项链","en":"Necklace","it":"Collana"}', 2),
+        ("03", '{"zh":"手链","en":"Bracelet","it":"Bracciale"}', 3),
+        ("04", '{"zh":"手镯","en":"Bangle","it":"Bracciale rigido"}', 4),
+        ("05", '{"zh":"耳饰","en":"Earrings","it":"Orecchini"}', 5),
+        ("06", '{"zh":"吊坠","en":"Pendant","it":"Ciondolo"}', 6),
+        ("07", '{"zh":"胸针","en":"Brooch","it":"Spilla"}', 7),
+        ("08", '{"zh":"摆件","en":"Ornament","it":"Oggetto"}', 8),
+        ("99", '{"zh":"其他","en":"Other","it":"Altro"}', 99),
+    ]
+    conn.executemany(
+        "INSERT OR IGNORE INTO product_types(code,names,sort_order) VALUES(?,?,?)", product_types
+    )
+
+
+# 旧「分类」(黄金/钻石…) 语义上是材质，统一迁移为业界标准英文材质码；
+# 品类（戒指/项链…）按商品名称关键字推断，无法推断归入「其他」。
+_MAT_BY_CATCODE = {
+    "01": "GOLD", "02": "DIAMOND", "03": "JADEITE", "04": "PLATINUM",
+    "05": "COLORED_GEMSTONE", "06": "SILVER", "07": "PEARL", "99": "OTHER",
+}
+_MAT_BY_ZHNAME = {
+    "黄金": "GOLD", "金": "GOLD", "铂金": "PLATINUM", "银饰": "SILVER", "银": "SILVER",
+    "钻石": "DIAMOND", "翡翠": "JADEITE", "彩宝": "COLORED_GEMSTONE",
+    "珍珠": "PEARL", "其他": "OTHER",
+}
+# (品类码, 中文名, 关键字) —— 顺序即优先级（手链/手串先于手镯，耳钉先于泛称）
+_TYPE_KEYWORDS = [
+    ("03", "手链", ("手链", "手串")),
+    ("04", "手镯", ("手镯", "镯")),
+    ("01", "戒指", ("戒指", "戒")),
+    ("02", "项链", ("项链", "锁骨链", "链")),
+    ("05", "耳饰", ("耳钉", "耳环", "耳饰", "耳")),
+    ("06", "吊坠", ("吊坠", "坠")),
+    ("07", "胸针", ("胸针",)),
+    ("08", "摆件", ("摆件",)),
+]
+
+
+def _infer_product_type(name: str) -> tuple[str, str]:
+    import json as _json
+    for code, zh, keys in _TYPE_KEYWORDS:
+        if any(k in (name or "") for k in keys):
+            return code, zh
+    return "99", "其他"
+
+
+def _migrate_material_and_type(conn: sqlite3.Connection) -> None:
+    """把旧分类数据迁移为 英文材质 + 新品类（幂等：只补空值）。"""
+    import json as _json
+    type_names: dict[str, dict] = {}
+    for code, names, _ in conn.execute("SELECT code,names,sort_order FROM product_types").fetchall():
+        try:
+            type_names[code] = _json.loads(names or "{}")
+        except Exception:
+            type_names[code] = {}
+
+    rows = conn.execute(
+        "SELECT id,name,category,category_code,material,product_type_code FROM products"
+    ).fetchall()
+    for r in rows:
+        sets, args = [], []
+        # 材质：一次性把旧自由文本（足金999/PT950 等成色描述）统一为英文材质码。
+        # 仅当旧分类能映射、且当前 material 不是合法英文材质码时执行。
+        mat = _MAT_BY_CATCODE.get(r["category_code"] or "")
+        if not mat:
+            mat = _MAT_BY_ZHNAME.get((r["category"] or "").strip(), "")
+        if mat and (r["material"] or "") not in _MAT_BY_CATCODE.values():
+            sets.append("material=?")
+            args.append(mat)
+        # 品类：按品名推断
+        if not (r["product_type_code"] or "").strip():
+            tcode, tzh = _infer_product_type(r["name"] or "")
+            sets.append("product_type_code=?")
+            args.append(tcode)
+            sets.append("product_type=?")
+            args.append((type_names.get(tcode) or {}).get("zh") or tzh)
+        if sets:
+            args.append(r["id"])
+            conn.execute(f"UPDATE products SET {', '.join(sets)} WHERE id=?", args)
 
 
 # 旧库商品只有中文品类名，按分类表回填 category_code
@@ -530,6 +629,9 @@ def seed_demo(conn: sqlite3.Connection) -> None:
     )
     # 演示商品只写了中文品类名，按分类字典回填 category_code
     _backfill_category_code(conn)
+    # 再迁移为 英文材质 + 新品类
+    _migrate_material_and_type(conn)
+    conn.commit()
 
     customers = [("王晓丽", "13800001111", "金卡", 43600, 0, "1990-05-12", "偏好足金手镯"),
                  ("李强", "13900002222", "银卡", 12800, 21800, "1988-11-03", "钻石类"),
