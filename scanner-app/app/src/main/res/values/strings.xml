@@ -199,4 +199,16 @@
     <string name="sc_scan_hint">扫EPC用小功率（参数设置里可调），防止串扫邻柜；机身扳机 = 快捷扫EPC</string>
     <string name="sc_product_hint">扫码自动填入，可手工修改</string>
     <string name="task_not_active">任务当前不是【进行中】状态，请在网页端开始盘点后再按扫描</string>
+    <!-- 扫码页 -->
+    <string name="capture_hint">双指捏合可放大/缩小镜头焦距</string>
+    <string name="capture_zoom">焦距 %1$d / %2$d%3$s</string>
+    <string name="capture_auto">（自动）</string>
+    <!-- 出单提示 -->
+    <string name="sc_not_found_banner">⚠ 库中未找到：%1$s</string>
+    <string name="sc_not_found_tip">该码不在在库商品中，请核对后手工填写商品名称与金额</string>
+    <!-- 确认对话框 -->
+    <string name="logout_confirm_title">退出登录</string>
+    <string name="logout_confirm_msg">退出后需要重新扫【手持机登录】二维码才能使用。确定退出吗？</string>
+    <string name="btn_confirm">确定</string>
+    <string name="btn_cancel">取消</string>
 </resources>

@@ -186,4 +186,16 @@
     <string name="sc_scan_hint">EPC uses low power (tunable in settings) to avoid reading neighbor counters; trigger = quick EPC</string>
     <string name="sc_product_hint">Filled by scan, editable</string>
     <string name="task_not_active">Task is not running. Start it on the web page, then press scan again</string>
+    <!-- capture -->
+    <string name="capture_hint">Pinch to zoom the camera</string>
+    <string name="capture_zoom">Zoom %1$d / %2$d%3$s</string>
+    <string name="capture_auto">(auto)</string>
+    <!-- sale hints -->
+    <string name="sc_not_found_banner">⚠ Not in stock: %1$s</string>
+    <string name="sc_not_found_tip">No stock item matched. Enter the item name and amount manually</string>
+    <!-- confirm dialog -->
+    <string name="logout_confirm_title">Sign out</string>
+    <string name="logout_confirm_msg">You will need to scan the handheld login QR again to use the app. Sign out?</string>
+    <string name="btn_confirm">OK</string>
+    <string name="btn_cancel">Cancel</string>
 </resources>

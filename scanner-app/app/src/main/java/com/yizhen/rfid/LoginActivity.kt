@@ -78,7 +78,8 @@ class LoginActivity : AppCompatActivity() {
         opts.setDesiredBarcodeFormats(ScanOptions.QR_CODE)
         opts.setPrompt("")
         opts.setBeepEnabled(false)
-        opts.setOrientationLocked(false)
+        opts.setOrientationLocked(true)
+        opts.setCaptureActivity(PortraitCaptureActivity::class.java)
         qrLauncher.launch(opts)
     }
 

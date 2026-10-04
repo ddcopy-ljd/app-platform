@@ -42,12 +42,19 @@ class HomeActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         findViewById<TextView>(R.id.btnHomeLogout).setOnClickListener {
-            net.execute {
-                AuthApi.logout(prefs.authOrigin, prefs.authToken)
-            }
-            prefs.clearAuth()
-            startActivity(Intent(this, LoginActivity::class.java))
-            finish()
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(R.string.logout_confirm_title)
+                .setMessage(R.string.logout_confirm_msg)
+                .setNegativeButton(R.string.btn_cancel, null)
+                .setPositiveButton(R.string.btn_confirm) { _, _ ->
+                    net.execute {
+                        AuthApi.logout(prefs.authOrigin, prefs.authToken)
+                    }
+                    prefs.clearAuth()
+                    startActivity(Intent(this, LoginActivity::class.java))
+                    finish()
+                }
+                .show()
         }
 
         // 提前初始化 UHF 模块，进入扫描页即刻可用

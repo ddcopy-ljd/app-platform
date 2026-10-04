@@ -193,6 +193,26 @@
                             android:textSize="16sp"
                             android:textStyle="bold"
                             android:visibility="gone" />
+
+                        <TextView
+                            android:id="@+id/tvNotFound"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:textColor="@color/orange"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:visibility="gone" />
+
+                        <TextView
+                            android:id="@+id/tvNotFoundTip"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/sc_not_found_tip"
+                            android:textColor="@color/text_hint"
+                            android:textSize="11sp"
+                            android:visibility="gone" />
                     </LinearLayout>
                 </LinearLayout>
             </LinearLayout>

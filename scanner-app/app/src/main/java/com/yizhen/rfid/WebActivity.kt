@@ -236,7 +236,8 @@ class WebActivity : AppCompatActivity() {
         opts.setDesiredBarcodeFormats(formats)
         opts.setPrompt("")
         opts.setBeepEnabled(false)
-        opts.setOrientationLocked(false)
+        opts.setOrientationLocked(true)
+        opts.setCaptureActivity(PortraitCaptureActivity::class.java)
         cameraLauncher.launch(opts)
     }
 

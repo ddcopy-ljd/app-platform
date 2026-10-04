@@ -51,6 +51,8 @@ class SaleActivity : AppCompatActivity() {
     private lateinit var tvCode: TextView
     private lateinit var tvName: TextView
     private lateinit var tvPrice: TextView
+    private lateinit var tvNotFound: TextView
+    private lateinit var tvNotFoundTip: TextView
     private lateinit var etCustomer: EditText
     private lateinit var etPhone: EditText
     private lateinit var etProduct: EditText
@@ -91,6 +93,8 @@ class SaleActivity : AppCompatActivity() {
         tvCode = findViewById(R.id.tvProdCode)
         tvName = findViewById(R.id.tvProdName)
         tvPrice = findViewById(R.id.tvProdPrice)
+        tvNotFound = findViewById(R.id.tvNotFound)
+        tvNotFoundTip = findViewById(R.id.tvNotFoundTip)
         etCustomer = findViewById(R.id.etCustomer)
         etPhone = findViewById(R.id.etPhone)
         etProduct = findViewById(R.id.etProduct)
@@ -165,7 +169,8 @@ class SaleActivity : AppCompatActivity() {
         opts.setDesiredBarcodeFormats(formats)
         opts.setPrompt("")
         opts.setBeepEnabled(false)
-        opts.setOrientationLocked(false)
+        opts.setOrientationLocked(true)                       // 保持竖屏，不横过来
+        opts.setCaptureActivity(PortraitCaptureActivity::class.java) // 变焦 + 连续自动对焦
         cameraLauncher.launch(opts)
     }
 
@@ -222,14 +227,28 @@ class SaleActivity : AppCompatActivity() {
             etProduct.setText(p.name)
             etAmount.setText(if (p.price > 0) String.format(Locale.US, "%.2f", p.price) else "")
             showProduct(p)
+            setNotFound(null)
             Toast.makeText(this, "${p.code} ${p.name}", Toast.LENGTH_SHORT).show()
-        } else if (type == "epc") {
-            Toast.makeText(this, getString(R.string.sc_not_found) + " EPC $c", Toast.LENGTH_SHORT).show()
         } else {
+            // 库中找不到：界面常驻提示（不只弹一下 Toast），等人工核对后手工填写
             picked = null
-            etProduct.setText(raw)
+            val label = if (type == "epc") "EPC" else if (type == "qrcode") "二维码" else "条码"
+            setNotFound("$label $c")
             clearProduct()
+            if (type != "epc") etProduct.setText(raw)
             Toast.makeText(this, R.string.sc_not_found, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** 未匹配提示：code 为空则隐藏。 */
+    private fun setNotFound(code: String?) {
+        if (code.isNullOrBlank()) {
+            tvNotFound.visibility = android.view.View.GONE
+            tvNotFoundTip.visibility = android.view.View.GONE
+        } else {
+            tvNotFound.text = getString(R.string.sc_not_found_banner, code)
+            tvNotFound.visibility = android.view.View.VISIBLE
+            tvNotFoundTip.visibility = android.view.View.VISIBLE
         }
     }
 
@@ -295,6 +314,7 @@ class SaleActivity : AppCompatActivity() {
                     etAmount.setText("")
                     etPaid.setText("")
                     clearProduct()
+                    setNotFound(null)
                     loadOptions()
                 }
             } catch (e: Exception) {

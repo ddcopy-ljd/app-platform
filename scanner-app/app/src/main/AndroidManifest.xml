@@ -19,6 +19,7 @@
 
         <activity
             android:name=".LoginActivity"
+            android:screenOrientation="portrait"
             android:configChanges="orientation|screenSize|keyboardHidden|locale|layoutDirection"
             android:exported="true"
             android:launchMode="singleTop"
@@ -31,17 +32,20 @@
 
         <activity
             android:name=".HomeActivity"
+            android:screenOrientation="portrait"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden|locale|layoutDirection" />
 
         <activity
             android:name=".SaleActivity"
+            android:screenOrientation="portrait"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden|locale|layoutDirection"
             android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name=".StockActivity"
+            android:screenOrientation="portrait"
             android:configChanges="orientation|screenSize|keyboardHidden|locale|layoutDirection"
             android:exported="false"
             android:launchMode="singleTop"
@@ -49,17 +53,27 @@
 
         <activity
             android:name=".BarcodeScanActivity"
+            android:screenOrientation="portrait"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden|locale|layoutDirection" />
 
         <activity
             android:name=".WebActivity"
+            android:screenOrientation="portrait"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden|locale|layoutDirection"
             android:windowSoftInputMode="adjustResize" />
 
         <activity
+            android:name=".PortraitCaptureActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:stateNotNeeded="true"
+            android:theme="@style/Theme.Rfid" />
+
+        <activity
             android:name=".SettingsActivity"
+            android:screenOrientation="portrait"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden|locale|layoutDirection" />
     </application>
