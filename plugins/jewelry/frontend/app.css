@@ -268,6 +268,10 @@ a { text-decoration: none; color: inherit; }
 .btn-block { width: 100%; }
 .btn-sm { padding: 8px 16px; font-size: 14px; }
 .btn-outline { border: 1.5px solid var(--wine); color: var(--wine); background: transparent; }
+.btn-small { display: inline-block; padding: 4px 10px; border-radius: var(--radius-sm); font-size: 13px; border: 1px solid var(--border); background: #fff; color: var(--text); cursor: pointer; }
+.btn-small.btn-danger { color: #c0392b; border-color: #e6b8b0; }
+.card-title { font-size: 16px; font-weight: 700; color: var(--wine); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid var(--gold); }
+.hint { font-size: 13px; color: var(--text2); margin: 6px 0 12px; }
 .btn:active { transform: scale(.97); }
 
 /* ---------- empty ---------- */

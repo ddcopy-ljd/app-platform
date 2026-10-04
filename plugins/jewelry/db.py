@@ -20,15 +20,37 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS stores (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
+  name_i18n TEXT DEFAULT '{}',
   code TEXT UNIQUE,
   owner TEXT
+);
+
+CREATE TABLE IF NOT EXISTS languages (
+  code TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  is_default INTEGER DEFAULT 0,
+  sort_order INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS biz_config (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  epc_prefix TEXT DEFAULT 'E280',
+  seq_bits INTEGER DEFAULT 8
+);
+
+CREATE TABLE IF NOT EXISTS categories (
+  code TEXT PRIMARY KEY,
+  names TEXT NOT NULL DEFAULT '{}',
+  sort_order INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS products (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   code TEXT UNIQUE NOT NULL,
   name TEXT NOT NULL,
+  name_i18n TEXT DEFAULT '{}',
   category TEXT DEFAULT '黄金',
+  category_code TEXT DEFAULT '',
   material TEXT DEFAULT '',
   weight REAL DEFAULT 0,
   size TEXT DEFAULT '',
@@ -41,6 +63,7 @@ CREATE TABLE IF NOT EXISTS products (
   showcase_public INTEGER DEFAULT 0,
   showcase_order INTEGER DEFAULT 0,
   showcase_desc TEXT DEFAULT '',
+  showcase_desc_i18n TEXT DEFAULT '{}',
   origin TEXT DEFAULT '',
   created TEXT DEFAULT (datetime('now','localtime'))
 );
@@ -329,6 +352,10 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("products", "showcase_desc", "TEXT DEFAULT ''"),
         ("products", "origin", "TEXT DEFAULT ''"),
         ("products", "high_value", "INTEGER DEFAULT 0"),
+        ("products", "name_i18n", "TEXT DEFAULT '{}'"),
+        ("products", "category_code", "TEXT DEFAULT ''"),
+        ("products", "showcase_desc_i18n", "TEXT DEFAULT '{}'"),
+        ("stores", "name_i18n", "TEXT DEFAULT '{}'"),
         ("tenant_profiles", "showcase_title", "TEXT DEFAULT '新品橱窗'"),
         ("tenant_profiles", "showcase_subtitle", "TEXT DEFAULT '本周臻品 · 限量发售'"),
     ]
@@ -336,6 +363,51 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         if not _has_column(conn, table, col):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
     conn.commit()
+    _seed_base_dicts(conn)
+    _backfill_category_code(conn)
+    conn.commit()
+
+
+# 基础字典：语言 / EPC 业务配置 / 商品分类（多语言名称）
+def _seed_base_dicts(conn: sqlite3.Connection) -> None:
+    conn.executemany(
+        "INSERT OR IGNORE INTO languages(code,name,is_default,sort_order) VALUES(?,?,?,?)",
+        [("zh", "中文", 1, 1), ("en", "English", 0, 2), ("it", "Italiano", 0, 3)],
+    )
+    conn.execute("INSERT OR IGNORE INTO biz_config(id,epc_prefix,seq_bits) VALUES(1,'E280',8)")
+    categories = [
+        ("01", '{"zh":"黄金","en":"Gold","it":"Oro"}', 1),
+        ("02", '{"zh":"钻石","en":"Diamond","it":"Diamante"}', 2),
+        ("03", '{"zh":"翡翠","en":"Jadeite","it":"Giada"}', 3),
+        ("04", '{"zh":"铂金","en":"Platinum","it":"Platino"}', 4),
+        ("05", '{"zh":"彩宝","en":"Colored gems","it":"Pietre colorate"}', 5),
+        ("06", '{"zh":"银饰","en":"Silver","it":"Argento"}', 6),
+        ("07", '{"zh":"珍珠","en":"Pearl","it":"Perla"}', 7),
+        ("99", '{"zh":"其他","en":"Other","it":"Altro"}', 99),
+    ]
+    conn.executemany(
+        "INSERT OR IGNORE INTO categories(code,names,sort_order) VALUES(?,?,?)", categories
+    )
+
+
+# 旧库商品只有中文品类名，按分类表回填 category_code
+def _backfill_category_code(conn: sqlite3.Connection) -> None:
+    rows = conn.execute("SELECT code, names FROM categories").fetchall()
+    import json as _json
+    name_to_code: dict[str, str] = {}
+    for code, names in rows:
+        try:
+            m = _json.loads(names or "{}")
+        except Exception:
+            m = {}
+        for v in m.values():
+            if v:
+                name_to_code[str(v)] = code
+    for name, code in name_to_code.items():
+        conn.execute(
+            "UPDATE products SET category_code=? WHERE category=? AND (category_code IS NULL OR category_code='')",
+            (code, name),
+        )
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -424,7 +496,7 @@ def seed_demo(conn: sqlite3.Connection) -> None:
         ("J006", "黄金福字吊坠", "黄金", "足金999", 6.8, "", "GDH-90344", 4600, 5600, "已定", 1, "E28011606000020999A1C14588", 0, 0, "",
          "深圳·水贝"),
         # J007 - 银质对戒 (6)
-        ("J007", "银质一生一世对戒", "其他", "925银", 8.5, "17号", "AG-12098", 900, 1280, "在库", 2, "", 1, 6,
+        ("J007", "银质一生一世对戒", "银饰", "925银", 8.5, "17号", "AG-12098", 900, 1280, "在库", 2, "", 1, 6,
          "产地：广州番禺｜材质：925纯银镀铂金｜总重：8.50g｜17号戒圈｜刻字「一生一世」，情侣首选｜参考价：¥1,280",
          "广州·番禺"),
         # J008 - 古法黄金 (7)
@@ -444,7 +516,7 @@ def seed_demo(conn: sqlite3.Connection) -> None:
          "产地：新疆和田｜材质：和田玉羊脂白玉｜总重：15.60g｜平安扣圆圆满满，馈赠长辈佳品｜附鉴定证书｜参考价：¥7,800",
          "新疆·和田"),
         # J011 - 珍珠项链 (不进橱窗)
-        ("J011", "珍珠项链", "其他", "南洋金珠+925银", 0, "45cm", "", 2600, 3600, "在库", 2, "", 0, 0, "",
+        ("J011", "珍珠项链", "珍珠", "南洋金珠+925银", 0, "45cm", "", 2600, 3600, "在库", 2, "", 0, 0, "",
          "菲律宾·巴拉望"),
     ]
     conn.executemany(
@@ -454,6 +526,8 @@ def seed_demo(conn: sqlite3.Connection) -> None:
             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         products,
     )
+    # 演示商品只写了中文品类名，按分类字典回填 category_code
+    _backfill_category_code(conn)
 
     customers = [("王晓丽", "13800001111", "金卡", 43600, 0, "1990-05-12", "偏好足金手镯"),
                  ("李强", "13900002222", "银卡", 12800, 21800, "1988-11-03", "钻石类"),

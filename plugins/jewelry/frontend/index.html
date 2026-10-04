@@ -504,6 +504,26 @@
             <button class="btn btn-gold btn-block" @click="saveProfile">{{ t('act.save') }}</button>
             <a class="btn btn-outline btn-block" href="/site" target="_blank" style="text-decoration:none; margin-top:8px">预览迷你网站</a>
           </div>
+
+          <div class="card-item">
+            <div class="card-title">EPC 编码规则</div>
+            <div class="form-group"><label>前缀</label><input v-model="bizConfig.epc_prefix" placeholder="E280"></div>
+            <div class="form-group"><label>序号位数（1-8）</label><input v-model.number="bizConfig.seq_bits" type="number" min="1" max="8"></div>
+            <button class="btn btn-gold btn-block" @click="saveBizConfig">保存规则</button>
+          </div>
+
+          <div class="card-item">
+            <div class="card-title">商品分类</div>
+            <div v-for="c in cats" :key="c.code" class="flex-between" style="padding:6px 0;border-bottom:1px solid #eee">
+              <span><b class="mono">{{ c.code }}</b> {{ c.names.zh }} <span style="color:#999">{{ c.names.en||'' }}</span></span>
+              <span><button class="btn-small" @click="editCat(c)">编辑</button> <button class="btn-small btn-danger" @click="delCat(c.code)">删</button></span>
+            </div>
+            <div class="form-group" style="margin-top:8px"><label>编码</label><input v-model="catEdit.code" :disabled="catEditMode==='edit'"></div>
+            <div class="form-row"><div class="form-group"><label>中文</label><input v-model="catEdit.names.zh"></div><div class="form-group"><label>英文</label><input v-model="catEdit.names.en"></div></div>
+            <div class="form-group"><label>排序</label><input v-model.number="catEdit.sort_order" type="number"></div>
+            <button class="btn btn-gold btn-block" @click="saveCat">{{ catEditMode==='edit'?'保存修改':'新增分类' }}</button>
+            <button class="btn btn-outline btn-block" v-if="catEditMode==='edit'" @click="resetCatEdit" style="margin-top:6px">取消</button>
+          </div>
         </section>
         <section v-if="isPc && tab==='logs'">
           <div class="page-head">
@@ -540,6 +560,42 @@
             <div class="form-group"><label>地址</label><input v-model="profile.address"></div>
             <button class="btn btn-gold" @click="saveProfile">保存</button>
             <a class="btn btn-outline" href="/site" target="_blank" style="margin-left:12px">预览迷你网站</a>
+          </div>
+
+          <!-- EPC 编码规则 -->
+          <div class="card-item">
+            <div class="card-title">EPC 编码规则</div>
+            <div class="form-row">
+              <div class="form-group"><label>前缀</label><input v-model="bizConfig.epc_prefix" placeholder="E280"></div>
+              <div class="form-group"><label>序号位数（1-8）</label><input v-model.number="bizConfig.seq_bits" type="number" min="1" max="8"></div>
+            </div>
+            <div class="hint">EPC = 前缀 + 分类码 + 序号（十六进制）。例如 E280 + 01 + 00000001</div>
+            <button class="btn btn-gold" @click="saveBizConfig">保存规则</button>
+          </div>
+
+          <!-- 商品分类管理 -->
+          <div class="card-item">
+            <div class="card-title">商品分类管理</div>
+            <table class="data-table" style="margin-bottom:12px">
+              <thead><tr><th>编码</th><th>中文名</th><th>英文名</th><th>排序</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr v-for="c in cats" :key="c.code">
+                  <td class="mono">{{ c.code }}</td>
+                  <td>{{ c.names.zh }}</td>
+                  <td>{{ c.names.en || '—' }}</td>
+                  <td>{{ c.sort_order }}</td>
+                  <td><button class="btn-small" @click="editCat(c)">编辑</button> <button class="btn-small btn-danger" @click="delCat(c.code)">删除</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="form-row">
+              <div class="form-group"><label>编码</label><input v-model="catEdit.code" :disabled="catEditMode==='edit'" placeholder="如 08"></div>
+              <div class="form-group"><label>中文名</label><input v-model="catEdit.names.zh"></div>
+              <div class="form-group"><label>英文名</label><input v-model="catEdit.names.en"></div>
+              <div class="form-group"><label>排序</label><input v-model.number="catEdit.sort_order" type="number"></div>
+            </div>
+            <button class="btn btn-gold" @click="saveCat">{{ catEditMode==='edit' ? '保存修改' : '新增分类' }}</button>
+            <button class="btn btn-outline" v-if="catEditMode==='edit'" @click="resetCatEdit" style="margin-left:8px">取消</button>
           </div>
         </section>
 
@@ -658,7 +714,7 @@
           <div class="form-row"><div class="form-group"><label>成本</label><input v-model.number="sheetData.cost" type="number"></div><div class="form-group"><label>售价</label><input v-model.number="sheetData.price" type="number"></div></div>
           <div class="form-group"><label>证书号</label><input v-model="sheetData.cert"></div>
           <div class="form-row" v-if="sheetMode==='product'"><div class="form-group"><label>状态</label><select v-model="sheetData.status"><option>在库</option><option>已定</option><option>已售</option><option>借出</option></select></div>
-            <div class="form-group"><label>RFID EPC</label><input v-model="sheetData.rfid_epc"></div></div>
+            <div class="form-group"><label>RFID EPC</label><div style="display:flex;gap:6px"><input v-model="sheetData.rfid_epc" style="flex:1"><button type="button" class="btn-small" @click="generateEpc" :disabled="!sheetData.id">生成EPC</button></div></div></div>
           <div class="form-group" v-if="sheetMode==='product'"><label><input type="checkbox" v-model="sheetData.showcase_public" :true-value="1" :false-value="0"> 允许上橱窗</label></div>
           <div class="form-group" v-if="sheetMode==='product'"><label><input type="checkbox" v-model="sheetData.high_value" :true-value="1" :false-value="0"> ⭐ 高价值商品（盘点时未扫到将置顶提醒）</label></div>
         </template>

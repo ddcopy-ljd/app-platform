@@ -1,11 +1,12 @@
 """懿臻珠宝云 · 插件后端（可独立运行）。
 
 独立启动：在本目录执行  python main.py
-默认 http://127.0.0.1:8000  演示账号 admin / 123456
+默认 http://127.0.0.1:8002  演示账号 admin / 123456
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import secrets
@@ -19,6 +20,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 import uvicorn
@@ -34,14 +36,13 @@ FRONTEND_DIR = ROOT / "frontend"
 LOGO_DIR = ROOT / "logo"
 
 HOST = os.environ.get("HOST", "127.0.0.1")
-PORT = int(os.environ.get("PORT", "8000"))
+PORT = int(os.environ.get("PORT", "8002"))
 # 平台启动时注入 TENANT_DB_DIR；独立运行时该变量为空 → 进入 STANDALONE 模式
 MODE = "STANDALONE" if not os.environ.get("TENANT_DB_DIR") else "PLATFORM"
 
 # ---- 软件名称等元数据：统一从 plugin.json 读取，改名只改这一处 ----
 def _load_plugin_meta() -> dict:
     try:
-        import json
         return json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
     except Exception:
         return {}
@@ -56,6 +57,7 @@ FEATURES = [
 ]
 
 app = FastAPI(title=SOFT_NAME, docs_url="/docs", redoc_url=None)
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 _sessions: dict[str, dict] = {}
 _lock = threading.Lock()
@@ -816,11 +818,147 @@ class ProductIn(BaseModel):
     status: str = "在库"
     store_id: int | None = 1
     rfid_epc: str = ""
+    name_i18n: str = "{}"
+    category_code: str = ""
     showcase_public: int = 0
     showcase_order: int = 0
     showcase_desc: str = ""
     origin: str = ""
     high_value: int = 0
+
+
+# ---------------------------------------------------------------- 语言 / 业务配置 / 分类
+
+@app.get("/api/languages")
+def language_list(request: Request):
+    _require_auth(request)
+    with _db(request) as conn:
+        rows = conn.execute("SELECT code,name,is_default,sort_order FROM languages ORDER BY sort_order").fetchall()
+        return [{"code": r[0], "name": r[1], "is_default": bool(r[2]), "sort_order": r[3]} for r in rows]
+
+
+@app.get("/api/biz-config")
+def biz_config_get(request: Request):
+    _require_auth(request)
+    with _db(request) as conn:
+        r = conn.execute("SELECT epc_prefix,seq_bits FROM biz_config WHERE id=1").fetchone()
+        if not r:
+            conn.execute("INSERT OR IGNORE INTO biz_config(id,epc_prefix,seq_bits) VALUES(1,'E280',8)")
+            conn.commit()
+            r = ("E280", 8)
+        return {"epc_prefix": r[0], "seq_bits": r[1]}
+
+
+class BizConfigUpdate(BaseModel):
+    epc_prefix: str
+    seq_bits: int = 8
+
+
+@app.put("/api/biz-config")
+def biz_config_update(request: Request, body: BizConfigUpdate):
+    _require_auth(request)
+    prefix = (body.epc_prefix or "").strip().upper()
+    if not prefix:
+        raise HTTPException(400, "EPC 前缀不能为空")
+    if not (1 <= body.seq_bits <= 8):
+        raise HTTPException(400, "序号位数需在 1~8 之间")
+    with _db(request) as conn:
+        conn.execute(
+            "INSERT INTO biz_config(id,epc_prefix,seq_bits) VALUES(1,?,?) "
+            "ON CONFLICT(id) DO UPDATE SET epc_prefix=excluded.epc_prefix, seq_bits=excluded.seq_bits",
+            (prefix, body.seq_bits),
+        )
+        conn.commit()
+    return {"ok": True}
+
+
+@app.get("/api/categories")
+def category_list(request: Request):
+    _require_auth(request)
+    with _db(request) as conn:
+        rows = conn.execute("SELECT code,names,sort_order FROM categories ORDER BY sort_order,code").fetchall()
+        return [{"code": r[0], "names": json.loads(r[1] or "{}"), "sort_order": r[2]} for r in rows]
+
+
+class CategoryUpdate(BaseModel):
+    code: str = ""
+    names: dict = Field(default_factory=dict)
+    sort_order: int = 0
+
+
+@app.post("/api/categories")
+def category_create(request: Request, body: CategoryUpdate):
+    _require_auth(request)
+    code = (body.code or "").strip()
+    if not code:
+        raise HTTPException(400, "分类编码不能为空")
+    if not (body.names.get("zh") or body.names.get("en")):
+        raise HTTPException(400, "至少填写中文或英文名称")
+    with _db(request) as conn:
+        if conn.execute("SELECT 1 FROM categories WHERE code=?", (code,)).fetchone():
+            raise HTTPException(400, "分类编码已存在")
+        conn.execute(
+            "INSERT INTO categories(code,names,sort_order) VALUES(?,?,?)",
+            (code, json.dumps(body.names, ensure_ascii=False), body.sort_order),
+        )
+        conn.commit()
+    return {"ok": True, "code": code}
+
+
+@app.put("/api/categories/{code}")
+def category_update(request: Request, code: str, body: CategoryUpdate):
+    _require_auth(request)
+    if not (body.names.get("zh") or body.names.get("en")):
+        raise HTTPException(400, "至少填写中文或英文名称")
+    with _db(request) as conn:
+        if not conn.execute("SELECT 1 FROM categories WHERE code=?", (code,)).fetchone():
+            raise HTTPException(404, "分类不存在")
+        conn.execute(
+            "UPDATE categories SET names=?, sort_order=? WHERE code=?",
+            (json.dumps(body.names, ensure_ascii=False), body.sort_order, code),
+        )
+        conn.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/categories/{code}")
+def category_delete(request: Request, code: str):
+    _require_auth(request)
+    with _db(request) as conn:
+        used = conn.execute("SELECT COUNT(*) FROM products WHERE category_code=?", (code,)).fetchone()[0]
+        if used:
+            raise HTTPException(400, f"该分类下仍有 {used} 件商品，不能删除")
+        conn.execute("DELETE FROM categories WHERE code=?", (code,))
+        conn.commit()
+    return {"ok": True}
+
+
+@app.post("/api/products/{pid}/generate-epc")
+def product_generate_epc(pid: int, request: Request):
+    """按 EPC 前缀+分类码+递增序号 生成并回写 RFID EPC。"""
+    _require_auth(request)
+    with _db(request) as conn:
+        cfg = conn.execute("SELECT epc_prefix,seq_bits FROM biz_config WHERE id=1").fetchone()
+        prefix, seq_bits = (cfg[0], cfg[1]) if cfg else ("E280", 8)
+        p = conn.execute("SELECT category_code, rfid_epc FROM products WHERE id=?", (pid,)).fetchone()
+        if not p:
+            raise HTTPException(404, "商品不存在")
+        if p["rfid_epc"]:
+            return {"ok": True, "epc": p["rfid_epc"], "reused": True}
+        cat_code = p["category_code"] or "00"
+        like = f"{prefix}{cat_code}%"
+        row = conn.execute(
+            "SELECT MAX(CAST(SUBSTR(rfid_epc, ?) AS INTEGER)) FROM products WHERE rfid_epc LIKE ?",
+            (len(prefix) + len(cat_code) + 1, like),
+        ).fetchone()
+        seq = (row[0] or 0) + 1
+        max_seq = 16 ** seq_bits - 1
+        if seq > max_seq:
+            raise HTTPException(400, "该分类序号已用尽，请调大序号位数")
+        epc = f"{prefix}{cat_code}{seq:0{seq_bits}X}"
+        conn.execute("UPDATE products SET rfid_epc=? WHERE id=?", (epc, pid))
+        conn.commit()
+        return {"ok": True, "epc": epc, "seq": seq}
 
 
 @app.get("/api/products")
@@ -873,10 +1011,10 @@ def product_create(body: ProductIn, request: Request):
             raise HTTPException(400, "商品编码已存在")
         epc = body.rfid_epc or ""
         cur = conn.execute(
-            """INSERT INTO products(code,name,category,material,weight,size,cert,cost,price,status,store_id,rfid_epc,
+            """INSERT INTO products(code,name,name_i18n,category,category_code,material,weight,size,cert,cost,price,status,store_id,rfid_epc,
                                      showcase_public,showcase_order,showcase_desc,origin,high_value)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (body.code, body.name, body.category, body.material, body.weight, body.size, body.cert,
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (body.code, body.name, body.name_i18n, body.category, body.category_code, body.material, body.weight, body.size, body.cert,
              body.cost, body.price, body.status, body.store_id, epc,
              body.showcase_public, body.showcase_order, body.showcase_desc, body.origin, body.high_value),
         )
@@ -896,10 +1034,10 @@ def product_update(pid: int, body: ProductIn, request: Request):
         if conn.execute("SELECT 1 FROM products WHERE code=? AND id<>?", (body.code, pid)).fetchone():
             raise HTTPException(400, "商品编码已存在")
         conn.execute(
-            """UPDATE products SET code=?,name=?,category=?,material=?,weight=?,size=?,cert=?,
+            """UPDATE products SET code=?,name=?,name_i18n=?,category=?,category_code=?,material=?,weight=?,size=?,cert=?,
                cost=?,price=?,status=?,store_id=?,rfid_epc=?,showcase_public=?,
                showcase_order=?,showcase_desc=?,origin=?,high_value=? WHERE id=?""",
-            (body.code, body.name, body.category, body.material, body.weight, body.size, body.cert,
+            (body.code, body.name, body.name_i18n, body.category, body.category_code, body.material, body.weight, body.size, body.cert,
              body.cost, body.price, body.status, body.store_id, body.rfid_epc, body.showcase_public,
              body.showcase_order, body.showcase_desc, body.origin, body.high_value, pid),
         )

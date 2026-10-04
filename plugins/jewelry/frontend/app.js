@@ -24,6 +24,8 @@ var ST = Vue.reactive({
   // data
   dashData: null, trendData: null, remindData: null, showRemind: true, catSales: null,
   products: [], prodTotal: 0, prodCat: '', prodQ: '',
+  cats: [], bizConfig: { epc_prefix: 'E280', seq_bits: 8 }, languages: [],
+  catEdit: { code: '', names: { zh: '', en: '' }, sort_order: 0 }, catEditMode: 'new',
   deposits: [], depTotal: 0,
   sales: [], saleTotal: 0,
   subList: [], subTotal: 0, subPage: 1,
@@ -114,6 +116,17 @@ var SUB_TITLES = {
   purchases: 'nav.purchases', outsourcings: 'nav.outsourcings', logs: 'nav.logs'
 };
 var CATS = ['黄金', '钻石', '铂金', '翡翠', '彩宝', '其他'];
+
+// 根据分类中文名取 code
+function catCodeByName(name) {
+  var c = (ST.cats || []).find(function (x) { return (x.names && x.names.zh) === name; });
+  return c ? c.code : '';
+}
+// 根据 code 取中文名
+function catNameByCode(code) {
+  var c = (ST.cats || []).find(function (x) { return x.code === code; });
+  return c && c.names ? (c.names.zh || c.code) : (code || '');
+}
 
 // ---- computed-like getters ----
 function filteredProducts() {
@@ -217,6 +230,9 @@ function refreshAll() {
   api('GET', '/api/deposits?page=1&size=100').then(function (r) { ST.deposits = r.items; ST.depTotal = r.total; }).catch(function () {});
   api('GET', '/api/sales?page=1&size=100').then(function (r) { ST.sales = r.items; ST.saleTotal = r.total; }).catch(function () {});
   api('GET', '/api/products/options?status=在库').then(function (r) { ST.stockOptions = r.items; }).catch(function () {});
+  api('GET', '/api/categories').then(function (r) { ST.cats = r || []; }).catch(function () {});
+  api('GET', '/api/biz-config').then(function (r) { ST.bizConfig = r; }).catch(function () {});
+  api('GET', '/api/languages').then(function (r) { ST.languages = r || []; }).catch(function () {});
 }
 
 function loadSubList() {
@@ -305,6 +321,55 @@ function printLabel(p) {
   }).catch(function (e) { toast(e.message, 'error'); });
 }
 
+// 为已有商品按「前缀+分类码+序号」生成 EPC（编辑态使用）
+function generateEpc() {
+  var d = ST.sheetData;
+  if (!d || !d.id) { toast(t('toast.saveFirst'), 'error'); return; }
+  api('POST', '/api/products/' + d.id + '/generate-epc').then(function (r) {
+    d.rfid_epc = r.epc;
+    toast((r.reused ? t('toast.epcReused') : t('toast.epcGenOk')) + ' ' + r.epc);
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+
+// ---------------- 店铺资料：分类管理 ----------------
+function resetCatEdit() {
+  ST.catEdit = { code: '', names: { zh: '', en: '' }, sort_order: (ST.cats || []).length + 1 };
+  ST.catEditMode = 'new';
+}
+function editCat(c) {
+  ST.catEditMode = 'edit';
+  ST.catEdit = { code: c.code, names: Object.assign({}, c.names || { zh: '', en: '' }), sort_order: c.sort_order || 0 };
+}
+function saveCat() {
+  var ce = ST.catEdit;
+  if (!ce.code.trim()) { toast(t('toast.fillCatCode'), 'error'); return; }
+  if (!(ce.names.zh || ce.names.en)) { toast(t('toast.fillCatName'), 'error'); return; }
+  var body = { code: ce.code.trim(), names: { zh: ce.names.zh || '', en: ce.names.en || '' }, sort_order: Number(ce.sort_order) || 0 };
+  var method = ST.catEditMode === 'edit' ? 'PUT' : 'POST';
+  var url = ST.catEditMode === 'edit' ? '/api/categories/' + ce.code : '/api/categories';
+  api(method, url, body).then(function () {
+    toast(t('toast.saveOk'));
+    resetCatEdit();
+    api('GET', '/api/categories').then(function (r) { ST.cats = r || []; });
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+function delCat(code) {
+  if (!confirm('Delete category ' + code + '?')) return;
+  api('DELETE', '/api/categories/' + code).then(function () {
+    toast(t('toast.delOk'));
+    api('GET', '/api/categories').then(function (r) { ST.cats = r || []; });
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+
+// ---------------- 店铺资料：EPC 规则 ----------------
+function saveBizConfig() {
+  var cfg = ST.bizConfig;
+  api('PUT', '/api/biz-config', { epc_prefix: (cfg.epc_prefix || '').trim().toUpperCase(), seq_bits: Number(cfg.seq_bits) || 8 }).then(function () {
+    toast(t('toast.saveOk'));
+    api('GET', '/api/biz-config').then(function (r) { ST.bizConfig = r; });
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+
 function quickSale() {
   if (checkFrozen()) return;
   openSheet('sale', t('sheet.sale'), { customer: '', phone: '', product: '', product_id: null, amount: '', paid: 0, method: '现金', biz_date: new Date().toISOString().slice(0, 10) });
@@ -377,7 +442,7 @@ function submitSheet() {
     if (!d.code || !d.name) { toast(t('toast.fillCode'), 'error'); return; }
     var m2 = d.id ? 'PUT' : 'POST';
     var u2 = d.id ? '/api/products/' + d.id : '/api/products';
-    api(m2, u2, { code: d.code || '', name: d.name || '', category: d.category || '黄金', material: d.material || '', weight: Number(d.weight) || 0, size: d.size || '', cert: d.cert || '', cost: Number(d.cost) || 0, price: Number(d.price) || 0, status: d.status || '在库', rfid_epc: d.rfid_epc || '', showcase_public: d.showcase_public || 0, high_value: d.high_value || 0 }).then(function () {
+    api(m2, u2, { code: d.code || '', name: d.name || '', category: d.category || '黄金', category_code: catCodeByName(d.category) || d.category_code || '', name_i18n: d.name_i18n || '{}', material: d.material || '', weight: Number(d.weight) || 0, size: d.size || '', cert: d.cert || '', cost: Number(d.cost) || 0, price: Number(d.price) || 0, status: d.status || '在库', rfid_epc: d.rfid_epc || '', showcase_public: d.showcase_public || 0, high_value: d.high_value || 0 }).then(function () {
       toast(t('toast.saveOk')); closeSheet(); refreshAll();
     }).catch(function (e) { toast(e.message, 'error'); });
   } else if (ST.sheetMode === 'inbound') {
@@ -654,7 +719,10 @@ var app = Vue.createApp({
     subTitle: subTitle,
     exportHref: exportHref,
     nav: function () { return NAV_ITEMS; },
-    cats: function () { return CATS; },
+    cats: function () {
+      var list = (ST.cats || []).map(function (c) { return (c.names && c.names.zh) || c.code; });
+      return list.length ? list : CATS;
+    },
     FIELD_LABELS: function () { return FIELD_LABELS; },
   },
   methods: {
@@ -665,7 +733,10 @@ var app = Vue.createApp({
     openSheet: openSheet, closeSheet: closeSheet, submitSheet: submitSheet,
     onPickProduct: onPickProduct,
     addProduct: addProduct, editProduct: editProduct, delProduct: delProduct, printLabel: printLabel,
-    copyProduct: copyProduct,
+    copyProduct: copyProduct, generateEpc: generateEpc,
+    catNameByCode: catNameByCode, catCodeByName: catCodeByName,
+    resetCatEdit: resetCatEdit, editCat: editCat, saveCat: saveCat, delCat: delCat,
+    saveBizConfig: saveBizConfig,
     openInbound: openInbound, copyInbound: copyInbound, openRfid: openRfid, doRfid: doRfid,
     openLabelPrint: openLabelPrint, removeLabelItem: removeLabelItem, closeLabel: closeLabel,
     submitLabelPrint: submitLabelPrint,
