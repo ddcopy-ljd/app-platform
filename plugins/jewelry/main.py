@@ -38,12 +38,24 @@ PORT = int(os.environ.get("PORT", "8000"))
 # 平台启动时注入 TENANT_DB_DIR；独立运行时该变量为空 → 进入 STANDALONE 模式
 MODE = "STANDALONE" if not os.environ.get("TENANT_DB_DIR") else "PLATFORM"
 
+# ---- 软件名称等元数据：统一从 plugin.json 读取，改名只改这一处 ----
+def _load_plugin_meta() -> dict:
+    try:
+        import json
+        return json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+PLUGIN_META = _load_plugin_meta()
+SOFT_NAME = PLUGIN_META.get("name", "懿臻珠宝云")
+SOFT_VERSION = PLUGIN_META.get("softwareVersion", "1.0.0")
+
 FEATURES = [
     "products", "inventory", "sales", "deposits", "loans", "customers",
     "repairs", "purchases", "outsourcings", "rfid", "labels", "site", "logs",
 ]
 
-app = FastAPI(title="懿臻珠宝云", docs_url="/docs", redoc_url=None)
+app = FastAPI(title=SOFT_NAME, docs_url="/docs", redoc_url=None)
 
 _sessions: dict[str, dict] = {}
 _lock = threading.Lock()
@@ -176,7 +188,7 @@ def _gen_epc(code: str) -> str:
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "name": "懿臻珠宝云", "mode": MODE, "version": "1.0.0"}
+    return {"ok": True, "name": SOFT_NAME, "mode": MODE, "version": SOFT_VERSION}
 
 
 @app.get("/")
@@ -703,6 +715,24 @@ def dashboard_trend(request: Request):
         return {"months": [r["m"] for r in rows], "amounts": [round(r["a"], 2) for r in rows]}
 
 
+@app.get("/api/dashboard/category-sales")
+def dashboard_category_sales(request: Request):
+    """近6个月各品类销售额占比（与趋势图同口径，未关联档案的销售计入「其他」）。"""
+    _require_auth(request)
+    with _db(request) as conn:
+        rows = conn.execute("""
+            SELECT COALESCE(p.category, '其他') cat, COALESCE(SUM(s.amount),0) a, COUNT(*) n
+            FROM sales s LEFT JOIN products p ON p.id = s.product_id
+            WHERE s.status!='已冲红' AND s.biz_date >= date('now','start of month','-5 months')
+            GROUP BY cat ORDER BY a DESC
+        """).fetchall()
+        total = sum(r["a"] for r in rows) or 1
+        return {"items": [
+            {"category": r["cat"], "amount": round(r["a"], 2), "count": r["n"], "pct": round(r["a"] * 100 / total, 1)}
+            for r in rows
+        ]}
+
+
 @app.get("/api/dashboard/reminders")
 def dashboard_reminders(request: Request):
     _require_auth(request)
@@ -1004,7 +1034,6 @@ def rfid_scan(body: RfidScanIn, request: Request):
             epcs = list(book_map.keys())
         scanned = []
         seen = set()
-        surplus = []
         for epc in epcs:
             if epc in seen:
                 continue
@@ -1013,21 +1042,20 @@ def rfid_scan(body: RfidScanIn, request: Request):
             if epc in book_map:
                 p = book_map[epc]
                 scanned.append({"epc": epc, "product": p["name"], "code": p["code"], "status": p["status"], "result": "账实相符"})
-            else:
-                surplus.append({"epc": epc, "product": "", "code": "", "status": "", "result": "盘盈"})
+            # 未登记标签（盘盈）：不再记录入库，直接忽略
         shortage = []
         for epc, p in book_map.items():
             if epc not in seen:
                 shortage.append({"epc": epc, "product": p["name"], "code": p["code"], "status": p["status"], "result": "盘亏"})
         conn.commit()
-        _log(conn, op["username"], "RFID隔空盘点", f"感应{len(seen)} 盘盈{len(surplus)} 盘亏{len(shortage)}")
+        _log(conn, op["username"], "RFID隔空盘点", f"感应{len(seen)} 盘亏{len(shortage)}")
         return {
             "scannedCount": len(seen),
             "bookCount": len(book_map),
             "matched": scanned,
-            "surplus": surplus,
+            "surplus": [],
             "shortage": shortage,
-            "items": scanned + surplus + shortage,
+            "items": scanned + shortage,
         }
 
 
@@ -1138,7 +1166,7 @@ def _run_stocktake(conn: sqlite3.Connection, epcs: list[str], device: str, opera
         read_count[e] = read_count.get(e, 0) + 1
     seen = list(dict.fromkeys(epcs))
 
-    matched, surplus, shortage, abnormal = [], [], [], []
+    matched, shortage, abnormal = [], [], []
     for epc in seen:
         dup = read_count[epc] - 1
         if epc in book_map:
@@ -1149,9 +1177,7 @@ def _run_stocktake(conn: sqlite3.Connection, epcs: list[str], device: str, opera
             p = all_map[epc]
             abnormal.append({"epc": epc, "code": p["code"], "product": p["name"],
                              "book_status": p["status"], "result": f"异常（{p['status']}仍出现）", "dup_count": dup})
-        else:
-            surplus.append({"epc": epc, "code": "", "product": "",
-                            "book_status": "", "result": "盘盈（未登记标签）", "dup_count": dup})
+        # 未登记标签（盘盈）：不再记录入库/批次，直接忽略
     for epc, p in book_map.items():
         if epc not in seen:
             shortage.append({"epc": epc, "code": p["code"], "product": p["name"],
@@ -1161,13 +1187,13 @@ def _run_stocktake(conn: sqlite3.Connection, epcs: list[str], device: str, opera
     cur = conn.execute(
         """INSERT INTO stocktakes(batch_no,device,scanned_count,book_count,matched_count,
                                   surplus_count,shortage_count,abnormal_count,dup_count,operator)
-           VALUES(?,?,?,?,?,?,?,?,?,?)""",
+           VALUES(?,?,?,?,?,0,?,?,?,?)""",
         (batch_no, device, len(seen), len(book_map), len(matched),
-         len(surplus), len(shortage), len(abnormal),
+         len(shortage), len(abnormal),
          sum(v - 1 for v in read_count.values() if v > 1), operator),
     )
     sid = cur.lastrowid
-    for it in matched + surplus + shortage + abnormal:
+    for it in matched + shortage + abnormal:
         conn.execute(
             """INSERT INTO stocktake_items(stocktake_id,result,epc,product_id,code,product,book_status,dup_count)
                VALUES(?,?,?,?,?,?,?,?)""",
@@ -1179,14 +1205,14 @@ def _run_stocktake(conn: sqlite3.Connection, epcs: list[str], device: str, opera
             _inv(conn, book_map[it["epc"]]["id"], it["epc"], "scan", operator)
     conn.commit()
     _log(conn, operator, "RFID批量盘点",
-         f"{batch_no} 扫描{len(seen)} 盘盈{len(surplus)} 盘亏{len(shortage)} 异常{len(abnormal)}")
-    items = matched + abnormal + surplus + shortage
+         f"{batch_no} 扫描{len(seen)} 盘亏{len(shortage)} 异常{len(abnormal)}")
+    items = matched + abnormal + shortage
     return {
         "id": sid, "batch_no": batch_no, "device": device,
         "scannedCount": len(seen), "bookCount": len(book_map),
-        "matchedCount": len(matched), "surplusCount": len(surplus),
+        "matchedCount": len(matched), "surplusCount": 0,
         "shortageCount": len(shortage), "abnormalCount": len(abnormal),
-        "matched": matched, "surplus": surplus, "shortage": shortage, "abnormal": abnormal,
+        "matched": matched, "surplus": [], "shortage": shortage, "abnormal": abnormal,
         "items": items,
     }
 
@@ -1518,6 +1544,14 @@ def _session_by_key(key: str, conn: sqlite3.Connection):
     return s
 
 
+def _session_live(key: str, conn: sqlite3.Connection):
+    """仅进行中/待核对任务允许数据交互；已结束任务的 key 立即失效（403），手持机据此清空任务态。"""
+    s = _session_by_key(key, conn)
+    if s["status"] not in ("进行中", "待核对"):
+        raise HTTPException(403, "盘点任务已结束，请重新扫描任务二维码")
+    return s
+
+
 def _device_heartbeat(conn: sqlite3.Connection, sid: int, device_key: str, name: str):
     """注册/续期设备并分配临时编号，返回 (device_no, finished)。"""
     row = conn.execute(
@@ -1558,7 +1592,7 @@ def co_join(key: str, body: CoJoinIn):
 def co_snapshot(key: str, device: str = ""):
     """下发本店在库商品全量快照，手持机据此本地实时比对。"""
     with _db_for_tenant_key(key) as conn:
-        s = _session_by_key(key, conn)
+        s = _session_live(key, conn)
         rows = conn.execute(
             "SELECT code,name,rfid_epc epc,status,COALESCE(high_value,0) high_value FROM products "
             "WHERE rfid_epc!='' AND status IN ('在库','已定','借出')"
@@ -1610,7 +1644,7 @@ def co_pull(key: str, device: str = "", since_id: int = 0):
     """增量拉取其他设备新扫到的标签（id 大于 since_id）。"""
     device_key = (device or "anon").strip()
     with _db_for_tenant_key(key) as conn:
-        s = _session_by_key(key, conn)
+        s = _session_live(key, conn)
         conn.execute(
             "UPDATE stocktake_devices SET last_seen=datetime('now','localtime') "
             "WHERE session_id=? AND device_key=?", (s["id"], device_key))

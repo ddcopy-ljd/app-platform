@@ -16,12 +16,13 @@ function isPcLayout() {
 // ---- 响应式状态 ----
 var ST = Vue.reactive({
   token: '', user: null, mode: 'NORMAL', tenant: '',
+  softName: '懿臻珠宝云',   // 软件名：启动时从 /api/health 拉取（源自 plugin.json），此处仅为兜底
   tab: 'dashboard', subView: '',
   isPc: isPcLayout(),
   lang: currentLang, langKeys: LANG_KEYS, langLabels: LANG_LABELS,
   loginUser: 'admin', loginPwd: '123456',
   // data
-  dashData: null, trendData: null, remindData: null, showRemind: true,
+  dashData: null, trendData: null, remindData: null, showRemind: true, catSales: null,
   products: [], prodTotal: 0, prodCat: '', prodQ: '',
   deposits: [], depTotal: 0,
   sales: [], saleTotal: 0,
@@ -44,9 +45,14 @@ var ST = Vue.reactive({
   writeEpc: true, labelCopies: 1, labelFont: 'E:SIMSUN.FNT',
   simulatePrint: false, labelBusy: false, labelResult: null,
   // 盘点批次历史（协同盘点结果）
-  stockBatches: [], stockDetail: null,
+  stockBatches: [], stockDetail: null, batchProd: null,
   coTask: null, coTaskHost: '', coBusy: false, coTimer: null,
+  invSub: 'stock',              // 库存页子页签：stock=在库商品，count=库存盘点
+  invQ: '',                     // 在库商品搜索词
+  _coTaskSeen: false,           // 内部标记：任务是否已被自动切换过（防止定时器反复把用户拽回盘点页签）
   coQrUrl: '', _qrFor: 0, _coQrObj: '',
+  // 复制入库高亮（flashIds 中的商品 ID 列表，3.5s 后自动移除）
+  flashIds: [],
   // toast
   toast: { show: false, text: '', type: 'success' },
 });
@@ -131,6 +137,34 @@ function todoCount() {
          (ST.remindData.repairsPending || []).length;
 }
 
+// 库存页「在库商品」列表：在库 + 名称/编码/EPC 过滤
+function invStockList() {
+  var list = (ST.products || []).filter(function (p) { return p.status === '在库'; });
+  if (ST.invQ) {
+    var q = ST.invQ.toLowerCase();
+    list = list.filter(function (p) {
+      return (p.name && p.name.toLowerCase().indexOf(q) >= 0) ||
+             (p.code && p.code.toLowerCase().indexOf(q) >= 0) ||
+             (p.rfid_epc && p.rfid_epc.toLowerCase().indexOf(q) >= 0);
+    });
+  }
+  return list;
+}
+
+// ---- 全局盘点冻结状态 ----
+// 协同盘点任务存在（进行中/待核对）时，全店销售与出入库冻结。
+// 后端在接口层强制拦截（400），前端读取 ST.coTask 统一屏蔽相关入口。
+function isFrozen() { return !!ST.coTask; }
+
+// 拦截守卫：返回 true 表示已冻结，调用方应直接 return
+function checkFrozen() {
+  if (!ST.coTask) return false;
+  toast(t('inv.frozenBlock'), 'error');
+  ST.tab = 'inventory'; ST.subView = ''; ST.invSub = 'count';
+  loadInv(); loadStockBatches();
+  return true;
+}
+
 function currentTitle() {
   var item = NAV_ITEMS.find(function (n) { return n.id === ST.tab; });
   return item ? t(item.key) : '';
@@ -172,11 +206,13 @@ function openSubView(name) {
 function loadDash() {
   api('GET', '/api/dashboard/overview').then(function (r) { ST.dashData = r; }).catch(function () {});
   api('GET', '/api/dashboard/trend').then(function (r) { ST.trendData = r; }).catch(function () {});
+  api('GET', '/api/dashboard/category-sales').then(function (r) { ST.catSales = r; }).catch(function () {});
   api('GET', '/api/dashboard/reminders').then(function (r) { ST.remindData = r; }).catch(function () {});
 }
 
 function refreshAll() {
   loadDash();
+  loadCoTask();   // 全局同步盘点冻结状态，各页面据此屏蔽出入库操作
   api('GET', '/api/products?page=1&size=200').then(function (r) { ST.products = r.items; ST.prodTotal = r.total; }).catch(function () {});
   api('GET', '/api/deposits?page=1&size=100').then(function (r) { ST.deposits = r.items; ST.depTotal = r.total; }).catch(function () {});
   api('GET', '/api/sales?page=1&size=100').then(function (r) { ST.sales = r.items; ST.saleTotal = r.total; }).catch(function () {});
@@ -230,18 +266,33 @@ function openSheet(mode, title, data) {
 function closeSheet() { ST.sheetMode = ''; ST.sheetData = {}; }
 
 function openInbound() {
+  if (checkFrozen()) return;
   openSheet('inbound', t('sheet.inbound'), { code: '', name: '', category: '黄金', material: '', weight: 0, size: '', cert: '', cost: 0, price: 0, rfid_epc: '', biz_date: new Date().toISOString().slice(0, 10) });
 }
 
 function addProduct() {
+  if (checkFrozen()) return;
   openSheet('product', t('sheet.product'), { code: '', name: '', category: '黄金', material: '', weight: 0, size: '', cert: '', cost: 0, price: 0, status: '在库', rfid_epc: '', showcase_public: 0, high_value: 0 });
 }
 
 function editProduct(p) {
+  if (checkFrozen()) return;
   openSheet('product', t('sheet.product'), Object.assign({}, p));
 }
 
+// 复制新增：以现有商品为模板预填表单，编码/EPC 留空，保存即建档新品
+function copyProduct(p) {
+  if (checkFrozen()) return;
+  var d = Object.assign({}, p);
+  delete d.id;
+  d.code = '';
+  d.rfid_epc = '';
+  openSheet('product', t('act.copyNew') + ' - ' + (p.name || ''), d);
+  toast(t('act.copyNew') + ': ' + t('toast.fillCode'), 'info');
+}
+
 function delProduct(pid) {
+  if (checkFrozen()) return;
   if (!confirm('Delete?')) return;
   api('DELETE', '/api/products/' + pid).then(function () { toast(t('toast.delOk')); refreshAll(); }).catch(function (e) { toast(e.message, 'error'); });
 }
@@ -255,14 +306,17 @@ function printLabel(p) {
 }
 
 function quickSale() {
+  if (checkFrozen()) return;
   openSheet('sale', t('sheet.sale'), { customer: '', phone: '', product: '', product_id: null, amount: '', paid: 0, method: '现金', biz_date: new Date().toISOString().slice(0, 10) });
 }
 
 function openDeposit() {
+  if (checkFrozen()) return;
   openSheet('deposit', t('sheet.deposit'), { customer: '', phone: '', product: '', product_id: null, total: 0, deposit: 0, balance: 0, promised_date: '', reminder_days: 7 });
 }
 
 function openLoan() {
+  if (checkFrozen()) return;
   openSheet('loan', t('sheet.loan'), { direction: 'out', product: '', code: '', party: '', qty: 1, loan_date: new Date().toISOString().slice(0, 10), due_date: '' });
 }
 
@@ -301,8 +355,12 @@ function onPickProduct() {
 }
 
 // ---- submit ----
+// 盘点冻结期间禁止提交的表单类型（开单/收定金/建档/入库/借货）
+var FROZEN_SHEETS = { sale: 1, deposit: 1, product: 1, inbound: 1, loan: 1 };
+
 function submitSheet() {
   var d = ST.sheetData;
+  if (FROZEN_SHEETS[ST.sheetMode] && checkFrozen()) { closeSheet(); return; }
   if (ST.sheetMode === 'sale') {
     if (!d.customer && !d.phone) { toast(t('toast.fillCustomer'), 'error'); return; }
     if (!d.product && !d.product_id) { toast(t('toast.fillProduct'), 'error'); return; }
@@ -361,33 +419,47 @@ function submitSheet() {
 
 // ---- actions ----
 function voidSale(s) {
+  if (checkFrozen()) return;
   if (!confirm(t('act.void') + '?')) return;
   api('POST', '/api/sales/' + s.id + '/void').then(function () { toast(t('toast.voidOk')); refreshAll(); }).catch(function (e) { toast(e.message, 'error'); });
 }
 
 function payDeposit(d) {
+  if (checkFrozen()) return;
   if (!confirm(t('act.payBal') + '?')) return;
   api('POST', '/api/deposits/' + d.id + '/pay').then(function (r) { toast(t('toast.payOk') + ' ' + r.bill_no); refreshAll(); }).catch(function (e) { toast(e.message, 'error'); });
 }
 
 function voidDeposit(d) {
+  if (checkFrozen()) return;
   if (!confirm(t('act.void') + '?')) return;
   api('POST', '/api/deposits/' + d.id + '/void').then(function () { toast(t('toast.voidOk')); refreshAll(); }).catch(function (e) { toast(e.message, 'error'); });
 }
 
 function returnLoan(d) {
+  if (checkFrozen()) return;
   api('POST', '/api/loans/' + d.id + '/return').then(function () { toast(t('toast.returnOk')); loadSubList(); refreshAll(); }).catch(function (e) { toast(e.message, 'error'); });
 }
 
 function copyInbound(pid) {
-  api('POST', '/api/inventory/copy/' + pid).then(function (r) { toast(t('toast.saveOk') + ' ' + r.code); refreshAll(); loadInv(); }).catch(function (e) { toast(e.message, 'error'); });
+  if (checkFrozen()) return;
+  api('POST', '/api/inventory/copy/' + pid).then(function (r) {
+    ST.flashIds.push(r.id);
+    setTimeout(function () {
+      var i = ST.flashIds.indexOf(r.id);
+      if (i >= 0) ST.flashIds.splice(i, 1);
+    }, 3500);
+    toast(t('toast.saveOk') + ' ' + r.code); refreshAll(); loadInv();
+  }).catch(function (e) { toast(e.message, 'error'); });
 }
 
 function receivePurchase(d) {
+  if (checkFrozen()) return;
   api('POST', '/api/purchases/' + d.id + '/receive').then(function (r) { toast(t('toast.receiveOk') + ' ' + r.code); refreshAll(); loadSubList(); }).catch(function (e) { toast(e.message, 'error'); });
 }
 
 function receiveOut(d) {
+  if (checkFrozen()) return;
   api('POST', '/api/outsourcings/' + d.id + '/receive').then(function (r) { toast(t('toast.receiveOk') + ' ' + r.code + ' ￥' + fmt(r.cost)); refreshAll(); loadSubList(); }).catch(function (e) { toast(e.message, 'error'); });
 }
 
@@ -470,6 +542,12 @@ function loadStockBatches() {
 function viewStockBatch(b) {
   api('GET', '/api/stocktake/' + b.id).then(function (r) { ST.stockDetail = r; }).catch(function (e) { toast(e.message, 'error'); });
 }
+// 批次明细中点击商品：拉取商品档案查看详情（盘盈/异常项可能无档案）
+function viewBatchProduct(it) {
+  if (!it.product_id) { toast(t('toast.noProdFile'), 'error'); return; }
+  api('GET', '/api/products/' + it.product_id).then(function (p) { ST.batchProd = p; })
+    .catch(function () { toast(t('toast.noProdFile'), 'error'); });
+}
 
 // ---- 多终端协同盘点 ----
 function startCoTask() {
@@ -478,21 +556,26 @@ function startCoTask() {
   api('POST', '/api/stocktake/task/start', { host: ST.coTaskHost || '' }).then(function (r) {
     ST.coTask = r;
     loadCoQr(r.id);
-    toast('协同盘点任务已开启，请手持机扫码加入');
+    toast('盘点任务已开启，请手持机扫码加入');
     ensureCoTimer();
   }).catch(function (e) { toast(e.message, 'error'); })
    .finally(function () { ST.coBusy = false; });
 }
 function loadCoTask() {
   api('GET', '/api/stocktake/task/active').then(function (r) {
-    if (r && r.active) { ST.coTask = r; ensureCoTimer(); loadCoQr(r.id); }
+    if (r && r.active) {
+      ST.coTask = r; ensureCoTimer(); loadCoQr(r.id);
+      // 任务刚出现（从无到有）时自动切到盘点页签一次，用户手动切走则不再打扰
+      if (!ST._coTaskSeen && ST.tab === 'inventory') { ST.invSub = 'count'; }
+      ST._coTaskSeen = true;
+    }
     else { clearCoTask(); }
   }).catch(function () {});
 }
 function clearCoTask() {
   if (ST._coQrObj) { try { URL.revokeObjectURL(ST._coQrObj); } catch (e) {} }
   ST._coQrObj = ''; ST._qrFor = 0; ST.coQrUrl = '';
-  ST.coTask = null; clearCoTimer();
+  ST.coTask = null; ST._coTaskSeen = false; clearCoTimer();
 }
 // 二维码接口需要登录态，<img> 无法带 Authorization 头，故用带 token 的 fetch 取 SVG 再转 blob 显示。
 function loadCoQr(id) {
@@ -512,7 +595,7 @@ function loadCoQr(id) {
 }
 function endCoTask() {
   if (!ST.coTask) return;
-  if (!confirm('确定结束扫描阶段？系统将合并所有手持机数据并核对差异（销售仍暂停）。')) return;
+  if (!confirm('确定结束扫描？\n\n结束后：手持机停止上传，系统合并各设备扫描结果并生成差异（相符/盘亏/异常）供你核对。\n注意：销售与出入库仍然冻结，核对无误后需再点【核对确认，解除销售冻结】才会恢复营业。')) return;
   ST.coBusy = true;
   api('POST', '/api/stocktake/task/' + ST.coTask.id + '/end', {}).then(function () {
     toast('已核对，请查看差异并确认'); loadCoTask();
@@ -552,12 +635,21 @@ function clearCoTimer() {
 // ---- resize ----
 window.addEventListener('resize', function () { ST.isPc = isPcLayout(); });
 
+// ---- 软件名称（源自 plugin.json，经 /api/health 下发）----
+(function loadSoftName() {
+  fetch(API + '/api/health').then(function (r) { return r.json(); }).then(function (r) {
+    if (r && r.name) { ST.softName = r.name; document.title = r.name; }
+  }).catch(function () {});
+})();
+
 // ---- Vue app ----
 var app = Vue.createApp({
   data: function () { return ST; },
   computed: {
     filteredProducts: filteredProducts,
+    invStockList: invStockList,
     todoCount: todoCount,
+    frozen: isFrozen,
     currentTitle: currentTitle,
     subTitle: subTitle,
     exportHref: exportHref,
@@ -573,11 +665,12 @@ var app = Vue.createApp({
     openSheet: openSheet, closeSheet: closeSheet, submitSheet: submitSheet,
     onPickProduct: onPickProduct,
     addProduct: addProduct, editProduct: editProduct, delProduct: delProduct, printLabel: printLabel,
+    copyProduct: copyProduct,
     openInbound: openInbound, copyInbound: copyInbound, openRfid: openRfid, doRfid: doRfid,
     openLabelPrint: openLabelPrint, removeLabelItem: removeLabelItem, closeLabel: closeLabel,
     submitLabelPrint: submitLabelPrint,
     loadStockBatches: loadStockBatches,
-    viewStockBatch: viewStockBatch,
+    viewStockBatch: viewStockBatch, viewBatchProduct: viewBatchProduct,
     startCoTask: startCoTask, loadCoTask: loadCoTask, endCoTask: endCoTask,
     confirmCoTask: confirmCoTask, abortCoTask: abortCoTask, copyCoUrl: copyCoUrl,
     quickSale: quickSale, openDeposit: openDeposit,
@@ -613,4 +706,9 @@ try {
     }).catch(function () { ST.token = ''; sessionStorage.removeItem('jewelry_token'); });
   }
 } catch (e) {}
+
+// ---- 全局冻结状态慢速轮询 ----
+// 任务可能由另一台电脑开启/确认/终止；即使不在库存页也要能感知冻结与解冻。
+// 进行中任务的 5s 快速轮询由 ensureCoTimer 负责，这里是全局面兜底。
+setInterval(function () { if (ST.token) loadCoTask(); }, 15000);
 
