@@ -410,6 +410,18 @@ a { text-decoration: none; color: inherit; }
 @media (max-width: 560px) { .pv-grid { grid-template-columns: 1fr; } .pv-cell.pv-wide { grid-column: span 1; } }
 @keyframes modalIn { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
 .label-items { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+/* 标签打印预览：内层 827×413 点阵按容器宽度等比缩放（cqw 容器查询单位） */
+.label-preview-scroll { max-height: 360px; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 10px; padding: 4px; border: 1px dashed var(--border); border-radius: 10px; background: var(--cream, #faf6ec); }
+.label-inner { position: relative; width: 100%; aspect-ratio: 827 / 413; flex-shrink: 0; background: #fff; border: 1px solid #d9c9a3; border-radius: 4px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.07); container-type: inline-size; }
+.lp-slot { position: absolute; overflow: hidden; white-space: nowrap; color: #111; font-family: Arial, 'Segoe UI', sans-serif; line-height: 1.08; }
+.lp-cn { font-family: 'SimSun', '宋体', serif; font-weight: 600; }
+.lp-ascii { font-weight: 500; }
+.lp-barcode { display: flex; flex-direction: column; justify-content: space-between; }
+.lp-bartext { text-align: center; letter-spacing: 3px; font-size: 14px; }
+.lp-bars { width: 100%; background: repeating-linear-gradient(90deg, #000 0 2px, #fff 2px 4px, #000 4px 5px, #fff 5px 8px, #000 8px 11px, #fff 11px 14px); }
+.label-epc-list { margin-top: 8px; border: 1px solid #eee3c8; border-radius: 8px; background: #fffdf5; overflow: hidden; }
+.label-epc-list .log-item { padding: 5px 10px; display: flex; justify-content: space-between; align-items: center; gap: 10px; border-bottom: 1px dashed #f0e6cc; }
+.label-epc-list .log-item:last-child { border-bottom: none; }
 .label-chip { display: inline-flex; align-items: center; gap: 6px; background: #f7efe2; border: 1px solid #e3d3b4; color: #7a5a2e; border-radius: 999px; padding: 4px 12px; font-size: 14px; }
 .label-chip b { cursor: pointer; color: #b03a3a; font-weight: 700; }
 .field-chips { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; }

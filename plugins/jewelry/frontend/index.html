@@ -908,20 +908,31 @@
         </div>
         <div class="form-group" v-if="labelTplId">
           <label>{{ t('tpl.currentTpl') }}</label>
-          <div class="flex-between" style="padding:6px 10px;border:1px solid #d4af37;border-radius:6px;background:#fdf8ec">
+          <div style="padding:6px 10px;border:1px solid #d4af37;border-radius:6px;background:#fdf8ec">
             <span>🏷 {{ (labelTemplates.find(function(x){return x.id===labelTplId})||{}).name }}</span>
-            <span>
-              <label class="field-chip"><input type="radio" name="labelMode" :checked="labelUseTpl" @change="labelUseTpl=true"> {{ t('tpl.useTpl') }}</label>
-              <label class="field-chip"><input type="radio" name="labelMode" :checked="!labelUseTpl" @change="labelUseTpl=false"> {{ t('tpl.useCustom') }}</label>
-            </span>
           </div>
         </div>
-        <div class="form-group" v-show="!labelUseTpl">
-          <label>{{ t('label.fields') }}</label>
-          <div class="field-chips">
-            <label class="field-chip" v-for="(labName, labKey) in FIELD_LABELS" :key="labKey">
-              <input type="checkbox" v-model="labelFields[labKey]"> {{ fieldLabelText(labKey) }}
-            </label>
+        <div class="form-group" v-if="labelItems.length">
+          <label>{{ t('label.preview') }}</label>
+          <div class="label-preview-scroll">
+            <div class="label-inner" v-for="lv in labelPreview()" :key="lv.id">
+              <div v-for="(s, si) in lv.slots" :key="si" class="lp-slot"
+                   :class="'lp-' + s.type"
+                   :style="{ left: (s.x*100/827)+'cqw', top: (s.y*100/827)+'cqw', width: (s.w*100/827)+'cqw', height: (s.h*100/827)+'cqw', fontSize: (s.fh*100/827)+'cqw' }">
+                <template v-if="s.type === 'barcode'">
+                  <div class="lp-bartext">{{ s.val }}</div>
+                  <div class="lp-bars" :style="{ height: (s.bh*100/827)+'cqw' }"></div>
+                </template>
+                <template v-else>{{ s.val }}</template>
+              </div>
+              <div v-if="!lv.slots.length" class="prod-meta" style="padding:24px;text-align:center">{{ t('tpl.empty') }}</div>
+            </div>
+          </div>
+          <div class="label-epc-list">
+            <div class="log-item" v-for="lv in labelPreview()" :key="'epc-' + lv.id">
+              <span>{{ lv.code }} {{ lv.name }}</span>
+              <span class="mono small">{{ lv.epc || t('label.epcAuto') }}</span>
+            </div>
           </div>
         </div>
         <div class="form-row">

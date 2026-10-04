@@ -228,6 +228,8 @@ var I18N = {
     // 标签排版弹窗
     'label.title': '🏷 RFID 标签排版打印',
     'label.pick': '打印商品（70×35mm / 300dpi · 得实 DL-735RE）',
+    'label.preview': '标签预览（70×35mm 按实际比例）',
+    'label.epcAuto': 'EPC 打印时自动生成',
     'label.empty': '尚未选择，可从下方添加，或去商品列表点「排版打印」',
     'label.add': '＋ 添加在库商品…', 'label.fields': '标签内容字段',
     'label.printer': '打印机', 'label.selPrinter': '— 请选择 —', 'label.noPrinter': '未检测到打印机',
@@ -509,6 +511,8 @@ var I18N = {
     'label.genZpl': 'Generate ZPL',
     'label.noPrinter': 'No printer detected',
     'label.pick': 'Print items (70×35mm / 300dpi · DL-735RE)',
+    'label.preview': 'Label preview (70×35mm, to scale)',
+    'label.epcAuto': 'EPC auto-generated at print',
     'label.print': 'Print Labels',
     'label.printer': 'Printer',
     'label.selPrinter': '— Select —',

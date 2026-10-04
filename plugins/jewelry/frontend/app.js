@@ -1170,10 +1170,12 @@ function openLabelPrint(p) {
   ST.labelDlg = true;
   ST.labelResult = null;
   ST.labelTplId = null;
-  ST.labelUseTpl = false;
+  ST.labelUseTpl = true;
+  if (!ST.labelTemplates.length) loadTemplates();
   if (p && !ST.labelItems.some(function (x) { return x.id === p.id; })) {
     ST.labelItems.push({ id: p.id, code: p.code, name: p.name,
-      product_type_code: p.product_type_code, category_code: p.category_code });
+      product_type_code: p.product_type_code, category_code: p.category_code,
+      rfid_epc: p.rfid_epc || '' });
   }
   // 若已选商品属于同一品类且该品类绑定了模板，自动加载模板
   _autoPickTemplate();
@@ -1209,6 +1211,69 @@ function removeLabelItem(id) {
   _autoPickTemplate();
 }
 function closeLabel() { ST.labelDlg = false; }
+
+// ---- 标签打印预览（与后端 rfid_print._field_value / 固定布局保持一致）----
+function _labelVal(field, it, store) {
+  var p = ST.products.find(function (x) { return x.id === it.id; }) || it;
+  if (field === 'store') return store;
+  if (field === 'name') return p.name || '';
+  if (field === 'code') return p.code || '';
+  if (field === 'spec') {
+    var a = [];
+    if (p.material) a.push(p.material);
+    if (p.weight) a.push((+p.weight).toFixed(2) + 'g');
+    if (p.size) a.push(p.size);
+    return a.join(' ');
+  }
+  if (field === 'price') return p.price ? 'RMB ' + (+p.price).toLocaleString('en-US', { maximumFractionDigits: 0 }) : '';
+  if (field === 'cert') return p.cert ? 'CERT ' + p.cert : '';
+  if (field === 'barcode') return p.code || '';
+  if (field === 'epc_text') { var e = p.rfid_epc || it.rfid_epc || ''; return e ? 'EPC ' + e.slice(-12) : ''; }
+  if (field === 'category') return p.product_type || '';
+  if (field === 'material') return p.material || '';
+  if (field === 'weight') return p.weight ? (+p.weight).toFixed(2) + 'g' : '';
+  if (field === 'size') return p.size || '';
+  if (field === 'cost') return p.cost ? '￥' + (+p.cost).toLocaleString('en-US', { maximumFractionDigits: 0 }) : '';
+  return '';
+}
+
+// 返回每个已选商品的预览数据：{id, code, name, epc, slots:[{x,y,w,h,type,val,fw,fh,bh}]}（单位：点 827×413）
+function labelPreview() {
+  if (!ST.labelItems.length) return [];
+  var store = (ST.profile && ST.profile.name) || '';
+  var tpl = ST.labelTplId ? ST.labelTemplates.find(function (x) { return x.id === ST.labelTplId; }) : null;
+  var def = null;
+  if (tpl) {
+    try { def = typeof tpl.definition === 'string' ? JSON.parse(tpl.definition) : (tpl.definition || {}); }
+    catch (e) { def = null; }
+  }
+  return ST.labelItems.map(function (it) {
+    var p = ST.products.find(function (x) { return x.id === it.id; }) || it;
+    var slots = [];
+    if (ST.labelUseTpl && def && def.slots && def.slots.length) {
+      def.slots.forEach(function (s0) {
+        var val = _labelVal(s0.field, it, store);
+        if (!val) return;
+        var f = s0.font || {};
+        slots.push({ x: +s0.x || 0, y: +s0.y || 0, w: +s0.w || 200, h: +s0.h || 30,
+          type: (f.type || 'ascii'), val: String(val),
+          fw: +f.w || 24, fh: +f.h || 24, bh: +f.h || 64 });
+      });
+    } else {
+      var F = ST.labelFields, y = 24;
+      if (F.name && p.name) { slots.push({ x: 24, y: y, w: 780, h: 30, type: 'cn', val: p.name, fw: 30, fh: 30 }); y += 44; }
+      var spec = _labelVal('spec', it, store);
+      if (F.spec && spec) { slots.push({ x: 24, y: y, w: 780, h: 22, type: 'cn', val: spec, fw: 22, fh: 22 }); y += 34; }
+      if (F.barcode && p.code) { slots.push({ x: 24, y: y + 4, w: 320, h: 94, type: 'barcode', val: p.code, fw: 22, fh: 22, bh: 64 }); }
+      if (F.price && p.price) slots.push({ x: 560, y: 24, w: 240, h: 42, type: 'ascii', val: _labelVal('price', it, store), fw: 42, fh: 42 });
+      if (F.cert && p.cert) slots.push({ x: 520, y: 108, w: 280, h: 20, type: 'ascii', val: _labelVal('cert', it, store), fw: 20, fh: 20 });
+      if (F.epc_text && p.rfid_epc) slots.push({ x: 420, y: 373, w: 380, h: 18, type: 'ascii', val: _labelVal('epc_text', it, store), fw: 18, fh: 18 });
+      if (F.store && store) slots.push({ x: 24, y: 377, w: 380, h: 20, type: 'cn', val: store, fw: 20, fh: 20 });
+    }
+    return { id: it.id, code: it.code, name: it.name, epc: p.rfid_epc || it.rfid_epc || '', slots: slots };
+  });
+}
+
 function submitLabelPrint() {
   if (!ST.labelItems.length) { toast(t('toast.pickLabel'), 'error'); return; }
   ST.labelBusy = true;
@@ -1391,7 +1456,7 @@ var app = Vue.createApp({
     saveBizConfig: saveBizConfig,
     openInbound: openInbound, copyInbound: copyInbound, openRfid: openRfid, doRfid: doRfid,
     openLabelPrint: openLabelPrint, removeLabelItem: removeLabelItem, closeLabel: closeLabel,
-    submitLabelPrint: submitLabelPrint,
+    submitLabelPrint: submitLabelPrint, labelPreview: labelPreview,
     loadStockBatches: loadStockBatches,
     viewStockBatch: viewStockBatch, viewBatchProduct: viewBatchProduct,
     startCoTask: startCoTask, loadCoTask: loadCoTask, endCoTask: endCoTask,
