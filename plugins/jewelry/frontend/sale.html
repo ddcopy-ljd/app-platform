@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>销售出单 · 手持机</title>
+<style>
+  :root{
+    --wine:#8b1e3f; --wine-d:#6e152f; --green:#1a7f37; --red:#c0392b;
+    --bg:#f2f0ec; --card:#fff; --line:#e2ddd4; --tx:#2b2622; --tx2:#8a8177;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    background:var(--bg); color:var(--tx); font-size:16px;
+    display:flex; flex-direction:column; max-width:520px; margin:0 auto;
+  }
+  /* ---- 顶栏 ---- */
+  .top{
+    background:var(--wine); color:#fff; padding:10px 14px;
+    display:flex; align-items:center; gap:10px; flex:none;
+  }
+  .top .t{font-size:18px; font-weight:700; flex:1;}
+  .top .u{font-size:13px; opacity:.85; max-width:40%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .top button{background:rgba(255,255,255,.15); border:none; color:#fff; font-size:13px; padding:6px 12px; border-radius:8px;}
+  /* ---- 主体 ---- */
+  main{flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:12px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px;}
+  .sec-t{font-size:13px; color:var(--tx2); margin-bottom:8px; font-weight:600;}
+  /* ---- 扫码区 ---- */
+  .scan-btns{display:flex; gap:10px;}
+  .scan-btn{
+    flex:1; border:none; border-radius:12px; padding:16px 4px; color:#fff;
+    font-size:16px; font-weight:700; display:flex; flex-direction:column; align-items:center; gap:4px;
+  }
+  .scan-btn small{font-weight:400; font-size:11px; opacity:.8;}
+  .scan-btn:active{transform:scale(.97);}
+  .scan-btn.b1{background:#2563eb;} .scan-btn.b2{background:#0891b2;} .scan-btn.b3{background:var(--green);}
+  .scan-btn.b3.busy{background:var(--red); animation:pulse 1s infinite;}
+  @keyframes pulse{50%{opacity:.65;}}
+  .scan-hint{margin-top:8px; font-size:13px; color:var(--green); text-align:center; display:none;}
+  .scan-hint.on{display:block;}
+  /* ---- 商品卡 ---- */
+  .prod{display:flex; gap:12px; align-items:center; min-height:74px;}
+  .prod img{width:74px; height:74px; border-radius:10px; object-fit:cover; background:#eee; flex:none;}
+  .prod .no-img{width:74px; height:74px; border-radius:10px; background:#eee; flex:none; display:flex; align-items:center; justify-content:center; color:#bbb; font-size:24px;}
+  .prod .info{flex:1; min-width:0;}
+  .prod .code{font-size:12px; color:var(--tx2);}
+  .prod .name{font-size:17px; font-weight:700; margin:2px 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .prod .price{font-size:18px; color:var(--wine); font-weight:700;}
+  .prod .tag{display:inline-block; font-size:11px; padding:1px 8px; border-radius:99px; background:#e8f5ec; color:var(--green); margin-left:6px;}
+  .prod .tag.bad{background:#fdecea; color:var(--red);}
+  .prod-empty{color:var(--tx2); font-size:14px; text-align:center; padding:14px 0;}
+  /* ---- 表单 ---- */
+  .frm{display:flex; flex-direction:column; gap:10px;}
+  .row{display:flex; gap:10px;}
+  .fg{flex:1; display:flex; flex-direction:column; gap:4px;}
+  .fg label{font-size:13px; color:var(--tx2);}
+  .fg input,.fg select{
+    width:100%; border:1px solid var(--line); border-radius:10px; padding:11px 10px;
+    font-size:16px; background:#fff; color:var(--tx); outline:none;
+  }
+  .fg input:focus,.fg select:focus{border-color:var(--wine);}
+  .pay-btns{display:flex; gap:8px;}
+  .pay-btns button{
+    flex:1; border:1.5px solid var(--line); background:#fff; border-radius:10px;
+    padding:10px 2px; font-size:15px; color:var(--tx);
+  }
+  .pay-btns button.on{border-color:var(--wine); background:#faf0f3; color:var(--wine); font-weight:700;}
+  /* ---- 提交 ---- */
+  .submit-wrap{flex:none; padding:10px 12px 14px; background:linear-gradient(transparent,var(--bg) 30%);}
+  .submit{
+    width:100%; border:none; border-radius:14px; padding:16px; font-size:18px; font-weight:700;
+    background:var(--wine); color:#fff;
+  }
+  .submit:active{background:var(--wine-d);}
+  .submit:disabled{opacity:.5;}
+  /* ---- 遮罩提示 ---- */
+  .overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,.75); color:#fff; z-index:9;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px;
+    text-align:center; padding:24px; font-size:16px; line-height:1.6;
+  }
+  .toast{
+    position:fixed; left:50%; top:18%; transform:translateX(-50%); z-index:99;
+    background:rgba(30,26,24,.92); color:#fff; padding:10px 18px; border-radius:10px;
+    font-size:14px; max-width:86%; text-align:center; opacity:0; transition:opacity .25s; pointer-events:none;
+  }
+  .toast.show{opacity:1;}
+  .toast.err{background:rgba(140,30,30,.95);}
+  .bill-done{text-align:center; padding:8px 0;}
+  .bill-done .bn{font-size:20px; font-weight:700; color:var(--green);}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <span class="t">销售出单</span>
+  <span class="u" id="topUser"></span>
+  <button onclick="loadOptions(true)">刷新</button>
+</div>
+
+<main>
+  <!-- 扫码 -->
+  <div class="card">
+    <div class="sec-t">商品识别</div>
+    <div class="scan-btns">
+      <button class="scan-btn b1" onclick="yzScan('barcode')">条码<small>扫商品条码</small></button>
+      <button class="scan-btn b2" onclick="yzScan('qrcode')">二维码<small>扫标签二维码</small></button>
+      <button class="scan-btn b3" id="btnEpc" onclick="yzScan('epc')">EPC<small id="epcTip">小功率防串扫</small></button>
+    </div>
+    <div class="scan-hint" id="scanHint">EPC 识别中，再次按扳机或点按钮停止…</div>
+  </div>
+
+  <!-- 识别结果 -->
+  <div class="card">
+    <div class="sec-t">商品信息</div>
+    <div class="prod" id="prodBox"><div class="prod-empty">尚未识别商品<br><span style="font-size:12px">扫条码 / 二维码 / EPC，或直接在下方手工填写</span></div></div>
+  </div>
+
+  <!-- 表单 -->
+  <div class="card frm">
+    <div class="row">
+      <div class="fg"><label>客户</label><input id="fCustomer" placeholder="散客"></div>
+      <div class="fg"><label>电话</label><input id="fPhone" inputmode="tel"></div>
+    </div>
+    <div class="fg"><label>商品名称</label><input id="fProduct" placeholder="扫码自动填入，可手工修改"></div>
+    <div class="row">
+      <div class="fg"><label>金额 ￥</label><input id="fAmount" type="number" inputmode="decimal" step="0.01" min="0"></div>
+      <div class="fg"><label>实收 ￥</label><input id="fPaid" type="number" inputmode="decimal" step="0.01" min="0"></div>
+    </div>
+    <div class="fg"><label>收款方式</label>
+      <div class="pay-btns" id="payBtns">
+        <button data-m="现金" class="on">现金</button>
+        <button data-m="微信">微信</button>
+        <button data-m="刷卡">刷卡</button>
+        <button data-m="转账">转账</button>
+      </div>
+    </div>
+    <div class="row">
+      <div class="fg"><label>日期</label><input id="fDate" type="date"></div>
+    </div>
+  </div>
+</main>
+
+<div class="submit-wrap">
+  <button class="submit" id="btnSubmit" onclick="submitSale()">提 交 出 单</button>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="overlay" id="overlay" style="display:none"></div>
+
+<script>
+'use strict';
+// ================= 鉴权 =================
+// App WebView 以 /sale?token=xxx 进入；token 存 localStorage，URL 上立即抹掉
+var TOKEN = new URLSearchParams(location.search).get('token') || localStorage.getItem('yz_sale_token') || '';
+if (TOKEN) {
+  localStorage.setItem('yz_sale_token', TOKEN);
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+}
+window.__yzLoginOk = false;
+
+function api(method, url, body) {
+  var opt = { method: method, headers: { 'Authorization': 'Bearer ' + TOKEN } };
+  if (body !== undefined) {
+    opt.headers['Content-Type'] = 'application/json';
+    opt.body = JSON.stringify(body);
+  }
+  return fetch(url, opt).then(function (r) {
+    if (r.status === 401) { showOverlay('登录已过期', '请在手持机 App 重新扫码登录'); throw new Error('unauthorized'); }
+    return r.json().then(function (j) {
+      if (!r.ok) throw new Error(j.detail || ('HTTP ' + r.status));
+      return j;
+    });
+  });
+}
+
+function showOverlay(title, sub) {
+  var o = document.getElementById('overlay');
+  o.innerHTML = '<div style="font-size:22px;font-weight:700">' + esc(title) + '</div><div>' + esc(sub) + '</div>';
+  o.style.display = 'flex';
+}
+
+// ================= 状态 =================
+var OPTS = [];          // 在库商品 options：{id,code,name,price,rfid_epc}
+var PICKED = null;      // 当前选中商品 {id,code,name,price,rfid_epc}
+var METHOD = '现金';
+
+// ================= 扫码桥（与 App SaleActivity 约定一致）=================
+window.YzScanner = {
+  available: !!(window.YzApp && window.YzApp.scan),
+  scan: function (type) {
+    if (window.YzApp && window.YzApp.scan) {
+      try { window.YzApp.scan(type); return true; } catch (e) {}
+    }
+    return false;
+  },
+  onResult: function (code, type) { onScanned(code, type); },
+  onState: function (scanning) { setEpcBusy(!!scanning); }
+};
+// 机身扳机接管：出单页扳机 = EPC 识别
+window.YzTrigger = { onTrigger: function () { yzScan('epc'); } };
+
+function yzScan(type) {
+  if (!window.YzScanner.scan(type)) {
+    // 无 App 桥（手机/电脑浏览器打开）：退化为手工输入
+    var c = prompt('请输入' + (type === 'epc' ? 'EPC' : '商品编码') + '：');
+    if (c) onScanned(c, type);
+  }
+}
+
+function setEpcBusy(on) {
+  document.getElementById('btnEpc').classList.toggle('busy', on);
+  document.getElementById('scanHint').classList.toggle('on', on);
+  document.getElementById('epcTip').textContent = on ? '点击停止' : '小功率防串扫';
+}
+
+// ================= 识别匹配（与网页端 applyScanToSale 同逻辑）=================
+function onScanned(code, type) {
+  var c = String(code || '').trim().toUpperCase();
+  if (!c) return;
+  var p = null;
+  if (type === 'epc') {
+    p = OPTS.find(function (x) { return String(x.rfid_epc || '').toUpperCase() === c; });
+  } else {
+    p = OPTS.find(function (x) { return String(x.code || '').toUpperCase() === c; });
+    if (!p) p = OPTS.find(function (x) { return String(x.code || '').toUpperCase() === c.replace(/^0+/, ''); });
+  }
+  if (p) {
+    pickProduct(p);
+    toast('已识别：' + p.code + ' ' + p.name);
+  } else if (type === 'epc') {
+    toast('未找到 EPC ' + c + ' 对应在库商品', true);
+  } else {
+    PICKED = null;
+    document.getElementById('fProduct').value = code;   // 未知条码：作为自定义商品名
+    renderProdBox();
+    toast('未匹配到在库商品，已填入商品名称，请核对', true);
+  }
+}
+
+function pickProduct(p) {
+  PICKED = p;
+  document.getElementById('fProduct').value = p.name;
+  document.getElementById('fAmount').value = p.price;
+  renderProdBox();
+}
+
+function renderProdBox() {
+  var box = document.getElementById('prodBox');
+  if (PICKED) {
+    box.innerHTML =
+      '<img src="/api/products/' + PICKED.id + '/image?t=' + Date.now() + '" onerror="this.style.display=\'none\'">' +
+      '<div class="info"><div class="code">' + esc(PICKED.code) + '</div>' +
+      '<div class="name">' + esc(PICKED.name) + '</div>' +
+      '<div class="price">￥' + fmt(PICKED.price) + '<span class="tag">在库</span></div></div>';
+  } else {
+    box.innerHTML = '<div class="prod-empty">尚未识别商品<br><span style="font-size:12px">扫条码 / 二维码 / EPC，或直接在下方手工填写</span></div>';
+  }
+}
+
+// ================= 数据 =================
+function loadOptions(force) {
+  if (OPTS.length && !force) return;
+  api('GET', '/api/products/options?status=' + encodeURIComponent('在库')).then(function (r) {
+    OPTS = r.items || [];
+  }).catch(function (e) { if (e.message !== 'unauthorized') toast('加载在库商品失败：' + e.message, true); });
+}
+
+function submitSale() {
+  var amount = parseFloat(document.getElementById('fAmount').value) || 0;
+  var paid = parseFloat(document.getElementById('fPaid').value) || 0;
+  if (!amount) { toast('请填写金额', true); return; }
+  var btn = document.getElementById('btnSubmit');
+  btn.disabled = true;
+  api('POST', '/api/sales', {
+    customer: document.getElementById('fCustomer').value.trim() || '',
+    phone: document.getElementById('fPhone').value.trim() || '',
+    product: document.getElementById('fProduct').value.trim() || '',
+    product_id: PICKED ? PICKED.id : null,
+    amount: amount,
+    paid: paid,
+    method: METHOD,
+    biz_date: document.getElementById('fDate').value || ''
+  }).then(function (r) {
+    loadOptions(true);   // 商品已售，刷新在库列表
+    PICKED = null;
+    document.getElementById('fProduct').value = '';
+    document.getElementById('fAmount').value = '';
+    document.getElementById('fPaid').value = '';
+    renderProdBox();
+    toast('出单成功，单号 ' + r.bill_no);
+    setTimeout(function () {
+      var box = document.getElementById('prodBox');
+      box.innerHTML = '<div class="bill-done"><div class="bn">✓ ' + esc(r.bill_no) + '</div><div style="font-size:13px;color:var(--tx2);margin-top:4px">出单成功，可继续扫码下一单</div></div>';
+    }, 900);
+  }).catch(function (e) {
+    if (e.message !== 'unauthorized') toast('出单失败：' + e.message, true);
+  }).finally(function () { btn.disabled = false; });
+}
+
+// ================= 杂项 =================
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (m) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+  });
+}
+function fmt(n) {
+  return (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('zh-CN', { minimumFractionDigits: 0 });
+}
+var _tt;
+function toast(msg, err) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (err ? ' err' : '');
+  clearTimeout(_tt);
+  _tt = setTimeout(function () { t.className = 'toast' + (err ? ' err' : ''); }, 2200);
+}
+
+document.getElementById('payBtns').addEventListener('click', function (ev) {
+  var b = ev.target.closest('button'); if (!b) return;
+  METHOD = b.dataset.m;
+  this.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
+});
+
+// ================= 启动 =================
+(function init() {
+  document.getElementById('fDate').value = new Date().toISOString().slice(0, 10);
+  renderProdBox();
+  if (!TOKEN) { showOverlay('未登录', '请从手持机 App 扫码登录后进入出单'); return; }
+  api('GET', '/api/auth/me').then(function (r) {
+    window.__yzLoginOk = true;
+    var u = (r && r.user) || {};
+    document.getElementById('topUser').textContent = u.display_name || u.username || '';
+    loadOptions(false);
+  }).catch(function () {});
+})();
+</script>
+</body>
+</html>

@@ -3058,7 +3058,7 @@ def spa_asset(asset_path: str):
             return FileResponse(str(f))
     f = (FRONTEND_DIR / asset_path).resolve()
     if f.is_file() and _safe_relative(f, FRONTEND_DIR.resolve()) and f.suffix.lower() in (
-        ".js", ".css", ".map", ".png", ".svg", ".woff2", ".ico", ".jpg", ".webp",
+        ".js", ".css", ".map", ".png", ".svg", ".woff2", ".ico", ".jpg", ".webp", ".html",
     ):
         # 业务页面脚本/样式每次校验更新，避免发布后浏览器缓存旧版（内网工具，开销可忽略）
         nocache = {"Cache-Control": "no-cache"} if f.suffix.lower() in (".js", ".css", ".html") else None

@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>库存盘点 · 手持机</title>
+<style>
+  :root{
+    --wine:#8b1e3f; --green:#1a7f37; --red:#c0392b; --blue:#2563eb;
+    --bg:#f2f0ec; --card:#fff; --line:#e2ddd4; --tx:#2b2622; --tx2:#8a8177;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    background:var(--bg); color:var(--tx); font-size:15px;
+    display:flex; flex-direction:column; max-width:520px; margin:0 auto;
+  }
+  .top{
+    background:var(--wine); color:#fff; padding:8px 12px; flex:none;
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  }
+  .top .t{font-size:17px; font-weight:700; flex:1;}
+  .top button{background:rgba(255,255,255,.15); border:none; color:#fff; font-size:13px; padding:6px 12px; border-radius:8px;}
+  /* 状态条 */
+  .chips{display:flex; gap:6px; flex-wrap:wrap; padding:8px 12px 0; flex:none;}
+  .chip{font-size:12px; padding:4px 10px; border-radius:99px; background:#fff; border:1px solid var(--line); color:var(--tx2);}
+  .chip.ok{color:var(--green); border-color:#bfe3c8; background:#f0faf3;}
+  .chip.warn{color:var(--red); border-color:#f2c4bd; background:#fdf1ef;}
+  .chip.pwr{color:var(--blue); border-color:#c7d7f7; background:#f2f7ff;}
+  main{flex:1; overflow-y:auto; padding:10px 12px; display:flex; flex-direction:column; gap:10px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px;}
+  /* 高价值提醒 */
+  .hv{display:none; background:#fff7e6; border:1px solid #f0d9a8; color:#9a6b00; border-radius:12px; padding:10px 12px; font-size:14px; flex:none;}
+  .hv.on{display:block;}
+  /* 扳机大按钮 */
+  .trigger{
+    width:100%; border:none; border-radius:14px; padding:18px; font-size:18px; font-weight:700;
+    color:#fff; background:var(--blue); flex:none;
+  }
+  .trigger.scan{background:var(--red); animation:pulse 1s infinite;}
+  .trigger.ready{background:var(--green);}
+  .trigger:active{transform:scale(.99);}
+  @keyframes pulse{50%{opacity:.7;}}
+  /* 页签 */
+  .tabs{display:flex; gap:8px; flex:none;}
+  .tab{flex:1; text-align:center; padding:10px; border-radius:10px; background:#fff; border:1px solid var(--line); color:var(--tx2); font-size:15px;}
+  .tab.on{color:var(--green); border-color:var(--green); font-weight:700; background:#f0faf3;}
+  .tab.on2{color:var(--red); border-color:var(--red); font-weight:700; background:#fdf1ef;}
+  /* 列表 */
+  .list{display:flex; flex-direction:column; gap:6px;}
+  .item{background:#fff; border:1px solid var(--line); border-radius:10px; padding:8px 10px; display:flex; align-items:center; gap:8px;}
+  .item .bdg{font-size:11px; padding:2px 8px; border-radius:99px; flex:none; color:#fff;}
+  .item .info{flex:1; min-width:0;}
+  .item .nm{font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .item .sub{font-size:11px; color:var(--tx2);}
+  .item.ab{border-color:#f2c4bd; background:#fdf5f4;}
+  .empty{color:var(--tx2); text-align:center; padding:24px 0; font-size:13px;}
+  .more{color:var(--tx2); text-align:center; font-size:12px; padding:6px 0;}
+  /* 设置面板 */
+  .mask{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:20; display:none;}
+  .mask.on{display:block;}
+  .panel{
+    position:fixed; left:0; right:0; bottom:0; z-index:21; background:#fff;
+    border-radius:16px 16px 0 0; padding:16px; max-width:520px; margin:0 auto;
+    display:none; max-height:80vh; overflow-y:auto;
+  }
+  .panel.on{display:block;}
+  .panel h3{font-size:16px; margin-bottom:10px;}
+  .prow{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 0; border-bottom:1px solid #f0ece5; font-size:14px;}
+  .prow input[type=number]{width:90px; border:1px solid var(--line); border-radius:8px; padding:7px; font-size:14px;}
+  .prow select{border:1px solid var(--line); border-radius:8px; padding:7px; font-size:14px;}
+  .sw{position:relative; width:44px; height:24px; background:#ccc; border-radius:99px; transition:.2s; flex:none;}
+  .sw.on{background:var(--green);}
+  .sw::after{content:''; position:absolute; top:2px; left:2px; width:20px; height:20px; background:#fff; border-radius:50%; transition:.2s;}
+  .sw.on::after{left:22px;}
+  .pbtns{display:flex; gap:8px; margin-top:12px;}
+  .pbtn{flex:1; border:none; border-radius:10px; padding:11px; font-size:14px; color:#fff; background:var(--wine);}
+  .pbtn.gray{background:#8a8177;}
+  .toast{
+    position:fixed; left:50%; top:14%; transform:translateX(-50%); z-index:99;
+    background:rgba(30,26,24,.92); color:#fff; padding:10px 18px; border-radius:10px;
+    font-size:14px; max-width:86%; text-align:center; opacity:0; transition:opacity .25s; pointer-events:none;
+  }
+  .toast.show{opacity:1;}
+  .toast.err{background:rgba(140,30,30,.95);}
+  .overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,.75); color:#fff; z-index:9;
+    display:none; flex-direction:column; align-items:center; justify-content:center; gap:12px;
+    text-align:center; padding:24px; font-size:15px; line-height:1.6;
+  }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <span class="t">库存盘点</span>
+  <button onclick="scanJoin()">扫码加入任务</button>
+  <button onclick="openPanel()">⚙ 设置</button>
+</div>
+
+<div class="chips">
+  <span class="chip" id="chNet">连接中…</span>
+  <span class="chip" id="chTask">未加入任务</span>
+  <span class="chip" id="chSnap">未下载快照</span>
+  <span class="chip" id="chUhf">UHF…</span>
+  <span class="chip pwr" id="chPwr">—</span>
+  <span class="chip" id="chDev">本机</span>
+</div>
+
+<main>
+  <div class="hv" id="hvBanner"></div>
+  <button class="trigger" id="btnTrigger" onclick="YzTrigger.onTrigger()">扫码加入盘点任务</button>
+  <div class="tabs">
+    <div class="tab on" id="tabStore" onclick="setTab(false)">在库 (0)</div>
+    <div class="tab" id="tabAbnormal" onclick="setTab(true)">异常 (0)</div>
+  </div>
+  <div class="list" id="list"></div>
+  <div class="empty" id="empty">扫描到的商品会实时显示在这里</div>
+</main>
+
+<!-- 设置面板 -->
+<div class="mask" id="mask" onclick="closePanel()"></div>
+<div class="panel" id="panel">
+  <h3>盘点参数</h3>
+  <div class="prow"><span>上报/拉取间隔（秒）</span><input type="number" id="sPull" min="5" max="120"></div>
+  <div class="prow"><span>信号过滤（RSSI）</span><div class="sw" id="sRssiOn" onclick="toggleSw(this)"></div></div>
+  <div class="prow"><span>RSSI 阈值</span><select id="sRssiTh">
+    <option value="-60">-60（近）</option><option value="-65">-65</option><option value="-70">-70</option>
+    <option value="-75">-75（默认）</option><option value="-80">-80</option><option value="-85">-85（远）</option>
+  </select></div>
+  <div class="prow"><span>同标签去重提示</span><div class="sw" id="sDedup" onclick="toggleSw(this)"></div></div>
+  <div class="prow"><span>高价值未扫提醒</span><div class="sw" id="sHv" onclick="toggleSw(this)"></div></div>
+  <div class="prow"><span>异常标签震动</span><div class="sw" id="sVib" onclick="toggleSw(this)"></div></div>
+  <div class="pbtns">
+    <button class="pbtn" onclick="downloadSnapshot(true)">重新下载快照</button>
+    <button class="pbtn gray" onclick="leaveTask(true)">退出任务</button>
+  </div>
+  <div class="pbtns"><button class="pbtn gray" onclick="closePanel()">关闭</button></div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="overlay" id="overlay"></div>
+
+<script>
+'use strict';
+// ================= 登录态（App 传入 token；盘点接口本身用任务密钥）=================
+var TOKEN = new URLSearchParams(location.search).get('token') || localStorage.getItem('yz_sale_token') || '';
+if (TOKEN) {
+  localStorage.setItem('yz_sale_token', TOKEN);
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+}
+window.__yzLoginOk = false;
+
+// ================= 设置 =================
+var SET = load('yz_stock_set', { pull: 15, rssiOn: true, rssiTh: -75, dedup: true, hv: true, vib: true });
+function load(k, d) { try { var v = JSON.parse(localStorage.getItem(k)); return v || d; } catch (e) { return d; } }
+function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function saveSet() { save('yz_stock_set', SET); }
+
+// ================= 状态 =================
+var CFG = load('yz_stock_cfg', { server: '', taskNo: '', deviceNo: 0, sinceId: 0, snapshot: '' });
+var SNAPSHOT = {};   // epc -> {code,name,hv}
+var RECORDS = {};    // epc -> {type,self,dev,rssi,time,name,seq}
+var WEIGHT = { ABNORMAL: 0, HV_UN: 1, HV_SC: 2, NORMAL: 3, OTHER: 4 };
+var seq = 0;
+var PENDING = {};    // 待上报 epc -> rssi
+var joined = false, active = false, snapshotReady = false, scanning = false;
+var netOk = true, globalCount = 0;
+var abnormalTab = false;
+
+// ================= API（协同盘点，密钥鉴权）=================
+var ORIGIN = '', KEY = '';
+function parseServer() {
+  var s = (CFG.server || '').trim();
+  if (!s || s.toLowerCase().indexOf('/co/join') < 0) return false;
+  var m = s.match(/[?&]key=([^&]+)/); if (!m) return false;
+  KEY = m[1];
+  var o = s.match(/^(https?:\/\/[^\/]+)/i); if (!o) return false;
+  ORIGIN = o[1];
+  return true;
+}
+function enc(s) { return encodeURIComponent(s || ''); }
+function stReq(method, path, body) {
+  var dev = DEV.key;
+  var url = ORIGIN + path + '?key=' + KEY + '&device=' + enc(dev);
+  var opt = { method: method };
+  if (body) { opt.headers = { 'Content-Type': 'application/json' }; opt.body = JSON.stringify(body); }
+  return fetch(url, opt).then(function (r) {
+    return r.json().then(function (j) {
+      if (!r.ok) { var e = new Error(j.detail || ('HTTP ' + r.status)); e.code = r.status; throw e; }
+      return j;
+    });
+  });
+}
+
+// ================= 桥 =================
+var DEV = { key: '', name: '', stock: 30, sale: 10, ready: false };
+var APP = !!(window.YzApp && window.YzApp.stockStart);
+function devInfo() {
+  if (!APP) return;
+  try {
+    var d = JSON.parse(window.YzApp.device());
+    DEV = d; APP = true;
+  } catch (e) { APP = false; }
+}
+
+window.YzScanner = {
+  onResult: function (code, type) { if (type === 'qrcode') handleQr(code); },
+  onState: function (on) { setScanning(!!on); },
+  onTags: function (tags) { onTags(tags || []); }
+};
+// 机身扳机接管：可扫则开/停连续扫描；未加入任务则扫码加入
+window.YzTrigger = {
+  onTrigger: function () {
+    if (canScan()) {
+      if (!DEV.ready) { toast('本机无 UHF 模块，请在手机浏览器使用网页版盘点', true); return; }
+      if (scanning) window.YzApp.stockStop(); else window.YzApp.stockStart();
+    } else {
+      scanJoin();
+    }
+  }
+};
+
+function scanJoin() {
+  if (window.YzApp && window.YzApp.scan) { window.YzApp.scan('qrcode'); return; }
+  var u = prompt('粘贴盘点任务二维码内容（含 /co/join?key=）：');
+  if (u) handleQr(u);
+}
+
+function handleQr(raw) {
+  var s = String(raw || '').trim();
+  if (!s) return;
+  if (s.toLowerCase().indexOf('/co/join') >= 0) {
+    CFG.server = s; save('yz_stock_cfg', CFG);
+    join(true);
+  } else if (s.toLowerCase().indexOf('/stocktake/upload') >= 0) {
+    toast('这是旧版单人盘点码，请在网页端「协同盘点任务」创建任务后扫码', true);
+  } else {
+    toast('无法识别的二维码，请扫协同盘点任务码', true);
+  }
+}
+
+// ================= 盘点引擎（与原 App StockEngine 同规则）=================
+function loadSnapshot(items) {
+  SNAPSHOT = {}; RECORDS = {}; seq = 0;
+  (items || []).forEach(function (o) {
+    var epc = String(o.epc || '').toUpperCase();
+    if (!epc) return;
+    SNAPSHOT[epc] = { code: o.code || '', name: o.name || '', hv: !!o.high_value };
+  });
+  if (SET.hv) {
+    for (var epc in SNAPSHOT) {
+      if (!RECORDS[epc]) RECORDS[epc] = { type: 'HV_UN', self: false, dev: 0, name: SNAPSHOT[epc].name, seq: --seq };
+    }
+  }
+  snapshotReady = Object.keys(SNAPSHOT).length > 0;
+  save('yz_stock_cfg', CFG);
+  saveRecords();
+}
+/** @return 1=本店新 2=异常新 0=重复 */
+function onSelfScan(epc, rssi, time) {
+  var cur = RECORDS[epc];
+  if (cur && cur.self) return 0;
+  var info = SNAPSHOT[epc];
+  if (info) {
+    RECORDS[epc] = { type: info.hv ? 'HV_SC' : 'NORMAL', self: true, dev: CFG.deviceNo, rssi: rssi, time: time, name: info.name, seq: ++seq };
+    return 1;
+  }
+  RECORDS[epc] = { type: 'ABNORMAL', self: true, dev: CFG.deviceNo, rssi: rssi, time: time, name: '', seq: ++seq };
+  return 2;
+}
+function mergeOther(epc, dev) {
+  var cur = RECORDS[epc];
+  if (cur && cur.self) return;
+  var info = SNAPSHOT[epc]; if (!info) return;
+  RECORDS[epc] = { type: 'OTHER', self: false, dev: dev, name: info.name, seq: 1e6 + Object.keys(RECORDS).length };
+}
+function listFor(abn) {
+  var arr = [];
+  for (var epc in RECORDS) {
+    var r = RECORDS[epc];
+    if (abn ? r.type === 'ABNORMAL' : r.type !== 'ABNORMAL') arr.push([epc, r]);
+  }
+  arr.sort(function (a, b) { return (WEIGHT[a[1].type] - WEIGHT[b[1].type]) || (b[1].seq - a[1].seq); });
+  return arr;
+}
+function saveRecords() { save('yz_stock_records', { seq: seq, r: RECORDS }); }
+function restoreRecords() {
+  var d = load('yz_stock_records', null);
+  if (d && d.r) { RECORDS = d.r; seq = d.seq || 0; }
+}
+
+// ================= 扫描 =================
+function canScan() { return joined && active && snapshotReady; }
+function setScanning(on) {
+  scanning = !!on;
+  refreshUi();
+}
+function onTags(tags) {
+  if (!scanning) return;
+  var now = new Date();
+  var time = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+  var dirty = false;
+  tags.forEach(function (t) {
+    var epc = String(t.epc || '').toUpperCase();
+    if (!epc) return;
+    var rssi = t.rssi || 0;
+    if (SET.rssiOn && rssi !== 0 && rssi < SET.rssiTh) return; // 信号过滤
+    var r = onSelfScan(epc, rssi, time);
+    if (r === 1) { window.YzApp && window.YzApp.beep(); PENDING[epc] = rssi; dirty = true; }
+    else if (r === 2) {
+      window.YzApp && window.YzApp.beep();
+      if (SET.vib) window.YzApp && window.YzApp.vibrate(300);
+      PENDING[epc] = rssi; dirty = true;
+    } else {
+      if (!SET.dedup) window.YzApp && window.YzApp.beep();
+      PENDING[epc] = rssi; dirty = true; // 重复也上传，服务端去重
+    }
+  });
+  if (dirty) { save('yz_stock_pending', PENDING); refreshUi(); }
+}
+function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+// ================= 任务连接 =================
+function join(autoSnapshot) {
+  if (!parseServer()) { toast('请先扫码加入任务', true); return; }
+  stReq('POST', '/api/stocktake/co/join', { device: DEV.key, name: DEV.name }).then(function (j) {
+    if (j.status === '已完成') { leaveTask(true); return; }
+    var isNew = j.task_no && j.task_no !== CFG.taskNo;
+    if (isNew) {
+      CFG.sinceId = 0; CFG.snapshot = ''; PENDING = {}; save('yz_stock_pending', PENDING);
+      SNAPSHOT = {}; RECORDS = {}; seq = 0; snapshotReady = false;
+      saveRecords();
+    }
+    CFG.deviceNo = j.device_no || 0;
+    CFG.taskNo = j.task_no || CFG.taskNo;
+    save('yz_stock_cfg', CFG);
+    joined = true; active = !!j.active; netOk = true;
+    toast('已加入任务，本机编号 ' + CFG.deviceNo);
+    refreshUi();
+    if (isNew || autoSnapshot) downloadSnapshot();
+  }).catch(function (e) {
+    netOk = false; joined = false; refreshUi();
+    if (e.code === 403 || e.code === 404) { leaveTask(false); toast('任务密钥无效，请重新扫码', true); }
+    else toast('加入失败：' + e.message, true);
+  });
+}
+
+function downloadSnapshot(manual) {
+  if (!parseServer()) { toast('请先扫码加入任务', true); return; }
+  stReq('GET', '/api/stocktake/co/snapshot').then(function (s) {
+    if (s.status === '已完成') { leaveTask(true); return; }
+    CFG.snapshot = JSON.stringify(s.items || []);
+    loadSnapshot(s.items || []);
+    joined = true; active = s.status === '进行中'; netOk = true;
+    toast('快照已下载：' + Object.keys(SNAPSHOT).length + ' 件');
+    refreshUi();
+  }).catch(function (e) {
+    if (e.code === 403 || e.code === 404) { leaveTask(false); }
+    else { netOk = false; if (manual) toast('下载失败：' + e.message, true); refreshUi(); }
+  });
+}
+
+function leaveTask(hint) {
+  if (scanning && APP) window.YzApp.stockStop();
+  joined = false; active = false; snapshotReady = false;
+  PENDING = {}; SNAPSHOT = {}; RECORDS = {}; seq = 0;
+  CFG.server = ''; CFG.taskNo = ''; CFG.deviceNo = 0; CFG.sinceId = 0; CFG.snapshot = '';
+  save('yz_stock_cfg', CFG); save('yz_stock_pending', PENDING); saveRecords();
+  netOk = true;
+  refreshUi();
+  if (hint) toast('任务已结束，请扫码加入新任务', true);
+}
+
+// ================= 上报 / 拉取 / 任务轮询 =================
+function flush() {
+  if (!joined && !Object.keys(PENDING).length) return;
+  var keys = Object.keys(PENDING);
+  if (!keys.length) return;
+  if (!parseServer()) return;
+  var body = { device: DEV.key, name: DEV.name, tags: keys.map(function (k) { return { epc: k, rssi: PENDING[k] }; }) };
+  stReq('POST', '/api/stocktake/co/scan', body).then(function (resp) {
+    keys.forEach(function (k) { delete PENDING[k]; });
+    globalCount = resp.global_count || globalCount;
+    netOk = true;
+    save('yz_stock_pending', PENDING);
+    refreshUi();
+  }).catch(function (e) {
+    if (e.code === 403 || e.code === 404) { leaveTask(false); }
+    else if (e.code === 409) {
+      // 主管已结束任务：停扫并丢弃待传
+      active = false; PENDING = {}; save('yz_stock_pending', PENDING);
+      if (scanning && APP) window.YzApp.stockStop();
+      toast('主管已结束任务', true);
+      refreshUi();
+    } else { netOk = false; save('yz_stock_pending', PENDING); refreshUi(); }
+  });
+}
+
+function pull() {
+  if (!joined || !parseServer()) return;
+  stReq('GET', '/api/stocktake/co/pull' + '&since_id=' + (CFG.sinceId || 0))
+    .then(function (resp) {
+      if (resp.status === '已完成') { leaveTask(true); return; }
+      var items = resp.items || [];
+      items.forEach(function (o) { mergeOther(String(o.epc || '').toUpperCase(), o.device_no || 0); });
+      if ((resp.max_id || 0) > (CFG.sinceId || 0)) CFG.sinceId = resp.max_id;
+      save('yz_stock_cfg', CFG);
+      netOk = true;
+      active = resp.status === '进行中';
+      if (!active && scanning && APP) window.YzApp.stockStop();
+      if (items.length) saveRecords();
+      refreshUi();
+    }).catch(function (e) {
+      if (e.code === 403 || e.code === 404) { leaveTask(false); }
+      else { netOk = false; refreshUi(); }
+    });
+}
+
+function pollTask() {
+  if (!joined || !parseServer()) return;
+  stReq('GET', '/api/stocktake/co/task').then(function (t) {
+    netOk = true;
+    if (t.status === '已完成') { leaveTask(true); return; }
+    if (joined && !t.active && active) {
+      if (scanning && APP) window.YzApp.stockStop();
+      toast(t.status === '待核对' ? '任务已提交，等待主管核对' : '任务已结束');
+    }
+    active = !!t.active;
+    refreshUi();
+  }).catch(function () {});
+}
+
+setInterval(function () { if (scanning || Object.keys(PENDING).length) flush(); }, 1200);
+setInterval(function () { if (joined) pull(); }, Math.max(5, SET.pull) * 1000);
+setInterval(function () { if (joined) pollTask(); }, 20000);
+
+// ================= UI =================
+function setTab(abn) {
+  abnormalTab = abn;
+  document.getElementById('tabStore').className = 'tab' + (abn ? '' : ' on');
+  document.getElementById('tabAbnormal').className = 'tab' + (abn ? ' on2' : '');
+  renderList();
+}
+function renderList() {
+  var arr = listFor(abnormalTab);
+  var list = document.getElementById('list');
+  var MAX = 300;
+  var html = '';
+  arr.slice(0, MAX).forEach(function (p) {
+    var epc = p[0], r = p[1];
+    var bdg, cls = 'item';
+    if (r.type === 'ABNORMAL') { bdg = '<span class="bdg" style="background:var(--red)">异常</span>'; cls += ' ab'; }
+    else if (r.type === 'HV_UN') bdg = '<span class="bdg" style="background:#d97706">高值未扫</span>';
+    else if (r.type === 'HV_SC') bdg = '<span class="bdg" style="background:#d97706">高值已扫</span>';
+    else if (r.type === 'OTHER') bdg = '<span class="bdg" style="background:#64748b">' + esc('设备' + r.dev) + '</span>';
+    else bdg = '<span class="bdg" style="background:var(--green)">已扫</span>';
+    var sub = esc(epc) + (r.rssi ? ' · ' + r.rssi + 'dBm' : '') + (r.time ? ' · ' + r.time : '');
+    html += '<div class="' + cls + '">' + bdg + '<div class="info"><div class="nm">' + (esc(r.name) || '未登记商品') + '</div><div class="sub">' + sub + '</div></div></div>';
+  });
+  list.innerHTML = html;
+  var empty = document.getElementById('empty');
+  empty.style.display = arr.length ? 'none' : 'block';
+  empty.textContent = arr.length ? '' : (abnormalTab ? '没有异常标签' : '扫描到的商品会实时显示在这里');
+  if (arr.length > MAX) list.innerHTML += '<div class="more">仅显示最近 ' + MAX + ' 条，共 ' + arr.length + ' 条</div>';
+  document.getElementById('tabStore').textContent = '在库 (' + listFor(false).length + ')';
+  document.getElementById('tabAbnormal').textContent = '异常 (' + listFor(true).length + ')';
+  // 高价值提醒
+  var hv = 0;
+  for (var epc in RECORDS) if (RECORDS[epc].type === 'HV_UN') hv++;
+  var b = document.getElementById('hvBanner');
+  if (hv > 0 && SET.hv) { b.textContent = '⚠ 还有 ' + hv + ' 件高价值商品未扫到'; b.className = 'hv on'; }
+  else b.className = 'hv';
+}
+function refreshUi() {
+  var chNet = document.getElementById('chNet');
+  chNet.textContent = netOk ? '在线' : '离线';
+  chNet.className = 'chip ' + (netOk ? 'ok' : 'warn');
+  var chTask = document.getElementById('chTask');
+  chTask.textContent = !joined ? '未加入任务' : (active ? '盘点中' : '待核对');
+  chTask.className = 'chip ' + (joined && active ? 'ok' : (joined ? 'warn' : ''));
+  var n = Object.keys(SNAPSHOT).length;
+  var chSnap = document.getElementById('chSnap');
+  chSnap.textContent = snapshotReady ? '快照 ' + n + ' 件' : '未下载快照';
+  chSnap.className = 'chip ' + (snapshotReady ? 'ok' : 'warn');
+  var chUhf = document.getElementById('chUhf');
+  chUhf.textContent = APP ? (DEV.ready ? 'UHF 就绪' : '无 UHF') : '网页模式';
+  chUhf.className = 'chip ' + (APP && DEV.ready ? 'ok' : '');
+  document.getElementById('chDev').textContent = CFG.deviceNo ? '本机 ' + CFG.deviceNo : '本机';
+  var btn = document.getElementById('btnTrigger');
+  if (canScan()) {
+    if (scanning) { btn.className = 'trigger scan'; btn.textContent = '停止扫描'; }
+    else { btn.className = 'trigger ready'; btn.textContent = '开始扫描'; }
+  } else {
+    btn.className = 'trigger'; btn.textContent = '扫码加入盘点任务';
+  }
+  renderList();
+}
+
+// ---- 设置面板 ----
+function openPanel() {
+  document.getElementById('sPull').value = SET.pull;
+  swSet('sRssiOn', SET.rssiOn); document.getElementById('sRssiTh').value = String(SET.rssiTh);
+  swSet('sDedup', SET.dedup); swSet('sHv', SET.hv); swSet('sVib', SET.vib);
+  document.getElementById('mask').className = 'mask on';
+  document.getElementById('panel').className = 'panel on';
+}
+function closePanel() {
+  var v = parseInt(document.getElementById('sPull').value) || 15;
+  SET.pull = v < 5 ? 5 : (v > 120 ? 120 : v);
+  SET.rssiTh = parseInt(document.getElementById('sRssiTh').value) || -75;
+  saveSet();
+  document.getElementById('mask').className = 'mask';
+  document.getElementById('panel').className = 'panel';
+}
+function swSet(id, on) { document.getElementById(id).className = 'sw' + (on ? ' on' : ''); }
+function toggleSw(el) { el.className = 'sw' + (el.className.indexOf('on') >= 0 ? '' : ' on'); }
+function applyPanelSw(id, key) {
+  var on = document.getElementById(id).className.indexOf('on') >= 0;
+  if (SET[key] !== on) { SET[key] = on; }
+}
+// 关面板时同步开关
+document.getElementById('panel').addEventListener('transitionend', function () {});
+var _closePanel = closePanel;
+closePanel = function () {
+  applyPanelSw('sRssiOn', 'rssiOn'); applyPanelSw('sDedup', 'dedup');
+  applyPanelSw('sHv', 'hv'); applyPanelSw('sVib', 'vib');
+  _closePanel();
+};
+
+// ---- 杂项 ----
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (m) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+  });
+}
+var _tt;
+function toast(msg, err) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (err ? ' err' : '');
+  clearTimeout(_tt);
+  _tt = setTimeout(function () { t.className = 'toast' + (err ? ' err' : ''); }, 2400);
+}
+function showOverlay(title, sub) {
+  var o = document.getElementById('overlay');
+  o.innerHTML = '<div style="font-size:22px;font-weight:700">' + esc(title) + '</div><div>' + esc(sub) + '</div>';
+  o.style.display = 'flex';
+}
+
+// ================= 启动 =================
+(function init() {
+  if (!TOKEN) { showOverlay('未登录', '请从手持机 App 扫码登录后进入盘点'); return; }
+  fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + TOKEN } }).then(function (r) {
+    if (!r.ok) throw new Error('unauthorized');
+    window.__yzLoginOk = true;
+    devInfo();
+    // 恢复盘点功率（出单页可能留在了小功率）
+    if (APP && DEV.ready) {
+      try { window.YzApp.setPower(DEV.stock); } catch (e) {}
+      document.getElementById('chPwr').textContent = DEV.stock + 'dBm';
+    }
+    // 恢复任务态
+    restoreRecords();
+    var saved = load('yz_stock_pending', null); if (saved) PENDING = saved;
+    if (CFG.snapshot) { try { loadSnapshot(JSON.parse(CFG.snapshot)); } catch (e) {} }
+    if (CFG.server) { joined = true; parseServer(); join(false); }
+    refreshUi();
+  }).catch(function () { showOverlay('登录已过期', '请在手持机 App 重新扫码登录'); });
+})();
+</script>
+</body>
+</html>
