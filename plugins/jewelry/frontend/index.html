@@ -986,10 +986,11 @@
             <img v-if="tplEdit.definition.bg_image" class="tpl-bg" :src="tplEdit.definition.bg_image" :style="tplBgStyle()" alt="">
             <div class="tpl-slot"
                  v-for="(s,i) in tplEdit.definition.slots" :key="i"
-                 :class="{active: tplSelIdx===i, 'tpl-qrcode': s.font.type==='qrcode'}"
+                 :class="{active: tplSelIdx===i, 'tpl-qrcode': s.font.type==='qrcode', 'tpl-empty': s.font.type==='empty'}"
                  :style="{ left: (s.x*tplDotScale())+'px', top: (s.y*tplDotScale())+'px', width: (s.w*tplDotScale())+'px', height: (s.h*tplDotScale())+'px', transform: 'rotate('+(s.font.rotate||0)+'deg)', transformOrigin: 'center center' }"
                  @mousedown="startDragSlot($event, i)">
               <template v-if="s.font.type==='qrcode'"><img class="tpl-qrimg" :src="qrSvgDataUrl(labelFieldText(s.field),3)" alt=""><div class="tpl-qrlbl">QR·{{ labelFieldText(s.field) }}</div></template>
+              <template v-else-if="s.font.type==='empty'">不可打印区</template>
               <template v-else>{{ labelFieldText(s.field) }}</template>
             </div>
           </div>
@@ -1006,18 +1007,22 @@
             <div class="tpl-prop-row">
               <label>{{ t('tpl.posX') }}</label>
               <input type="number" :value="tplEdit.definition.slots[tplSelIdx].x" @input="updateSlot(tplSelIdx, 'x', +$event.target.value)">
+              <span class="tpl-unit">≈ {{ dotsToMm(tplEdit.definition.slots[tplSelIdx].x) }}mm</span>
             </div>
             <div class="tpl-prop-row">
               <label>{{ t('tpl.posY') }}</label>
               <input type="number" :value="tplEdit.definition.slots[tplSelIdx].y" @input="updateSlot(tplSelIdx, 'y', +$event.target.value)">
+              <span class="tpl-unit">≈ {{ dotsToMm(tplEdit.definition.slots[tplSelIdx].y) }}mm</span>
             </div>
             <div class="tpl-prop-row">
               <label>{{ t('tpl.slotW') }}</label>
               <input type="number" :value="tplEdit.definition.slots[tplSelIdx].w" @input="updateSlot(tplSelIdx, 'w', +$event.target.value)">
+              <span class="tpl-unit">≈ {{ dotsToMm(tplEdit.definition.slots[tplSelIdx].w) }}mm</span>
             </div>
             <div class="tpl-prop-row">
               <label>{{ t('tpl.slotH') }}</label>
               <input type="number" :value="tplEdit.definition.slots[tplSelIdx].h" @input="updateSlot(tplSelIdx, 'h', +$event.target.value)">
+              <span class="tpl-unit">≈ {{ dotsToMm(tplEdit.definition.slots[tplSelIdx].h) }}mm</span>
             </div>
             <div class="tpl-prop-row">
               <label>{{ t('tpl.outType') }}</label>
@@ -1026,6 +1031,7 @@
                 <option value="ascii">{{ t('tpl.font.ascii') }}</option>
                 <option value="barcode">{{ t('tpl.font.barcode') }}</option>
                 <option value="qrcode">{{ t('tpl.font.qrcode') }}</option>
+                <option value="empty">{{ t('tpl.font.empty') }}</option>
               </select>
             </div>
             <div class="tpl-prop-row">
@@ -1045,7 +1051,7 @@
               <label>{{ t('tpl.qrSize') }}</label>
               <input type="number" min="1" max="10" :value="tplEdit.definition.slots[tplSelIdx].font.h" @input="updateSlot(tplSelIdx, 'font.h', +$event.target.value)">
             </div>
-            <div class="tpl-prop-row" v-else>
+            <div class="tpl-prop-row" v-else-if="['barcode','cn','ascii'].includes(tplEdit.definition.slots[tplSelIdx].font.type)">
               <label>{{ tplEdit.definition.slots[tplSelIdx].font.type==='barcode' ? t('tpl.barH') : t('tpl.fontH') }}</label>
               <input type="number" :value="tplEdit.definition.slots[tplSelIdx].font.h" @input="updateSlot(tplSelIdx, 'font.h', +$event.target.value)">
             </div>

@@ -1022,6 +1022,7 @@ var LABEL_FIELDS = [
   { key: 'weight',   i18n: 'label.fld.weight',   type: 'ascii', defFont: { type: 'ascii', w: 18, h: 18 } },
   { key: 'size',     i18n: 'label.fld.size',     type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 18, h: 18 } },
   { key: 'cost',     i18n: 'label.fld.cost',     type: 'ascii', defFont: { type: 'ascii', w: 18, h: 18 } },
+  { key: 'empty',    i18n: 'label.fld.empty',    type: 'empty', defFont: { type: 'empty' } },
 ];
 
 function labelFieldText(k) {
@@ -1172,8 +1173,8 @@ function addSlotToCanvas(fieldKey) {
   slots.push({
     field: fieldKey,
     x: baseX, y: baseY,
-    w: field.type === 'barcode' ? 300 : 200,
-    h: field.type === 'barcode' ? 80 : (field.defFont.h || 24) + 8,
+    w: field.type === 'barcode' ? 300 : (field.type === 'empty' ? 200 : 200),
+    h: field.type === 'barcode' ? 80 : (field.type === 'empty' ? 40 : (field.defFont.h || 24) + 8),
     font: JSON.parse(JSON.stringify(field.defFont)),
   });
   ST.tplSelIdx = slots.length - 1;
@@ -1209,6 +1210,12 @@ function updateSlot(idx, prop, value) {
   }
 }
 
+// dots 转 mm（300dpi，1 inch=25.4mm=300dots），保留两位小数
+function dotsToMm(dots) {
+  var v = Number(dots) || 0;
+  return (v * 25.4 / 300).toFixed(2);
+}
+
 // 切换输出类型时给该类型的关键参数设默认值
 function onSlotTypeChange(idx, type) {
   if (!ST.tplEdit || !ST.tplEdit.definition.slots[idx]) return;
@@ -1224,6 +1231,8 @@ function onSlotTypeChange(idx, type) {
     slot.w = slot.w || 300; slot.h = Math.max(slot.h || 0, 80);
   } else if (type === 'cn') {
     slot.font.w = slot.font.w || 30; slot.font.h = slot.font.h || 30;
+  } else if (type === 'empty') {
+    slot.w = slot.w || 200; slot.h = slot.h || 40;
   } else {
     slot.font.w = slot.font.w || 24; slot.font.h = slot.font.h || 24;
   }
@@ -1416,9 +1425,11 @@ function labelPreview() {
     }
     if (def && def.slots && def.slots.length) {
       def.slots.forEach(function (s0) {
+        var f = s0.font || {};
+        // 不可打印区：仅占位，不渲染也不打印
+        if ((f.type || 'ascii') === 'empty') return;
         var val = _labelVal(s0.field, it, store);
         if (!val) return;
-        var f = s0.font || {};
         slots.push({ x: +s0.x || 0, y: +s0.y || 0, w: +s0.w || 200, h: +s0.h || 30,
           type: (f.type || 'ascii'), val: String(val),
           fw: +f.w || 24, fh: +f.h || 24, bh: +f.h || 64,
@@ -1649,7 +1660,7 @@ var app = Vue.createApp({
     openTplDesigner: openTplDesigner, closeTplDesigner: closeTplDesigner,
     saveTemplate: saveTemplate, delTemplate: delTemplate, bindCatTemplate: bindCatTemplate,
     addSlotToCanvas: addSlotToCanvas, removeSlot: removeSlot, updateSlot: updateSlot,
-    onSlotTypeChange: onSlotTypeChange, qrSvgDataUrl: qrSvgDataUrl,
+    onSlotTypeChange: onSlotTypeChange, qrSvgDataUrl: qrSvgDataUrl, dotsToMm: dotsToMm,
     startDragSlot: startDragSlot, previewTemplate: previewTemplate, loadTemplates: loadTemplates,
     tplDotScale: tplDotScale,
     uploadTplBg: uploadTplBg, rotateTplBg: rotateTplBg, removeTplBg: removeTplBg,

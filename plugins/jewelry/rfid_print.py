@@ -138,6 +138,9 @@ def _render_slot(slot: dict, product: dict, store_name: str) -> list[str]:
     fw_dir = {90: "R", 180: "I", 270: "B"}.get(rotate, "N")
 
     lines = [f"^FO{x},{y}"]
+    if font_type == "empty":
+        # 不可打印区：仅占位，不输出任何打印指令
+        return []
     if fw_dir != "N":
         lines.append(f"^FW{fw_dir}")
 
