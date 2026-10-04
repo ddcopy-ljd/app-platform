@@ -376,6 +376,7 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("products", "product_type_code", "TEXT DEFAULT ''"),
         ("products", "image", "BLOB"),
         ("products", "image_ts", "TEXT DEFAULT ''"),
+        ("biz_config", "epc_cleaned", "INTEGER DEFAULT 0"),
     ]
     for table, col, decl in alters:
         if not _has_column(conn, table, col):
@@ -384,6 +385,8 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     _seed_base_dicts(conn)
     _backfill_category_code(conn)
     _migrate_material_and_type(conn)
+    conn.commit()
+    _migrate_clean_dirty_epc(conn)
     conn.commit()
 
 
@@ -525,6 +528,50 @@ def _migrate_material_and_type(conn: sqlite3.Connection) -> None:
         if sets:
             args.append(r["id"])
             conn.execute(f"UPDATE products SET {', '.join(sets)} WHERE id=?", args)
+
+
+def _migrate_clean_dirty_epc(conn: sqlite3.Connection) -> None:
+    """一次性清理历史脏 EPC（随机十六进制串、尾部混入货号、品类码错位/空值）。
+
+    规则：合法 EPC = 配置前缀 + 2 位品类码 + seq_bits 位十六进制序号，
+    且品类码必须与商品 product_type_code 一致；不合规的按品类顺序重新分配，
+    各品类已占用的最大序号之后续号，避免冲突。仅执行一次（biz_config.epc_cleaned）。
+    """
+    import re as _re
+    flag = conn.execute("SELECT epc_cleaned FROM biz_config WHERE id=1").fetchone()
+    if flag and flag[0]:
+        return
+    cfg = conn.execute("SELECT epc_prefix,seq_bits FROM biz_config WHERE id=1").fetchone()
+    prefix, bits = cfg[0], cfg[1]
+    pat = _re.compile(r"^" + _re.escape(prefix) + r"(\d{2})([0-9A-F]{%d})$" % bits)
+    used: dict[str, set[int]] = {}
+    for (epc,) in conn.execute("SELECT rfid_epc FROM products WHERE COALESCE(rfid_epc,'')<>''"):
+        m = pat.match((epc or "").upper())
+        if m:
+            used.setdefault(m.group(1), set()).add(int(m.group(2), 16))
+
+    def _take(code: str) -> int:
+        s = used.setdefault(code, set())
+        n = 1
+        while n in s:
+            n += 1
+        s.add(n)
+        return n
+
+    rows = conn.execute(
+        "SELECT id,COALESCE(product_type_code,''),COALESCE(rfid_epc,'') FROM products"
+    ).fetchall()
+    for pid, tc, epc in rows:
+        code = tc or "99"
+        m = pat.match(epc.upper()) if epc else None
+        if m and m.group(1) == code:
+            continue  # 合规且品类一致，保留
+        seq = _take(code)
+        conn.execute(
+            "UPDATE products SET rfid_epc=? WHERE id=?",
+            (f"{prefix}{code}{seq:0{bits}X}", pid),
+        )
+    conn.execute("UPDATE biz_config SET epc_cleaned=1 WHERE id=1")
 
 
 # 旧库商品只有中文品类名，按分类表回填 category_code

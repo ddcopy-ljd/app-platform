@@ -172,7 +172,7 @@
                   <td class="cell-num">￥{{ fmt(p.price) }}</td>
                   <td class="cell-num cell-cost">￥{{ fmt(p.cost) }}</td>
                   <td class="cell-status"><span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span></td>
-                  <td class="cell-epc mono" :title="p.rfid_epc">{{ p.rfid_epc||'—' }}</td>
+                  <td class="cell-epc mono" :title="p.label_print_count ? printedTip(p) : p.rfid_epc"><span v-if="p.label_print_count" class="printed-ico">🖨</span>{{ p.rfid_epc||'—' }}</td>
                   <td class="cell-ico"><span v-if="p.showcase_public" :title="t('th.showcase')">✓</span><span v-else class="dim">—</span></td>
                   <td class="cell-ico"><span v-if="p.high_value" :title="t('lbl.highValue')">⭐</span><span v-else class="dim">—</span></td>
                   <td class="cell-op nowrap">
@@ -190,7 +190,7 @@
                 <input type="checkbox" class="card-print-check" :checked="!!printSel[p.id]" @click.stop @change="togglePrintSel(p.id)" :title="t('act.printSel')">
                 <div class="prod-thumb"><img v-if="p.image_ts" :src="productImageUrl(p)" class="prod-thumb-img" alt=""><template v-else>💎</template></div>
                 <div class="prod-info">
-                  <div class="prod-name">{{ p.name }}<span class="tag tag-hv" v-if="p.high_value">⭐{{ t('lbl.highValue') }}</span><span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span></div>
+                  <div class="prod-name">{{ p.name }}<span class="tag tag-printed" v-if="p.label_print_count" :title="printedTip(p)">🖨{{ p.label_print_count }}</span><span class="tag tag-hv" v-if="p.high_value">⭐{{ t('lbl.highValue') }}</span><span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span></div>
                   <div class="prod-meta">{{ p.code }} · {{ productTypeName(p) }} · {{ materialText(p.material) || '—' }} · {{ p.weight }}g</div>
                 </div>
                 <div class="prod-price2"><div class="pp">￥{{ fmt(p.price) }}</div></div>
@@ -528,8 +528,9 @@
 
           <div class="card-item">
             <div class="card-title">{{ t('epc.title') }}</div>
-            <div class="form-group"><label>{{ t('epc.prefix') }}</label><input v-model="bizConfig.epc_prefix" placeholder="E280"></div>
+            <div class="form-group"><label>{{ t('epc.prefix') }}</label><input v-model="bizConfig.epc_prefix" placeholder="YZZ"></div>
             <div class="form-group"><label>{{ t('epc.seqBits') }}</label><input v-model.number="bizConfig.seq_bits" type="number" min="1" max="8"></div>
+            <div class="hint">{{ t('epc.hint') }}</div>
             <button class="btn btn-gold btn-block" @click="saveBizConfig">{{ t('epc.save') }}</button>
           </div>
 
@@ -603,7 +604,7 @@
           <div class="card-item">
             <div class="card-title">{{ t('epc.title') }}</div>
             <div class="form-row">
-              <div class="form-group"><label>{{ t('epc.prefix') }}</label><input v-model="bizConfig.epc_prefix" placeholder="E280"></div>
+              <div class="form-group"><label>{{ t('epc.prefix') }}</label><input v-model="bizConfig.epc_prefix" placeholder="YZZ"></div>
               <div class="form-group"><label>{{ t('epc.seqBits') }}</label><input v-model.number="bizConfig.seq_bits" type="number" min="1" max="8"></div>
             </div>
             <div class="hint">{{ t('epc.hint') }}</div>
@@ -892,47 +893,36 @@
     </div>
   </div>
 
-  <div class="modal-mask" v-if="labelDlg" @click.self="closeLabel">
+  <div class="modal-mask" v-if="labelDlg">
     <div class="modal-box label-sheet">
       <div class="sheet-head"><h3>{{ t('label.title') }}</h3><span class="sheet-close" @click="closeLabel">✕</span></div>
       <div class="sheet-body">
         <div class="form-group">
-          <label>{{ t('label.pick') }}</label>
-          <div class="label-items">
-            <span class="label-chip" v-for="it in labelItems" :key="it.id">{{ it.code }} <b @click="removeLabelItem(it.id)">✕</b></span>
-            <span v-if="!labelItems.length" class="prod-meta">{{ t('label.empty') }}</span>
-          </div>
-        </div>
-        <div class="form-group" v-if="labelTplId">
-          <label>{{ t('tpl.currentTpl') }}</label>
-          <div style="padding:6px 10px;border:1px solid #d4af37;border-radius:6px;background:#fdf8ec">
-            <span>🏷 {{ (labelTemplates.find(function(x){return x.id===labelTplId})||{}).name }}</span>
-          </div>
+          <label>{{ t('label.spec') }}</label>
+          <div class="prod-meta">70mm × 35mm · {{ labelItems.length }} {{ t('label.sheetUnit') }}</div>
         </div>
         <div class="form-group" v-if="labelItems.length">
           <label>{{ t('label.preview') }}</label>
           <div class="label-preview-scroll">
-            <div class="label-inner" v-for="lv in labelPreview()" :key="lv.id">
-              <div v-for="(s, si) in lv.slots" :key="si" class="lp-slot"
-                   :class="'lp-' + s.type"
-                   :style="{ left: (s.x*100/827)+'cqw', top: (s.y*100/827)+'cqw', width: (s.w*100/827)+'cqw', height: (s.h*100/827)+'cqw', fontSize: (s.fh*100/827)+'cqw' }">
-                <template v-if="s.type === 'barcode'">
-                  <div class="lp-bartext" v-if="!s.below">{{ s.val }}</div>
-                  <div class="lp-bars" :style="{ height: (s.bh*100/827)+'cqw' }"></div>
-                  <div class="lp-bartext" v-if="s.below">{{ s.val }}</div>
-                </template>
-                <template v-else>{{ s.val }}</template>
+            <div class="label-preview-item" v-for="lv in labelPreview()" :key="lv.id">
+              <span class="lp-remove" :title="t('act.remove')" @click="removeLabelItem(lv.id)">✕</span>
+              <div class="label-inner">
+                <div v-for="(s, si) in lv.slots" :key="si" class="lp-slot"
+                     :class="'lp-' + s.type"
+                     :style="{ left: (s.x*100/827)+'cqw', top: (s.y*100/827)+'cqw', width: (s.w*100/827)+'cqw', height: (s.h*100/827)+'cqw', fontSize: (s.fh*100/827)+'cqw' }">
+                  <template v-if="s.type === 'barcode'">
+                    <div class="lp-bartext" v-if="!s.below">{{ s.val }}</div>
+                    <div class="lp-bars" :style="{ height: (s.bh*100/827)+'cqw' }"></div>
+                    <div class="lp-bartext" v-if="s.below">{{ s.val }}</div>
+                  </template>
+                  <template v-else>{{ s.val }}</template>
+                </div>
+                <div v-if="!lv.slots.length" class="prod-meta" style="padding:8mm;text-align:center">{{ t('tpl.empty') }}</div>
               </div>
-              <div v-if="!lv.slots.length" class="prod-meta" style="padding:24px;text-align:center">{{ t('tpl.empty') }}</div>
-            </div>
-          </div>
-          <div class="label-epc-list">
-            <div class="log-item" v-for="lv in labelPreview()" :key="'epc-' + lv.id">
-              <span class="mono">{{ lv.code }}</span>
-              <span class="mono small">{{ lv.epc || t('label.epcAuto') }}</span>
             </div>
           </div>
         </div>
+        <div v-else class="prod-meta">{{ t('label.empty') }}</div>
         <div class="form-row">
           <div class="form-group"><label>{{ t('label.printer') }}</label>
             <select v-model="printerName" :disabled="!printSupported">

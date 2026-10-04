@@ -412,14 +412,18 @@ a { text-decoration: none; color: inherit; }
 @keyframes modalIn { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
 .label-items { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 /* 标签打印预览：内层 827×413 点阵按容器宽度等比缩放（cqw 容器查询单位） */
-.label-preview-scroll { max-height: 360px; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 10px; padding: 4px; border: 1px dashed var(--border); border-radius: 10px; background: var(--cream, #faf6ec); }
-.label-inner { position: relative; width: 100%; aspect-ratio: 827 / 413; flex-shrink: 0; background: #fff; border: 1px solid #d9c9a3; border-radius: 4px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.07); container-type: inline-size; }
+.label-preview-scroll { max-height: 46vh; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 12px; padding: 8px; border: 1px dashed var(--border); border-radius: 10px; background: var(--cream, #faf6ec); }
+.label-preview-item { position: relative; width: 70mm; margin: 0 auto; }
+/* 实物等比预览：70mm×35mm（浏览器缩放 100% 时与标签纸同尺寸），槽位用 cqw 随标签宽度缩放 */
+.label-inner { position: relative; width: 70mm; height: 35mm; flex-shrink: 0; background: #fff; border: 1px solid #d9c9a3; border-radius: 2px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.07); container-type: inline-size; }
+.lp-remove { position: absolute; top: -9px; right: -9px; z-index: 2; width: 20px; height: 20px; line-height: 18px; text-align: center; border-radius: 50%; background: #8a6d1f; color: #fff; font-size: 11px; cursor: pointer; opacity: 0; transition: opacity .15s; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.label-preview-item:hover .lp-remove { opacity: 1; }
 .lp-slot { position: absolute; overflow: hidden; white-space: nowrap; color: #111; font-family: Arial, 'Segoe UI', sans-serif; line-height: 1.08; }
 .lp-cn { font-family: 'SimSun', '宋体', serif; font-weight: 600; }
 .lp-ascii { font-weight: 500; }
 .lp-barcode { display: flex; flex-direction: column; justify-content: space-between; }
-.lp-bartext { text-align: center; letter-spacing: 3px; font-size: 14px; }
-.lp-bars { width: 100%; background: repeating-linear-gradient(90deg, #000 0 2px, #fff 2px 4px, #000 4px 5px, #fff 5px 8px, #000 8px 11px, #fff 11px 14px); }
+.lp-bartext { text-align: center; letter-spacing: .12em; font-size: .85em; }
+.lp-bars { width: 100%; background: repeating-linear-gradient(90deg, #000 0 .24cqw, #fff .24 .48cqw, #000 .48 .60cqw, #fff .60 .96cqw, #000 .96 1.32cqw, #fff 1.32 1.68cqw); }
 .label-epc-list { margin-top: 8px; border: 1px solid #eee3c8; border-radius: 8px; background: #fffdf5; overflow: hidden; }
 .label-epc-list .log-item { padding: 5px 10px; display: flex; justify-content: space-between; align-items: center; gap: 10px; border-bottom: 1px dashed #f0e6cc; }
 .label-epc-list .log-item:last-child { border-bottom: none; }
@@ -537,6 +541,8 @@ select.lang-code {
 .table-products .th-img { width: 56px; }
 .table-products .th-check, .table-products td.cell-check { width: 34px; min-width: 34px; text-align: center; }
 .table-products .th-check input, .table-products td.cell-check input { width: 15px; height: 15px; cursor: pointer; vertical-align: middle; accent-color: var(--gold, #c9a227); }
+.table-products .printed-ico { margin-right: 3px; font-size: 12px; }
+.tag-printed { background: #eef6ec; color: #3d7a35; border-color: #bfe0b8; }
 .table-products td.cell-img { width: 56px; padding: 5px 6px; text-align: center; }
 .table-products .cell-img .prod-thumb-img { width: 48px; height: 36px; border-radius: 6px; }
 .table-products .cell-img .prod-thumb-ph {

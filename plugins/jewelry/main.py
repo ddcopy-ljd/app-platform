@@ -10,6 +10,7 @@ import base64
 import json
 import logging
 import os
+import re
 import secrets
 import socket
 import sqlite3
@@ -204,21 +205,48 @@ def _norm_material(v: str) -> str:
 
 def _epc_cfg(conn: sqlite3.Connection) -> tuple[str, int]:
     cfg = conn.execute("SELECT epc_prefix,seq_bits FROM biz_config WHERE id=1").fetchone()
-    return (cfg[0], cfg[1]) if cfg else ("E280", 8)
+    return (cfg[0], cfg[1]) if cfg else ("E280", 6)
+
+
+def _pinyin_initials(name: str, n: int = 3) -> str:
+    """企业名称 → 拼音首字母前 n 位（中文取拼音首字母，英文/数字原样保留，大写）。
+    例：懿臻珠宝 → YZZ。"""
+    name = (name or "").strip()
+    if not name:
+        return ""
+    try:
+        from pypinyin import Style, lazy_pinyin
+        pys = lazy_pinyin(name, style=Style.FIRST_LETTER, errors=lambda items: list(items))
+    except Exception:
+        pys = list(name)
+    out: list[str] = []
+    for py in pys:
+        for ch in str(py).upper():
+            if ch.isascii() and ch.isalnum():
+                out.append(ch)
+    return "".join(out)[:n]
 
 
 def _gen_type_epc(conn: sqlite3.Connection, type_code: str) -> str:
-    """EPC = 前缀 + 品类码 + 十六进制递增序号（各品类独立计数）。"""
+    """EPC = 企业前缀 + 品类码 + 十六进制递增序号（各品类独立计数）。"""
     prefix, seq_bits = _epc_cfg(conn)
     code = (type_code or "99").strip() or "99"
+    head = f"{prefix}{code}"
+    maxseq = 0
     row = conn.execute(
-        "SELECT MAX(CAST(SUBSTR(rfid_epc, ?) AS INTEGER)) FROM products WHERE rfid_epc LIKE ?",
-        (len(prefix) + len(code) + 1, f"{prefix}{code}%"),
-    ).fetchone()
-    seq = (row[0] or 0) + 1
+        "SELECT rfid_epc FROM products WHERE rfid_epc LIKE ?", (head + "%",)
+    ).fetchall()
+    for (e,) in row:
+        tail = (e or "")[len(head):]
+        if len(tail) == seq_bits:
+            try:
+                maxseq = max(maxseq, int(tail, 16))
+            except ValueError:
+                continue
+    seq = maxseq + 1
     if seq > 16 ** seq_bits - 1:
         raise HTTPException(400, "该品类 EPC 序号已用尽，请调大序号位数")
-    return f"{prefix}{code}{seq:0{seq_bits}X}"
+    return f"{head}{seq:0{seq_bits}X}"
 
 
 # 列表/详情不回传图片 BLOB（图片走专用接口），用 image_ts 判断是否有图
@@ -226,7 +254,9 @@ _PRODUCT_COLS = (
     "id,code,name,name_i18n,category,category_code,material,product_type,product_type_code,"
     "weight,size,cert,cost,price,status,store_id,rfid_epc,"
     "showcase_public,showcase_order,showcase_desc,showcase_desc_i18n,origin,high_value,"
-    "image_ts,created"
+    "image_ts,created,"
+    "(SELECT MAX(ts) FROM inventory_logs il WHERE il.product_id=products.id AND il.type='rfid') AS label_printed_at,"
+    "(SELECT COUNT(*) FROM inventory_logs il WHERE il.product_id=products.id AND il.type='rfid') AS label_print_count"
 )
 
 
@@ -931,18 +961,24 @@ class BizConfigUpdate(BaseModel):
 def biz_config_update(request: Request, body: BizConfigUpdate):
     _require_auth(request)
     prefix = (body.epc_prefix or "").strip().upper()
-    if not prefix:
-        raise HTTPException(400, "EPC 前缀不能为空")
-    if not (1 <= body.seq_bits <= 8):
-        raise HTTPException(400, "序号位数需在 1~8 之间")
     with _db(request) as conn:
+        # 前缀留空时，按企业名称拼音首字母前三位自动生成
+        if not prefix:
+            prow = conn.execute("SELECT name FROM tenant_profiles ORDER BY id DESC LIMIT 1").fetchone()
+            prefix = _pinyin_initials(prow[0] if prow else "")
+        if not prefix:
+            raise HTTPException(400, "EPC 前缀为空，且无法从企业名称自动生成（请先在店铺资料填写企业名称）")
+        if not re.fullmatch(r"[A-Z0-9]{1,6}", prefix):
+            raise HTTPException(400, "EPC 前缀只能用 1~6 位英文字母或数字")
+        if not (1 <= body.seq_bits <= 8):
+            raise HTTPException(400, "序号位数需在 1~8 之间")
         conn.execute(
             "INSERT INTO biz_config(id,epc_prefix,seq_bits) VALUES(1,?,?) "
             "ON CONFLICT(id) DO UPDATE SET epc_prefix=excluded.epc_prefix, seq_bits=excluded.seq_bits",
             (prefix, body.seq_bits),
         )
         conn.commit()
-    return {"ok": True}
+    return {"ok": True, "epc_prefix": prefix}
 
 
 @app.get("/api/categories")
@@ -1610,6 +1646,7 @@ def print_labels(body: LabelPrintIn, request: Request):
         # 逐件生成：显式模板优先，否则按各商品品类绑定模板，无模板回退默认字段布局
         fields = {f for f in body.fields if f in rfid_print.FIELD_OPTIONS}
         copies = max(1, body.copies)
+        epc_prefix_cfg, _ = _epc_cfg(conn)
         zpl_parts = []
         used_template_ids = set()
         for p in products:
@@ -1618,11 +1655,13 @@ def print_labels(body: LabelPrintIn, request: Request):
                 used_template_ids.add(tpl_i["id"])
                 one = rfid_print.build_label_zpl(
                     p, store_name=store_name, write_epc=body.write_epc, template=tpl_i,
+                    rfid_prefix=epc_prefix_cfg,
                 )
             else:
                 one = rfid_print.build_label_zpl(
                     p, fields=fields, store_name=store_name,
                     font=(body.font or ""), write_epc=body.write_epc,
+                    rfid_prefix=epc_prefix_cfg,
                 )
             zpl_parts.append(one.replace("^PQ1", f"^PQ{copies}"))
         zpl = "".join(zpl_parts)

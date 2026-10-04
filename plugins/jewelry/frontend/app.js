@@ -344,6 +344,11 @@ function methodText(m) { return METHOD_I18N_KEYS[m] ? t(METHOD_I18N_KEYS[m]) : (
 var LEVEL_I18N_KEYS = { '普通': 'cust.normal', '银卡': 'cust.silver', '金卡': 'cust.gold' };
 function levelText(l) { return LEVEL_I18N_KEYS[l] ? t(LEVEL_I18N_KEYS[l]) : (l || ''); }
 function directionText(d) { return d === 'out' ? t('lbl.out') : (d === 'in' ? t('lbl.in') : (d || '')); }
+// 标签打印记录提示：🖨 图标悬停显示打印次数与最近时间
+function printedTip(p) {
+  var tm = (p && p.label_printed_at || '').slice(5, 16);  // MM-DD HH:MM
+  return t('tip.printed').replace('{n}', p.label_print_count).replace('{t}', tm);
+}
 function coStatusText(s) {
   if (s === '进行中') return t('co.statusRunning');
   if (s === '待核对') return t('co.statusReview');
@@ -609,7 +614,8 @@ var _cropImg = null;      // 已加载的原图 Image
 var _cropDrag = null;     // 拖拽状态
 
 function chooseProductImage(pid) {
-  if (!pid) { toast(t('toast.saveFirst'), 'error'); return; }
+  // 新商品尚未保存时，选完图自动先保存商品（在 onProductImageChosen 中处理）
+  if (!pid && ST.sheetMode !== 'product') { toast(t('toast.saveFirst'), 'error'); return; }
   if (!_imgFileInput) {
     _imgFileInput = document.createElement('input');
     _imgFileInput.type = 'file';
@@ -619,7 +625,7 @@ function chooseProductImage(pid) {
     document.body.appendChild(_imgFileInput);
   }
   _imgFileInput.value = '';
-  _imgFileInput.dataset.pid = String(pid);
+  _imgFileInput.dataset.pid = String(pid || 0);
   _imgFileInput.click();
 }
 function onProductImageChosen(e) {
@@ -628,8 +634,15 @@ function onProductImageChosen(e) {
   if (!f) return;
   if (!/^image\//.test(f.type)) { return; }
   if (f.size > 20 * 1024 * 1024) { toast('图片不能超过 20MB', 'error'); return; }
+  var pid = Number(input.dataset.pid) || 0;
   var reader = new FileReader();
-  reader.onload = function (ev) { openImgCrop(Number(input.dataset.pid), ev.target.result); };
+  reader.onload = function (ev) {
+    var dataUrl = ev.target.result;
+    if (pid) { openImgCrop(pid, dataUrl); return; }
+    // 未保存的新商品：自动保存成功后再打开裁切
+    saveProductForm(ST.sheetData).then(function (r) { openImgCrop(r.id, dataUrl); })
+      .catch(function () { /* 校验失败已提示，停留表单让用户修改 */ });
+  };
   reader.readAsDataURL(f);
 }
 function openImgCrop(pid, src) {
@@ -823,6 +836,33 @@ function onPickProduct() {
 // 盘点冻结期间禁止提交的表单类型（开单/收定金/建档/入库/借货）
 var FROZEN_SHEETS = { sale: 1, deposit: 1, product: 1, inbound: 1, loan: 1 };
 
+// 保存商品表单（新建/编辑），返回 Promise；opts.closeAfter 保存成功后关闭面板
+function saveProductForm(d, opts) {
+  opts = opts || {};
+  if (!d.code || !d.name) { toast(t('toast.fillCode'), 'error'); return Promise.reject(new Error('fill')); }
+  var tc = ensureTypeCode(d);
+  var typeZh = typeNameByCode(tc) || d.product_type || '其他';
+  var cc2 = ensureCatCode(d);
+  var catZh = catNameByCode(cc2) || d.category || typeZh;
+  var isNew = !d.id;
+  var body2 = { code: d.code || '', name: d.name || '', name_i18n: d.name_i18n || '{}',
+    category: catZh, category_code: cc2 || '',
+    product_type_code: tc || '99', product_type: typeZh,
+    material: materialText(d.material), weight: Number(d.weight) || 0, size: d.size || '',
+    cert: d.cert || '', cost: Number(d.cost) || 0, price: Number(d.price) || 0,
+    status: d.status || '在库', rfid_epc: d.rfid_epc || '', store_id: d.store_id || 1,
+    showcase_public: d.showcase_public || 0, showcase_order: d.showcase_order || 0,
+    showcase_desc: d.showcase_desc || '', origin: d.origin || '', high_value: d.high_value || 0 };
+  return api(isNew ? 'POST' : 'PUT', isNew ? '/api/products' : '/api/products/' + d.id, body2).then(function (r) {
+    d.id = r.id;
+    d.rfid_epc = r.rfid_epc || d.rfid_epc;
+    toast(t('toast.saveOk') + (isNew && r.rfid_epc ? ' EPC: ' + r.rfid_epc : ''));
+    refreshAll();
+    if (opts.closeAfter) closeSheet();
+    return r;
+  }).catch(function (e) { if (e && e.message !== 'fill') toast(e.message, 'error'); throw e; });
+}
+
 function submitSheet() {
   var d = ST.sheetData;
   if (FROZEN_SHEETS[ST.sheetMode] && checkFrozen()) { closeSheet(); return; }
@@ -839,34 +879,7 @@ function submitSheet() {
       toast(t('toast.saveOk')); closeSheet(); refreshAll();
     }).catch(function (e) { toast(e.message, 'error'); });
   } else if (ST.sheetMode === 'product') {
-    if (!d.code || !d.name) { toast(t('toast.fillCode'), 'error'); return; }
-    var tc = ensureTypeCode(d);
-    var typeZh = typeNameByCode(tc) || d.product_type || '其他';
-    var cc2 = ensureCatCode(d);
-    var catZh = catNameByCode(cc2) || d.category || typeZh;
-    var m2 = d.id ? 'PUT' : 'POST';
-    var u2 = d.id ? '/api/products/' + d.id : '/api/products';
-    var body2 = { code: d.code || '', name: d.name || '', name_i18n: d.name_i18n || '{}',
-      category: catZh, category_code: cc2 || '',
-      product_type_code: tc || '99', product_type: typeZh,
-      material: materialText(d.material), weight: Number(d.weight) || 0, size: d.size || '',
-      cert: d.cert || '', cost: Number(d.cost) || 0, price: Number(d.price) || 0,
-      status: d.status || '在库', rfid_epc: d.rfid_epc || '', store_id: d.store_id || 1,
-      showcase_public: d.showcase_public || 0, showcase_order: d.showcase_order || 0,
-      showcase_desc: d.showcase_desc || '', origin: d.origin || '', high_value: d.high_value || 0 };
-    api(m2, u2, body2).then(function (r) {
-      // 新建后保留表单并带出 id/EPC，可立即上传商品图片；再次保存按编辑处理
-      if (!d.id) {
-        d.id = r.id;
-        d.rfid_epc = r.rfid_epc || d.rfid_epc;
-        toast(t('toast.saveOk') + (r.rfid_epc ? ' EPC: ' + r.rfid_epc : ''));
-        refreshAll();
-      } else {
-        d.rfid_epc = r.rfid_epc || d.rfid_epc;
-        toast(t('toast.saveOk'));
-        closeSheet(); refreshAll();
-      }
-    }).catch(function (e) { toast(e.message, 'error'); });
+    saveProductForm(d, { closeAfter: true });
   } else if (ST.sheetMode === 'inbound') {
     if (!d.name) { toast(t('toast.fillProduct'), 'error'); return; }
     var itc = ensureTypeCode(d);
@@ -1476,7 +1489,7 @@ var app = Vue.createApp({
     t: t, fmt: fmt, fmtY: fmtY, dateFmt: dateFmt,
     statusClass: statusClass,
     statusText: statusText, methodText: methodText, levelText: levelText,
-    directionText: directionText, coStatusText: coStatusText, resultText: resultText,
+    directionText: directionText, printedTip: printedTip, coStatusText: coStatusText, resultText: resultText,
     fieldLabelText: fieldLabelText, labelFieldText: labelFieldText,
     doLogin: doLogin, doLogout: doLogout,
     go: go, openSubView: openSubView, setLang: setLang,

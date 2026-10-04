@@ -14,6 +14,27 @@ from __future__ import annotations
 
 import json
 
+
+def chip_epc_hex(epc: str, prefix: str = "E280") -> str:
+    """可读 EPC → 写入芯片的十六进制串。
+
+    - 纯十六进制码（旧 E280 开头）原样写入；
+    - 含企业拼音字母前缀（如 YZZ）时，前缀按 ASCII 编码为十六进制
+      （YZZ → 595A5A），品类码与十六进制序号保持原样；
+      例：YZZ0100000001 → 595A5A0100000001。
+    """
+    epc = (epc or "").strip().upper()
+    if not epc:
+        return ""
+    try:
+        int(epc, 16)
+        return epc
+    except ValueError:
+        p = (prefix or "").strip().upper()
+        if p and epc.startswith(p):
+            return p.encode("ascii", "ignore").hex().upper() + epc[len(p):]
+        return epc.encode("ascii", "ignore").hex().upper()
+
 # 300 DPI 下的标签尺寸
 LABEL_WIDTH_DOTS = 827   # 70mm
 LABEL_HEIGHT_DOTS = 413  # 35mm
@@ -131,7 +152,8 @@ def _render_slot(slot: dict, product: dict, store_name: str) -> list[str]:
 
 def build_label_zpl(product: dict, *, fields: set[str] | None = None,
                     store_name: str = "", font: str = DEFAULT_FONT,
-                    write_epc: bool = True, template: dict | None = None) -> str:
+                    write_epc: bool = True, template: dict | None = None,
+                    rfid_prefix: str = "E280") -> str:
     """生成单件商品的 ZPL（^XA ... ^XZ）。
 
     优先使用 template 的 slots 布局；无 template 时回退到 fields 集合的固定布局。
@@ -157,9 +179,9 @@ def build_label_zpl(product: dict, *, fields: set[str] | None = None,
 
     L: list[str] = ["^XA", "^CI27", f"^PW{LABEL_WIDTH_DOTS}", f"^LL{LABEL_HEIGHT_DOTS}"]
 
-    # ---- 写 RFID 芯片（EPC 区，十六进制）----
+    # ---- 写 RFID 芯片（EPC 区，十六进制；拼音前缀自动转 ASCII 十六进制）----
     if write_epc and epc:
-        L.append(f"^RFW,H^FD{epc}^FS")
+        L.append(f"^RFW,H^FD{chip_epc_hex(epc, rfid_prefix)}^FS")
 
     # ---- 模板驱动：遍历 slots ----
     if template and template.get("definition"):
@@ -217,12 +239,13 @@ def build_label_zpl(product: dict, *, fields: set[str] | None = None,
 def build_batch_zpl(products: list[dict], *, fields: set[str] | None = None,
                     store_name: str = "", font: str = DEFAULT_FONT,
                     write_epc: bool = True, copies: int = 1,
-                    template: dict | None = None) -> str:
+                    template: dict | None = None, rfid_prefix: str = "E280") -> str:
     """批量：每件 copies 张，拼成一个打印作业。"""
     blocks = []
     for p in products:
         one = build_label_zpl(p, fields=fields, store_name=store_name,
-                              font=font, write_epc=write_epc, template=template)
+                              font=font, write_epc=write_epc, template=template,
+                              rfid_prefix=rfid_prefix)
         blocks.append(one.replace("^PQ1", f"^PQ{max(1, copies)}"))
     return "".join(blocks)
 
