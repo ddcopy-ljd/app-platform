@@ -22,7 +22,6 @@ class PortraitCaptureActivity : Activity() {
     private lateinit var dbv: DecoratedBarcodeView
     private lateinit var tvZoom: TextView
     private lateinit var capture: CaptureManager
-    private lateinit var prefs: Prefs
     private lateinit var scaleDetector: ScaleGestureDetector
 
     private var zoom = 0
@@ -30,7 +29,6 @@ class PortraitCaptureActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        prefs = Prefs(this)
         setContentView(R.layout.activity_capture)
         dbv = findViewById(R.id.dbv)
         tvZoom = findViewById(R.id.tvZoom)
@@ -43,17 +41,18 @@ class PortraitCaptureActivity : Activity() {
         settings.isMeteringEnabled = true
         settings.isExposureEnabled = true
         dbv.cameraSettings = settings
+        dbv.decoderFactory = RotateDecoderFactory()   // 横放/竖放的条码都能扫
 
         capture = CaptureManager(this, dbv)
         capture.initializeFromIntent(intent, savedInstanceState)
         capture.decode()
 
-        zoom = prefs.camZoom
         setupPinchZoom()
         // 预览启动后才能读到镜头最大变焦档位，此时再套用变焦
         dbv.barcodeView.addStateListener(object : CameraPreview.StateListener {
             override fun previewSized() {}
-            override fun previewStarted() { applyZoom() }
+            // 每次进入都重新自动设置（连续自动对焦 + 自动近焦），不沿用上次的手动档
+            override fun previewStarted() { zoom = 0; applyZoom() }
             override fun previewStopped() {}
             override fun cameraError(error: Exception?) {}
             override fun cameraClosed() {}
@@ -67,8 +66,7 @@ class PortraitCaptureActivity : Activity() {
                     val f = detector.scaleFactor
                     if (f > 1.03) zoom += 1
                     else if (f < 0.97) zoom -= 1
-                    prefs.camZoomAuto = false   // 手动调过之后不再自动
-                    applyZoom()
+                    applyZoom()   // 仅本次扫码有效，不记忆
                     return true
                 }
             })
@@ -80,14 +78,13 @@ class PortraitCaptureActivity : Activity() {
     }
 
     private fun applyZoom() {
-        val manual = !prefs.camZoomAuto
         dbv.changeCameraParameters { par ->
             if (par.isZoomSupported) {
                 maxZoom = par.maxZoom
-                // 自动档：取镜头最大变焦的 30%（首饰条码/二维码都很小，稍近一点更好扫）；手动档用手捏过的档位
-                val z = if (manual) zoom else (par.maxZoom * 0.3f).roundToInt()
+                // 0 = 自动档：取镜头最大变焦的 30%（首饰标签小，稍近一点更好扫）；
+                // 手捏过之后 zoom 非 0，按手动档位走，退出页面即失效
+                val z = if (zoom == 0) (par.maxZoom * 0.3f).roundToInt() else zoom
                 par.zoom = z.coerceIn(0, par.maxZoom)
-                if (!manual) { zoom = z; prefs.camZoom = z }
             }
             val modes = par.supportedFocusModes
             par.focusMode = when {
@@ -100,9 +97,9 @@ class PortraitCaptureActivity : Activity() {
             par
         }
         runOnUiThread {
-            val auto = if (prefs.camZoomAuto) getString(R.string.capture_auto) else ""
-            tvZoom.text = getString(R.string.capture_zoom,
-                zoom.coerceIn(0, maxZoom), maxZoom, auto)
+            val tag = if (zoom == 0) getString(R.string.capture_auto) else ""
+            val shown = if (zoom == 0) (maxZoom * 0.3f).roundToInt() else zoom
+            tvZoom.text = getString(R.string.capture_zoom, shown.coerceIn(0, maxZoom), maxZoom, tag)
         }
     }
 

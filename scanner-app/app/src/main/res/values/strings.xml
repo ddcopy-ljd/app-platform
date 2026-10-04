@@ -211,4 +211,7 @@
     <string name="logout_confirm_msg">退出后需要重新扫【手持机登录】二维码才能使用。确定退出吗？</string>
     <string name="btn_confirm">确定</string>
     <string name="btn_cancel">取消</string>
+    <string name="sc_bad_epc">⚠ 扫描到异常的EPC号：%1$s</string>
+    <string name="sc_bad_barcode">⚠ 扫描到异常的条码：%1$s</string>
+    <string name="sc_bad_qr">⚠ 扫描到异常的二维码：%1$s</string>
 </resources>

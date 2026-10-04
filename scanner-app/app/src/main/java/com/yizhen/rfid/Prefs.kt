@@ -86,16 +86,6 @@ class Prefs(context: Context) {
         get() = sp.getString("device_name", "") ?: ""
         set(v) = sp.edit().putString("device_name", v).apply()
 
-    /** 扫码镜头变焦档位（0=最广，值越大越近）。 */
-    var camZoom: Int
-        get() = sp.getInt("cam_zoom", 0)
-        set(v) = sp.edit().putInt("cam_zoom", v).apply()
-
-    /** true=进入扫码页自动按镜头能力设置一档近焦（适合小标签），用户手捏后转手动。 */
-    var camZoomAuto: Boolean
-        get() = sp.getBoolean("cam_zoom_auto", true)
-        set(v) = sp.edit().putBoolean("cam_zoom_auto", v).apply()
-
     /** 最近一次任务的本机临时编号。 */
     var deviceNo: Int
         get() = sp.getInt("device_no", 0)

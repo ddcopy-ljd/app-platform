@@ -198,4 +198,7 @@
     <string name="logout_confirm_msg">You will need to scan the handheld login QR again to use the app. Sign out?</string>
     <string name="btn_confirm">OK</string>
     <string name="btn_cancel">Cancel</string>
+    <string name="sc_bad_epc">⚠ Abnormal EPC: %1$s</string>
+    <string name="sc_bad_barcode">⚠ Abnormal barcode: %1$s</string>
+    <string name="sc_bad_qr">⚠ Abnormal QR code: %1$s</string>
 </resources>

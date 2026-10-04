@@ -232,24 +232,28 @@ class SaleActivity : AppCompatActivity() {
         } else {
             // 库中找不到：界面常驻提示（不只弹一下 Toast），等人工核对后手工填写
             picked = null
-            val label = if (type == "epc") "EPC" else if (type == "qrcode") "二维码" else "条码"
-            setNotFound("$label $c")
+            setNotFound(c, type)
             clearProduct()
             if (type != "epc") etProduct.setText(raw)
             Toast.makeText(this, R.string.sc_not_found, Toast.LENGTH_SHORT).show()
         }
     }
 
-    /** 未匹配提示：code 为空则隐藏。 */
-    private fun setNotFound(code: String?) {
+    /** 未匹配常驻提示：明确说明扫到的是异常 EPC 号 / 条码 / 二维码。 */
+    private fun setNotFound(code: String?, type: String = "") {
         if (code.isNullOrBlank()) {
             tvNotFound.visibility = android.view.View.GONE
             tvNotFoundTip.visibility = android.view.View.GONE
-        } else {
-            tvNotFound.text = getString(R.string.sc_not_found_banner, code)
-            tvNotFound.visibility = android.view.View.VISIBLE
-            tvNotFoundTip.visibility = android.view.View.VISIBLE
+            return
         }
+        val res = when (type) {
+            "epc" -> R.string.sc_bad_epc
+            "qrcode" -> R.string.sc_bad_qr
+            else -> R.string.sc_bad_barcode
+        }
+        tvNotFound.text = getString(res, code)
+        tvNotFound.visibility = android.view.View.VISIBLE
+        tvNotFoundTip.visibility = android.view.View.VISIBLE
     }
 
     private fun showProduct(p: Product) {
