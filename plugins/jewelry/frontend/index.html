@@ -141,19 +141,38 @@
             <div class="cat-chip" :class="{active:!prodCat}" @click="prodCat=''">{{ t('cat.all') }}</div>
             <div class="cat-chip" v-for="o in typeList" :key="o.code" :class="{active:prodCat===o.code}" @click="prodCat=o.code">{{ catNameOf(o) }}</div>
           </div>
-          <div class="table-wrap" v-if="isPc">
-            <table class="data-table">
-              <thead><tr><th></th><th>{{ t('lbl.code') }}</th><th>{{ t('lbl.name') }}</th><th>{{ t('lbl.category') }}</th><th>{{ t('lbl.material') }}</th><th>{{ t('lbl.weight') }}</th><th>{{ t('lbl.price') }}</th><th>{{ t('lbl.cost') }}</th><th>{{ t('lbl.status') }}</th><th>EPC</th><th>{{ t('th.showcase') }}</th><th>{{ t('th.highValue') }}</th><th></th></tr></thead>
+          <div class="table-wrap table-wide" v-if="isPc">
+            <table class="data-table table-products">
+              <thead><tr>
+                <th class="th-img"></th>
+                <th class="th-code">{{ t('lbl.code') }}</th>
+                <th class="th-name">{{ t('lbl.name') }}</th>
+                <th class="th-type">{{ t('lbl.category') }}</th>
+                <th class="th-mat">{{ t('lbl.material') }}</th>
+                <th class="th-num">{{ t('lbl.weight') }}</th>
+                <th class="th-num">{{ t('lbl.price') }}</th>
+                <th class="th-num">{{ t('lbl.cost') }}</th>
+                <th class="th-status">{{ t('lbl.status') }}</th>
+                <th class="th-epc">EPC</th>
+                <th class="th-ico" :title="t('th.showcase')">🪟</th>
+                <th class="th-ico" :title="t('lbl.highValue')">⭐</th>
+                <th class="th-op">{{ t('common.op') }}</th>
+              </tr></thead>
               <tbody>
                 <tr v-for="p in filteredProducts" :key="p.id">
                   <td class="cell-img"><img v-if="p.image_ts" :src="productImageUrl(p)" class="prod-thumb-img" alt=""><span v-else class="prod-thumb-ph">💎</span></td>
-                  <td>{{ p.code }}</td><td>{{ p.name }}</td><td>{{ productTypeName(p) }}</td><td>{{ materialText(p.material) || '—' }}</td><td>{{ p.weight }}g</td>
-                  <td>￥{{ fmt(p.price) }}</td><td>￥{{ fmt(p.cost) }}</td>
-                  <td><span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span></td>
-                  <td class="mono">{{ p.rfid_epc||'—' }}</td>
-                  <td>{{ p.showcase_public?t('common.yes'):t('common.no') }}</td>
-                  <td><span class="tag tag-hv" v-if="p.high_value">⭐{{ t('lbl.highValue') }}</span><span v-else>—</span></td>
-                  <td class="nowrap">
+                  <td class="cell-code mono">{{ p.code }}</td>
+                  <td class="cell-name">{{ p.name }}</td>
+                  <td class="cell-type">{{ productTypeName(p) }}</td>
+                  <td class="cell-mat mono" :title="p.material ? t('mat.cn.'+materialText(p.material)) : ''">{{ materialText(p.material) || '—' }}</td>
+                  <td class="cell-num">{{ p.weight }}g</td>
+                  <td class="cell-num">￥{{ fmt(p.price) }}</td>
+                  <td class="cell-num cell-cost">￥{{ fmt(p.cost) }}</td>
+                  <td class="cell-status"><span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span></td>
+                  <td class="cell-epc mono" :title="p.rfid_epc">{{ p.rfid_epc||'—' }}</td>
+                  <td class="cell-ico"><span v-if="p.showcase_public" :title="t('th.showcase')">✓</span><span v-else class="dim">—</span></td>
+                  <td class="cell-ico"><span v-if="p.high_value" :title="t('lbl.highValue')">⭐</span><span v-else class="dim">—</span></td>
+                  <td class="cell-op nowrap">
                     <button class="link" :disabled="frozen" @click="editProduct(p)">{{ t('act.edit') }}</button>
                     <button class="link" :disabled="frozen" @click="copyProduct(p)">{{ t('act.copyNew') }}</button>
                     <button class="link" @click="openLabelPrint(p)">{{ t('act.labelPrint') }}</button>

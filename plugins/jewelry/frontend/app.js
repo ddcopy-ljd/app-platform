@@ -132,8 +132,10 @@ var SUB_TITLES = {
 };
 var CATS = ['黄金', '钻石', '铂金', '翡翠', '彩宝', '其他'];
 
-// 业界标准英文材质受控词表（库内存英文码）
-var MATERIALS = ['GOLD', 'PLATINUM', 'SILVER', 'DIAMOND', 'JADEITE', 'COLORED_GEMSTONE', 'PEARL', 'OTHER'];
+// 业界标准英文简写材质受控词表（库内存简写：Au金/Pt铂/Ag银/DIA钻石/JAD翡翠/CGS彩宝/PRL珍珠/OTH其他）
+var MATERIALS = ['AU', 'PT', 'AG', 'DIA', 'JAD', 'CGS', 'PRL', 'OTH'];
+// 历史英文长码 → 简写（兼容旧数据渲染）
+var MAT_FULL_TO_SHORT = { GOLD: 'AU', PLATINUM: 'PT', SILVER: 'AG', DIAMOND: 'DIA', JADEITE: 'JAD', COLORED_GEMSTONE: 'CGS', PEARL: 'PRL', OTHER: 'OTH' };
 
 // 根据分类中文名取 code
 function catCodeByName(name) {
@@ -203,10 +205,11 @@ function ensureTypeCode(d) {
   }
   return d.product_type_code;
 }
-// 材质统一展示业界标准英文码（库内英文，界面也显示英文）
+// 材质统一展示业界标准英文简写（AU/PT/AG/DIA/JAD/CGS/PRL/OTH）；历史长码自动收敛
 function materialText(code) {
   if (!code) return '';
-  return String(code).trim().toUpperCase();
+  var up = String(code).trim().toUpperCase();
+  return MAT_FULL_TO_SHORT[up] || up;
 }
 function productImageUrl(p) {
   if (!p || !p.id) return '';
@@ -837,7 +840,7 @@ function submitSheet() {
     var body2 = { code: d.code || '', name: d.name || '', name_i18n: d.name_i18n || '{}',
       category: catZh, category_code: cc2 || '',
       product_type_code: tc || '99', product_type: typeZh,
-      material: (d.material || '').toUpperCase(), weight: Number(d.weight) || 0, size: d.size || '',
+      material: materialText(d.material), weight: Number(d.weight) || 0, size: d.size || '',
       cert: d.cert || '', cost: Number(d.cost) || 0, price: Number(d.price) || 0,
       status: d.status || '在库', rfid_epc: d.rfid_epc || '', store_id: d.store_id || 1,
       showcase_public: d.showcase_public || 0, showcase_order: d.showcase_order || 0,
@@ -861,7 +864,7 @@ function submitSheet() {
     api('POST', '/api/inventory/inbound', { code: d.code || '', name: d.name,
       category: d.category || '', category_code: d.category_code || '',
       product_type_code: itc, product_type: typeNameByCode(itc),
-      material: (d.material || '').toUpperCase(),
+      material: materialText(d.material),
       weight: Number(d.weight) || 0, size: d.size || '', cert: d.cert || '',
       cost: Number(d.cost) || 0, price: Number(d.price) || 0,
       rfid_epc: d.rfid_epc || '', biz_date: d.biz_date || '' }).then(function (r) {

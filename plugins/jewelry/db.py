@@ -424,17 +424,42 @@ def _seed_base_dicts(conn: sqlite3.Connection) -> None:
     )
 
 
-# 旧「分类」(黄金/钻石…) 语义上是材质，统一迁移为业界标准英文材质码；
+# 旧「分类」(黄金/钻石…) 语义上是材质，统一迁移为业界标准英文简写；
 # 品类（戒指/项链…）按商品名称关键字推断，无法推断归入「其他」。
+# 简写取业界惯例：Au 金 / Pt 铂 / Ag 银 / DIA 钻石 / JAD 翡翠 / CGS 彩宝 / PRL 珍珠 / OTH 其他
 _MAT_BY_CATCODE = {
-    "01": "GOLD", "02": "DIAMOND", "03": "JADEITE", "04": "PLATINUM",
-    "05": "COLORED_GEMSTONE", "06": "SILVER", "07": "PEARL", "99": "OTHER",
+    "01": "AU", "02": "DIA", "03": "JAD", "04": "PT",
+    "05": "CGS", "06": "AG", "07": "PRL", "99": "OTH",
 }
 _MAT_BY_ZHNAME = {
-    "黄金": "GOLD", "金": "GOLD", "铂金": "PLATINUM", "银饰": "SILVER", "银": "SILVER",
-    "钻石": "DIAMOND", "翡翠": "JADEITE", "彩宝": "COLORED_GEMSTONE",
-    "珍珠": "PEARL", "其他": "OTHER",
+    "黄金": "AU", "金": "AU", "铂金": "PT", "银饰": "AG", "银": "AG",
+    "钻石": "DIA", "翡翠": "JAD", "彩宝": "CGS",
+    "珍珠": "PRL", "其他": "OTH",
 }
+# 早期版本使用的英文长码 → 简写（存量数据幂等收敛）
+_MAT_FULL_TO_SHORT = {
+    "GOLD": "AU", "PLATINUM": "PT", "SILVER": "AG", "DIAMOND": "DIA",
+    "JADEITE": "JAD", "COLORED_GEMSTONE": "CGS", "PEARL": "PRL", "OTHER": "OTH",
+}
+_VALID_MAT = set(_MAT_BY_CATCODE.values())
+# 品名材质关键字（旧分类为兜底「其他」时按品名推断，顺序即优先级，铂必须先于金）
+_MAT_NAME_KEYWORDS = [
+    ("PT", ("铂金", "白金", "pt")),
+    ("AG", ("银", "ag", "s925")),
+    ("DIA", ("钻石", "钻", "dia")),
+    ("JAD", ("翡翠", "玉", "jad")),
+    ("PRL", ("珍珠", "prl")),
+    ("CGS", ("彩宝", "彩钻", "宝石", "cgs")),
+    ("AU", ("足金", "黄金", "金", "k金", "au", "g750", "999")),
+]
+
+
+def _infer_material_by_name(name: str) -> str:
+    n = (name or "").lower()
+    for mat, keys in _MAT_NAME_KEYWORDS:
+        if any(k in n for k in keys):
+            return mat
+    return ""
 # (品类码, 中文名, 关键字) —— 顺序即优先级（手链/手串先于手镯，耳钉先于泛称）
 _TYPE_KEYWORDS = [
     ("03", "手链", ("手链", "手串")),
@@ -471,14 +496,25 @@ def _migrate_material_and_type(conn: sqlite3.Connection) -> None:
     ).fetchall()
     for r in rows:
         sets, args = [], []
-        # 材质：一次性把旧自由文本（足金999/PT950 等成色描述）统一为英文材质码。
-        # 仅当旧分类能映射、且当前 material 不是合法英文材质码时执行。
-        mat = _MAT_BY_CATCODE.get(r["category_code"] or "")
-        if not mat:
-            mat = _MAT_BY_ZHNAME.get((r["category"] or "").strip(), "")
-        if mat and (r["material"] or "") not in _MAT_BY_CATCODE.values():
+        cur_mat = (r["material"] or "").strip()
+        cur_up = cur_mat.upper()
+        # 材质归一：早期英文长码先收敛为简写
+        if cur_up in _MAT_FULL_TO_SHORT:
+            cur_mat = _MAT_FULL_TO_SHORT[cur_up]
+        # 期望材质：①旧分类码精确映射（兜底 99/OTH 视为未知）②旧中文分类名 ③品名关键字
+        want = _MAT_BY_CATCODE.get(r["category_code"] or "")
+        if want in ("", "OTH"):
+            zh = _MAT_BY_ZHNAME.get((r["category"] or "").strip(), "")
+            if zh and zh != "OTH":
+                want = zh
+        if want in ("", "OTH"):
+            by_name = _infer_material_by_name(r["name"] or "")
+            if by_name:
+                want = by_name
+        # 需要写入：空/非法值一律补；当前是兜底 OTH 且能推断出精确材质时升级
+        if want and (cur_mat not in _VALID_MAT or (cur_mat == "OTH" and want != "OTH")):
             sets.append("material=?")
-            args.append(mat)
+            args.append(want)
         # 品类：按品名推断
         if not (r["product_type_code"] or "").strip():
             tcode, tzh = _infer_product_type(r["name"] or "")

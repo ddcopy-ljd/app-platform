@@ -187,9 +187,19 @@ def _gen_epc(code: str) -> str:
     return f"E280{raw}{code[-4:].upper().ljust(4, '0')}"[:28]
 
 
-# 业界标准英文材质（受控词表，库内直接存英文，展示层做中/英/意映射）
-MATERIAL_CODES = ["GOLD", "PLATINUM", "SILVER", "DIAMOND", "JADEITE",
-                  "COLORED_GEMSTONE", "PEARL", "OTHER"]
+# 业界标准英文简写材质（受控词表，库内直接存简写）：
+# Au 金 / Pt 铂 / Ag 银 / DIA 钻石 / JAD 翡翠 / CGS 彩宝 / PRL 珍珠 / OTH 其他
+MATERIAL_CODES = ["AU", "PT", "AG", "DIA", "JAD", "CGS", "PRL", "OTH"]
+# 早期英文长码 → 简写（兼容历史入库/接口传入）
+_MAT_FULL_TO_SHORT = {
+    "GOLD": "AU", "PLATINUM": "PT", "SILVER": "AG", "DIAMOND": "DIA",
+    "JADEITE": "JAD", "COLORED_GEMSTONE": "CGS", "PEARL": "PRL", "OTHER": "OTH",
+}
+
+
+def _norm_material(v: str) -> str:
+    v = (v or "").strip().upper()
+    return _MAT_FULL_TO_SHORT.get(v, v)
 
 
 def _epc_cfg(conn: sqlite3.Connection) -> tuple[str, int]:
@@ -1277,7 +1287,7 @@ def product_create(body: ProductIn, request: Request):
                                      showcase_public,showcase_order,showcase_desc,origin,high_value)
                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (body.code, body.name, body.name_i18n, body.category, body.category_code,
-             (body.material or "").strip().upper(), type_name, type_code,
+             _norm_material(body.material), type_name, type_code,
              body.weight, body.size, body.cert, body.cost, body.price, body.status, body.store_id, epc,
              body.showcase_public, body.showcase_order, body.showcase_desc, body.origin, body.high_value),
         )
@@ -1305,7 +1315,7 @@ def product_update(pid: int, body: ProductIn, request: Request):
                cost=?,price=?,status=?,store_id=?,rfid_epc=?,showcase_public=?,
                showcase_order=?,showcase_desc=?,origin=?,high_value=? WHERE id=?""",
             (body.code, body.name, body.name_i18n, body.category, body.category_code,
-             (body.material or "").strip().upper(), type_name, type_code,
+             _norm_material(body.material), type_name, type_code,
              body.weight, body.size, body.cert, body.cost, body.price, body.status, body.store_id, epc,
              body.showcase_public, body.showcase_order, body.showcase_desc, body.origin, body.high_value, pid),
         )
@@ -1458,7 +1468,7 @@ def inventory_inbound(body: InboundIn, request: Request):
             """INSERT INTO products(code,name,category,category_code,material,product_type,product_type_code,
                                     weight,size,cert,cost,price,status,store_id,rfid_epc,showcase_public)
                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'在库',?, ?,0)""",
-            (code, body.name, body.category, body.category_code, (body.material or "").strip().upper(),
+            (code, body.name, body.category, body.category_code, _norm_material(body.material),
              type_name, type_code, body.weight, body.size, body.cert, body.cost, body.price, 1, epc),
         )
         _inv(conn, cur.lastrowid, epc, "in", op["username"])
@@ -1482,7 +1492,8 @@ def inventory_copy(pid: int, request: Request):
             """INSERT INTO products(code,name,name_i18n,category,category_code,material,product_type,product_type_code,
                                     weight,size,cert,cost,price,status,store_id,rfid_epc,showcase_public,origin,high_value)
                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'在库',?, ?,0,?,?)""",
-            (code, src["name"], src["name_i18n"], src["category"], src["category_code"], src["material"],
+            (code, src["name"], src["name_i18n"], src["category"], src["category_code"],
+             _norm_material(src["material"]),
              src["product_type"], type_code, src["weight"], src["size"], src["cert"], src["cost"], src["price"],
              src["store_id"], epc, src["origin"], src["high_value"]),
         )

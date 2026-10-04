@@ -341,7 +341,7 @@ a { text-decoration: none; color: inherit; }
 .pc-top-actions { display: flex; align-items: center; gap: 10px; }
 .lang-select { padding: 6px 10px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); font-size: 14px; outline: none; cursor: pointer; }
 
-.app-shell.pc .main-content { flex: 1; padding: 24px; overflow-y: auto; }
+.app-shell.pc .main-content { flex: 1; min-width: 0; padding: 24px; overflow-y: auto; }
 
 /* PC table */
 .table-wrap { background: var(--white); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; box-shadow: 0 1px 4px rgba(92,34,51,.04); margin-top: 12px; overflow-x: auto; }
@@ -351,8 +351,8 @@ a { text-decoration: none; color: inherit; }
 .data-table tr:hover td { background: rgba(201,169,97,.04); }
 .data-table tr:last-child td { border-bottom: none; }
 
-/* PC section layout */
-.app-shell.pc section { max-width: 1200px; }
+/* PC section layout：内容区占满全屏宽度并自适应 */
+.app-shell.pc section { max-width: none; width: 100%; min-width: 0; }
 .app-shell.pc .stats-grid { grid-template-columns: repeat(4, 1fr); }
 .app-shell.pc .mini-chart { max-width: none; }
 .app-shell.pc .quick-grid { display: none; }
@@ -514,8 +514,44 @@ select.lang-code {
 
 /* ---- 商品图片（列表缩略图 + 表单编辑区） ---- */
 .prod-thumb-img { width: 100%; height: 100%; object-fit: cover; border-radius: var(--radius-sm); display: block; }
-.data-table td.cell-img { width: 54px; }
-.cell-img .prod-thumb-ph { font-size: 20px; }
+
+/* ===== 商品列表：全屏宽度、列紧凑自适应、属性全部显示 ===== */
+.table-wide { width: 100%; overflow-x: auto; }
+.table-products { width: 100%; table-layout: auto; }
+.table-products th, .table-products td { padding: 7px 8px; font-size: 13px; vertical-align: middle; }
+.table-products th { white-space: nowrap; }
+/* 缩略图列（4:3） */
+.table-products .th-img { width: 56px; }
+.table-products td.cell-img { width: 56px; padding: 5px 6px; text-align: center; }
+.table-products .cell-img .prod-thumb-img { width: 48px; height: 36px; border-radius: 6px; }
+.table-products .cell-img .prod-thumb-ph {
+  width: 48px; height: 36px; margin: 0 auto; display: flex; align-items: center; justify-content: center;
+  font-size: 18px; background: var(--cream); border-radius: 6px;
+}
+/* 编码 / 名称 / 品类 / 材质 */
+.cell-code { white-space: nowrap; }
+.cell-name { min-width: 84px; white-space: normal; word-break: break-word; line-height: 1.35; }
+.cell-type { white-space: nowrap; }
+.cell-mat { white-space: nowrap; font-weight: 600; letter-spacing: .3px; }
+/* 数字列右对齐等宽数字 */
+.th-num { text-align: right; }
+.cell-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cell-cost { color: var(--text2); }
+/* 状态 */
+.cell-status { white-space: nowrap; }
+/* EPC：小字号等宽，宽度受限时折行，悬停 title 看全值 */
+.th-epc { width: 130px; }
+.cell-epc { max-width: 130px; font-size: 11.5px; color: var(--text2); letter-spacing: .2px; white-space: normal; word-break: break-all; line-height: 1.35; }
+/* 橱窗 / 高价值图标列 */
+.th-ico, .cell-ico { width: 30px; text-align: center; }
+.cell-ico { white-space: nowrap; }
+.cell-ico .dim { color: #d8cccf; }
+/* 操作列：紧凑链接组，宽度受限时折成两行 */
+.cell-op { white-space: normal; text-align: right; line-height: 1.7; }
+.table-products .cell-op .link { padding: 2px 4px; font-size: 12.5px; white-space: nowrap; }
+
+/* 移动端商品卡缩略图改为 4:3 */
+.product-card .prod-thumb { width: 60px; height: 45px; font-size: 20px; overflow: hidden; }
 .img-edit { display: flex; align-items: center; gap: 14px; margin: 10px 0 6px; }
 .img-edit-thumb {
   width: 120px; height: 90px; border-radius: var(--radius-sm);
