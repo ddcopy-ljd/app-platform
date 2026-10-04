@@ -18,6 +18,11 @@ class Prefs(context: Context) {
         get() = sp.getInt("power", 30)
         set(v) = sp.edit().putInt("power", v).apply()
 
+    /** 销售出单识别 EPC 用小功率（默认 10dBm，约几十厘米），防止串扫邻柜商品。 */
+    var salePower: Int
+        get() = sp.getInt("sale_power", 10)
+        set(v) = sp.edit().putInt("sale_power", v).apply()
+
     /** 一次性把老版本（默认20dBm，读取距离仅20cm）提升到最大功率30dBm；用户之后可自行调小。 */
     fun migratePowerIfNeeded() {
         if (sp.getBoolean("power_mig_v2", false)) return
@@ -107,6 +112,24 @@ class Prefs(context: Context) {
     var offlineQueue: String
         get() = sp.getString("offline_queue", "[]") ?: "[]"
         set(v) = sp.edit().putString("offline_queue", v).apply()
+
+    // —— 登录态（扫码登录，当天有效；服务端校验 valid_day）——
+    var authToken: String
+        get() = sp.getString("auth_token", "") ?: ""
+        set(v) = sp.edit().putString("auth_token", v).apply()
+
+    var authOrigin: String
+        get() = sp.getString("auth_origin", "") ?: ""
+        set(v) = sp.edit().putString("auth_origin", v.trim()).apply()
+
+    /** 登录用户 JSON：{"username":..,"display_name":..,"role":..} */
+    var authUserJson: String
+        get() = sp.getString("auth_user", "{}") ?: "{}"
+        set(v) = sp.edit().putString("auth_user", v).apply()
+
+    fun clearAuth() {
+        sp.edit().remove("auth_token").remove("auth_origin").remove("auth_user").apply()
+    }
 
     fun resetAll() {
         val dk = deviceKey

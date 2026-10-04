@@ -69,6 +69,9 @@ var ST = Vue.reactive({
   invQ: '',                     // 在库商品搜索词
   _coTaskSeen: false,           // 内部标记：任务是否已被自动切换过（防止定时器反复把用户拽回盘点页签）
   coQrUrl: '', _qrFor: 0, _coQrObj: '',
+  // 手持机扫码登录（网页端弹窗）
+  hqShow: false, hqStatus: '', hqDevice: '', hqImg: '', hqKey: '', hqTimer: null,
+  yzScanReady: false,   // App WebView 注入 YzApp 桥接后为 true，出单表单显示扫码按钮
   // 复制入库高亮（flashIds 中的商品 ID 列表，3.5s 后自动移除）
   flashIds: [],
   // toast
@@ -444,6 +447,87 @@ function doLogout() {
   api('POST', '/api/auth/logout').catch(function () {});
   ST.token = ''; ST.user = null; ST.tab = 'dashboard'; ST.subView = '';
   syncToken();
+}
+
+// ---- 手持机扫码登录（网页端） ----
+function openHandheldLogin() {
+  if (!ST.token) { toast(t('login.err'), 'error'); return; }
+  api('GET', '/api/handheld/login-qr').then(function (r) {
+    ST.hqKey = r.hkey;
+    ST.hqStatus = 'pending';
+    ST.hqDevice = '';
+    ST.hqImg = qrSvgDataUrl(r.url, 5);
+    ST.hqShow = true;
+    clearInterval(ST.hqTimer);
+    ST.hqTimer = setInterval(hqPoll, 2000);
+  }).catch(function (e) { toast(e.message || t('login.err'), 'error'); });
+}
+
+function hqPoll() {
+  if (!ST.hqKey || !ST.hqShow) return;
+  api('GET', '/api/handheld/login-status?hkey=' + encodeURIComponent(ST.hqKey)).then(function (r) {
+    ST.hqStatus = r.status;
+    ST.hqDevice = r.name || r.device || '';
+    if (r.status === 'confirmed' || r.status === 'denied' || r.status === 'expired') clearInterval(ST.hqTimer);
+  }).catch(function () { clearInterval(ST.hqTimer); ST.hqStatus = 'expired'; });
+}
+
+function handheldConfirm(ok) {
+  api('POST', '/api/handheld/confirm', { hkey: ST.hqKey, approve: ok }).then(function () {
+    ST.hqStatus = ok ? 'confirmed' : 'denied';
+    clearInterval(ST.hqTimer);
+  }).catch(function (e) { toast(e.message || 'error', 'error'); });
+}
+
+function closeHandheldLogin() {
+  clearInterval(ST.hqTimer);
+  ST.hqShow = false; ST.hqKey = ''; ST.hqStatus = ''; ST.hqDevice = ''; ST.hqImg = '';
+}
+
+// ---- 手持机 App 扫码桥接 ----
+// App 端（C27 WebView）注入 window.YzApp；扫到结果回调 window.YzScanner.onResult(code, type)
+window.YzScanner = {
+  available: false,
+  scan: function (type) {
+    if (window.YzApp && window.YzApp.scan) {
+      try { window.YzApp.scan(type); return true; } catch (e) {}
+    }
+    return false;
+  },
+  onResult: function (code, type) { applyScanToSale(code, type); },
+  // App 通知扫码状态（EPC 连续扫描中）
+  onState: function (scanning) { if (ST.sheetMode === 'sale') ST.sheetData._scanning = !!scanning; }
+};
+ST.yzScanReady = !!(window.YzApp && window.YzApp.scan);
+window.YzScanner.available = ST.yzScanReady;
+
+function yzScan(type) {
+  if (!window.YzScanner.scan(type)) toast(t('scan.unavailable'), 'error');
+}
+
+/** 扫码结果 → 出单商品识别：条码/二维码按商品编码匹配，EPC 按 rfid_epc 匹配。 */
+function applyScanToSale(code, type) {
+  var c = String(code || '').trim().toUpperCase();
+  if (!c) return;
+  var p = null;
+  if (type === 'epc') {
+    p = ST.stockOptions.find(function (x) { return String(x.rfid_epc || '').toUpperCase() === c; });
+  } else {
+    p = ST.stockOptions.find(function (x) { return String(x.code || '').toUpperCase() === c; });
+    if (!p) p = ST.stockOptions.find(function (x) { return String(x.code || '').toUpperCase() === c.replace(/^0+/, ''); });
+  }
+  if (p) {
+    ST.sheetData.product_id = p.id;
+    ST.sheetData.product = p.name;
+    if (ST.sheetMode === 'sale') ST.sheetData.amount = p.price;
+    if (ST.sheetMode === 'deposit') ST.sheetData.total = p.price;
+    toast(t('scan.found') + '：' + p.code + ' ' + p.name);
+  } else if (type === 'epc') {
+    toast(t('scan.notFound') + ' EPC ' + c, 'error');
+  } else {
+    ST.sheetData.product = c;   // 未知条码：作为自定义商品名填入，可继续手工编辑
+    toast(t('scan.notFound'), 'error');
+  }
 }
 
 // ---- sheet ----
@@ -1619,6 +1703,8 @@ var app = Vue.createApp({
     directionText: directionText, printedTip: printedTip, coStatusText: coStatusText, resultText: resultText,
     fieldLabelText: fieldLabelText, labelFieldText: labelFieldText,
     doLogin: doLogin, doLogout: doLogout,
+    openHandheldLogin: openHandheldLogin, closeHandheldLogin: closeHandheldLogin,
+    handheldConfirm: handheldConfirm, yzScan: yzScan,
     go: go, openSubView: openSubView, setLang: setLang,
     openSheet: openSheet, closeSheet: closeSheet, submitSheet: submitSheet,
     onPickProduct: onPickProduct,
@@ -1685,6 +1771,22 @@ try {
     ST.token = saved;
     api('GET', '/api/auth/me').then(function (r) {
       ST.user = r.user; ST.mode = r.mode || 'NORMAL'; ST.tenant = r.tenant || '';
+      window.__yzLoginOk = true;
+      refreshAll();
+    }).catch(function () { ST.token = ''; sessionStorage.removeItem('jewelry_token'); });
+  }
+} catch (e) {}
+
+// ---- 手持机 App WebView：URL 携带 token 直接进入 ----
+// SaleActivity 加载 /?token=xxx 时免登录进入；__yzLoginOk 供 App 检测会话是否有效
+try {
+  var _yzTok = new URLSearchParams(location.search).get('token');
+  if (_yzTok && !ST.token) {
+    ST.token = _yzTok;
+    sessionStorage.setItem('jewelry_token', _yzTok);
+    api('GET', '/api/auth/me').then(function (r) {
+      ST.user = r.user; ST.mode = r.mode || 'NORMAL'; ST.tenant = r.tenant || '';
+      window.__yzLoginOk = true;
       refreshAll();
     }).catch(function () { ST.token = ''; sessionStorage.removeItem('jewelry_token'); });
   }

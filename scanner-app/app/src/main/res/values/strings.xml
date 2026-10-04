@@ -1,10 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_title">UHF RFID 批量盘点</string>
+    <string name="app_title">懿臻珠宝云 · 手持机</string>
     <string name="lang_switch">EN</string>
-    <string name="settings_title">设置</string>
+    <string name="settings_title">参数设置</string>
     <string name="btn_settings">设置</string>
     <string name="btn_save">保存</string>
+
+    <!-- 登录页 -->
+    <string name="login_title">扫码登录</string>
+    <string name="login_sub">在电脑或手机网页端点击【手持机登录】显示二维码\n用手持机扫描后在网页上确认</string>
+    <string name="login_scan_btn">扫 码 登 录</string>
+    <string name="login_status_idle">登录后当天有效\n隔日需重新扫码</string>
+    <string name="login_status_checking">正在检查已有登录…</string>
+    <string name="login_status_reporting">正在向服务端注册设备…</string>
+    <string name="login_status_waiting">等待网页确认…\n请在网页上核对设备名并点击【确认登录】</string>
+    <string name="login_status_expired">登录已过期或二维码失效，请重新扫码</string>
+    <string name="login_qr_invalid">无法识别该二维码\n请扫描网页端【手持机登录】的二维码</string>
+    <string name="login_denied">网页端已拒绝本次登录</string>
+    <string name="login_ok">登录成功：%1$s</string>
+    <string name="login_device_name">设备名称（网页确认时显示）</string>
+    <string name="login_device_name_hint">如：前厅手持机1号</string>
+
+    <!-- 主界面 -->
+    <string name="home_sale">销售出单</string>
+    <string name="home_stock">库存盘点</string>
+    <string name="home_logout">退出登录</string>
+
+    <!-- 销售出单页 -->
+    <string name="sale_title">销售出单</string>
+    <string name="sale_session_expired">登录已过期，请重新扫码登录</string>
+    <string name="sale_scan_type_unknown">未知的扫码类型</string>
 
     <!-- 设置：服务端 -->
     <string name="st_group_server">服务端</string>
@@ -18,7 +43,12 @@
 
     <!-- 设置：RFID -->
     <string name="st_group_rfid">RFID 参数</string>
-    <string name="st_power">读取功率</string>
+    <string name="st_power">盘点扫描功率</string>
+    <string name="st_power_hint">批量盘点用大功率（默认30dBm），参数设置里可预先调整到合适距离</string>
+    <string name="st_sale_power">出单识别功率</string>
+    <string name="st_sale_power_hint">出单扫EPC用小功率（默认10dBm，约几十厘米），防止串扫到邻柜商品</string>
+    <string name="st_test_scan_start">▶ 试扫（边调功率边听声音）</string>
+    <string name="st_test_scan_stop">■ 停止试扫</string>
     <string name="st_trigger">机身扳机适配（按扳机无反应时逐个切换测试）</string>
     <string name="st_trigger_hint">在首页按一次机身扳机，看「扳机事件」诊断行显示哪个通道，就选对应项；正常后保持自动即可。</string>
     <string name="trig_auto">自动（全部通道，推荐先试）</string>

@@ -132,6 +132,12 @@ def _require_auth(request: Request) -> dict:
         sess = _sessions.get(token)
     if not sess:
         raise HTTPException(status_code=401, detail="未登录或登录已过期")
+    # 手持机扫码会话仅当天有效，隔日自动作废
+    valid_day = sess.get("valid_day")
+    if valid_day and valid_day != date.today().isoformat():
+        with _lock:
+            _sessions.pop(token, None)
+        raise HTTPException(status_code=401, detail="登录已过期（手持机会话当天有效），请重新扫码登录")
     return sess
 
 
@@ -766,6 +772,119 @@ def api_logout(request: Request):
 def api_me(request: Request):
     u = _require_auth(request)
     return {"user": u, "features": FEATURES, "mode": _operator_mode(request), "tenant": _tenant_of(request)}
+
+
+# ---------------------------------------------------------------- 手持机扫码登录（会话当天有效）
+
+# hkey -> {status: pending|waiting|confirmed|denied, device, name, created, user, token}
+_handheld_logins: dict[str, dict] = {}
+_HANDHELD_LOGIN_TTL = 600  # 登录二维码有效期（秒）
+
+
+def _purge_handheld_logins() -> None:
+    now = time.time()
+    expired = [k for k, v in _handheld_logins.items() if now - v["created"] > _HANDHELD_LOGIN_TTL]
+    for k in expired:
+        _handheld_logins.pop(k, None)
+
+
+@app.get("/api/handheld/login-qr")
+def handheld_login_qr(request: Request):
+    """网页端（已登录用户）生成【手持机登录】二维码，内容为手持机上报地址（含一次性 hkey）。"""
+    sess = _require_auth(request)
+    with _lock:
+        _purge_handheld_logins()
+    hkey = secrets.token_urlsafe(16)
+    _handheld_logins[hkey] = {
+        "status": "pending", "device": "", "name": "",
+        "created": time.time(), "user": sess, "token": "",
+    }
+    url = f"http://{_lan_ip()}:{PORT}/api/handheld/auth?hkey={hkey}"
+    return {"hkey": hkey, "url": url, "expires_in": _HANDHELD_LOGIN_TTL}
+
+
+class HandheldAuthIn(BaseModel):
+    hkey: str
+    device: str = ""
+    name: str = ""
+
+
+@app.post("/api/handheld/auth")
+def handheld_auth(body: HandheldAuthIn):
+    """手持机扫登录二维码后上报设备信息，进入待确认状态，等待网页端确认。"""
+    with _lock:
+        _purge_handheld_logins()
+        h = _handheld_logins.get(body.hkey)
+        if not h:
+            raise HTTPException(status_code=410, detail="二维码已过期，请在网页端重新生成")
+        if h["status"] != "pending":
+            raise HTTPException(status_code=409, detail="该二维码已被使用，请重新生成")
+        h["status"] = "waiting"
+        h["device"] = (body.device or "").strip()
+        h["name"] = (body.name or "").strip() or "手持机"
+    return {"ok": True}
+
+
+@app.get("/api/handheld/login-status")
+def handheld_login_status(hkey: str, request: Request):
+    """网页端轮询：pending → waiting（显示设备名，等待确认）→ confirmed / denied。"""
+    _require_auth(request)
+    with _lock:
+        _purge_handheld_logins()
+        h = _handheld_logins.get(hkey)
+        if not h:
+            return {"status": "expired"}
+        return {"status": h["status"], "device": h["device"], "name": h["name"]}
+
+
+class HandheldConfirmIn(BaseModel):
+    hkey: str
+    approve: bool = True
+
+
+@app.post("/api/handheld/confirm")
+def handheld_confirm(body: HandheldConfirmIn, request: Request):
+    """网页端确认/拒绝。确认即为手持机签发与当前网页用户同身份的会话（当天有效）。"""
+    sess = _require_auth(request)
+    with _lock:
+        h = _handheld_logins.get(body.hkey)
+        if not h:
+            raise HTTPException(status_code=410, detail="二维码已过期，请重新生成")
+        if h["status"] != "waiting":
+            raise HTTPException(status_code=409, detail="登录状态已变更，请关闭后重试")
+        if not body.approve:
+            h["status"] = "denied"
+            return {"ok": False}
+        token = secrets.token_urlsafe(24)
+        info = dict(sess)
+        info["valid_day"] = date.today().isoformat()
+        info["via"] = "handheld"
+        _sessions[token] = info
+        h["status"] = "confirmed"
+        h["token"] = token
+    with _db(request) as conn:
+        _log(conn, sess["username"], "手持机登录确认", h["name"] or h["device"] or "手持机")
+    return {"ok": True}
+
+
+@app.get("/api/handheld/poll")
+def handheld_poll(hkey: str):
+    """手持机轮询登录结果；网页确认后返回会话 token（当天有效），一次性领取。"""
+    with _lock:
+        _purge_handheld_logins()
+        h = _handheld_logins.get(hkey)
+        if not h:
+            return {"status": "expired"}
+        if h["status"] == "confirmed":
+            _handheld_logins.pop(hkey, None)
+            u = h["user"]
+            return {
+                "status": "confirmed",
+                "token": h["token"],
+                "user": {"username": u["username"], "display_name": u["display_name"], "role": u["role"]},
+                "tenant": None,
+            }
+        return {"status": h["status"]}
 
 
 # ---------------------------------------------------------------- 看板 / 店铺

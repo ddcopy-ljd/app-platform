@@ -336,6 +336,8 @@ class MainActivity : AppCompatActivity() {
         if (!canScan()) { toast(R.string.need_join); return }
         if (scanning) return
         // 盘点一律连续读取：按住扫、松开停（单次读取模式已废弃）
+        // 出单页可能把功率切成了出单小功率，进入盘点扫描前恢复盘点功率
+        if (RfidManager.ready) RfidManager.setPower(prefs.power)
         val ok = if (RfidManager.ready)
             RfidManager.start { epc, rssi -> onTag(epc, rssi) }
         else true // 演示模式

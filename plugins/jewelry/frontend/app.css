@@ -679,3 +679,23 @@ tr.row-flash, tr.row-flash:hover { background-color: #FFF3CD !important; transit
 /* 分类编辑表单：点「编辑」后滚动定位并短暂高亮 */
 @keyframes catEditFlash { 0% { box-shadow: 0 0 0 3px rgba(212,175,55,.5); border-color: #d4af37; } 100% { box-shadow: 0 0 0 0 rgba(212,175,55,0); } }
 .cat-edit-flash { animation: catEditFlash 1.6s ease-out 1; }
+
+/* ===== 手持机扫码登录弹窗 ===== */
+.hq-body { text-align: center; }
+.hq-qr { display: flex; justify-content: center; padding: 6px 0 10px; }
+.hq-qr img { width: 220px; height: 220px; }
+.hq-tip { color: var(--text-2, #8B7A6B); font-size: 14px; }
+.hq-tip.ok { color: #2e7d32; }
+.hq-tip.err { color: #c0392b; }
+.hq-device { font-size: 17px; font-weight: 600; color: var(--text-1, #3D2B1F); margin: 4px 0 2px; }
+.hq-sub { margin-bottom: 12px; }
+.hq-btns { display: flex; gap: 10px; justify-content: center; }
+.hq-btns .btn { min-width: 110px; }
+
+/* ===== 出单表单：商品识别扫码按钮（手持机 App 内显示） ===== */
+.scan-row { margin: 2px 0 12px; }
+.scan-row > label { display: block; font-size: 12px; color: var(--text-2, #8B7A6B); margin-bottom: 6px; }
+.scan-btns { display: flex; gap: 8px; }
+.scan-btns .btn-small { flex: 1; }
+.scan-hint { margin-top: 6px; font-size: 11px; color: #b8860b; }
+.side-foot-btns { display: flex; gap: 8px; margin-top: 8px; }

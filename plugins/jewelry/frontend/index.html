@@ -36,7 +36,10 @@
       </nav>
       <div class="side-foot">
         <div>{{ user ? user.display_name : '' }} · {{ user && user.role==='TENANT_ADMIN'?t('misc.role.admin'):t('misc.role.staff') }}</div>
-        <button class="btn btn-sm btn-outline" @click="doLogout">{{ t('nav.logout') }}</button>
+        <div class="side-foot-btns">
+          <button class="btn btn-sm btn-gold" @click="openHandheldLogin">{{ t('login.handheld') }}</button>
+          <button class="btn btn-sm btn-outline" @click="doLogout">{{ t('nav.logout') }}</button>
+        </div>
       </div>
     </aside>
 
@@ -678,6 +681,7 @@
             <div class="menu-item" @click="go('appointments');loadAppt()"><div class="menu-text">{{ t('nav.appointments') }}</div></div>
             <div class="menu-item" @click="go('profile');loadProfile()"><div class="menu-text">{{ t('nav.profile') }}</div></div>
             <div class="menu-item"><a href="/site" target="_blank" class="menu-text">{{ t('nav.site') }}</a></div>
+            <div class="menu-item" @click="openHandheldLogin"><div class="menu-text">📱 {{ t('login.handheld') }}</div></div>
             <div class="menu-item" @click="doLogout"><div class="menu-text">{{ t('nav.logout') }}</div></div>
           </div>
         </section>
@@ -749,6 +753,28 @@
     </div>
   </div>
 
+  <!-- 手持机扫码登录（手机/电脑网页均可发起，扫二维码后在网页上确认设备名） -->
+  <div class="sheet-mask" :class="{show:hqShow}" @click.self="closeHandheldLogin">
+    <div class="sheet" style="max-width:380px" @click.stop>
+      <div class="sheet-head"><span class="sheet-title">{{ t('login.handheld') }}</span><button class="sheet-close" @click="closeHandheldLogin">×</button></div>
+      <div class="sheet-body hq-body">
+        <div class="hq-qr"><img v-if="hqImg" :src="hqImg" alt=""></div>
+        <div v-if="hqStatus==='pending'" class="hq-tip">{{ t('hq.pending') }}</div>
+        <div v-else-if="hqStatus==='waiting'" class="hq-tip">
+          <div class="hq-device">📱 {{ hqDevice }}</div>
+          <div class="hq-sub">{{ t('hq.waiting') }}</div>
+          <div class="hq-btns">
+            <button class="btn btn-primary" @click="handheldConfirm(true)">{{ t('hq.approve') }}</button>
+            <button class="btn btn-outline" @click="handheldConfirm(false)">{{ t('hq.deny') }}</button>
+          </div>
+        </div>
+        <div v-else-if="hqStatus==='confirmed'" class="hq-tip ok">{{ t('hq.done') }}</div>
+        <div v-else-if="hqStatus==='denied'" class="hq-tip err">{{ t('hq.denied') }}</div>
+        <div v-else-if="hqStatus==='expired'" class="hq-tip err">{{ t('hq.expired') }}</div>
+      </div>
+    </div>
+  </div>
+
   <div class="sheet-mask" :class="{show:sheetMode, pc:isPc}" @click.self="closeSheet">
     <div class="sheet" @click.stop>
       <div class="sheet-head"><span class="sheet-title">{{ sheetTitle }}</span><button class="sheet-close" @click="closeSheet">×</button></div>
@@ -761,6 +787,15 @@
               <option :value="null">{{ t('sale.customName') }}</option>
               <option v-for="p in stockOptions" :key="p.id" :value="p.id">{{ p.code }} {{ p.name }} ￥{{ p.price }}</option>
             </select>
+          </div>
+          <div class="scan-row" v-if="yzScanReady">
+            <label>{{ t('scan.label') }}</label>
+            <div class="scan-btns">
+              <button type="button" class="btn-small" @click="yzScan('barcode')">{{ t('scan.barcode') }}</button>
+              <button type="button" class="btn-small" @click="yzScan('qrcode')">{{ t('scan.qrcode') }}</button>
+              <button type="button" class="btn-small" @click="yzScan('epc')">{{ t('scan.epc') }}</button>
+            </div>
+            <div v-if="sheetData._scanning" class="scan-hint">{{ t('scan.epcBusy') }}</div>
           </div>
           <div class="form-group"><label>{{ t('sale.productName') }}</label><input v-model="sheetData.product"></div>
           <div class="form-row"><div class="form-group"><label>{{ t('lbl.amount') }}</label><input v-model.number="sheetData.amount" type="number"></div><div class="form-group"><label>{{ t('lbl.paid') }}</label><input v-model.number="sheetData.paid" type="number"></div></div>

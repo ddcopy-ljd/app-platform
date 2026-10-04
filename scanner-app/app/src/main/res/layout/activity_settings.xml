@@ -114,6 +114,50 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
+                        android:text="@string/st_sale_power"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+                    <TextView
+                        android:id="@+id/stSalePowerVal"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/green"
+                        android:textSize="13sp" />
+                </LinearLayout>
+                <SeekBar
+                    android:id="@+id/stSalePower"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:max="25"
+                    android:progressTint="@color/green"
+                    android:thumbTint="@color/green" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/st_sale_power_hint"
+                    android:textColor="@color/text_hint"
+                    android:textSize="10sp" />
+                <TextView
+                    android:id="@+id/btnTestSaleScan"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/bg_btn_blue"
+                    android:gravity="center"
+                    android:paddingVertical="10dp"
+                    android:text="@string/st_test_scan_start"
+                    android:textColor="#FFFFFF"
+                    android:textSize="13sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="14dp">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
                         android:text="@string/st_power"
                         android:textColor="@color/text_secondary"
                         android:textSize="13sp" />
@@ -131,6 +175,23 @@
                     android:max="25"
                     android:progressTint="@color/green"
                     android:thumbTint="@color/green" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/st_power_hint"
+                    android:textColor="@color/text_hint"
+                    android:textSize="10sp" />
+                <TextView
+                    android:id="@+id/btnTestStockScan"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/bg_btn_green"
+                    android:gravity="center"
+                    android:paddingVertical="10dp"
+                    android:text="@string/st_test_scan_start"
+                    android:textColor="#FFFFFF"
+                    android:textSize="13sp" />
 
                 <TextView style="@style/StLabel" android:text="@string/st_trigger" />
                 <Spinner android:id="@+id/stTriggerMode" style="@style/StSpinner"
