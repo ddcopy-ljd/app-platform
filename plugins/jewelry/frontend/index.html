@@ -9,19 +9,19 @@
 </head>
 <body>
 <div id="app">
-  <div v-if="mode==='PRODUCTION_SUPPORT'" class="support-banner">生产运维穿透模式 · 所有修改将写入审计日志</div>
+  <div v-if="mode==='PRODUCTION_SUPPORT'" class="support-banner">{{ t('support.banner') }}</div>
 
   <div v-if="!token" class="login-page">
     <div class="login-logo"><img src="/logo/logo.svg" alt=""></div>
     <div class="login-title">{{ softName }}</div>
-    <div class="login-sub">Jewelry Cloud · 独立工作台</div>
+    <div class="login-sub">{{ t('login.sub') }}</div>
     <div class="login-card">
       <label>{{ t('login.user') }}</label>
       <input v-model="loginUser" type="text" :placeholder="t('login.userPh')" @keyup.enter="doLogin">
       <label>{{ t('login.pass') }}</label>
       <input v-model="loginPwd" type="password" :placeholder="t('login.passPh')" @keyup.enter="doLogin">
       <button class="btn btn-primary btn-block" @click="doLogin">{{ t('login.submit') }}</button>
-      <div class="login-hint">演示账号：admin / 123456</div>
+      <div class="login-hint">{{ t('login.hint') }}</div>
       <div class="lang-row">
         <button v-for="k in langKeys" :key="k" class="lang-mini" :class="{on:lang===k}" @click="setLang(k)">{{ langLabels[k] }}</button>
       </div>
@@ -35,7 +35,7 @@
         <button v-for="n in nav" :key="n.id" class="nav-item" :class="{active:tab===n.id}" @click="go(n.id)">{{ n.icon }} {{ t(n.key) }}</button>
       </nav>
       <div class="side-foot">
-        <div>{{ user.display_name }} · {{ user.role==='TENANT_ADMIN'?'店长':'店员' }}</div>
+        <div>{{ user ? user.display_name : '' }} · {{ user && user.role==='TENANT_ADMIN'?t('misc.role.admin'):t('misc.role.staff') }}</div>
         <button class="btn btn-sm btn-outline" @click="doLogout">{{ t('nav.logout') }}</button>
       </div>
     </aside>
@@ -44,7 +44,7 @@
       <header class="app-bar" v-if="!isPc">
         <div class="brand"><img src="/logo/logo.svg" class="app-logo" alt=""> {{ softName }}</div>
         <div class="store-tag">{{ tenant }}</div>
-        <div class="avatar" @click="go('more')">{{ (user.display_name||'店')[0] }}</div>
+        <div class="avatar" @click="go('more')">{{ ((user&&user.display_name)||t('misc.role.staff'))[0] }}</div>
       </header>
       <header v-else class="pc-top">
         <h1>{{ currentTitle }}</h1>
@@ -58,15 +58,15 @@
       </header>
 
       <!-- 全局盘点冻结横幅：任务进行中/待核对时全页面显示，点击跳转处理 -->
-      <div v-if="frozen" class="freeze-banner" @click="go('inventory'); invSub='count'">🔒 {{ t('inv.frozenBanner') }}<b>{{ coTask.task_no }} · {{ coTask.status }}</b></div>
+      <div v-if="frozen" class="freeze-banner" @click="go('inventory'); invSub='count'">🔒 {{ t('inv.frozenBanner') }}<b>{{ coTask.task_no }} · {{ coStatusText(coTask.status) }}</b></div>
 
       <div class="main-content" v-if="!subView || isPc">
         <!-- dashboard -->
         <section v-if="tab==='dashboard'">
           <details class="biz-guide"><summary>📖 {{ t('biz.title') }}</summary><div class="biz-body">{{ t('biz.dashboard') }}</div></details>
           <div class="stats-grid" v-if="dashData">
-            <div class="stat-card"><div class="stat-label">{{ t('kpi.stock') }}</div><div class="stat-value">{{ dashData.stock.count }}</div><div class="stat-sub">成本 ￥{{ fmt(dashData.stock.cost) }}</div></div>
-            <div class="stat-card gold"><div class="stat-label">{{ t('kpi.today') }}</div><div class="stat-value">￥{{ fmt(dashData.todaySales.amount) }}</div><div class="stat-sub">{{ dashData.todaySales.count }} 笔</div></div>
+            <div class="stat-card"><div class="stat-label">{{ t('kpi.stock') }}</div><div class="stat-value">{{ dashData.stock.count }}</div><div class="stat-sub">{{ t('dash.cost') }} ￥{{ fmt(dashData.stock.cost) }}</div></div>
+            <div class="stat-card gold"><div class="stat-label">{{ t('kpi.today') }}</div><div class="stat-value">￥{{ fmt(dashData.todaySales.amount) }}</div><div class="stat-sub">{{ dashData.todaySales.count }} {{ t('dash.bills') }}</div></div>
             <div class="stat-card blue"><div class="stat-label">{{ t('kpi.month') }}</div><div class="stat-value">￥{{ fmt(dashData.monthSales.amount) }}</div></div>
             <div class="stat-card green"><div class="stat-label">{{ t('kpi.due') }}</div><div class="stat-value">￥{{ fmt(dashData.depositPending.amount) }}</div></div>
           </div>
@@ -84,7 +84,7 @@
             <div class="mini-chart-title"><span>{{ t('kpi.catSales') }}</span></div>
             <div class="cat-bars">
               <div class="cat-bar-row" v-for="(c,i) in catSales.items" :key="c.category">
-                <span class="cat-bar-name">{{ c.category }}</span>
+                <span class="cat-bar-name">{{ catText(c.category) }}</span>
                 <div class="cat-bar-track"><div class="cat-bar-fill" :class="'catc'+(i%6)" :style="{width: c.pct+'%'}"></div></div>
                 <span class="cat-bar-val">￥{{ fmt(c.amount) }} · {{ c.pct }}%</span>
               </div>
@@ -95,22 +95,22 @@
             <div class="reminder-head" @click="showRemind=!showRemind"><span>🕐 {{ t('kpi.todo') }}</span><span class="badge">{{ todoCount }}</span></div>
             <div class="reminder-body" v-if="showRemind">
               <div v-for="d in remindData.deposits" :key="'d'+d.id" class="reminder-item"><div class="ri-left"><span class="ri-name">{{ d.customer }}</span><span class="ri-date">{{ d.product }} {{ d.promised_date }}</span></div><span class="ri-amount">￥{{ fmt(d.balance) }}</span></div>
-              <div v-for="l in remindData.loansOverdue" :key="'l'+l.id" class="reminder-item"><div class="ri-left"><span class="ri-name">{{ l.product }}</span><span class="ri-date">逾期 {{ l.due_date }}</span></div></div>
-              <div v-for="r in remindData.repairsPending" :key="'r'+r.id" class="reminder-item"><div class="ri-left"><span class="ri-name">{{ r.item }}</span><span class="ri-date">{{ r.status }}</span></div></div>
+              <div v-for="l in remindData.loansOverdue" :key="'l'+l.id" class="reminder-item"><div class="ri-left"><span class="ri-name">{{ l.product }}</span><span class="ri-date">{{ t('common.overdue') }} {{ l.due_date }}</span></div></div>
+              <div v-for="r in remindData.repairsPending" :key="'r'+r.id" class="reminder-item"><div class="ri-left"><span class="ri-name">{{ r.item }}</span><span class="ri-date">{{ statusText(r.status) }}</span></div></div>
               <div class="reminder-empty" v-if="!todoCount">{{ t('empty.todo') }}</div>
             </div>
           </div>
           <div class="section" v-if="!isPc">
             <div class="section-title"><span class="dot"></span>{{ t('kpi.quick') }}</div>
             <div class="quick-grid">
-              <div class="quick-item" @click="go('products')"><div class="quick-icon wine">💎</div><div class="quick-label">商品</div></div>
-              <div class="quick-item" @click="go('inventory')"><div class="quick-icon gold">📦</div><div class="quick-label">库存</div></div>
-              <div class="quick-item" @click="go('sales')"><div class="quick-icon blue">🧾</div><div class="quick-label">销售</div></div>
-              <div class="quick-item" @click="go('deposits')"><div class="quick-icon green">💰</div><div class="quick-label">定金</div></div>
-              <div class="quick-item" @click="openSubView('loans')"><div class="quick-icon orange">📥</div><div class="quick-label">借货</div></div>
-              <div class="quick-item" @click="openSubView('repairs')"><div class="quick-icon wine">🔧</div><div class="quick-label">维修</div></div>
-              <div class="quick-item" @click="openSubView('customers')"><div class="quick-icon gold">👥</div><div class="quick-label">客户</div></div>
-              <div class="quick-item" @click="openSubView('logs')"><div class="quick-icon blue">📋</div><div class="quick-label">日志</div></div>
+              <div class="quick-item" @click="go('products')"><div class="quick-icon wine">💎</div><div class="quick-label">{{ t('q.products') }}</div></div>
+              <div class="quick-item" @click="go('inventory')"><div class="quick-icon gold">📦</div><div class="quick-label">{{ t('q.inventory') }}</div></div>
+              <div class="quick-item" @click="go('sales')"><div class="quick-icon blue">🧾</div><div class="quick-label">{{ t('q.sales') }}</div></div>
+              <div class="quick-item" @click="go('deposits')"><div class="quick-icon green">💰</div><div class="quick-label">{{ t('q.deposits') }}</div></div>
+              <div class="quick-item" @click="openSubView('loans')"><div class="quick-icon orange">📥</div><div class="quick-label">{{ t('q.loans') }}</div></div>
+              <div class="quick-item" @click="openSubView('repairs')"><div class="quick-icon wine">🔧</div><div class="quick-label">{{ t('q.repairs') }}</div></div>
+              <div class="quick-item" @click="openSubView('customers')"><div class="quick-icon gold">👥</div><div class="quick-label">{{ t('q.customers') }}</div></div>
+              <div class="quick-item" @click="openSubView('logs')"><div class="quick-icon blue">📋</div><div class="quick-label">{{ t('q.logs') }}</div></div>
             </div>
           </div>
           <div class="section" v-if="dashData && dashData.recentSales && dashData.recentSales.length">
@@ -118,7 +118,7 @@
             <div class="card-list">
               <div class="card-item sale-card" v-for="s in dashData.recentSales" :key="s.bill_no">
                 <div class="sale-top"><span class="sale-no">{{ s.bill_no }}</span><span class="sale-amount">￥{{ fmt(s.amount) }}</span></div>
-                <div class="sale-info">{{ s.customer }} · {{ s.method }} · {{ s.biz_date }} · {{ s.status }}</div>
+                <div class="sale-info">{{ s.customer }} · {{ methodText(s.method) }} · {{ s.biz_date }} · {{ statusText(s.status) }}</div>
               </div>
             </div>
           </div>
@@ -143,19 +143,19 @@
           </div>
           <div class="table-wrap" v-if="isPc">
             <table class="data-table">
-              <thead><tr><th>编码</th><th>名称</th><th>品类</th><th>克重</th><th>售价</th><th>成本</th><th>状态</th><th>EPC</th><th>橱窗</th><th>高价值</th><th></th></tr></thead>
+              <thead><tr><th>{{ t('lbl.code') }}</th><th>{{ t('lbl.name') }}</th><th>{{ t('lbl.category') }}</th><th>{{ t('lbl.weight') }}</th><th>{{ t('lbl.price') }}</th><th>{{ t('lbl.cost') }}</th><th>{{ t('lbl.status') }}</th><th>EPC</th><th>{{ t('th.showcase') }}</th><th>{{ t('th.highValue') }}</th><th></th></tr></thead>
               <tbody>
                 <tr v-for="p in filteredProducts" :key="p.id">
                   <td>{{ p.code }}</td><td>{{ p.name }}</td><td>{{ productCatName(p) }}</td><td>{{ p.weight }}g</td>
                   <td>￥{{ fmt(p.price) }}</td><td>￥{{ fmt(p.cost) }}</td>
-                  <td><span class="tag" :class="statusClass(p.status)">{{ p.status }}</span></td>
+                  <td><span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span></td>
                   <td class="mono">{{ p.rfid_epc||'—' }}</td>
-                  <td>{{ p.showcase_public?'是':'否' }}</td>
-                  <td><span class="tag tag-hv" v-if="p.high_value">⭐高价值</span><span v-else>—</span></td>
+                  <td>{{ p.showcase_public?t('common.yes'):t('common.no') }}</td>
+                  <td><span class="tag tag-hv" v-if="p.high_value">⭐{{ t('lbl.highValue') }}</span><span v-else>—</span></td>
                   <td class="nowrap">
                     <button class="link" :disabled="frozen" @click="editProduct(p)">{{ t('act.edit') }}</button>
                     <button class="link" :disabled="frozen" @click="copyProduct(p)">{{ t('act.copyNew') }}</button>
-                    <button class="link" @click="openLabelPrint(p)">🏷 排版打印</button>
+                    <button class="link" @click="openLabelPrint(p)">{{ t('act.labelPrint') }}</button>
                     <button class="link danger" :disabled="frozen" @click="delProduct(p.id)">{{ t('act.del') }}</button>
                   </td>
                 </tr>
@@ -167,15 +167,15 @@
               <div class="product-card" @click="editProduct(p)">
                 <div class="prod-thumb">💎</div>
                 <div class="prod-info">
-                  <div class="prod-name">{{ p.name }}<span class="tag tag-hv" v-if="p.high_value">⭐高价值</span><span class="tag" :class="statusClass(p.status)">{{ p.status }}</span></div>
+                  <div class="prod-name">{{ p.name }}<span class="tag tag-hv" v-if="p.high_value">⭐{{ t('lbl.highValue') }}</span><span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span></div>
                   <div class="prod-meta">{{ p.code }} · {{ productCatName(p) }} · {{ p.material }} · {{ p.weight }}g</div>
                 </div>
                 <div class="prod-price2"><div class="pp">￥{{ fmt(p.price) }}</div></div>
               </div>
               <div class="row-actions">
                 <button class="btn btn-sm btn-outline" :disabled="frozen" @click="copyProduct(p)">{{ t('act.copyNew') }}</button>
-                <button class="btn btn-sm btn-outline" @click="openLabelPrint(p)">🏷 排版打印</button>
-                <button class="btn btn-sm btn-outline" :disabled="frozen" @click="delProduct(p.id)" style="color:var(--danger);border-color:var(--danger)">删除</button>
+                <button class="btn btn-sm btn-outline" @click="openLabelPrint(p)">{{ t('act.labelPrint') }}</button>
+                <button class="btn btn-sm btn-outline" :disabled="frozen" @click="delProduct(p.id)" style="color:var(--danger);border-color:var(--danger)">{{ t('act.del') }}</button>
               </div>
             </div>
             <div class="empty" v-if="!filteredProducts.length"><div class="empty-icon">💎</div>{{ t('empty.prod') }}</div>
@@ -191,15 +191,15 @@
             </details>
             <div class="biz-actions">
               <button class="btn btn-sm btn-outline" @click="openRfid">RFID {{ t('inv.scan') }}</button>
-              <button class="btn btn-sm btn-outline" @click="openLabelPrint()">🏷 标签排版</button>
+              <button class="btn btn-sm btn-outline" @click="openLabelPrint()">{{ t('act.labelLayout') }}</button>
               <button class="btn btn-primary btn-sm" :disabled="frozen" @click="openInbound">+ {{ t('inv.in') }}</button>
-            </div>
+          </div>
           </div>
           <div class="stats-grid" v-if="invSum">
-            <div class="stat-card"><div class="stat-label">在库</div><div class="stat-value">{{ invSum.inStock.count }}</div><div class="stat-sub">￥{{ fmt(invSum.inStock.cost) }}</div></div>
-            <div class="stat-card gold"><div class="stat-label">已定锁定</div><div class="stat-value">{{ invSum.reserved.count }}</div></div>
-            <div class="stat-card blue"><div class="stat-label">借出</div><div class="stat-value">{{ invSum.loaned.count }}</div></div>
-            <div class="stat-card orange"><div class="stat-label">已售</div><div class="stat-value">{{ invSum.sold.count }}</div></div>
+            <div class="stat-card"><div class="stat-label">{{ t('inv.stock') }}</div><div class="stat-value">{{ invSum.inStock.count }}</div><div class="stat-sub">￥{{ fmt(invSum.inStock.cost) }}</div></div>
+            <div class="stat-card gold"><div class="stat-label">{{ t('inv.reservedLocked') }}</div><div class="stat-value">{{ invSum.reserved.count }}</div></div>
+            <div class="stat-card blue"><div class="stat-label">{{ t('inv.loaned') }}</div><div class="stat-value">{{ invSum.loaned.count }}</div></div>
+            <div class="stat-card orange"><div class="stat-label">{{ t('inv.sold') }}</div><div class="stat-value">{{ invSum.sold.count }}</div></div>
           </div>
 
           <!-- 子页签：在库商品 / 库存盘点 -->
@@ -214,65 +214,65 @@
           <div v-if="invSub==='count'">
           <!-- RFID / 多终端协同盘点任务（全店唯一盘点入口与二维码） -->
           <div class="section rfid-box">
-            <div class="section-title"><span class="dot"></span>🧭 盘点任务</div>
-            <p class="prod-meta">主管开启任务后销售/出入库自动暂停，并生成<b>唯一的盘点二维码</b>；各手持机用 App 扫此码即领取任务（自动配置服务地址、加入并下载商品快照），再在手持机上点【开始盘点】；全部结束后主管核对确认，解除冻结。</p>
+            <div class="section-title"><span class="dot"></span>{{ t('co.taskTitle') }}</div>
+            <p class="prod-meta">{{ t('co.desc') }}</p>
 
             <!-- 无任务：开启 -->
             <div v-if="!coTask" class="rfid-host">
-              <input v-model="coTaskHost" class="search-input" placeholder="主机地址（自动检测；如 192.168.1.20:8002）">
-              <button class="btn btn-gold btn-sm" :disabled="coBusy" @click="startCoTask">开启盘点任务</button>
+              <input v-model="coTaskHost" class="search-input" :placeholder="t('co.hostPh')">
+              <button class="btn btn-gold btn-sm" :disabled="coBusy" @click="startCoTask">{{ t('co.start') }}</button>
             </div>
 
             <!-- 进行中/待核对 -->
             <div v-else class="rfid-flow">
               <div class="rfid-left">
                 <div class="url-line" style="margin-bottom:6px">
-                  <b>任务 {{ coTask.task_no }}</b>
-                  <span :class="coTask.status==='进行中' ? 'stock-ok' : 'stock-surplus'">【{{ coTask.status }}】</span>
-                  <button class="btn btn-sm btn-outline" @click="loadCoTask">刷新</button>
+                  <b>{{ t('co.task') }} {{ coTask.task_no }}</b>
+                  <span :class="coTask.status==='进行中' ? 'stock-ok' : 'stock-surplus'">【{{ coStatusText(coTask.status) }}】</span>
+                  <button class="btn btn-sm btn-outline" @click="loadCoTask">{{ t('common.refresh') }}</button>
                 </div>
-                <label>手持机加入地址（扫码自动配置）</label>
-                <div class="url-line"><code>{{ coTask.co_url }}</code><button class="btn btn-sm btn-outline" @click="copyCoUrl">复制</button></div>
+                <label>{{ t('co.joinUrl') }}</label>
+                <div class="url-line"><code>{{ coTask.co_url }}</code><button class="btn btn-sm btn-outline" @click="copyCoUrl">{{ t('common.copy') }}</button></div>
 
                 <table class="data-table" style="margin-top:10px">
-                  <thead><tr><th>设备</th><th>名称</th><th>最近在线</th><th>状态</th></tr></thead>
+                  <thead><tr><th>{{ t('th.device') }}</th><th>{{ t('th.devName') }}</th><th>{{ t('th.lastSeen') }}</th><th>{{ t('lbl.status') }}</th></tr></thead>
                   <tbody>
                     <tr v-for="d in coTask.devices" :key="d.device_no">
-                      <td class="stock-ok">{{ d.device_no }} 号机</td><td>{{ d.name }}</td>
+                      <td class="stock-ok">{{ d.device_no }}{{ t('co.deviceNo') }}</td><td>{{ d.name }}</td>
                       <td class="small">{{ d.last_seen }}</td>
-                      <td :class="d.finished ? 'stock-ok' : 'stock-surplus'">{{ d.finished ? '已提交' : '盘点中' }}</td>
+                      <td :class="d.finished ? 'stock-ok' : 'stock-surplus'">{{ d.finished ? t('co.submitted') : t('co.scanning') }}</td>
                     </tr>
-                    <tr v-if="!coTask.devices || !coTask.devices.length"><td colspan="4" class="small">尚无手持机加入</td></tr>
+                    <tr v-if="!coTask.devices || !coTask.devices.length"><td colspan="4" class="small">{{ t('co.noDevice') }}</td></tr>
                   </tbody>
                 </table>
 
                 <div v-if="coTask.result" class="stock-batches" style="margin-top:10px">
-                  扫描 <b>{{ coTask.result.scannedCount }}</b> / 账面 <b>{{ coTask.result.bookCount }}</b> ·
-                  相符 <b class="stock-ok">{{ coTask.result.matchedCount }}</b> ·
-                  盘亏 <b class="stock-shortage">{{ coTask.result.shortageCount }}</b> ·
-                  异常 <b class="stock-abnormal">{{ coTask.result.abnormalCount }}</b>
+                  {{ t('co.scanned') }} <b>{{ coTask.result.scannedCount }}</b> / {{ t('co.book') }} <b>{{ coTask.result.bookCount }}</b> ·
+                  {{ t('th.matched') }} <b class="stock-ok">{{ coTask.result.matchedCount }}</b> ·
+                  {{ t('th.shortage') }} <b class="stock-shortage">{{ coTask.result.shortageCount }}</b> ·
+                  {{ t('th.abnormal') }} <b class="stock-abnormal">{{ coTask.result.abnormalCount }}</b>
                 </div>
 
                 <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-                  <button v-if="coTask.status==='进行中'" class="btn btn-sm" style="background:#c0392b;color:#fff" :disabled="coBusy" @click="endCoTask">结束扫描并核对</button>
-                  <button v-if="coTask.status==='待核对'" class="btn btn-gold btn-sm" :disabled="coBusy" @click="confirmCoTask">核对确认，解除销售冻结</button>
-                  <button class="btn btn-sm btn-outline" style="color:#c0392b;border-color:#c0392b" :disabled="coBusy" @click="abortCoTask">强制终止任务</button>
-                  <span class="small" style="color:#8B7A6B">手持机故障/扫不到/误开任务时点此立即解冻</span>
+                  <button v-if="coTask.status==='进行中'" class="btn btn-sm" style="background:#c0392b;color:#fff" :disabled="coBusy" @click="endCoTask">{{ t('co.endScan') }}</button>
+                  <button v-if="coTask.status==='待核对'" class="btn btn-gold btn-sm" :disabled="coBusy" @click="confirmCoTask">{{ t('co.confirm') }}</button>
+                  <button class="btn btn-sm btn-outline" style="color:#c0392b;border-color:#c0392b" :disabled="coBusy" @click="abortCoTask">{{ t('co.abort') }}</button>
+                  <span class="small" style="color:#8B7A6B">{{ t('co.abortHint') }}</span>
                 </div>
               </div>
               <div class="rfid-right">
-                <img v-if="coQrUrl" class="qr-img" :src="coQrUrl" alt="盘点任务二维码">
-                <div v-else class="qr-img" style="display:flex;align-items:center;justify-content:center;color:#B0A08C;font-size:14px">二维码加载中…</div>
-                <div class="qr-cap">手持机扫码领取任务<br><span style="font-size:14px;color:#8B7A6B">领取后在设备上点【开始盘点】</span></div>
-                <div class="small" style="text-align:center;margin-top:4px">全局已扫 {{ coTask.scanned_count }}</div>
+                <img v-if="coQrUrl" class="qr-img" :src="coQrUrl" :alt="t('co.qrAlt')">
+                <div v-else class="qr-img" style="display:flex;align-items:center;justify-content:center;color:#B0A08C;font-size:14px">{{ t('co.qrLoading') }}</div>
+                <div class="qr-cap">{{ t('co.qrCap') }}<br><span style="font-size:14px;color:#8B7A6B">{{ t('co.qrCap2') }}</span></div>
+                <div class="small" style="text-align:center;margin-top:4px">{{ t('co.totalScanned') }} {{ coTask.scanned_count }}</div>
               </div>
             </div>
 
             <!-- 最近盘点批次（历史结果，含协同盘点） -->
             <div v-if="stockBatches.length" class="stock-batches" style="margin-top:16px">
-              <div class="section-title" style="font-size:14px;margin:0 0 8px"><span class="dot"></span>最近盘点批次</div>
+              <div class="section-title" style="font-size:14px;margin:0 0 8px"><span class="dot"></span>{{ t('co.recentBatches') }}</div>
               <table class="data-table">
-                <thead><tr><th>批次号</th><th>时间</th><th>设备</th><th>扫描/账面</th><th>相符</th><th>盘亏</th><th>异常</th><th></th></tr></thead>
+                <thead><tr><th>{{ t('th.batchNo') }}</th><th>{{ t('common.time') }}</th><th>{{ t('common.device') }}</th><th>{{ t('th.scanBook') }}</th><th>{{ t('th.matched') }}</th><th>{{ t('th.shortage') }}</th><th>{{ t('th.abnormal') }}</th><th></th></tr></thead>
                 <tbody>
                   <tr v-for="b in stockBatches" :key="b.id">
                     <td class="mono">{{ b.batch_no }}</td><td class="small">{{ b.created }}</td><td>{{ b.device }}</td>
@@ -280,7 +280,7 @@
                     <td class="stock-ok">{{ b.matched_count }}</td>
                     <td class="stock-shortage">{{ b.shortage_count }}</td>
                     <td class="stock-abnormal">{{ b.abnormal_count }}</td>
-                    <td><button class="link" @click="viewStockBatch(b)">明细</button></td>
+                    <td><button class="link" @click="viewStockBatch(b)">{{ t('common.detail') }}</button></td>
                   </tr>
                 </tbody>
               </table>
@@ -296,14 +296,14 @@
             <!-- PC：横向表格 -->
             <div class="table-wrap" v-if="isPc">
               <table class="data-table">
-                <thead><tr><th>编码</th><th>名称</th><th>品类</th><th>材质</th><th>克重</th><th>尺寸</th><th>售价</th><th>成本</th><th>EPC</th><th>高价值</th><th></th></tr></thead>
+                <thead><tr><th>{{ t('lbl.code') }}</th><th>{{ t('lbl.name') }}</th><th>{{ t('lbl.category') }}</th><th>{{ t('lbl.material') }}</th><th>{{ t('lbl.weight') }}</th><th>{{ t('lbl.size') }}</th><th>{{ t('lbl.price') }}</th><th>{{ t('lbl.cost') }}</th><th>EPC</th><th>{{ t('th.highValue') }}</th><th></th></tr></thead>
                 <tbody>
                   <tr v-for="p in invStockList" :key="'c'+p.id" :class="{'row-flash': flashIds.indexOf(p.id)>=0}">
                     <td>{{ p.code }}</td><td>{{ p.name }}</td><td>{{ productCatName(p) }}</td><td>{{ p.material || '—' }}</td>
                     <td>{{ p.weight }}g</td><td>{{ p.size || '—' }}</td>
                     <td>￥{{ fmt(p.price) }}</td><td>￥{{ fmt(p.cost) }}</td>
                     <td class="mono">{{ p.rfid_epc||'—' }}</td>
-                    <td><span class="tag tag-hv" v-if="p.high_value">⭐高价值</span><span v-else>—</span></td>
+                    <td><span class="tag tag-hv" v-if="p.high_value">⭐{{ t('lbl.highValue') }}</span><span v-else>—</span></td>
                     <td><button class="btn btn-sm btn-outline" :disabled="frozen" @click="copyInbound(p.id)">{{ t('inv.copy') }}</button></td>
                   </tr>
                 </tbody>
@@ -323,7 +323,7 @@
                     <div class="prod-meta" style="margin-top:4px">{{ productCatName(p) }} · {{ p.material || '—' }} · {{ p.weight }}g<span v-if="p.size"> · {{ p.size }}</span></div>
                     <div class="prod-meta" style="margin-top:2px">
                       <span style="color:var(--gold);font-weight:600">￥{{ fmt(p.price) }}</span>
-                      <span style="margin-left:8px">成本 ￥{{ fmt(p.cost) }}</span>
+                      <span style="margin-left:8px">{{ t('common.cost') }} ￥{{ fmt(p.cost) }}</span>
                       <span v-if="p.rfid_epc" style="margin-left:8px" class="mono">EPC:{{ p.rfid_epc.slice(-8) }}</span>
                     </div>
                   </div>
@@ -349,8 +349,8 @@
             <div class="card-item sale-card" v-for="s in sales" :key="s.id">
               <div class="sale-line">
                 <span class="sale-no">{{ s.bill_no }}</span>
-                <span class="tag" :class="s.status==='已冲红'?'tag-sold':'tag-stock'">{{ s.status }}</span>
-                <span class="sale-info">{{ s.customer }} · {{ s.product }} · {{ s.method }} · {{ s.biz_date }}</span>
+                <span class="tag" :class="s.status==='已冲红'?'tag-sold':'tag-stock'">{{ statusText(s.status) }}</span>
+                <span class="sale-info">{{ s.customer }} · {{ s.product }} · {{ methodText(s.method) }} · {{ s.biz_date }}</span>
                 <span class="sale-amount">￥{{ fmt(s.amount) }}</span>
                 <button v-if="s.status!=='已冲红'" class="btn btn-sm btn-outline" :disabled="frozen" @click="voidSale(s)">{{ t('act.void') }}</button>
               </div>
@@ -370,9 +370,9 @@
           </div>
           <div class="card-list">
             <div class="card-item deposit-card" v-for="d in deposits" :key="d.id">
-              <div class="dep-row"><div class="dep-customer">{{ d.customer }}</div><div class="dep-amounts"><div class="dep-total">￥{{ fmt(d.total) }}</div><div class="dep-detail">已付 ￥{{ fmt(d.deposit) }} / 尾款 ￥{{ fmt(d.balance) }}</div></div></div>
+              <div class="dep-row"><div class="dep-customer">{{ d.customer }}</div><div class="dep-amounts"><div class="dep-total">￥{{ fmt(d.total) }}</div><div class="dep-detail">{{ t('dep.paid') }} ￥{{ fmt(d.deposit) }} / {{ t('lbl.balance') }} ￥{{ fmt(d.balance) }}</div></div></div>
               <div class="dep-product">{{ d.product }} · {{ d.promised_date }}</div>
-              <div class="dep-tags"><span class="tag tag-gold">{{ d.status }}</span></div>
+              <div class="dep-tags"><span class="tag tag-gold">{{ statusText(d.status) }}</span></div>
               <div class="row-actions" v-if="d.status==='已定'">
                 <button class="btn btn-sm btn-gold" :disabled="frozen" @click="payDeposit(d)">{{ t('act.payBal') }}</button>
                 <button class="btn btn-sm btn-outline" :disabled="frozen" @click="voidDeposit(d)">{{ t('act.void') }}</button>
@@ -388,13 +388,13 @@
               <summary>📖 {{ t('biz.title') }}</summary>
               <div class="biz-body">{{ t('biz.loans') }}</div>
             </details>
-            <div class="biz-actions"><button class="btn btn-primary btn-sm" :disabled="frozen" @click="openLoan">+ 新增</button></div>
+            <div class="biz-actions"><button class="btn btn-primary btn-sm" :disabled="frozen" @click="openLoan">+ {{ t('act.addNew') }}</button></div>
           </div>
           <div class="card-list">
             <div class="card-item loan-card" v-for="d in subList" :key="d.id">
-              <div class="flex-between"><b>{{ d.product }}</b><span class="tag">{{ d.status }}</span></div>
-              <div class="prod-meta">{{ d.direction==='out'?'借出':'借入' }} · {{ d.party }} · {{ d.code }} · {{ d.due_date }}</div>
-              <button v-if="d.status==='借出中'||d.status==='借入中'" class="btn btn-sm btn-outline mt-sm" :disabled="frozen" @click="returnLoan(d)">归还/核销</button>
+              <div class="flex-between"><b>{{ d.product }}</b><span class="tag">{{ statusText(d.status) }}</span></div>
+              <div class="prod-meta">{{ directionText(d.direction) }} · {{ d.party }} · {{ d.code }} · {{ d.due_date }}</div>
+              <button v-if="d.status==='借出中'||d.status==='借入中'" class="btn btn-sm btn-outline mt-sm" :disabled="frozen" @click="returnLoan(d)">{{ t('act.returnWriteOff') }}</button>
             </div>
           </div>
         </section>
@@ -404,13 +404,13 @@
               <summary>📖 {{ t('biz.title') }}</summary>
               <div class="biz-body">{{ t('biz.repairs') }}</div>
             </details>
-            <div class="biz-actions"><button class="btn btn-primary btn-sm" @click="openRepair">+ 接件</button></div>
+            <div class="biz-actions"><button class="btn btn-primary btn-sm" @click="openRepair">+ {{ t('act.accept') }}</button></div>
           </div>
           <div class="card-list">
             <div class="card-item repair-card" v-for="d in subList" :key="d.id">
-              <div class="flex-between"><b>{{ d.item }}</b><span>{{ d.status }}</span></div>
+              <div class="flex-between"><b>{{ d.item }}</b><span>{{ statusText(d.status) }}</span></div>
               <div class="prod-meta">{{ d.customer }} · {{ d.issue }}</div>
-              <button class="btn btn-sm btn-outline mt-sm" @click="editRepair(d)">更新状态</button>
+              <button class="btn btn-sm btn-outline mt-sm" @click="editRepair(d)">{{ t('act.updateStatus') }}</button>
             </div>
           </div>
         </section>
@@ -420,13 +420,13 @@
               <summary>📖 {{ t('biz.title') }}</summary>
               <div class="biz-body">{{ t('biz.purchases') }}</div>
             </details>
-            <div class="biz-actions"><button class="btn btn-primary btn-sm" @click="openPurchase">+ 采购</button></div>
+            <div class="biz-actions"><button class="btn btn-primary btn-sm" @click="openPurchase">+ {{ t('act.purchase') }}</button></div>
           </div>
           <div class="card-list">
             <div class="card-item" v-for="d in subList" :key="d.id">
-              <div class="flex-between"><b>{{ d.product }}</b><span class="tag">{{ d.status }}</span></div>
+              <div class="flex-between"><b>{{ d.product }}</b><span class="tag">{{ statusText(d.status) }}</span></div>
               <div class="prod-meta">{{ d.supplier }} · ￥{{ fmt(d.cost) }}</div>
-              <button v-if="d.status!=='已入库'" class="btn btn-sm btn-outline mt-sm" :disabled="frozen" @click="receivePurchase(d)">确认入库</button>
+              <button v-if="d.status!=='已入库'" class="btn btn-sm btn-outline mt-sm" :disabled="frozen" @click="receivePurchase(d)">{{ t('act.confirmReceive') }}</button>
             </div>
           </div>
         </section>
@@ -436,13 +436,13 @@
               <summary>📖 {{ t('biz.title') }}</summary>
               <div class="biz-body">{{ t('biz.outsourcings') }}</div>
             </details>
-            <div class="biz-actions"><button class="btn btn-primary btn-sm" @click="openOutsource">+ 发料</button></div>
+            <div class="biz-actions"><button class="btn btn-primary btn-sm" @click="openOutsource">+ {{ t('act.sendOut') }}</button></div>
           </div>
           <div class="card-list">
             <div class="card-item" v-for="d in subList" :key="d.id">
-              <div class="flex-between"><b>{{ d.product }}</b><span class="tag">{{ d.status }}</span></div>
-              <div class="prod-meta">成本 ￥{{ fmt(d.gold_price*d.weight+d.labor_fee) }} · {{ d.factory }}</div>
-              <button v-if="d.status!=='已收货'" class="btn btn-sm btn-outline mt-sm" :disabled="frozen" @click="receiveOut(d)">收货入库</button>
+              <div class="flex-between"><b>{{ d.product }}</b><span class="tag">{{ statusText(d.status) }}</span></div>
+              <div class="prod-meta">{{ t('common.cost') }} ￥{{ fmt(d.gold_price*d.weight+d.labor_fee) }} · {{ d.factory }}</div>
+              <button v-if="d.status!=='已收货'" class="btn btn-sm btn-outline mt-sm" :disabled="frozen" @click="receiveOut(d)">{{ t('act.receiveStock') }}</button>
             </div>
           </div>
         </section>
@@ -452,22 +452,22 @@
               <summary>📖 {{ t('biz.title') }}</summary>
               <div class="biz-body">{{ t('biz.customers') }}</div>
             </details>
-            <div class="biz-actions"><button class="btn btn-primary btn-sm" @click="openCustomer">+ 客户</button></div>
+            <div class="biz-actions"><button class="btn btn-primary btn-sm" @click="openCustomer">+ {{ t('act.addCustomer') }}</button></div>
           </div>
           <div class="card-list">
             <div class="card-item" v-for="d in subList" :key="d.id">
               <div class="cust-item" :onclick="!isPc ? '' : ''" @click="(isPc ? editCustomer(d) : null)">
                 <div class="cust-avatar">{{ (d.name||'?')[0] }}</div>
-                <div class="cust-info"><div class="cust-name">{{ d.name }} · {{ d.level }}</div><div class="cust-phone">{{ d.phone }}</div><div class="cust-meta" v-if="d.preference || d.birthday">
-                  <span v-if="d.birthday" class="tag tag-gold">生日 {{ d.birthday }}</span>
+                <div class="cust-info"><div class="cust-name">{{ d.name }} · {{ levelText(d.level) }}</div><div class="cust-phone">{{ d.phone }}</div><div class="cust-meta" v-if="d.preference || d.birthday">
+                  <span v-if="d.birthday" class="tag tag-gold">{{ t('dash.birthday') }} {{ d.birthday }}</span>
                   <span v-if="d.preference" class="tag">{{ d.preference }}</span>
                 </div></div>
-                <div class="cust-stats"><div class="cust-total">￥{{ fmt(d.total_amount) }}</div><div class="cust-due" v-if="d.due_amount">待付 ￥{{ fmt(d.due_amount) }}</div>
-                  <button v-if="isPc" class="btn btn-sm btn-outline mt-sm" @click.stop="editCustomer(d)">编辑</button>
+                <div class="cust-stats"><div class="cust-total">￥{{ fmt(d.total_amount) }}</div><div class="cust-due" v-if="d.due_amount">{{ t('dash.due') }} ￥{{ fmt(d.due_amount) }}</div>
+                  <button v-if="isPc" class="btn btn-sm btn-outline mt-sm" @click.stop="editCustomer(d)">{{ t('act.edit') }}</button>
                 </div>
               </div>
             </div>
-            <div class="empty" v-if="!subList.length">暂无客户，可从销售/定金开单时自动建档</div>
+            <div class="empty" v-if="!subList.length">{{ t('cust.empty') }}</div>
           </div>
         </section>
 
@@ -478,15 +478,15 @@
           </details>
           <div class="card-list">
             <div class="card-item" v-for="d in appointments" :key="d.id">
-              <div class="flex-between"><b>{{ d.name }}</b><span class="tag" :class="statusClass(d.status)">{{ d.status }}</span></div>
-              <div class="prod-meta">{{ d.contact }} · {{ d.category }}</div>
-              <div class="prod-meta">期望：{{ d.want_date }} {{ d.want_slot }}</div>
+              <div class="flex-between"><b>{{ d.name }}</b><span class="tag" :class="statusClass(d.status)">{{ statusText(d.status) }}</span></div>
+              <div class="prod-meta">{{ d.contact }} · {{ catText(d.category) }}</div>
+              <div class="prod-meta">{{ t('appt.want') }}{{ d.want_date }} {{ d.want_slot }}</div>
               <div class="row-actions">
-                <button class="btn btn-sm btn-outline" @click="setAppt(d,'contacted')">已联系</button>
-                <button class="btn btn-sm btn-gold" @click="setAppt(d,'done')">成交</button>
+                <button class="btn btn-sm btn-outline" @click="setAppt(d,'contacted')">{{ t('appt.contacted') }}</button>
+                <button class="btn btn-sm btn-gold" @click="setAppt(d,'done')">{{ t('appt.done') }}</button>
               </div>
             </div>
-            <div class="empty" v-if="!appointments.length">暂无预约，访客可从公开页 /site 自助提交</div>
+            <div class="empty" v-if="!appointments.length">{{ t('appt.emptyM') }}</div>
           </div>
         </section>
 
@@ -496,33 +496,33 @@
             <div class="biz-body">{{ t('biz.profile') }}</div>
           </details>
           <div class="card-item">
-            <div class="form-group"><label>名称</label><input v-model="profile.name"></div>
-            <div class="form-group"><label>口号</label><input v-model="profile.slogan"></div>
-            <div class="form-group"><label>简介</label><textarea v-model="profile.intro"></textarea></div>
-            <div class="form-row"><div class="form-group"><label>电话</label><input v-model="profile.phone"></div><div class="form-group"><label>营业时间</label><input v-model="profile.hours"></div></div>
-            <div class="form-group"><label>地址</label><input v-model="profile.address"></div>
+            <div class="form-group"><label>{{ t('pf.name') }}</label><input v-model="profile.name"></div>
+            <div class="form-group"><label>{{ t('pf.slogan') }}</label><input v-model="profile.slogan"></div>
+            <div class="form-group"><label>{{ t('pf.intro') }}</label><textarea v-model="profile.intro"></textarea></div>
+            <div class="form-row"><div class="form-group"><label>{{ t('pf.phone') }}</label><input v-model="profile.phone"></div><div class="form-group"><label>{{ t('pf.hours') }}</label><input v-model="profile.hours"></div></div>
+            <div class="form-group"><label>{{ t('pf.address') }}</label><input v-model="profile.address"></div>
             <button class="btn btn-gold btn-block" @click="saveProfile">{{ t('act.save') }}</button>
-            <a class="btn btn-outline btn-block" href="/site" target="_blank" style="text-decoration:none; margin-top:8px">预览迷你网站</a>
+            <a class="btn btn-outline btn-block" href="/site" target="_blank" style="text-decoration:none; margin-top:8px">{{ t('pf.previewSite') }}</a>
           </div>
 
           <div class="card-item">
-            <div class="card-title">EPC 编码规则</div>
-            <div class="form-group"><label>前缀</label><input v-model="bizConfig.epc_prefix" placeholder="E280"></div>
-            <div class="form-group"><label>序号位数（1-8）</label><input v-model.number="bizConfig.seq_bits" type="number" min="1" max="8"></div>
-            <button class="btn btn-gold btn-block" @click="saveBizConfig">保存规则</button>
+            <div class="card-title">{{ t('epc.title') }}</div>
+            <div class="form-group"><label>{{ t('epc.prefix') }}</label><input v-model="bizConfig.epc_prefix" placeholder="E280"></div>
+            <div class="form-group"><label>{{ t('epc.seqBits') }}</label><input v-model.number="bizConfig.seq_bits" type="number" min="1" max="8"></div>
+            <button class="btn btn-gold btn-block" @click="saveBizConfig">{{ t('epc.save') }}</button>
           </div>
 
           <div class="card-item">
-            <div class="card-title">商品分类</div>
-            <div v-for="c in cats" :key="c.code" class="flex-between" style="padding:6px 0;border-bottom:1px solid #eee">
-              <span><b class="mono">{{ c.code }}</b> {{ c.names.zh }} <span style="color:#999">{{ c.names.en||'' }}</span></span>
-              <span><button class="btn-small" @click="editCat(c)">编辑</button> <button class="btn-small btn-danger" @click="delCat(c.code)">删</button></span>
+            <div class="card-title">{{ t('cat.title') }}</div>
+            <div v-for="c in catList" :key="c.code" class="flex-between" style="padding:6px 0;border-bottom:1px solid #eee">
+              <span><b class="mono">{{ c.code }}</b> {{ catNameOf(c) }} <span style="color:#999">{{ c.names.en||'' }}</span></span>
+              <span><button class="btn-small" @click="editCat(c)">{{ t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delCat(c.code)">{{ t('act.del') }}</button></span>
             </div>
-            <div class="form-group" style="margin-top:8px"><label>编码</label><input v-model="catEdit.code" :disabled="catEditMode==='edit'"></div>
-            <div class="form-row"><div class="form-group"><label>中文</label><input v-model="catEdit.names.zh"></div><div class="form-group"><label>英文</label><input v-model="catEdit.names.en"></div></div>
-            <div class="form-group"><label>排序</label><input v-model.number="catEdit.sort_order" type="number"></div>
-            <button class="btn btn-gold btn-block" @click="saveCat">{{ catEditMode==='edit'?'保存修改':'新增分类' }}</button>
-            <button class="btn btn-outline btn-block" v-if="catEditMode==='edit'" @click="resetCatEdit" style="margin-top:6px">取消</button>
+            <div class="form-group" style="margin-top:8px"><label>{{ t('lbl.code') }}</label><input v-model="catEdit.code" :disabled="catEditMode==='edit'"></div>
+            <div class="form-row"><div class="form-group"><label>{{ t('cat.zhName') }}</label><input v-model="catEdit.names.zh"></div><div class="form-group"><label>{{ t('cat.enName') }}</label><input v-model="catEdit.names.en"></div></div>
+            <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="catEdit.sort_order" type="number"></div>
+            <button class="btn btn-gold btn-block" @click="saveCat">{{ catEditMode==='edit'?t('cat.saveEdit'):t('cat.addNew') }}</button>
+            <button class="btn btn-outline btn-block" v-if="catEditMode==='edit'" @click="resetCatEdit" style="margin-top:6px">{{ t('act.cancel') }}</button>
           </div>
         </section>
         <section v-if="isPc && tab==='logs'">
@@ -531,7 +531,7 @@
               <summary>📖 {{ t('biz.title') }}</summary>
               <div class="biz-body">{{ t('biz.logs') }}</div>
             </details>
-            <div class="biz-actions"><a class="btn btn-sm btn-outline" :href="exportHref" @click.prevent="exportLogs">导出 CSV</a></div>
+            <div class="biz-actions"><a class="btn btn-sm btn-outline" :href="exportHref" @click.prevent="exportLogs">{{ t('act.export') }}</a></div>
           </div>
           <div class="card-list"><div class="log-item" v-for="d in subList" :key="d.id"><span class="log-time">{{ d.time }}</span><span class="log-action">{{ d.operator }} {{ d.action }}</span><span class="log-target">{{ d.target }}</span></div></div>
         </section>
@@ -539,63 +539,63 @@
           <details class="biz-guide"><summary>📖 {{ t('biz.title') }}</summary><div class="biz-body">{{ t('biz.appointments') }}</div></details>
           <div class="card-list">
             <div class="card-item" v-for="d in appointments" :key="d.id">
-              <div class="flex-between"><b>{{ d.name }}</b><span class="tag">{{ d.status }}</span></div>
-              <div class="prod-meta">{{ d.contact }} · {{ d.category }} · {{ d.want_date }} {{ d.want_slot }}</div>
+              <div class="flex-between"><b>{{ d.name }}</b><span class="tag">{{ statusText(d.status) }}</span></div>
+              <div class="prod-meta">{{ d.contact }} · {{ catText(d.category) }} · {{ d.want_date }} {{ d.want_slot }}</div>
               <div class="row-actions">
-                <button class="btn btn-sm btn-outline" @click="setAppt(d,'contacted')">已联系</button>
-                <button class="btn btn-sm btn-outline" @click="setAppt(d,'arrived')">已到店</button>
-                <button class="btn btn-sm btn-gold" @click="setAppt(d,'done')">已成交</button>
+                <button class="btn btn-sm btn-outline" @click="setAppt(d,'contacted')">{{ t('appt.contacted') }}</button>
+                <button class="btn btn-sm btn-outline" @click="setAppt(d,'arrived')">{{ t('appt.arrived') }}</button>
+                <button class="btn btn-sm btn-gold" @click="setAppt(d,'done')">{{ t('appt.done') }}</button>
               </div>
             </div>
-            <div class="empty" v-if="!appointments.length">暂无预约，可从公开页 /site 提交</div>
+            <div class="empty" v-if="!appointments.length">{{ t('empty.appt') }}</div>
           </div>
         </section>
         <section v-if="isPc && tab==='profile'">
           <details class="biz-guide"><summary>📖 {{ t('biz.title') }}</summary><div class="biz-body">{{ t('biz.profile') }}</div></details>
           <div class="card-item" v-if="profile">
-            <div class="form-group"><label>名称</label><input v-model="profile.name"></div>
-            <div class="form-group"><label>口号</label><input v-model="profile.slogan"></div>
-            <div class="form-group"><label>简介</label><textarea v-model="profile.intro"></textarea></div>
-            <div class="form-row"><div class="form-group"><label>电话</label><input v-model="profile.phone"></div><div class="form-group"><label>营业时间</label><input v-model="profile.hours"></div></div>
-            <div class="form-group"><label>地址</label><input v-model="profile.address"></div>
-            <button class="btn btn-gold" @click="saveProfile">保存</button>
-            <a class="btn btn-outline" href="/site" target="_blank" style="margin-left:12px">预览迷你网站</a>
+            <div class="form-group"><label>{{ t('pf.name') }}</label><input v-model="profile.name"></div>
+            <div class="form-group"><label>{{ t('pf.slogan') }}</label><input v-model="profile.slogan"></div>
+            <div class="form-group"><label>{{ t('pf.intro') }}</label><textarea v-model="profile.intro"></textarea></div>
+            <div class="form-row"><div class="form-group"><label>{{ t('pf.phone') }}</label><input v-model="profile.phone"></div><div class="form-group"><label>{{ t('pf.hours') }}</label><input v-model="profile.hours"></div></div>
+            <div class="form-group"><label>{{ t('pf.address') }}</label><input v-model="profile.address"></div>
+            <button class="btn btn-gold" @click="saveProfile">{{ t('act.save') }}</button>
+            <a class="btn btn-outline" href="/site" target="_blank" style="margin-left:12px">{{ t('pf.previewSite') }}</a>
           </div>
 
           <!-- EPC 编码规则 -->
           <div class="card-item">
-            <div class="card-title">EPC 编码规则</div>
+            <div class="card-title">{{ t('epc.title') }}</div>
             <div class="form-row">
-              <div class="form-group"><label>前缀</label><input v-model="bizConfig.epc_prefix" placeholder="E280"></div>
-              <div class="form-group"><label>序号位数（1-8）</label><input v-model.number="bizConfig.seq_bits" type="number" min="1" max="8"></div>
+              <div class="form-group"><label>{{ t('epc.prefix') }}</label><input v-model="bizConfig.epc_prefix" placeholder="E280"></div>
+              <div class="form-group"><label>{{ t('epc.seqBits') }}</label><input v-model.number="bizConfig.seq_bits" type="number" min="1" max="8"></div>
             </div>
-            <div class="hint">EPC = 前缀 + 分类码 + 序号（十六进制）。例如 E280 + 01 + 00000001</div>
-            <button class="btn btn-gold" @click="saveBizConfig">保存规则</button>
+            <div class="hint">{{ t('epc.hint') }}</div>
+            <button class="btn btn-gold" @click="saveBizConfig">{{ t('epc.save') }}</button>
           </div>
 
           <!-- 商品分类管理 -->
           <div class="card-item">
-            <div class="card-title">商品分类管理</div>
+            <div class="card-title">{{ t('cat.mgrTitle') }}</div>
             <table class="data-table" style="margin-bottom:12px">
-              <thead><tr><th>编码</th><th>中文名</th><th>英文名</th><th>排序</th><th>操作</th></tr></thead>
+              <thead><tr><th>{{ t('lbl.code') }}</th><th>{{ t('cat.zhName') }}</th><th>{{ t('cat.enName') }}</th><th>{{ t('cat.sort') }}</th><th>{{ t('common.op') }}</th></tr></thead>
               <tbody>
-                <tr v-for="c in cats" :key="c.code">
+                <tr v-for="c in catList" :key="c.code">
                   <td class="mono">{{ c.code }}</td>
                   <td>{{ c.names.zh }}</td>
                   <td>{{ c.names.en || '—' }}</td>
                   <td>{{ c.sort_order }}</td>
-                  <td><button class="btn-small" @click="editCat(c)">编辑</button> <button class="btn-small btn-danger" @click="delCat(c.code)">删除</button></td>
+                  <td><button class="btn-small" @click="editCat(c)">{{ t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delCat(c.code)">{{ t('act.del') }}</button></td>
                 </tr>
               </tbody>
             </table>
             <div class="form-row">
-              <div class="form-group"><label>编码</label><input v-model="catEdit.code" :disabled="catEditMode==='edit'" placeholder="如 08"></div>
-              <div class="form-group"><label>中文名</label><input v-model="catEdit.names.zh"></div>
-              <div class="form-group"><label>英文名</label><input v-model="catEdit.names.en"></div>
-              <div class="form-group"><label>排序</label><input v-model.number="catEdit.sort_order" type="number"></div>
+              <div class="form-group"><label>{{ t('lbl.code') }}</label><input v-model="catEdit.code" :disabled="catEditMode==='edit'" :placeholder="t('cat.codePh')"></div>
+              <div class="form-group"><label>{{ t('cat.zhName') }}</label><input v-model="catEdit.names.zh"></div>
+              <div class="form-group"><label>{{ t('cat.enName') }}</label><input v-model="catEdit.names.en"></div>
+              <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="catEdit.sort_order" type="number"></div>
             </div>
-            <button class="btn btn-gold" @click="saveCat">{{ catEditMode==='edit' ? '保存修改' : '新增分类' }}</button>
-            <button class="btn btn-outline" v-if="catEditMode==='edit'" @click="resetCatEdit" style="margin-left:8px">取消</button>
+            <button class="btn btn-gold" @click="saveCat">{{ catEditMode==='edit' ? t('cat.saveEdit') : t('cat.addNew') }}</button>
+            <button class="btn btn-outline" v-if="catEditMode==='edit'" @click="resetCatEdit" style="margin-left:8px">{{ t('act.cancel') }}</button>
           </div>
         </section>
 
@@ -606,19 +606,19 @@
             <div class="biz-body">{{ t('biz.more') }}</div>
           </details>
           <div class="profile-card">
-            <div class="pf-top"><div class="pf-avatar">{{ (user.display_name||'店')[0] }}</div><div><div class="pf-name">{{ user.display_name }}</div><div class="pf-role">{{ user.role==='TENANT_ADMIN'?'店长':'店员' }}</div></div></div>
+            <div class="pf-top"><div class="pf-avatar">{{ (((user&&user.display_name)||t('misc.role.staff')))[0] }}</div><div><div class="pf-name">{{ user ? user.display_name : '' }}</div><div class="pf-role">{{ user && user.role==='TENANT_ADMIN'?t('misc.role.admin'):t('misc.role.staff') }}</div></div></div>
           </div>
           <div class="menu-list">
-            <div class="menu-item" @click="openSubView('customers')"><div class="menu-text">客户管理</div></div>
-            <div class="menu-item" @click="openSubView('loans')"><div class="menu-text">借货管理</div></div>
-            <div class="menu-item" @click="openSubView('repairs')"><div class="menu-text">维修管理</div></div>
-            <div class="menu-item" @click="openSubView('purchases')"><div class="menu-text">采购管理</div></div>
-            <div class="menu-item" @click="openSubView('outsourcings')"><div class="menu-text">委外加工</div></div>
-            <div class="menu-item" @click="openSubView('logs')"><div class="menu-text">操作日志</div></div>
-            <div class="menu-item" @click="go('appointments');loadAppt()"><div class="menu-text">到店预约</div></div>
-            <div class="menu-item" @click="go('profile');loadProfile()"><div class="menu-text">店铺资料</div></div>
-            <div class="menu-item"><a href="/site" target="_blank" class="menu-text">企业迷你网站</a></div>
-            <div class="menu-item" @click="doLogout"><div class="menu-text">退出登录</div></div>
+            <div class="menu-item" @click="openSubView('customers')"><div class="menu-text">{{ t('nav.customers') }}</div></div>
+            <div class="menu-item" @click="openSubView('loans')"><div class="menu-text">{{ t('nav.loans') }}</div></div>
+            <div class="menu-item" @click="openSubView('repairs')"><div class="menu-text">{{ t('nav.repairs') }}</div></div>
+            <div class="menu-item" @click="openSubView('purchases')"><div class="menu-text">{{ t('nav.purchases') }}</div></div>
+            <div class="menu-item" @click="openSubView('outsourcings')"><div class="menu-text">{{ t('nav.outsourcings') }}</div></div>
+            <div class="menu-item" @click="openSubView('logs')"><div class="menu-text">{{ t('nav.logs') }}</div></div>
+            <div class="menu-item" @click="go('appointments');loadAppt()"><div class="menu-text">{{ t('nav.appointments') }}</div></div>
+            <div class="menu-item" @click="go('profile');loadProfile()"><div class="menu-text">{{ t('nav.profile') }}</div></div>
+            <div class="menu-item"><a href="/site" target="_blank" class="menu-text">{{ t('nav.site') }}</a></div>
+            <div class="menu-item" @click="doLogout"><div class="menu-text">{{ t('nav.logout') }}</div></div>
           </div>
         </section>
       </div>
@@ -632,46 +632,46 @@
             <div class="biz-body">{{ t('biz.'+subView) }}</div>
           </details>
           <div class="biz-actions">
-            <button class="btn btn-primary btn-sm" v-if="subView==='customers'" @click="openCustomer">+ 客户</button>
-            <button class="btn btn-primary btn-sm" v-if="subView==='loans'" @click="openLoan">+ 新增</button>
-            <button class="btn btn-primary btn-sm" v-if="subView==='repairs'" @click="openRepair">+ 接件</button>
-            <button class="btn btn-primary btn-sm" v-if="subView==='purchases'" @click="openPurchase">+ 采购</button>
-            <button class="btn btn-primary btn-sm" v-if="subView==='outsourcings'" @click="openOutsource">+ 发料</button>
-            <a class="btn btn-sm btn-outline" v-if="subView==='logs'" :href="exportHref" @click.prevent="exportLogs">导出 CSV</a>
+            <button class="btn btn-primary btn-sm" v-if="subView==='customers'" @click="openCustomer">+ {{ t('act.addCustomer') }}</button>
+            <button class="btn btn-primary btn-sm" v-if="subView==='loans'" @click="openLoan">+ {{ t('act.addNew') }}</button>
+            <button class="btn btn-primary btn-sm" v-if="subView==='repairs'" @click="openRepair">+ {{ t('act.accept') }}</button>
+            <button class="btn btn-primary btn-sm" v-if="subView==='purchases'" @click="openPurchase">+ {{ t('act.purchase') }}</button>
+            <button class="btn btn-primary btn-sm" v-if="subView==='outsourcings'" @click="openOutsource">+ {{ t('act.sendOut') }}</button>
+            <a class="btn btn-sm btn-outline" v-if="subView==='logs'" :href="exportHref" @click.prevent="exportLogs">{{ t('act.export') }}</a>
           </div>
         </div>
         <div v-if="subView==='loans'">
           <div class="card-item loan-card" v-for="d in subList" :key="d.id">
-            <div class="flex-between"><b>{{ d.product }}</b><span>{{ d.status }}</span></div>
+            <div class="flex-between"><b>{{ d.product }}</b><span>{{ statusText(d.status) }}</span></div>
             <div class="prod-meta">{{ d.party }} · {{ d.code }}</div>
-            <button v-if="d.status==='借出中'||d.status==='借入中'" class="btn btn-sm btn-outline mt-sm" @click="returnLoan(d)">归还</button>
+            <button v-if="d.status==='借出中'||d.status==='借入中'" class="btn btn-sm btn-outline mt-sm" @click="returnLoan(d)">{{ t('act.returnShort') }}</button>
           </div>
         </div>
         <div v-if="subView==='repairs'">
           <div class="card-item" v-for="d in subList" :key="d.id">
-            <div class="flex-between"><b>{{ d.item }}</b><span>{{ d.status }}</span></div>
-            <button class="btn btn-sm btn-outline mt-sm" @click="editRepair(d)">更新</button>
+            <div class="flex-between"><b>{{ d.item }}</b><span>{{ statusText(d.status) }}</span></div>
+            <button class="btn btn-sm btn-outline mt-sm" @click="editRepair(d)">{{ t('act.updateShort') }}</button>
           </div>
         </div>
         <div v-if="subView==='customers'">
           <div class="card-item" v-for="d in subList" :key="d.id" @click="editCustomer(d)">
             <div class="cust-item"><div class="cust-avatar">{{ (d.name||'?')[0] }}</div>
-              <div class="cust-info"><div class="cust-name">{{ d.name }} · {{ d.level }}</div><div class="cust-phone">{{ d.phone }}</div></div>
-              <div class="cust-stats"><div class="cust-total">￥{{ fmt(d.total_amount) }}</div><div class="cust-due" v-if="d.due_amount">待付 ￥{{ fmt(d.due_amount) }}</div></div>
+              <div class="cust-info"><div class="cust-name">{{ d.name }} · {{ levelText(d.level) }}</div><div class="cust-phone">{{ d.phone }}</div></div>
+              <div class="cust-stats"><div class="cust-total">￥{{ fmt(d.total_amount) }}</div><div class="cust-due" v-if="d.due_amount">{{ t('dash.due') }} ￥{{ fmt(d.due_amount) }}</div></div>
             </div>
           </div>
-          <div class="empty" v-if="!subList.length">暂无客户</div>
+          <div class="empty" v-if="!subList.length">{{ t('cust.emptyShort') }}</div>
         </div>
         <div v-if="subView==='purchases'">
           <div class="card-item" v-for="d in subList" :key="d.id">
-            <div class="flex-between"><b>{{ d.product }}</b>{{ d.status }}</div>
-            <button v-if="d.status!=='已入库'" class="btn btn-sm btn-outline mt-sm" :disabled="frozen" @click="receivePurchase(d)">入库</button>
+            <div class="flex-between"><b>{{ d.product }}</b>{{ statusText(d.status) }}</div>
+            <button v-if="d.status!=='已入库'" class="btn btn-sm btn-outline mt-sm" :disabled="frozen" @click="receivePurchase(d)">{{ t('act.receiveShort') }}</button>
           </div>
         </div>
         <div v-if="subView==='outsourcings'">
           <div class="card-item" v-for="d in subList" :key="d.id">
-            <div class="flex-between"><b>{{ d.product }}</b>{{ d.status }}</div>
-            <button v-if="d.status!=='已收货'" class="btn btn-sm btn-outline mt-sm" :disabled="frozen" @click="receiveOut(d)">收货</button>
+            <div class="flex-between"><b>{{ d.product }}</b>{{ statusText(d.status) }}</div>
+            <button v-if="d.status!=='已收货'" class="btn btn-sm btn-outline mt-sm" :disabled="frozen" @click="receiveOut(d)">{{ t('act.takeShort') }}</button>
           </div>
         </div>
         <div v-if="subView==='logs'">
@@ -680,11 +680,11 @@
       </div>
 
       <nav v-if="!isPc" class="tab-bar">
-        <button class="tab-item" :class="{active:tab==='dashboard'}" @click="go('dashboard')"><span class="tab-icon">📊</span>看板</button>
-        <button class="tab-item" :class="{active:tab==='products'}" @click="go('products')"><span class="tab-icon">💎</span>商品</button>
+        <button class="tab-item" :class="{active:tab==='dashboard'}" @click="go('dashboard')"><span class="tab-icon">📊</span>{{ t('tab.dashboard') }}</button>
+        <button class="tab-item" :class="{active:tab==='products'}" @click="go('products')"><span class="tab-icon">💎</span>{{ t('tab.products') }}</button>
         <div class="tab-center"><button class="tab-btn-add" @click="quickSale">+</button></div>
-        <button class="tab-item" :class="{active:tab==='deposits'}" @click="go('deposits')"><span class="tab-icon">💰</span>定金</button>
-        <button class="tab-item" :class="{active:tab==='more'}" @click="go('more')"><span class="tab-icon">👤</span>我的</button>
+        <button class="tab-item" :class="{active:tab==='deposits'}" @click="go('deposits')"><span class="tab-icon">💰</span>{{ t('tab.deposits') }}</button>
+        <button class="tab-item" :class="{active:tab==='more'}" @click="go('more')"><span class="tab-icon">👤</span>{{ t('tab.mine') }}</button>
       </nav>
     </div>
   </div>
@@ -694,150 +694,150 @@
       <div class="sheet-head"><span class="sheet-title">{{ sheetTitle }}</span><button class="sheet-close" @click="closeSheet">×</button></div>
       <div class="sheet-body">
         <template v-if="sheetMode==='sale'">
-          <div class="form-group"><label>客户</label><input v-model="sheetData.customer"></div>
-          <div class="form-group"><label>手机</label><input v-model="sheetData.phone"></div>
-          <div class="form-group"><label>在库商品</label>
+          <div class="form-group"><label>{{ t('lbl.customer') }}</label><input v-model="sheetData.customer"></div>
+          <div class="form-group"><label>{{ t('lbl.mobile') }}</label><input v-model="sheetData.phone"></div>
+          <div class="form-group"><label>{{ t('sale.stockItem') }}</label>
             <select v-model="sheetData.product_id" @change="onPickProduct">
-              <option :value="null">自定义名称</option>
+              <option :value="null">{{ t('sale.customName') }}</option>
               <option v-for="p in stockOptions" :key="p.id" :value="p.id">{{ p.code }} {{ p.name }} ￥{{ p.price }}</option>
             </select>
           </div>
-          <div class="form-group"><label>商品名称</label><input v-model="sheetData.product"></div>
-          <div class="form-row"><div class="form-group"><label>金额</label><input v-model.number="sheetData.amount" type="number"></div><div class="form-group"><label>实收</label><input v-model.number="sheetData.paid" type="number"></div></div>
-          <div class="form-row"><div class="form-group"><label>支付</label><select v-model="sheetData.method"><option>现金</option><option>微信</option><option>刷卡</option><option>转账</option></select></div>
-            <div class="form-group"><label>日期</label><input v-model="sheetData.biz_date" type="date"></div></div>
+          <div class="form-group"><label>{{ t('sale.productName') }}</label><input v-model="sheetData.product"></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.amount') }}</label><input v-model.number="sheetData.amount" type="number"></div><div class="form-group"><label>{{ t('lbl.paid') }}</label><input v-model.number="sheetData.paid" type="number"></div></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('sale.pay') }}</label><select v-model="sheetData.method"><option value="现金">{{ t('pay.cash') }}</option><option value="微信">{{ t('pay.wechat') }}</option><option value="刷卡">{{ t('pay.card') }}</option><option value="转账">{{ t('pay.transfer') }}</option></select></div>
+            <div class="form-group"><label>{{ t('lbl.date') }}</label><input v-model="sheetData.biz_date" type="date"></div></div>
         </template>
         <template v-if="sheetMode==='product'||sheetMode==='inbound'">
           <div class="form-row">
-            <div class="form-group"><label>编码</label><input v-model="sheetData.code"></div>
+            <div class="form-group"><label>{{ t('lbl.code') }}</label><input v-model="sheetData.code"></div>
             <div class="form-group" v-if="sheetMode==='product'">
-              <label>名称 <select class="lang-mini" v-model="sheetNameLang" title="选择名称语言：绿色=已录入，红色=未录入">
+              <label>{{ t('lbl.name') }} <select class="lang-mini" v-model="sheetNameLang" :title="t('form.nameLangTitle')">
                 <option v-for="lk in langKeys" :key="lk" :value="lk" :style="{color: langNameFilled(lk) ? '#1a7f37' : '#c0392b'}">{{ langLabels[lk] }}</option>
               </select></label>
               <input :value="sheetNameGet()" @input="sheetNameSet($event.target.value)">
             </div>
-            <div class="form-group" v-else><label>名称</label><input v-model="sheetData.name"></div>
+            <div class="form-group" v-else><label>{{ t('lbl.name') }}</label><input v-model="sheetData.name"></div>
           </div>
           <div class="form-row">
-            <div class="form-group"><label>品类</label>
+            <div class="form-group"><label>{{ t('lbl.category') }}</label>
               <select v-if="sheetMode==='product'" v-model="sheetData.category_code">
                 <option v-for="c in catList" :key="c.code" :value="c.code">{{ catNameOf(c) }}</option>
               </select>
               <select v-else v-model="sheetData.category"><option v-for="c in cats" :key="c">{{ c }}</option></select>
             </div>
-            <div class="form-group"><label>材质</label><input v-model="sheetData.material"></div>
+            <div class="form-group"><label>{{ t('lbl.material') }}</label><input v-model="sheetData.material"></div>
           </div>
-          <div class="form-row"><div class="form-group"><label>克重</label><input v-model.number="sheetData.weight" type="number"></div><div class="form-group"><label>尺寸</label><input v-model="sheetData.size"></div></div>
-          <div class="form-row"><div class="form-group"><label>成本</label><input v-model.number="sheetData.cost" type="number"></div><div class="form-group"><label>售价</label><input v-model.number="sheetData.price" type="number"></div></div>
-          <div class="form-group"><label>证书号</label><input v-model="sheetData.cert"></div>
-          <div class="form-row" v-if="sheetMode==='product'"><div class="form-group"><label>状态</label><select v-model="sheetData.status"><option>在库</option><option>已定</option><option>已售</option><option>借出</option></select></div>
-            <div class="form-group"><label>RFID EPC</label><div style="display:flex;gap:6px"><input v-model="sheetData.rfid_epc" style="flex:1"><button type="button" class="btn-small" @click="generateEpc" :disabled="!sheetData.id">生成EPC</button></div></div></div>
-          <div class="form-group" v-if="sheetMode==='product'"><label><input type="checkbox" v-model="sheetData.showcase_public" :true-value="1" :false-value="0"> 允许上橱窗</label></div>
-          <div class="form-group" v-if="sheetMode==='product'"><label><input type="checkbox" v-model="sheetData.high_value" :true-value="1" :false-value="0"> ⭐ 高价值商品（盘点时未扫到将置顶提醒）</label></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.weight') }}</label><input v-model.number="sheetData.weight" type="number"></div><div class="form-group"><label>{{ t('lbl.size') }}</label><input v-model="sheetData.size"></div></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.cost') }}</label><input v-model.number="sheetData.cost" type="number"></div><div class="form-group"><label>{{ t('lbl.price') }}</label><input v-model.number="sheetData.price" type="number"></div></div>
+          <div class="form-group"><label>{{ t('lbl.cert') }}</label><input v-model="sheetData.cert"></div>
+          <div class="form-row" v-if="sheetMode==='product'"><div class="form-group"><label>{{ t('lbl.status') }}</label><select v-model="sheetData.status"><option value="在库">{{ t('st.inStock') }}</option><option value="已定">{{ t('st.reserved') }}</option><option value="已售">{{ t('st.sold') }}</option><option value="借出">{{ t('st.loaned') }}</option></select></div>
+            <div class="form-group"><label>RFID EPC</label><div style="display:flex;gap:6px"><input v-model="sheetData.rfid_epc" style="flex:1"><button type="button" class="btn-small" @click="generateEpc" :disabled="!sheetData.id">{{ t('act.genEpc') }}</button></div></div></div>
+          <div class="form-group" v-if="sheetMode==='product'"><label><input type="checkbox" v-model="sheetData.showcase_public" :true-value="1" :false-value="0"> {{ t('act.allowShowcase') }}</label></div>
+          <div class="form-group" v-if="sheetMode==='product'"><label><input type="checkbox" v-model="sheetData.high_value" :true-value="1" :false-value="0"> {{ t('form.hvHint') }}</label></div>
         </template>
         <template v-if="sheetMode==='deposit'">
-          <div class="form-row"><div class="form-group"><label>客户</label><input v-model="sheetData.customer"></div><div class="form-group"><label>电话</label><input v-model="sheetData.phone"></div></div>
-          <div class="form-group"><label>锁定在库商品（可选）</label>
-            <select v-model="sheetData.product_id" @change="onPickProduct"><option :value="null">无现货定制</option>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.customer') }}</label><input v-model="sheetData.customer"></div><div class="form-group"><label>{{ t('lbl.phone') }}</label><input v-model="sheetData.phone"></div></div>
+          <div class="form-group"><label>{{ t('dep.lockHint') }}</label>
+            <select v-model="sheetData.product_id" @change="onPickProduct"><option :value="null">{{ t('dep.noStock') }}</option>
               <option v-for="p in stockOptions" :key="p.id" :value="p.id">{{ p.code }} {{ p.name }}</option></select>
           </div>
-          <div class="form-group"><label>商品</label><input v-model="sheetData.product"></div>
-          <div class="form-row"><div class="form-group"><label>总价</label><input v-model.number="sheetData.total" type="number" @input="sheetData.balance=(sheetData.total||0)-(sheetData.deposit||0)"></div>
-            <div class="form-group"><label>定金</label><input v-model.number="sheetData.deposit" type="number" @input="sheetData.balance=(sheetData.total||0)-(sheetData.deposit||0)"></div></div>
-          <div class="form-row"><div class="form-group"><label>尾款</label><input :value="sheetData.balance" readonly></div><div class="form-group"><label>交期</label><input v-model="sheetData.promised_date" type="date"></div></div>
+          <div class="form-group"><label>{{ t('lbl.product') }}</label><input v-model="sheetData.product"></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.total') }}</label><input v-model.number="sheetData.total" type="number" @input="sheetData.balance=(sheetData.total||0)-(sheetData.deposit||0)"></div>
+            <div class="form-group"><label>{{ t('lbl.deposit') }}</label><input v-model.number="sheetData.deposit" type="number" @input="sheetData.balance=(sheetData.total||0)-(sheetData.deposit||0)"></div></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.balance') }}</label><input :value="sheetData.balance" readonly></div><div class="form-group"><label>{{ t('lbl.promisedDate') }}</label><input v-model="sheetData.promised_date" type="date"></div></div>
         </template>
         <template v-if="sheetMode==='loan'">
-          <div class="form-group"><label>方向</label><select v-model="sheetData.direction"><option value="out">借出</option><option value="in">借入</option></select></div>
-          <div class="form-row"><div class="form-group"><label>商品</label><input v-model="sheetData.product"></div><div class="form-group"><label>编码</label><input v-model="sheetData.code" placeholder="借出请填在库编码"></div></div>
-          <div class="form-row"><div class="form-group"><label>对方</label><input v-model="sheetData.party"></div><div class="form-group"><label>数量</label><input v-model.number="sheetData.qty" type="number"></div></div>
-          <div class="form-row"><div class="form-group"><label>日期</label><input v-model="sheetData.loan_date" type="date"></div><div class="form-group"><label>应还</label><input v-model="sheetData.due_date" type="date"></div></div>
+          <div class="form-group"><label>{{ t('lbl.direction') }}</label><select v-model="sheetData.direction"><option value="out">{{ t('lbl.out') }}</option><option value="in">{{ t('lbl.in') }}</option></select></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.product') }}</label><input v-model="sheetData.product"></div><div class="form-group"><label>{{ t('lbl.code') }}</label><input v-model="sheetData.code" :placeholder="t('loan.codePh')"></div></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.party') }}</label><input v-model="sheetData.party"></div><div class="form-group"><label>{{ t('lbl.qty') }}</label><input v-model.number="sheetData.qty" type="number"></div></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.date') }}</label><input v-model="sheetData.loan_date" type="date"></div><div class="form-group"><label>{{ t('lbl.dueDate') }}</label><input v-model="sheetData.due_date" type="date"></div></div>
         </template>
         <template v-if="sheetMode==='repair'">
-          <div class="form-row"><div class="form-group"><label>客户</label><input v-model="sheetData.customer"></div><div class="form-group"><label>电话</label><input v-model="sheetData.phone"></div></div>
-          <div class="form-group"><label>物品</label><input v-model="sheetData.item"></div>
-          <div class="form-group"><label>问题</label><textarea v-model="sheetData.issue"></textarea></div>
-          <div class="form-row"><div class="form-group"><label>预估</label><input v-model.number="sheetData.est_fee" type="number"></div><div class="form-group"><label>实收</label><input v-model.number="sheetData.actual_fee" type="number"></div></div>
-          <div class="form-group"><label>状态</label><select v-model="sheetData.status"><option>待维修</option><option>维修中</option><option>待取件</option><option>已完成</option></select></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.customer') }}</label><input v-model="sheetData.customer"></div><div class="form-group"><label>{{ t('lbl.phone') }}</label><input v-model="sheetData.phone"></div></div>
+          <div class="form-group"><label>{{ t('lbl.item') }}</label><input v-model="sheetData.item"></div>
+          <div class="form-group"><label>{{ t('lbl.issue') }}</label><textarea v-model="sheetData.issue"></textarea></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.estFee') }}</label><input v-model.number="sheetData.est_fee" type="number"></div><div class="form-group"><label>{{ t('lbl.actualFee') }}</label><input v-model.number="sheetData.actual_fee" type="number"></div></div>
+          <div class="form-group"><label>{{ t('lbl.status') }}</label><select v-model="sheetData.status"><option value="待维修">{{ t('st.pending') }}</option><option value="维修中">{{ t('st.repairing') }}</option><option value="待取件">{{ t('st.waitTake') }}</option><option value="已完成">{{ t('st.done') }}</option></select></div>
         </template>
         <template v-if="sheetMode==='purchase'">
-          <div class="form-group"><label>供应商</label><input v-model="sheetData.supplier"></div>
-          <div class="form-row"><div class="form-group"><label>商品</label><input v-model="sheetData.product"></div><div class="form-group"><label>数量</label><input v-model.number="sheetData.qty" type="number"></div></div>
-          <div class="form-row"><div class="form-group"><label>成本</label><input v-model.number="sheetData.cost" type="number"></div><div class="form-group"><label>已付</label><input v-model.number="sheetData.paid" type="number"></div></div>
+          <div class="form-group"><label>{{ t('lbl.supplier') }}</label><input v-model="sheetData.supplier"></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.product') }}</label><input v-model="sheetData.product"></div><div class="form-group"><label>{{ t('lbl.qty') }}</label><input v-model.number="sheetData.qty" type="number"></div></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.cost') }}</label><input v-model.number="sheetData.cost" type="number"></div><div class="form-group"><label>{{ t('dep.paid') }}</label><input v-model.number="sheetData.paid" type="number"></div></div>
         </template>
         <template v-if="sheetMode==='outsource'">
-          <div class="form-group"><label>加工厂</label><input v-model="sheetData.factory"></div>
-          <div class="form-row"><div class="form-group"><label>商品</label><input v-model="sheetData.product"></div><div class="form-group"><label>材质</label><input v-model="sheetData.material"></div></div>
-          <div class="form-row"><div class="form-group"><label>克重</label><input v-model.number="sheetData.weight" type="number"></div><div class="form-group"><label>金价</label><input v-model.number="sheetData.gold_price" type="number"></div></div>
-          <div class="form-group"><label>工费</label><input v-model.number="sheetData.labor_fee" type="number"></div>
+          <div class="form-group"><label>{{ t('lbl.factory') }}</label><input v-model="sheetData.factory"></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.product') }}</label><input v-model="sheetData.product"></div><div class="form-group"><label>{{ t('lbl.material') }}</label><input v-model="sheetData.material"></div></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.weight') }}</label><input v-model.number="sheetData.weight" type="number"></div><div class="form-group"><label>{{ t('lbl.goldPrice') }}</label><input v-model.number="sheetData.gold_price" type="number"></div></div>
+          <div class="form-group"><label>{{ t('lbl.laborFee') }}</label><input v-model.number="sheetData.labor_fee" type="number"></div>
         </template>
         <template v-if="sheetMode==='customer'">
-          <div class="form-group"><label>姓名</label><input v-model="sheetData.name"></div>
-          <div class="form-group"><label>手机</label><input v-model="sheetData.phone"></div>
-          <div class="form-group"><label>等级</label><select v-model="sheetData.level"><option>普通</option><option>银卡</option><option>金卡</option></select></div>
-          <div class="form-group"><label>偏好</label><input v-model="sheetData.preference"></div>
+          <div class="form-group"><label>{{ t('lbl.name2') }}</label><input v-model="sheetData.name"></div>
+          <div class="form-group"><label>{{ t('lbl.phone') }}</label><input v-model="sheetData.phone"></div>
+          <div class="form-group"><label>{{ t('lbl.level') }}</label><select v-model="sheetData.level"><option value="普通">{{ t('cust.normal') }}</option><option value="银卡">{{ t('cust.silver') }}</option><option value="金卡">{{ t('cust.gold') }}</option></select></div>
+          <div class="form-group"><label>{{ t('lbl.preference') }}</label><input v-model="sheetData.preference"></div>
         </template>
         <template v-if="sheetMode==='rfid'">
-          <p class="prod-meta">独立运行时可用「模拟扫描」读取全部已写入 EPC 的在库标签；也可粘贴读写器回传的 EPC 列表。</p>
-          <div class="form-group"><label>EPC（每行一个）</label><textarea v-model="sheetData.epcText" rows="6"></textarea></div>
-          <button class="btn btn-outline btn-block" @click="doRfid(true)">模拟高频扫描</button>
+          <p class="prod-meta">{{ t('rfid.hint') }}</p>
+          <div class="form-group"><label>{{ t('rfid.epcPh') }}</label><textarea v-model="sheetData.epcText" rows="6"></textarea></div>
+          <button class="btn btn-outline btn-block" @click="doRfid(true)">{{ t('inv.scanSim') }}</button>
           <div v-if="rfidResult" class="mt-md">
-            <div>感应 {{ rfidResult.scannedCount }} · 账面 {{ rfidResult.bookCount }} · 盘亏 {{ rfidResult.shortage.length }}</div>
-            <div class="log-item" v-for="(it,i) in rfidResult.items" :key="i"><span>{{ it.result }}</span><span class="log-target">{{ it.code }} {{ it.product }} {{ it.epc }}</span></div>
+            <div>{{ t('rfid.sensed') }} {{ rfidResult.scannedCount }} · {{ t('inv.bookCount') }} {{ rfidResult.bookCount }} · {{ t('inv.shortage') }} {{ rfidResult.shortage.length }}</div>
+            <div class="log-item" v-for="(it,i) in rfidResult.items" :key="i"><span>{{ resultText(it.result) }}</span><span class="log-target">{{ it.code }} {{ it.product }} {{ it.epc }}</span></div>
           </div>
         </template>
       </div>
-      <div class="sheet-foot" v-if="sheetMode && sheetMode!=='rfid'"><button class="btn btn-gold btn-block" @click="submitSheet">确认提交</button></div>
-      <div class="sheet-foot" v-else-if="sheetMode==='rfid'"><button class="btn btn-gold btn-block" @click="doRfid(false)">开始盘点</button></div>
+      <div class="sheet-foot" v-if="sheetMode && sheetMode!=='rfid'"><button class="btn btn-gold btn-block" @click="submitSheet">{{ t('act.submit') }}</button></div>
+      <div class="sheet-foot" v-else-if="sheetMode==='rfid'"><button class="btn btn-gold btn-block" @click="doRfid(false)">{{ t('inv.scanStart') }}</button></div>
     </div>
   </div>
 
   <!-- RFID 标签排版打印弹窗 -->
   <div class="modal-mask" v-if="labelDlg" @click.self="closeLabel">
     <div class="modal-box label-sheet">
-      <div class="sheet-head"><h3>🏷 RFID 标签排版打印</h3><span class="sheet-close" @click="closeLabel">✕</span></div>
+      <div class="sheet-head"><h3>{{ t('label.title') }}</h3><span class="sheet-close" @click="closeLabel">✕</span></div>
       <div class="sheet-body">
         <div class="form-group">
-          <label>打印商品（70×35mm / 300dpi · 得实 DL-735RE）</label>
+          <label>{{ t('label.pick') }}</label>
           <div class="label-items">
             <span class="label-chip" v-for="it in labelItems" :key="it.id">{{ it.code }} {{ it.name }} <b @click="removeLabelItem(it.id)">✕</b></span>
-            <span v-if="!labelItems.length" class="prod-meta">尚未选择，可从下方添加，或去商品列表点「排版打印」</span>
+            <span v-if="!labelItems.length" class="prod-meta">{{ t('label.empty') }}</span>
           </div>
           <select class="mt-sm" @change="if($event.target.value){openLabelPrint(products.find(function(p){return p.id===+$event.target.value}));$event.target.value=''}">
-            <option value="">＋ 添加在库商品…</option>
+            <option value="">{{ t('label.add') }}</option>
             <option v-for="p in products.filter(function(x){return x.status==='在库'})" :key="p.id" :value="p.id">{{ p.code }} {{ p.name }}</option>
           </select>
         </div>
         <div class="form-group">
-          <label>标签内容字段</label>
+          <label>{{ t('label.fields') }}</label>
           <div class="field-chips">
             <label class="field-chip" v-for="(labName, labKey) in FIELD_LABELS" :key="labKey">
-              <input type="checkbox" v-model="labelFields[labKey]"> {{ labName }}
+              <input type="checkbox" v-model="labelFields[labKey]"> {{ fieldLabelText(labKey) }}
             </label>
           </div>
         </div>
         <div class="form-row">
-          <div class="form-group"><label>打印机</label>
+          <div class="form-group"><label>{{ t('label.printer') }}</label>
             <select v-model="printerName" :disabled="!printSupported">
-              <option value="" v-if="printSupported">— 请选择 —</option>
+              <option value="" v-if="printSupported">{{ t('label.selPrinter') }}</option>
               <option v-for="n in printers" :key="n" :value="n">{{ n }}</option>
-              <option v-if="!printSupported" value="">未检测到打印机</option>
+              <option v-if="!printSupported" value="">{{ t('label.noPrinter') }}</option>
             </select>
           </div>
-          <div class="form-group"><label>份数</label><input type="number" min="1" max="50" v-model.number="labelCopies"></div>
+          <div class="form-group"><label>{{ t('label.copies') }}</label><input type="number" min="1" max="50" v-model.number="labelCopies"></div>
         </div>
-        <div class="form-group"><label>机内中文字体（^A@ 字体名，按打印机实际配置）</label><input v-model="labelFont" placeholder="E:SIMSUN.FNT"></div>
+        <div class="form-group"><label>{{ t('label.font') }}</label><input v-model="labelFont" placeholder="E:SIMSUN.FNT"></div>
         <div class="form-group">
-          <label class="field-chip"><input type="checkbox" v-model="writeEpc"> 同时写入 RFID 芯片 EPC（^RFW）</label>
-          <label class="field-chip"><input type="checkbox" v-model="simulatePrint"> 仅生成 ZPL 指令（不实际打印，用于预览/调试）</label>
+          <label class="field-chip"><input type="checkbox" v-model="writeEpc"> {{ t('label.writeEpc') }}</label>
+          <label class="field-chip"><input type="checkbox" v-model="simulatePrint"> {{ t('label.simulate') }}</label>
         </div>
         <div v-if="labelResult" class="label-result">
-          <div class="stock-ok">✔ {{ labelResult.sent ? '已发送 ' + labelResult.count + ' 张到 ' + labelResult.printer : '已生成 ' + labelResult.count + ' 张标签指令（模拟）' }}</div>
+          <div class="stock-ok">✔ {{ labelResult.sent ? t('label.sent') + ' ' + labelResult.count + ' ' + t('label.sheetsTo') + ' ' + labelResult.printer : t('label.genSim') + ' ' + labelResult.count + ' ' + t('label.sheetsCmd') }}</div>
           <div class="log-item" v-for="j in labelResult.jobs" :key="j.id"><span>{{ j.code }} {{ j.name }}</span><span class="mono small">{{ j.rfid_epc }}</span></div>
-          <details><summary>查看 ZPL 指令</summary><pre class="zpl-pre">{{ labelResult.zpl }}</pre></details>
+          <details><summary>{{ t('label.viewZpl') }}</summary><pre class="zpl-pre">{{ labelResult.zpl }}</pre></details>
         </div>
       </div>
       <div class="sheet-foot">
-        <button class="btn btn-gold btn-block" :disabled="labelBusy || !labelItems.length" @click="submitLabelPrint">{{ labelBusy ? '发送中…' : (simulatePrint || !printSupported ? '生成 ZPL 指令' : '打印标签') }}</button>
+        <button class="btn btn-gold btn-block" :disabled="labelBusy || !labelItems.length" @click="submitLabelPrint">{{ labelBusy ? t('label.sending') : (simulatePrint || !printSupported ? t('label.genZpl') : t('label.print')) }}</button>
       </div>
     </div>
   </div>
@@ -845,22 +845,22 @@
   <!-- 盘点批次明细弹窗 -->
   <div class="modal-mask" v-if="stockDetail" @click.self="stockDetail=null">
     <div class="modal-box modal-lg">
-      <div class="sheet-head"><h3>盘点批次 {{ stockDetail.head.batch_no }}</h3><span class="sheet-close" @click="stockDetail=null">✕</span></div>
+      <div class="sheet-head"><h3>{{ t('co.batchTitle') }} {{ stockDetail.head.batch_no }}</h3><span class="sheet-close" @click="stockDetail=null">✕</span></div>
       <div class="sheet-body">
-        <p class="prod-meta">{{ stockDetail.head.created }} · {{ stockDetail.head.device }} · 扫描 {{ stockDetail.head.scanned_count }} / 账面 {{ stockDetail.head.book_count }}</p>
+        <p class="prod-meta">{{ stockDetail.head.created }} · {{ stockDetail.head.device }} · {{ t('sd.scanBook') }} {{ stockDetail.head.scanned_count }} / {{ t('sd.book2') }} {{ stockDetail.head.book_count }}</p>
         <div class="stock-summary">
-          <span class="stock-ok">相符 {{ stockDetail.head.matched_count }}</span>
-          <span class="stock-shortage">盘亏 {{ stockDetail.head.shortage_count }}</span>
-          <span class="stock-abnormal">异常 {{ stockDetail.head.abnormal_count }}</span>
+          <span class="stock-ok">{{ t('th.matched') }} {{ stockDetail.head.matched_count }}</span>
+          <span class="stock-shortage">{{ t('th.shortage') }} {{ stockDetail.head.shortage_count }}</span>
+          <span class="stock-abnormal">{{ t('th.abnormal') }} {{ stockDetail.head.abnormal_count }}</span>
         </div>
         <table class="data-table mt-sm">
-          <thead><tr><th>结果</th><th>货号</th><th>商品</th><th>账面状态</th><th>EPC</th></tr></thead>
+          <thead><tr><th>{{ t('th.result') }}</th><th>{{ t('th.goodsNo') }}</th><th>{{ t('th.goods') }}</th><th>{{ t('th.bookStatus') }}</th><th>EPC</th></tr></thead>
           <tbody>
             <tr v-for="it in stockDetail.items" :key="it.id"
                 :class="{'row-shortage':it.result.indexOf('盘亏')>=0,'row-abnormal':it.result.indexOf('异常')>=0}">
-              <td>{{ it.result }}</td><td>{{ it.code }}</td>
+              <td>{{ resultText(it.result) }}</td><td>{{ it.code }}</td>
               <td><span class="link-cell" @click="viewBatchProduct(it)">{{ it.product || '—' }}</span></td>
-              <td>{{ it.book_status }}</td>
+              <td>{{ statusText(it.book_status) }}</td>
               <td class="mono small">{{ it.epc }}</td>
             </tr>
           </tbody>
@@ -874,7 +874,7 @@
       <div class="pv-head">
         <div class="pv-title">
           <span class="pv-name">{{ batchProd.name }}</span>
-          <span class="tag" :class="statusClass(batchProd.status)">{{ batchProd.status }}</span>
+          <span class="tag" :class="statusClass(batchProd.status)">{{ statusText(batchProd.status) }}</span>
           <span class="tag tag-hv" v-if="batchProd.high_value">⭐{{ t('lbl.highValue') }}</span>
         </div>
         <span class="sheet-close" @click="batchProd=null">✕</span>
@@ -882,7 +882,7 @@
       <div class="pv-price-band">
         <div class="pv-price-item"><label>{{ t('lbl.price') }}</label><div class="pv-price">￥{{ fmt(batchProd.price) }}</div></div>
         <div class="pv-price-item"><label>{{ t('lbl.cost') }}</label><div class="pv-cost">￥{{ fmt(batchProd.cost) }}</div></div>
-        <div class="pv-price-item"><label>{{ t('lbl.showcase') }}</label><div class="pv-cost">{{ batchProd.showcase_public ? '是' : '否' }}</div></div>
+        <div class="pv-price-item"><label>{{ t('th.showcase') }}</label><div class="pv-cost">{{ batchProd.showcase_public ? t('common.yes') : t('common.no') }}</div></div>
       </div>
       <div class="pv-grid">
         <div class="pv-cell"><label>{{ t('lbl.code') }}</label><div>{{ batchProd.code }}</div></div>

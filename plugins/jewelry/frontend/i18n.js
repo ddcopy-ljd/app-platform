@@ -102,6 +102,18 @@ var I18N = {
     'toast.returnOk': '已归还，库存已恢复', 'toast.receiveOk': '已收货入库',
     'toast.custSaveOk': '客户已保存', 'toast.profileSaveOk': '店铺资料已保存',
     'toast.exportOk': '已导出CSV', 'toast.apptAcceptOk': '预约已接受',
+    // 标签打印/协同盘点补充提示（zh only，英文待后续补齐）
+    'toast.pickLabel': '请先选择要打印的商品',
+    'toast.printSent': '已发送到打印机', 'toast.zplDone': 'ZPL 指令已生成',
+    'toast.coStarted': '盘点任务已开启，请手持机扫码加入',
+    'toast.coEndReview': '已核对，请查看差异并确认',
+    'toast.coDone': '盘点完成，销售已恢复',
+    'toast.coAborted': '任务已强制终止，销售已恢复',
+    'toast.coUrlCopied': '加入地址已复制',
+    'co.cfStart': '开启盘点任务后，本店销售与出入库将暂停，直到主管核对确认。确定开启？',
+    'co.cfEnd': '确定结束扫描？\n\n结束后：手持机停止上传，系统合并各设备扫描结果并生成差异（相符/盘亏/异常）供你核对。\n注意：销售与出入库仍然冻结，核对无误后需再点【核对确认，解除销售冻结】才会恢复营业。',
+    'co.cfReview': '差异核对无误？确认后解除销售/出入库冻结，任务完成。',
+    'co.cfAbort': '【强制终止任务】\n\n立即解除销售/出入库冻结，本次盘点不生成核对结果，已扫描数据仅作记录。确定终止？',
     // print
     'print.fold': '对折标签', 'print.hangtag': '挂绳标签', 'print.rfid': 'RFID芯片标签',
     'print.copies': '打印份数', 'print.preview': '打印预览', 'print.print': '打印',
@@ -142,6 +154,88 @@ var I18N = {
     'biz.profile': '店铺资料（名称、口号、简介、电话、地址、营业时间）会同步展示到迷你网站。\n修改后点保存即生效，客人打开 /site 即可看到最新信息。',
     'biz.logs': '全店关键操作自动留痕：谁、在什么时间、对什么做了什么。\n可按时间回溯业务变动，支持一键导出 CSV 备查。',
     'biz.more': '「我的」汇集个人中心入口：客户、借货、维修、采购、委外、日志等管理页，以及店铺资料与迷你网站预览。\n电脑端这些功能在左侧导航直达。',
+    // 通用
+    'common.yes': '是', 'common.no': '否', 'common.copy': '复制', 'common.refresh': '刷新',
+    'common.detail': '明细', 'common.op': '操作', 'common.time': '时间', 'common.device': '设备',
+    'common.expected': '期望：', 'common.overdue': '逾期', 'common.cost': '成本',
+    // 表头 / 列
+    'th.showcase': '橱窗', 'th.highValue': '高价值', 'th.material': '材质',
+    'th.device': '设备', 'th.devName': '名称', 'th.lastSeen': '最近在线',
+    'th.batchNo': '批次号', 'th.scanBook': '扫描/账面', 'th.matched': '相符', 'th.shortage': '盘亏', 'th.abnormal': '异常',
+    'th.result': '结果', 'th.goodsNo': '货号', 'th.goods': '商品', 'th.bookStatus': '账面状态',
+    // 看板
+    'dash.cost': '成本', 'dash.bills': '笔', 'dash.birthday': '生日', 'dash.due': '待付',
+    'q.products': '商品', 'q.inventory': '库存', 'q.sales': '销售', 'q.deposits': '定金',
+    'q.loans': '借货', 'q.repairs': '维修', 'q.customers': '客户', 'q.logs': '日志',
+    // 商品/库存按钮
+    'act.labelPrint': '🏷 排版打印', 'act.labelLayout': '🏷 标签排版',
+    'act.genEpc': '生成EPC', 'act.addNew': '新增', 'act.accept': '接件', 'act.purchase': '采购',
+    'act.sendOut': '发料', 'act.addCustomer': '客户', 'act.updateStatus': '更新状态',
+    'act.returnWriteOff': '归还/核销', 'act.confirmReceive': '确认入库', 'act.receiveStock': '收货入库',
+    'act.allowShowcase': '允许上橱窗',
+    'hv.hint': '⭐ 高价值商品（盘点时未扫到将置顶提醒）',
+    // 库存概况
+    'inv.reservedLocked': '已定锁定',
+    // 协同盘点任务
+    'co.taskTitle': '🧭 盘点任务',
+    'co.desc': '主管开启任务后销售/出入库自动暂停，并生成唯一的盘点二维码；各手持机用 App 扫此码即领取任务（自动配置服务地址、加入并下载商品快照），再在手持机上点【开始盘点】；全部结束后主管核对确认，解除冻结。',
+    'co.hostPh': '主机地址（自动检测；如 192.168.1.20:8002）',
+    'co.start': '开启盘点任务', 'co.task': '任务', 'co.joinUrl': '手持机加入地址（扫码自动配置）',
+    'co.deviceNo': '号机', 'co.submitted': '已提交', 'co.scanning': '盘点中', 'co.noDevice': '尚无手持机加入',
+    'co.scanned': '扫描', 'co.book': '账面',
+    'co.endScan': '结束扫描并核对', 'co.confirm': '核对确认，解除销售冻结', 'co.abort': '强制终止任务',
+    'co.abortHint': '手持机故障/扫不到/误开任务时点此立即解冻',
+    'co.qrAlt': '盘点任务二维码', 'co.qrLoading': '二维码加载中…',
+    'co.qrCap': '手持机扫码领取任务', 'co.qrCap2': '领取后在设备上点【开始盘点】',
+    'co.totalScanned': '全局已扫', 'co.recentBatches': '最近盘点批次',
+    'co.statusRunning': '进行中', 'co.statusReview': '待核对',
+    'co.batchTitle': '盘点批次',
+    // 销售
+    'sale.pay': '支付', 'sale.stockItem': '在库商品', 'sale.customName': '自定义名称', 'sale.productName': '商品名称',
+    'pay.cash': '现金', 'pay.wechat': '微信', 'pay.card': '刷卡', 'pay.transfer': '转账',
+    // 定金
+    'dep.paid': '已付', 'dep.lockHint': '锁定在库商品（可选）', 'dep.noStock': '无现货定制',
+    // 借货
+    'loan.codePh': '借出请填在库编码',
+    // 客户
+    'cust.normal': '普通', 'cust.silver': '银卡', 'cust.gold': '金卡',
+    'cust.empty': '暂无客户，可从销售/定金开单时自动建档', 'cust.emptyShort': '暂无客户',
+    // 预约
+    'appt.want': '期望：', 'appt.contacted': '已联系', 'appt.arrived': '已到店', 'appt.done': '已成交',
+    'appt.pending': '待联系', 'appt.emptyM': '暂无预约，访客可从公开页 /site 自助提交',
+    // 店铺资料 / EPC / 分类管理
+    'pf.name': '名称', 'pf.slogan': '口号', 'pf.intro': '简介', 'pf.phone': '电话',
+    'pf.hours': '营业时间', 'pf.address': '地址', 'pf.previewSite': '预览迷你网站',
+    'epc.title': 'EPC 编码规则', 'epc.prefix': '前缀', 'epc.seqBits': '序号位数（1-8）',
+    'epc.hint': 'EPC = 前缀 + 分类码 + 序号（十六进制）。例如 E280 + 01 + 00000001', 'epc.save': '保存规则',
+    'cat.mgrTitle': '商品分类管理', 'cat.title': '商品分类', 'cat.zhName': '中文名', 'cat.enName': '英文名',
+    'cat.sort': '排序', 'cat.saveEdit': '保存修改', 'cat.addNew': '新增分类', 'cat.codePh': '如 08',
+    // 标签排版弹窗
+    'label.title': '🏷 RFID 标签排版打印',
+    'label.pick': '打印商品（70×35mm / 300dpi · 得实 DL-735RE）',
+    'label.empty': '尚未选择，可从下方添加，或去商品列表点「排版打印」',
+    'label.add': '＋ 添加在库商品…', 'label.fields': '标签内容字段',
+    'label.printer': '打印机', 'label.selPrinter': '— 请选择 —', 'label.noPrinter': '未检测到打印机',
+    'label.copies': '份数', 'label.font': '机内中文字体（^A@ 字体名，按打印机实际配置）',
+    'label.writeEpc': '同时写入 RFID 芯片 EPC（^RFW）',
+    'label.simulate': '仅生成 ZPL 指令（不实际打印，用于预览/调试）',
+    'label.sent': '已发送', 'label.sheetsTo': '张到', 'label.genSim': '已生成', 'label.sheetsCmd': '张标签指令（模拟）',
+    'label.viewZpl': '查看 ZPL 指令', 'label.sending': '发送中…', 'label.genZpl': '生成 ZPL 指令', 'label.print': '打印标签',
+    'label.fld.store': '门店名称', 'label.fld.name': '商品名称', 'label.fld.spec': '材质克重',
+    'label.fld.price': '售价', 'label.fld.cert': '证书号', 'label.fld.barcode': '货号条码', 'label.fld.epcText': 'EPC明文',
+    // 盘点结果明细
+    'sd.scanBook': '扫描', 'sd.book2': '账面',
+    // 状态（补充）
+    'st.apptPending': '待联系', 'st.apptContacted': '已联系', 'st.apptArrived': '已到店', 'st.apptDone': '已成交',
+    // 表单/底部栏/RFID 补充
+    'lbl.mobile': '手机',
+    'form.nameLangTitle': '选择名称语言：绿色=已录入，红色=未录入',
+    'form.hvHint': '⭐ 高价值商品（盘点时未扫到将置顶提醒）',
+    'rfid.hint': '独立运行时可用「模拟扫描」读取全部已写入 EPC 的在库标签；也可粘贴读写器回传的 EPC 列表。',
+    'rfid.epcPh': 'EPC（每行一个）',
+    'rfid.sensed': '感应',
+    'tab.dashboard': '看板', 'tab.products': '商品', 'tab.deposits': '定金', 'tab.mine': '我的',
+    'act.updateShort': '更新', 'act.receiveShort': '入库', 'act.takeShort': '收货', 'act.returnShort': '归还',
   },
 
   en: {

@@ -148,6 +148,11 @@ function productCatName(p) {
   }
   return p.category || '';
 }
+// 看板品类占比：后端按中文品类名分组，按当前语言显示
+function catText(name) {
+  var c = (ST.cats || []).find(function (x) { return x.names && x.names.zh === name; });
+  return c ? catNameOf(c) : (name || '');
+}
 // 确保商品数据带 category_code（旧数据/中文品类名兜底）
 function ensureCatCode(d) {
   if (!d.category_code) d.category_code = catCodeByName(d.category) || '';
@@ -235,11 +240,13 @@ function checkFrozen() {
 }
 
 function currentTitle() {
+  var lang = ST.lang;  // 建立响应式依赖：切换语言后标题随之更新（t() 本身非响应式）
   var item = NAV_ITEMS.find(function (n) { return n.id === ST.tab; });
   return item ? t(item.key) : '';
 }
 
 function subTitle() {
+  var lang = ST.lang;
   return t(SUB_TITLES[ST.subView] || '');
 }
 
@@ -248,6 +255,43 @@ function exportHref() { return API + '/api/logs/export'; }
 function statusClass(s) {
   var m = { '在库': 'tag-stock', '已定': 'tag-reserved', '已售': 'tag-sold', '借出': 'tag-blue' };
   return m[s] || 'tag-wine';
+}
+
+// ---- 业务枚举值 → 当前语言文案（数据层始终存中文/英文码，仅展示层翻译）----
+var STATUS_I18N_KEYS = {
+  '在库': 'st.inStock', '已定': 'st.reserved', '已售': 'st.sold', '借出': 'st.loaned',
+  '已冲红': 'st.voided', '已完成': 'st.done',
+  '待维修': 'st.pending', '维修中': 'st.repairing', '待取件': 'st.waitTake',
+  '待发货': 'st.shipping', '运输中': 'st.inTransit', '已入库': 'st.received',
+  '加工中': 'st.processing', '已收货': 'st.delivered',
+  '借出中': 'st.loanOut', '借入中': 'st.loanIn', '已归还': 'st.returned', '已核销': 'st.writeOff',
+  '已确认': 'st.confirmed', '已取消': 'st.cancelled',
+  // 预约单据后端存英文码
+  'pending': 'st.apptPending', 'contacted': 'st.apptContacted', 'arrived': 'st.apptArrived', 'done': 'st.apptDone'
+};
+function statusText(s) {
+  if (!s) return '';
+  var k = STATUS_I18N_KEYS[s];
+  return k ? t(k) : s;
+}
+var METHOD_I18N_KEYS = { '现金': 'pay.cash', '微信': 'pay.wechat', '刷卡': 'pay.card', '转账': 'pay.transfer' };
+function methodText(m) { return METHOD_I18N_KEYS[m] ? t(METHOD_I18N_KEYS[m]) : (m || ''); }
+var LEVEL_I18N_KEYS = { '普通': 'cust.normal', '银卡': 'cust.silver', '金卡': 'cust.gold' };
+function levelText(l) { return LEVEL_I18N_KEYS[l] ? t(LEVEL_I18N_KEYS[l]) : (l || ''); }
+function directionText(d) { return d === 'out' ? t('lbl.out') : (d === 'in' ? t('lbl.in') : (d || '')); }
+function coStatusText(s) {
+  if (s === '进行中') return t('co.statusRunning');
+  if (s === '待核对') return t('co.statusReview');
+  return s || '';
+}
+// 盘点明细结果文案含「相符/盘亏/异常/盘盈」关键词，按关键词翻译
+function resultText(r) {
+  if (!r) return '';
+  if (r.indexOf('盘亏') >= 0) return r.replace('盘亏', t('th.shortage'));
+  if (r.indexOf('盘盈') >= 0) return r.replace('盘盈', t('inv.surplus'));
+  if (r.indexOf('异常') >= 0) return r.replace('异常', t('th.abnormal'));
+  if (r.indexOf('相符') >= 0) return r.replace('相符', t('th.matched'));
+  return r;
 }
 
 // ---- language ----
@@ -624,6 +668,11 @@ var FIELD_LABELS = {
   store: '门店名称', name: '商品名称', spec: '材质克重',
   price: '售价', cert: '证书号', barcode: '货号条码', epc_text: 'EPC明文',
 };
+var FIELD_LABEL_I18N_KEYS = {
+  store: 'label.fld.store', name: 'label.fld.name', spec: 'label.fld.spec',
+  price: 'label.fld.price', cert: 'label.fld.cert', barcode: 'label.fld.barcode', epc_text: 'label.fld.epcText',
+};
+function fieldLabelText(k) { return FIELD_LABEL_I18N_KEYS[k] ? t(FIELD_LABEL_I18N_KEYS[k]) : (FIELD_LABELS[k] || k); }
 
 function openLabelPrint(p) {
   ST.labelDlg = true;
@@ -651,7 +700,7 @@ function removeLabelItem(id) {
 }
 function closeLabel() { ST.labelDlg = false; }
 function submitLabelPrint() {
-  if (!ST.labelItems.length) { toast('请先选择要打印的商品', 'error'); return; }
+  if (!ST.labelItems.length) { toast(t('toast.pickLabel'), 'error'); return; }
   ST.labelBusy = true;
   var fields = Object.keys(ST.labelFields).filter(function (k) { return ST.labelFields[k]; });
   api('POST', '/api/print/labels', {
@@ -660,7 +709,7 @@ function submitLabelPrint() {
     write_epc: ST.writeEpc, font: ST.labelFont || '', simulate: ST.simulatePrint || !ST.printSupported,
   }).then(function (r) {
     ST.labelResult = r;
-    toast(r.sent ? '已发送到打印机' : 'ZPL 指令已生成');
+    toast(r.sent ? t('toast.printSent') : t('toast.zplDone'));
     refreshAll();
   }).catch(function (e) { toast(e.message, 'error'); })
    .finally(function () { ST.labelBusy = false; });
@@ -682,12 +731,12 @@ function viewBatchProduct(it) {
 
 // ---- 多终端协同盘点 ----
 function startCoTask() {
-  if (!confirm('开启盘点任务后，本店销售与出入库将暂停，直到主管核对确认。确定开启？')) return;
+  if (!confirm(t('co.cfStart'))) return;
   ST.coBusy = true;
   api('POST', '/api/stocktake/task/start', { host: ST.coTaskHost || '' }).then(function (r) {
     ST.coTask = r;
     loadCoQr(r.id);
-    toast('盘点任务已开启，请手持机扫码加入');
+    toast(t('toast.coStarted'));
     ensureCoTimer();
   }).catch(function (e) { toast(e.message, 'error'); })
    .finally(function () { ST.coBusy = false; });
@@ -726,34 +775,34 @@ function loadCoQr(id) {
 }
 function endCoTask() {
   if (!ST.coTask) return;
-  if (!confirm('确定结束扫描？\n\n结束后：手持机停止上传，系统合并各设备扫描结果并生成差异（相符/盘亏/异常）供你核对。\n注意：销售与出入库仍然冻结，核对无误后需再点【核对确认，解除销售冻结】才会恢复营业。')) return;
+  if (!confirm(t('co.cfEnd'))) return;
   ST.coBusy = true;
   api('POST', '/api/stocktake/task/' + ST.coTask.id + '/end', {}).then(function () {
-    toast('已核对，请查看差异并确认'); loadCoTask();
+    toast(t('toast.coEndReview')); loadCoTask();
   }).catch(function (e) { toast(e.message, 'error'); })
    .finally(function () { ST.coBusy = false; });
 }
 function confirmCoTask() {
   if (!ST.coTask) return;
-  if (!confirm('差异核对无误？确认后解除销售/出入库冻结，任务完成。')) return;
+  if (!confirm(t('co.cfReview'))) return;
   ST.coBusy = true;
   api('POST', '/api/stocktake/task/' + ST.coTask.id + '/confirm', {}).then(function () {
-    toast('盘点完成，销售已恢复'); clearCoTask(); loadStockBatches();
+    toast(t('toast.coDone')); clearCoTask(); loadStockBatches();
   }).catch(function (e) { toast(e.message, 'error'); })
    .finally(function () { ST.coBusy = false; });
 }
 // 强制终止：手持机故障/无法加入/误开任务时立即解冻，不生成盘点结果
 function abortCoTask() {
   if (!ST.coTask) return;
-  if (!confirm('【强制终止任务】\n\n立即解除销售/出入库冻结，本次盘点不生成核对结果，已扫描数据仅作记录。确定终止？')) return;
+  if (!confirm(t('co.cfAbort'))) return;
   ST.coBusy = true;
   api('POST', '/api/stocktake/task/' + ST.coTask.id + '/abort', {}).then(function () {
-    toast('任务已强制终止，销售已恢复'); clearCoTask(); loadStockBatches();
+    toast(t('toast.coAborted')); clearCoTask(); loadStockBatches();
   }).catch(function (e) { toast(e.message, 'error'); })
    .finally(function () { ST.coBusy = false; });
 }
 function copyCoUrl() {
-  if (ST.coTask && navigator.clipboard) navigator.clipboard.writeText(ST.coTask.co_url).then(function () { toast('加入地址已复制'); });
+  if (ST.coTask && navigator.clipboard) navigator.clipboard.writeText(ST.coTask.co_url).then(function () { toast(t('toast.coUrlCopied')); });
 }
 function ensureCoTimer() {
   if (ST.coTimer) return;
@@ -796,6 +845,9 @@ var app = Vue.createApp({
   methods: {
     t: t, fmt: fmt, fmtY: fmtY, dateFmt: dateFmt,
     statusClass: statusClass,
+    statusText: statusText, methodText: methodText, levelText: levelText,
+    directionText: directionText, coStatusText: coStatusText, resultText: resultText,
+    fieldLabelText: fieldLabelText,
     doLogin: doLogin, doLogout: doLogout,
     go: go, openSubView: openSubView, setLang: setLang,
     openSheet: openSheet, closeSheet: closeSheet, submitSheet: submitSheet,
@@ -803,7 +855,7 @@ var app = Vue.createApp({
     addProduct: addProduct, editProduct: editProduct, delProduct: delProduct, printLabel: printLabel,
     copyProduct: copyProduct, generateEpc: generateEpc,
     catNameByCode: catNameByCode, catCodeByName: catCodeByName,
-    catNameOf: catNameOf, productCatName: productCatName,
+    catNameOf: catNameOf, productCatName: productCatName, catText: catText,
     sheetNameGet: sheetNameGet, sheetNameSet: sheetNameSet, langNameFilled: langNameFilled,
     resetCatEdit: resetCatEdit, editCat: editCat, saveCat: saveCat, delCat: delCat,
     saveBizConfig: saveBizConfig,
