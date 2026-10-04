@@ -133,8 +133,13 @@ def _render_slot(slot: dict, product: dict, store_name: str) -> list[str]:
     font_name = font.get("name", DEFAULT_FONT)
     font_w = int(font.get("w", 24))
     font_h = int(font.get("h", 24))
+    rotate = int(font.get("rotate", 0) or 0)
+    # ZPL 字段方向：N=0°, R=90°, I=180°, B=270°
+    fw_dir = {90: "R", 180: "I", 270: "B"}.get(rotate, "N")
 
     lines = [f"^FO{x},{y}"]
+    if fw_dir != "N":
+        lines.append(f"^FW{fw_dir}")
 
     if font_type == "cn":
         # 中文使用机内字体（^A@N,高度,宽度,字体名）
@@ -150,6 +155,9 @@ def _render_slot(slot: dict, product: dict, store_name: str) -> list[str]:
     else:
         # ASCII 内置字体（^A0N,高度,宽度）
         lines.append(f"^A0N,{font_h},{font_w}^FD{value}^FS")
+
+    if fw_dir != "N":
+        lines.append("^FWN")
 
     return lines
 

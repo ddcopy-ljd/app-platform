@@ -910,7 +910,7 @@
                 <img v-if="lv.bg_image" class="lp-bg" :src="lv.bg_image" :style="lpBgStyle(lv)" alt="">
                 <div v-for="(s, si) in lv.slots" :key="si" class="lp-slot"
                      :class="'lp-' + s.type"
-                     :style="{ left: (s.x*100/827)+'cqw', top: (s.y*100/827)+'cqw', width: (s.w*100/827)+'cqw', height: (s.h*100/827)+'cqw', fontSize: (s.fh*100/827)+'cqw' }">
+                     :style="{ left: (s.x*100/827)+'cqw', top: (s.y*100/827)+'cqw', width: (s.w*100/827)+'cqw', height: (s.h*100/827)+'cqw', fontSize: (s.fh*100/827)+'cqw', transform: 'rotate('+(s.rotate||0)+'deg)', transformOrigin: 'center center' }">
                   <template v-if="s.type === 'barcode'">
                     <div class="lp-bartext" v-if="!s.below">{{ s.val }}</div>
                     <div class="lp-bars" :style="{ height: (s.bh*100/827)+'cqw' }"></div>
@@ -970,8 +970,8 @@
         </div>
         <!-- 中：画布 -->
         <div style="flex:1;min-width:300px">
-          <div class="form-row" style="margin-bottom:8px;gap:8px;align-items:flex-end;flex-wrap:wrap">
-            <div class="form-group" style="flex:2;min-width:220px;margin-bottom:0"><label>{{ t('tpl.name') }}</label><input v-model="tplEdit.name" :placeholder="t('tpl.namePh')"></div>
+          <div class="form-row" style="margin-bottom:8px;gap:8px;align-items:flex-end;flex-wrap:nowrap">
+            <div class="form-group" style="flex:1;min-width:0;margin-bottom:0"><label>{{ t('tpl.name') }}</label><input v-model="tplEdit.name" :placeholder="t('tpl.namePh')"></div>
             <div class="form-group" style="margin-bottom:0"><label>{{ t('tpl.width') }}(mm)</label><input type="number" v-model.number="tplEdit.size_width" min="20" max="120" style="width:84px"></div>
             <div class="form-group" style="margin-bottom:0"><label>{{ t('tpl.height') }}(mm)</label><input type="number" v-model.number="tplEdit.size_height" min="10" max="80" style="width:84px"></div>
           </div>
@@ -987,7 +987,7 @@
             <div class="tpl-slot"
                  v-for="(s,i) in tplEdit.definition.slots" :key="i"
                  :class="{active: tplSelIdx===i, 'tpl-qrcode': s.font.type==='qrcode'}"
-                 :style="{ left: (s.x*tplDotScale())+'px', top: (s.y*tplDotScale())+'px', width: (s.w*tplDotScale())+'px', height: (s.h*tplDotScale())+'px' }"
+                 :style="{ left: (s.x*tplDotScale())+'px', top: (s.y*tplDotScale())+'px', width: (s.w*tplDotScale())+'px', height: (s.h*tplDotScale())+'px', transform: 'rotate('+(s.font.rotate||0)+'deg)', transformOrigin: 'center center' }"
                  @mousedown="startDragSlot($event, i)">
               <template v-if="s.font.type==='qrcode'"><img class="tpl-qrimg" :src="qrSvgDataUrl(labelFieldText(s.field),3)" alt=""><div class="tpl-qrlbl">QR·{{ labelFieldText(s.field) }}</div></template>
               <template v-else>{{ labelFieldText(s.field) }}</template>
@@ -1026,6 +1026,15 @@
                 <option value="ascii">{{ t('tpl.font.ascii') }}</option>
                 <option value="barcode">{{ t('tpl.font.barcode') }}</option>
                 <option value="qrcode">{{ t('tpl.font.qrcode') }}</option>
+              </select>
+            </div>
+            <div class="tpl-prop-row">
+              <label>{{ t('tpl.direction') }}</label>
+              <select :value="tplEdit.definition.slots[tplSelIdx].font.rotate||0" @change="updateSlot(tplSelIdx, 'font.rotate', +$event.target.value)">
+                <option :value="0">0°</option>
+                <option :value="90">90°</option>
+                <option :value="180">180°</option>
+                <option :value="270">270°</option>
               </select>
             </div>
             <div class="tpl-prop-row" v-if="['cn','ascii'].includes(tplEdit.definition.slots[tplSelIdx].font.type)">

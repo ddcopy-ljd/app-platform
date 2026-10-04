@@ -1422,6 +1422,7 @@ function labelPreview() {
         slots.push({ x: +s0.x || 0, y: +s0.y || 0, w: +s0.w || 200, h: +s0.h || 30,
           type: (f.type || 'ascii'), val: String(val),
           fw: +f.w || 24, fh: +f.h || 24, bh: +f.h || 64,
+          rotate: +f.rotate || 0,
           below: (f.type || 'ascii') === 'barcode',
           qr: (f.type || 'ascii') === 'qrcode' ? qrSvgDataUrl(val, 3) : '' });  // 二维码预览
       });
