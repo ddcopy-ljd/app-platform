@@ -1209,6 +1209,37 @@ function updateSlot(idx, prop, value) {
   }
 }
 
+// 切换输出类型时给该类型的关键参数设默认值
+function onSlotTypeChange(idx, type) {
+  if (!ST.tplEdit || !ST.tplEdit.definition.slots[idx]) return;
+  var slot = ST.tplEdit.definition.slots[idx];
+  slot.font = slot.font || {};
+  slot.font.type = type;
+  if (type === 'qrcode') {
+    if (!slot.font.h || slot.font.h < 1) slot.font.h = 8;
+    slot.font.h = Math.max(1, Math.min(10, Number(slot.font.h) || 8));
+    slot.w = slot.w || 200; slot.h = slot.h || 200;
+  } else if (type === 'barcode') {
+    if (!slot.font.h || slot.font.h < 8) slot.font.h = 64;
+    slot.w = slot.w || 300; slot.h = Math.max(slot.h || 0, 80);
+  } else if (type === 'cn') {
+    slot.font.w = slot.font.w || 30; slot.font.h = slot.font.h || 30;
+  } else {
+    slot.font.w = slot.font.w || 24; slot.font.h = slot.font.h || 24;
+  }
+}
+
+// 生成二维码 SVG data URL（用于打印预览与设计器预览）
+function qrSvgDataUrl(text, size) {
+  if (typeof qrcode === 'undefined' || !text) return '';
+  try {
+    var qr = qrcode(0, 'M');
+    qr.addData(String(text));
+    qr.make();
+    return qr.createDataURL(size || 4, 0);
+  } catch (e) { return ''; }
+}
+
 // 拖拽：mousedown 开始，mousemove 移动，mouseup 结束
 var _dragState = null;
 function startDragSlot(e, idx) {
@@ -1391,7 +1422,8 @@ function labelPreview() {
         slots.push({ x: +s0.x || 0, y: +s0.y || 0, w: +s0.w || 200, h: +s0.h || 30,
           type: (f.type || 'ascii'), val: String(val),
           fw: +f.w || 24, fh: +f.h || 24, bh: +f.h || 64,
-          below: (f.type || 'ascii') === 'barcode' });  // 模板条码 ^BCN,Y 人类可读数字印在条码下方
+          below: (f.type || 'ascii') === 'barcode',
+          qr: (f.type || 'ascii') === 'qrcode' ? qrSvgDataUrl(val, 3) : '' });  // 二维码预览
       });
     } else {
       var F = ST.labelFields, y = 24;
@@ -1616,6 +1648,7 @@ var app = Vue.createApp({
     openTplDesigner: openTplDesigner, closeTplDesigner: closeTplDesigner,
     saveTemplate: saveTemplate, delTemplate: delTemplate, bindCatTemplate: bindCatTemplate,
     addSlotToCanvas: addSlotToCanvas, removeSlot: removeSlot, updateSlot: updateSlot,
+    onSlotTypeChange: onSlotTypeChange, qrSvgDataUrl: qrSvgDataUrl,
     startDragSlot: startDragSlot, previewTemplate: previewTemplate, loadTemplates: loadTemplates,
     tplDotScale: tplDotScale,
     uploadTplBg: uploadTplBg, rotateTplBg: rotateTplBg, removeTplBg: removeTplBg,

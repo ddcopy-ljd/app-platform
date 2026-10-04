@@ -139,6 +139,10 @@ def _render_slot(slot: dict, product: dict, store_name: str) -> list[str]:
     if font_type == "cn":
         # 中文使用机内字体（^A@N,高度,宽度,字体名）
         lines.append(f"^A@N,{font_h},{font_w},{font_name}^FD{value}^FS")
+    elif font_type == "qrcode":
+        # QR Code：^BQN,2,放大倍数(1-10)，^FD 纠错级别+模式,数据
+        mag = max(1, min(10, int(font.get("h", 8) or 8)))
+        lines.append(f"^BQN,2,{mag}^FDQB,{value}^FS")
     elif font_type == "barcode":
         # Code128 条码，h 控制条码高度
         bh = int(font.get("h", 64))

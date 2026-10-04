@@ -421,6 +421,8 @@ a { text-decoration: none; color: inherit; }
 .lp-slot { position: absolute; z-index: 1; overflow: hidden; white-space: nowrap; color: #111; font-family: Arial, 'Segoe UI', sans-serif; line-height: 1.08; }
 /* 打印预览底图：只显示不打印（不进入 ZPL），铺满标签，槽位在其上 */
 .lp-bg { z-index: 0; }
+.lp-qr { width: 100%; height: 100%; object-fit: contain; display: block; }
+.lp-qrcode { white-space: normal; background: #fff; }
 .lp-cn { font-family: 'SimSun', '宋体', serif; font-weight: 600; }
 .lp-ascii { font-weight: 500; }
 .lp-barcode { display: flex; flex-direction: column; justify-content: space-between; }
@@ -663,6 +665,9 @@ tr.row-flash, tr.row-flash:hover { background-color: #FFF3CD !important; transit
 .tpl-slot { position: absolute; z-index: 1; border: 1px dashed #b08d2e; background: rgba(212,175,55,.12); color: #6b5410; font-size: 12px; display: flex; align-items: center; justify-content: center; cursor: move; user-select: none; border-radius: 3px; overflow: hidden; white-space: nowrap; }
 .tpl-slot:hover { background: rgba(212,175,55,.22); }
 .tpl-slot.active { border: 1.5px solid #c0392b; background: rgba(192,57,43,.10); box-shadow: 0 0 0 2px rgba(192,57,43,.15); }
+.tpl-qrcode { display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fff; padding: 2px; }
+.tpl-qrimg { width: 100%; height: 100%; object-fit: contain; display: block; }
+.tpl-qrlbl { font-size: 10px; color: #8a6d1f; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 
 /* 属性面板：名称与值同一行 */
 .tpl-props .tpl-prop-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }

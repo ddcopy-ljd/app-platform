@@ -631,18 +631,6 @@
                 </tr>
               </tbody>
             </table>
-            <div class="card-title" style="margin-top:4px">{{ t('tpl.title') }} <button class="btn btn-sm btn-gold" style="margin-left:8px" @click="openTplDesigner(null)">{{ t('tpl.new') }}</button></div>
-            <table class="data-table" style="margin-bottom:12px" v-if="labelTemplates.length">
-              <thead><tr><th>{{ t('tpl.name') }}</th><th>{{ t('tpl.size') }}</th><th>{{ t('common.op') }}</th></tr></thead>
-              <tbody>
-                <tr v-for="tp in labelTemplates" :key="tp.id">
-                  <td>🏷 {{ tp.name }}</td>
-                  <td>{{ tp.size_width }}×{{ tp.size_height }}mm</td>
-                  <td><button class="btn-small" @click="openTplDesigner(tp)">{{ t('tpl.design') }}</button> <button class="btn-small btn-danger" @click="delTemplate(tp.id)">{{ t('act.del') }}</button></td>
-                </tr>
-              </tbody>
-            </table>
-            <div v-else class="prod-meta" style="margin-bottom:12px">{{ t('tpl.empty') }}</div>
             <div id="type-edit-form" style="margin-top:10px;padding:10px;border:1px solid #eee;border-radius:6px">
               <div class="form-row">
                 <div class="form-group"><label>{{ t('lbl.code') }}</label><input v-model="typeEdit.code" :disabled="typeEditMode==='edit'" :placeholder="t('type.codePh')"></div>
@@ -656,6 +644,18 @@
                 <button class="btn btn-outline" v-if="typeEditMode==='edit'" @click="resetTypeEdit">{{ t('act.cancel') }}</button>
               </div>
             </div>
+            <div class="card-title" style="margin-top:16px">{{ t('tpl.title') }} <button class="btn btn-sm btn-gold" style="margin-left:8px" @click="openTplDesigner(null)">{{ t('tpl.new') }}</button></div>
+            <table class="data-table" style="margin-bottom:12px" v-if="labelTemplates.length">
+              <thead><tr><th>{{ t('tpl.name') }}</th><th>{{ t('tpl.size') }}</th><th>{{ t('common.op') }}</th></tr></thead>
+              <tbody>
+                <tr v-for="tp in labelTemplates" :key="tp.id">
+                  <td>🏷 {{ tp.name }}</td>
+                  <td>{{ tp.size_width }}×{{ tp.size_height }}mm</td>
+                  <td><button class="btn-small" @click="openTplDesigner(tp)">{{ t('tpl.design') }}</button> <button class="btn-small btn-danger" @click="delTemplate(tp.id)">{{ t('act.del') }}</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-else class="prod-meta" style="margin-bottom:12px">{{ t('tpl.empty') }}</div>
           </div>
         </section>
 
@@ -916,6 +916,10 @@
                     <div class="lp-bars" :style="{ height: (s.bh*100/827)+'cqw' }"></div>
                     <div class="lp-bartext" v-if="s.below">{{ s.val }}</div>
                   </template>
+                  <template v-else-if="s.type === 'qrcode'">
+                    <img v-if="s.qr" class="lp-qr" :src="s.qr" alt="">
+                    <span v-else class="prod-meta">QR</span>
+                  </template>
                   <template v-else>{{ s.val }}</template>
                 </div>
                 <div v-if="!lv.slots.length" class="prod-meta" style="padding:8mm;text-align:center">{{ t('tpl.empty') }}</div>
@@ -982,10 +986,11 @@
             <img v-if="tplEdit.definition.bg_image" class="tpl-bg" :src="tplEdit.definition.bg_image" :style="tplBgStyle()" alt="">
             <div class="tpl-slot"
                  v-for="(s,i) in tplEdit.definition.slots" :key="i"
-                 :class="{active: tplSelIdx===i}"
+                 :class="{active: tplSelIdx===i, 'tpl-qrcode': s.font.type==='qrcode'}"
                  :style="{ left: (s.x*tplDotScale())+'px', top: (s.y*tplDotScale())+'px', width: (s.w*tplDotScale())+'px', height: (s.h*tplDotScale())+'px' }"
                  @mousedown="startDragSlot($event, i)">
-              {{ labelFieldText(s.field) }}
+              <template v-if="s.font.type==='qrcode'"><img class="tpl-qrimg" :src="qrSvgDataUrl(labelFieldText(s.field),3)" alt=""><div class="tpl-qrlbl">QR·{{ labelFieldText(s.field) }}</div></template>
+              <template v-else>{{ labelFieldText(s.field) }}</template>
             </div>
           </div>
           <div class="hint" style="margin-top:6px">{{ t('tpl.hint') }}</div>
@@ -1015,30 +1020,31 @@
               <input type="number" :value="tplEdit.definition.slots[tplSelIdx].h" @input="updateSlot(tplSelIdx, 'h', +$event.target.value)">
             </div>
             <div class="tpl-prop-row">
-              <label>{{ t('tpl.fontType') }}</label>
-              <select :value="tplEdit.definition.slots[tplSelIdx].font.type" @change="updateSlot(tplSelIdx, 'font.type', $event.target.value)">
+              <label>{{ t('tpl.outType') }}</label>
+              <select :value="tplEdit.definition.slots[tplSelIdx].font.type" @change="onSlotTypeChange(tplSelIdx, $event.target.value)">
                 <option value="cn">{{ t('tpl.font.cn') }}</option>
                 <option value="ascii">{{ t('tpl.font.ascii') }}</option>
                 <option value="barcode">{{ t('tpl.font.barcode') }}</option>
+                <option value="qrcode">{{ t('tpl.font.qrcode') }}</option>
               </select>
             </div>
-            <div class="tpl-prop-row" v-if="tplEdit.definition.slots[tplSelIdx].font.type==='cn'">
-              <label>{{ t('tpl.fontName') }}</label>
-              <input :value="tplEdit.definition.slots[tplSelIdx].font.name" @input="updateSlot(tplSelIdx, 'font.name', $event.target.value)">
-            </div>
-            <div class="tpl-prop-row">
+            <div class="tpl-prop-row" v-if="['cn','ascii'].includes(tplEdit.definition.slots[tplSelIdx].font.type)">
               <label>{{ t('tpl.fontW') }}</label>
               <input type="number" :value="tplEdit.definition.slots[tplSelIdx].font.w" @input="updateSlot(tplSelIdx, 'font.w', +$event.target.value)">
             </div>
-            <div class="tpl-prop-row">
-              <label>{{ t('tpl.fontH') }}</label>
+            <div class="tpl-prop-row" v-if="tplEdit.definition.slots[tplSelIdx].font.type==='qrcode'">
+              <label>{{ t('tpl.qrSize') }}</label>
+              <input type="number" min="1" max="10" :value="tplEdit.definition.slots[tplSelIdx].font.h" @input="updateSlot(tplSelIdx, 'font.h', +$event.target.value)">
+            </div>
+            <div class="tpl-prop-row" v-else>
+              <label>{{ tplEdit.definition.slots[tplSelIdx].font.type==='barcode' ? t('tpl.barH') : t('tpl.fontH') }}</label>
               <input type="number" :value="tplEdit.definition.slots[tplSelIdx].font.h" @input="updateSlot(tplSelIdx, 'font.h', +$event.target.value)">
             </div>
             <button class="btn btn-sm btn-danger btn-block" style="margin-top:6px" @click="removeSlot(tplSelIdx)">{{ t('tpl.removeSlot') }}</button>
           </div>
           <div v-else class="hint">{{ t('tpl.selSlot') }}</div>
           <div style="margin-top:12px">
-            <label class="field-chip"><input type="checkbox" v-model="tplEdit.definition.write_epc"> {{ t('tpl.writeEpc') }}</label>
+            <label class="field-chip"><input type="checkbox" v-model="tplEdit.definition.write_epc"> {{ t('tpl.rfidEpc') }}</label>
           </div>
         </div>
       </div>
@@ -1120,6 +1126,7 @@
   <div class="toast" :class="['toast-'+toast.type, {show:toast.show}]">{{ toast.text }}</div>
 </div>
 <script src="./vendor/vue.global.prod.js"></script>
+<script src="./vendor/qrcode.min.js"></script>
 <script src="./i18n.js"></script>
 <script src="./app.js"></script>
 </body>
