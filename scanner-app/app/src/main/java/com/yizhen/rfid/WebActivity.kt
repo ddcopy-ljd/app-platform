@@ -201,7 +201,7 @@ class WebActivity : AppCompatActivity() {
         @JavascriptInterface
         fun vibrate(ms: Int) {
             try {
-                val d = ms.coerceIn(20, 2000)
+                val d = ms.coerceIn(20, 2000).toLong()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     vibrator?.vibrate(VibrationEffect.createOneShot(d, VibrationEffect.DEFAULT_AMPLITUDE))
                 } else {
