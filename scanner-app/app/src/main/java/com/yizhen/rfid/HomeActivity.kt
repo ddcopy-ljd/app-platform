@@ -33,10 +33,10 @@ class HomeActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.tvHomeServer).text = prefs.authOrigin
 
         findViewById<TextView>(R.id.btnHomeSale).setOnClickListener {
-            startActivity(Intent(this, WebActivity::class.java).putExtra("url", "sale.html"))
+            startActivity(Intent(this, SaleActivity::class.java))
         }
         findViewById<TextView>(R.id.btnHomeStock).setOnClickListener {
-            startActivity(Intent(this, WebActivity::class.java).putExtra("url", "stock.html"))
+            startActivity(Intent(this, StockActivity::class.java))
         }
         findViewById<TextView>(R.id.btnHomeSettings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))

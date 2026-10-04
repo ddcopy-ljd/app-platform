@@ -1,0 +1,412 @@
+package com.yizhen.rfid
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.graphics.Bitmap
+import android.media.AudioManager
+import android.media.ToneGenerator
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.view.KeyEvent
+import android.widget.EditText
+import android.widget.ImageView
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
+import org.json.JSONArray
+import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.Executors
+
+/**
+ * 销售出单（原生页）：与手机/电脑网页端出单内容一致。
+ *
+ * 商品识别三种方式：扫描条码 / 扫描二维码 / 扫描EPC码。
+ * EPC 使用【出单功率】小功率单次识别（防止串扫邻柜商品），机身扳机 = 快捷 EPC 识别。
+ */
+class SaleActivity : AppCompatActivity() {
+
+    private data class Product(
+        val id: Int, val code: String, val name: String, val price: Double, val epc: String
+    )
+
+    private lateinit var prefs: Prefs
+    private lateinit var api: SaleApi
+    private val main = Handler(Looper.getMainLooper())
+    private val net = Executors.newSingleThreadExecutor()
+
+    private lateinit var tvPower: TextView
+    private lateinit var tvHint: TextView
+    private lateinit var ivProd: ImageView
+    private lateinit var tvEmpty: TextView
+    private lateinit var tvCode: TextView
+    private lateinit var tvName: TextView
+    private lateinit var tvPrice: TextView
+    private lateinit var etCustomer: EditText
+    private lateinit var etPhone: EditText
+    private lateinit var etProduct: EditText
+    private lateinit var etAmount: EditText
+    private lateinit var etPaid: EditText
+    private lateinit var etDate: EditText
+    private lateinit var btnEpc: TextView
+    private lateinit var btnSubmit: TextView
+
+    private var tone: ToneGenerator? = null
+    private var options = listOf<Product>()
+    private var picked: Product? = null
+    private var epcScanning = false
+    private var lastTriggerAt = 0L
+    private var method = "现金"
+    private var pendingType = "barcode"
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        prefs = Prefs(this)
+        api = SaleApi(prefs)
+        if (prefs.authToken.isBlank() || prefs.authOrigin.isBlank()) { backToLogin(); return }
+        setContentView(R.layout.activity_sale)
+        tone = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
+
+        bindViews()
+        setupListeners()
+        etDate.setText(SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()))
+        tvPower.text = "EPC ${prefs.salePower}dBm"
+        loadOptions()
+    }
+
+    private fun bindViews() {
+        tvPower = findViewById(R.id.tvSalePower)
+        tvHint = findViewById(R.id.tvScanHint)
+        ivProd = findViewById(R.id.ivProduct)
+        tvEmpty = findViewById(R.id.tvProdEmpty)
+        tvCode = findViewById(R.id.tvProdCode)
+        tvName = findViewById(R.id.tvProdName)
+        tvPrice = findViewById(R.id.tvProdPrice)
+        etCustomer = findViewById(R.id.etCustomer)
+        etPhone = findViewById(R.id.etPhone)
+        etProduct = findViewById(R.id.etProduct)
+        etAmount = findViewById(R.id.etAmount)
+        etPaid = findViewById(R.id.etPaid)
+        etDate = findViewById(R.id.etDate)
+        btnEpc = findViewById(R.id.btnScanEpc)
+        btnSubmit = findViewById(R.id.btnSubmit)
+    }
+
+    private fun setupListeners() {
+        findViewById<TextView>(R.id.btnSaleBack).setOnClickListener { finish() }
+        tvPower.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
+        findViewById<TextView>(R.id.btnScanBarcode).setOnClickListener { scanCamera(ScanOptions.ONE_D_CODE_TYPES, "barcode") }
+        findViewById<TextView>(R.id.btnScanQr).setOnClickListener { scanCamera(listOf(ScanOptions.QR_CODE), "qrcode") }
+        btnEpc.setOnClickListener { toggleEpc() }
+
+        val chips = listOf(
+            findViewById<TextView>(R.id.chipCash) to "现金",
+            findViewById<TextView>(R.id.chipWechat) to "微信",
+            findViewById<TextView>(R.id.chipCard) to "刷卡",
+            findViewById<TextView>(R.id.chipTransfer) to "转账"
+        )
+        chips.forEach { (view, m) ->
+            view.setOnClickListener {
+                method = m
+                chips.forEach { (v, mm) ->
+                    val on = mm == m
+                    v.setBackgroundResource(if (on) R.drawable.bg_btn_green else R.drawable.bg_btn_dark)
+                    v.setTextColor(getColor(if (on) R.color.text_primary else R.color.text_secondary))
+                }
+            }
+        }
+
+        btnSubmit.setOnClickListener { submit() }
+    }
+
+    // -------------------------------- 数据
+
+    private fun loadOptions() {
+        net.execute {
+            try {
+                val arr = api.options()
+                val list = ArrayList<Product>()
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    list.add(
+                        Product(
+                            id = o.optInt("id"),
+                            code = o.optString("code"),
+                            name = o.optString("name"),
+                            price = o.optDouble("price", 0.0),
+                            epc = o.optString("rfid_epc")
+                        )
+                    )
+                }
+                main.post { options = list }
+            } catch (_: Exception) { }
+        }
+    }
+
+    // -------------------------------- 扫码识别
+
+    private val cameraLauncher = registerForActivityResult(ScanContract()) { res ->
+        val code = res.contents?.trim().orEmpty()
+        if (code.isNotEmpty()) { beep(); onCode(code, pendingType) }
+    }
+
+    private fun scanCamera(formats: Collection<String>, type: String) {
+        pendingType = type
+        val opts = ScanOptions()
+        opts.setDesiredBarcodeFormats(formats)
+        opts.setPrompt("")
+        opts.setBeepEnabled(false)
+        opts.setOrientationLocked(false)
+        cameraLauncher.launch(opts)
+    }
+
+    /** EPC：切出单小功率，扫到第一枚即停。 */
+    private fun toggleEpc() {
+        if (epcScanning) { stopEpc(); return }
+        if (!RfidManager.ready) {
+            Toast.makeText(this, R.string.demo_mode, Toast.LENGTH_SHORT).show()
+            scanCamera(ScanOptions.ONE_D_CODE_TYPES, "barcode")
+            return
+        }
+        RfidManager.setPower(prefs.salePower)
+        tvPower.text = "EPC ${prefs.salePower}dBm"
+        epcScanning = true
+        setEpcUi(true)
+        val ok = RfidManager.start { epc, _ ->
+            if (!epcScanning) return@start
+            stopEpc()
+            beep()
+            onCode(epc, "epc")
+        }
+        if (!ok) {
+            epcScanning = false
+            setEpcUi(false)
+            Toast.makeText(this, R.string.rfid_fail, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun stopEpc() {
+        if (!epcScanning) return
+        epcScanning = false
+        RfidManager.stop()
+        setEpcUi(false)
+    }
+
+    private fun setEpcUi(on: Boolean) {
+        tvHint.visibility = if (on) android.view.View.VISIBLE else android.view.View.GONE
+        btnEpc.setBackgroundResource(if (on) R.drawable.bg_btn_red else R.drawable.bg_btn_green)
+    }
+
+    /** 识别结果：EPC 按 rfid_epc 匹配，条码/二维码按商品编码匹配。 */
+    private fun onCode(raw: String, type: String) {
+        val c = raw.trim().uppercase()
+        if (c.isEmpty()) return
+        var p: Product? = null
+        if (type == "epc") {
+            p = options.firstOrNull { it.epc.uppercase() == c }
+        } else {
+            p = options.firstOrNull { it.code.uppercase() == c }
+                ?: options.firstOrNull { it.code.uppercase() == c.trimStart('0') }
+        }
+        if (p != null) {
+            picked = p
+            etProduct.setText(p.name)
+            etAmount.setText(if (p.price > 0) String.format(Locale.US, "%.2f", p.price) else "")
+            showProduct(p)
+            Toast.makeText(this, "${p.code} ${p.name}", Toast.LENGTH_SHORT).show()
+        } else if (type == "epc") {
+            Toast.makeText(this, getString(R.string.sc_not_found) + " EPC $c", Toast.LENGTH_SHORT).show()
+        } else {
+            picked = null
+            etProduct.setText(raw)
+            clearProduct()
+            Toast.makeText(this, R.string.sc_not_found, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun showProduct(p: Product) {
+        tvEmpty.visibility = android.view.View.GONE
+        tvCode.visibility = android.view.View.VISIBLE
+        tvName.visibility = android.view.View.VISIBLE
+        tvPrice.visibility = android.view.View.VISIBLE
+        tvCode.text = p.code
+        tvName.text = p.name
+        tvPrice.text = String.format(Locale.US, "￥%.2f", p.price)
+        ivProd.setImageDrawable(null)
+        ivProd.visibility = android.view.View.GONE
+        net.execute {
+            val bmp: Bitmap? = api.image(p.id)
+            main.post {
+                if (bmp != null && picked?.id == p.id) {
+                    ivProd.setImageBitmap(bmp)
+                    ivProd.visibility = android.view.View.VISIBLE
+                }
+            }
+        }
+    }
+
+    private fun clearProduct() {
+        tvEmpty.visibility = android.view.View.VISIBLE
+        tvCode.visibility = android.view.View.GONE
+        tvName.visibility = android.view.View.GONE
+        tvPrice.visibility = android.view.View.GONE
+        ivProd.visibility = android.view.View.GONE
+        ivProd.setImageDrawable(null)
+    }
+
+    // -------------------------------- 提交
+
+    private fun submit() {
+        val amount = etAmount.text.toString().trim().toDoubleOrNull() ?: 0.0
+        if (amount <= 0) {
+            Toast.makeText(this, R.string.sc_need_amount, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val paid = etPaid.text.toString().trim().toDoubleOrNull() ?: 0.0
+        val body = JSONObject()
+            .put("customer", etCustomer.text.toString().trim())
+            .put("phone", etPhone.text.toString().trim())
+            .put("product", etProduct.text.toString().trim())
+            .put("amount", amount)
+            .put("paid", paid)
+            .put("method", method)
+            .put("biz_date", etDate.text.toString().trim())
+        picked?.let { body.put("product_id", it.id) }
+
+        btnSubmit.isEnabled = false
+        net.execute {
+            try {
+                val r = api.create(body)
+                main.post {
+                    btnSubmit.isEnabled = true
+                    val bill = r.optString("bill_no")
+                    Toast.makeText(this, getString(R.string.sc_saved, bill), Toast.LENGTH_LONG).show()
+                    picked = null
+                    etProduct.setText("")
+                    etAmount.setText("")
+                    etPaid.setText("")
+                    clearProduct()
+                    loadOptions()
+                }
+            } catch (e: Exception) {
+                main.post {
+                    btnSubmit.isEnabled = true
+                    Toast.makeText(this, e.message ?: "error", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    // -------------------------------- 扳机
+
+    private val triggerReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.action ?: return
+            if (!TriggerChannels.handlesBroadcast(prefs.triggerMode)) return
+            if (prefs.triggerMode != TriggerChannels.MODE_AUTO &&
+                action != TriggerChannels.actionForMode(prefs.triggerMode)) return
+            val down = when (val v = intent.extras?.get("keydown")) {
+                is Boolean -> v
+                is String -> v.equals("true", ignoreCase = true) || v == "1"
+                is Int -> v != 0
+                null -> true
+                else -> intent.getBooleanExtra("keydown", true)
+            }
+            if (down) onTrigger()
+        }
+    }
+
+    private fun onTrigger() {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastTriggerAt < 800) return
+        lastTriggerAt = now
+        toggleEpc()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val filter = IntentFilter().apply {
+            TriggerChannels.actionsForMode(prefs.triggerMode).forEach { addAction(it) }
+        }
+        if (filter.countActions() > 0) {
+            try {
+                ContextCompat.registerReceiver(this, triggerReceiver, filter,
+                    ContextCompat.RECEIVER_EXPORTED)
+            } catch (_: Exception) {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                registerReceiver(triggerReceiver, filter)
+            }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        try { unregisterReceiver(triggerReceiver) } catch (_: Exception) {}
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // 进出单页切出单小功率，离开恢复盘点功率
+        if (RfidManager.ready) RfidManager.setPower(prefs.salePower)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        stopEpc()
+        if (RfidManager.ready) RfidManager.setPower(prefs.power)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (!TriggerChannels.handlesKeyEvent(prefs.triggerMode))
+            return super.dispatchKeyEvent(event)
+        val code = event.keyCode
+        val focusEditable = currentFocus is EditText
+        val candidate = (code == 66 || code == 82 || code in 96..110 || code in 131..143 || code in 280..300)
+                && !(code == 66 && focusEditable)
+        val src = event.source
+        val physical = (src and android.view.InputDevice.SOURCE_GAMEPAD) == android.view.InputDevice.SOURCE_GAMEPAD ||
+                (src and android.view.InputDevice.SOURCE_JOYSTICK) == android.view.InputDevice.SOURCE_JOYSTICK
+        if (candidate || physical) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) onTrigger()
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    // -------------------------------- 其它
+
+    private fun beep() {
+        try {
+            val ok = tone?.startTone(ToneGenerator.TONE_PROP_BEEP, 150) ?: false
+            if (!ok) {
+                try { tone?.release() } catch (_: Exception) {}
+                tone = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
+                tone?.startTone(ToneGenerator.TONE_PROP_BEEP, 150)
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun backToLogin() {
+        prefs.clearAuth()
+        val i = Intent(this, LoginActivity::class.java)
+        i.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        startActivity(i)
+        finish()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try { tone?.release() } catch (_: Exception) {}
+        net.shutdownNow()
+        main.removeCallbacksAndMessages(null)
+    }
+}

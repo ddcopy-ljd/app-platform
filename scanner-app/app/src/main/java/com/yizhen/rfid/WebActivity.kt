@@ -70,19 +70,19 @@ class WebActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_sale)
+        setContentView(R.layout.activity_web)
         prefs = Prefs(this)
         tone = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
         vibrator = getSystemService(VIBRATOR_SERVICE) as? Vibrator
 
         pageUrl = intent?.getStringExtra("url")?.trim().orEmpty().ifBlank { "sale.html" }
-        web = findViewById(R.id.webSale)
+        web = findViewById(R.id.webView)
         tvTitle = findViewById(R.id.tvWebTitle)
-        tvPower = findViewById(R.id.tvSalePower)
+        tvPower = findViewById(R.id.tvWebPower)
         tvPower.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-        findViewById<TextView>(R.id.btnSaleBack).setOnClickListener { finish() }
+        findViewById<TextView>(R.id.btnWebBack).setOnClickListener { finish() }
 
         if (prefs.authToken.isBlank() || prefs.authOrigin.isBlank()) {
             backToLogin(); return

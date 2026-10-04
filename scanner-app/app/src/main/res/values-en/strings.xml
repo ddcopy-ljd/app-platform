@@ -158,4 +158,32 @@
     <string name="offline_queued">Network error, queued for retry</string>
     <string name="rfid_fail">RFID init failed. Please run on a C27 device.</string>
     <string name="demo_mode">No UHF module detected. Tap the hint to scan barcodes with the camera.</string>
+    <!-- sale checkout (native) -->
+    <string name="sc_scan_title">Identify item</string>
+    <string name="sc_barcode">Barcode</string>
+    <string name="sc_qrcode">QR code</string>
+    <string name="sc_epc">EPC</string>
+    <string name="sc_scanning">Reading EPC……pull trigger again to stop</string>
+    <string name="sc_prod_empty">No item yet, scan to fill in</string>
+    <string name="sc_customer">Customer</string>
+    <string name="sc_phone">Phone</string>
+    <string name="sc_product">Item</string>
+    <string name="sc_amount">Amount</string>
+    <string name="sc_paid">Paid</string>
+    <string name="sc_pay">Payment</string>
+    <string name="sc_date">Date</string>
+    <string name="sc_submit">Submit</string>
+    <string name="pay_cash">Cash</string>
+    <string name="pay_wechat">WeChat</string>
+    <string name="pay_card">Card</string>
+    <string name="pay_transfer">Transfer</string>
+    <string name="sc_need_amount">Please enter the amount</string>
+    <string name="sc_saved">Order saved: %1$s</string>
+    <string name="sc_not_found">No stock item matched, filled into item name</string>
+    <!-- sale checkout -->
+    <string name="sc_group_item">Scanned item</string>
+    <string name="sc_group_bill">Order</string>
+    <string name="sc_scan_hint">EPC uses low power (tunable in settings) to avoid reading neighbor counters; trigger = quick EPC</string>
+    <string name="sc_product_hint">Filled by scan, editable</string>
+    <string name="task_not_active">Task is not running. Start it on the web page, then press scan again</string>
 </resources>

@@ -171,4 +171,32 @@
     <string name="offline_queued">网络异常，已存待传队列</string>
     <string name="rfid_fail">RFID 模块初始化失败，请在 C27 设备上运行</string>
     <string name="demo_mode">未检测到 UHF 模块，可点屏幕提示条用摄像头扫条码盘点</string>
+    <!-- 销售出单（原生页） -->
+    <string name="sc_scan_title">商品识别</string>
+    <string name="sc_barcode">扫条码</string>
+    <string name="sc_qrcode">扫二维码</string>
+    <string name="sc_epc">扫EPC</string>
+    <string name="sc_scanning">EPC 识别中……再按扳机停止</string>
+    <string name="sc_prod_empty">尚未识别商品，扫码后自动填入</string>
+    <string name="sc_customer">客户</string>
+    <string name="sc_phone">电话</string>
+    <string name="sc_product">商品名称</string>
+    <string name="sc_amount">金额 ￥</string>
+    <string name="sc_paid">实收 ￥</string>
+    <string name="sc_pay">收款方式</string>
+    <string name="sc_date">日期</string>
+    <string name="sc_submit">提交出单</string>
+    <string name="pay_cash">现金</string>
+    <string name="pay_wechat">微信</string>
+    <string name="pay_card">刷卡</string>
+    <string name="pay_transfer">转账</string>
+    <string name="sc_need_amount">请填写金额</string>
+    <string name="sc_saved">出单成功：%1$s</string>
+    <string name="sc_not_found">未匹配到在库商品，已填入商品名称</string>
+    <!-- 出单页补充 -->
+    <string name="sc_group_item">识别到的商品</string>
+    <string name="sc_group_bill">出单信息</string>
+    <string name="sc_scan_hint">扫EPC用小功率（参数设置里可调），防止串扫邻柜；机身扳机 = 快捷扫EPC</string>
+    <string name="sc_product_hint">扫码自动填入，可手工修改</string>
+    <string name="task_not_active">任务当前不是【进行中】状态，请在网页端开始盘点后再按扫描</string>
 </resources>

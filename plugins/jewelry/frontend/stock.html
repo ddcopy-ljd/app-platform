@@ -216,6 +216,8 @@ window.YzTrigger = {
     if (canScan()) {
       if (!DEV.ready) { toast('本机无 UHF 模块，请在手机浏览器使用网页版盘点', true); return; }
       if (scanning) window.YzApp.stockStop(); else window.YzApp.stockStart();
+    } else if (CFG.server) {
+      join(false);   // 已加入过任务：用原密钥重新加入刷新状态，无需重新扫码
     } else {
       scanJoin();
     }
@@ -389,10 +391,10 @@ function flush() {
   }).catch(function (e) {
     if (e.code === 403 || e.code === 404) { leaveTask(false); }
     else if (e.code === 409) {
-      // 主管已结束任务：停扫并丢弃待传
+      // 任务处于待核对/已暂停等非进行中状态：停扫丢批次，但保留密钥，按一下可自动重新加入
       active = false; PENDING = {}; save('yz_stock_pending', PENDING);
       if (scanning && APP) window.YzApp.stockStop();
-      toast('主管已结束任务', true);
+      toast('任务当前不是【进行中】状态，请在网页端开始盘点后再按扫描', true);
       refreshUi();
     } else { netOk = false; save('yz_stock_pending', PENDING); refreshUi(); }
   });
