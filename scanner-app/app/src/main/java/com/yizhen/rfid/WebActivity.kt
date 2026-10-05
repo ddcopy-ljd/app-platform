@@ -45,7 +45,7 @@ import org.json.JSONObject
  *  - onTags(tags)                     盘点批量标签 [{epc,rssi},...]（约150ms一批）
  * 网页可定义 window.YzTrigger = { onTrigger() } 接管机身扳机。
  */
-class WebActivity : AppCompatActivity() {
+class WebActivity : BaseActivity() {
 
     private lateinit var prefs: Prefs
     private lateinit var web: WebView

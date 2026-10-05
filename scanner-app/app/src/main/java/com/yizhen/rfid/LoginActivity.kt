@@ -17,7 +17,7 @@ import java.util.concurrent.Executors
  * 启动登录页：扫网页端【手持机登录】二维码 → 网页确认 → 获取当天有效会话 → 进入主界面。
  * 已有有效会话（当天）则直接进入主界面。
  */
-class LoginActivity : AppCompatActivity() {
+class LoginActivity : BaseActivity() {
 
     private lateinit var prefs: Prefs
     private lateinit var tvStatus: TextView
@@ -46,7 +46,7 @@ class LoginActivity : AppCompatActivity() {
         tvServer.text = prefs.authOrigin
 
         findViewById<TextView>(R.id.btnLang).setOnClickListener {
-            prefs.lang = if (prefs.lang == "en") "zh" else "en"
+            cycleLang()
             recreate()
         }
         findViewById<TextView>(R.id.btnScanLogin).setOnClickListener { scanQr() }

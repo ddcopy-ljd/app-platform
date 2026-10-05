@@ -1,8 +1,11 @@
 package com.yizhen.rfid
 
 import android.app.Activity
+import android.content.Context
+import android.content.res.Configuration
 import android.hardware.Camera
 import android.os.Bundle
+import java.util.Locale
 import android.view.ScaleGestureDetector
 import android.widget.TextView
 import com.journeyapps.barcodescanner.CameraPreview
@@ -18,6 +21,18 @@ import kotlin.math.roundToInt
  * - 镜头变焦：首次进入按镜头能力自动给一档近焦（小标签更好扫），双指捏合可手动放大/缩小，档位会记住
  */
 class PortraitCaptureActivity : Activity() {
+    override fun attachBaseContext(base: Context) {
+        val lang = base.getSharedPreferences("rfid", Context.MODE_PRIVATE).getString("lang", "zh") ?: "zh"
+        val locale = when (lang) {
+            "en" -> Locale.ENGLISH
+            "it" -> Locale.ITALIAN
+            else -> Locale.SIMPLIFIED_CHINESE
+        }
+        Locale.setDefault(locale)
+        val cfg = Configuration(base.resources.configuration)
+        cfg.setLocale(locale)
+        super.attachBaseContext(base.createConfigurationContext(cfg))
+    }
 
     private lateinit var dbv: DecoratedBarcodeView
     private lateinit var tvZoom: TextView

@@ -25,7 +25,7 @@ import java.util.Locale
  * 本页负责会话级去重：同一个条码在本次扫码过程中只回调一次，重复拍到只计重复数，
  * 不入库、不上传，避免同一标签被连续识别造成的流量浪费。
  */
-class BarcodeScanActivity : AppCompatActivity() {
+class BarcodeScanActivity : BaseActivity() {
 
     companion object {
         /** 由 StockActivity 在打开本页前设置，每识别到一个【新】条码在主线程回调一次。
@@ -51,7 +51,11 @@ class BarcodeScanActivity : AppCompatActivity() {
 
     override fun attachBaseContext(base: Context) {
         val lang = base.getSharedPreferences("rfid", Context.MODE_PRIVATE).getString("lang", "zh") ?: "zh"
-        val locale = if (lang == "en") Locale.ENGLISH else Locale.SIMPLIFIED_CHINESE
+        val locale = when (lang) {
+            "en" -> Locale.ENGLISH
+            "it" -> Locale.ITALIAN
+            else -> Locale.SIMPLIFIED_CHINESE
+        }
         Locale.setDefault(locale)
         val cfg = Configuration(base.resources.configuration)
         cfg.setLocale(locale)

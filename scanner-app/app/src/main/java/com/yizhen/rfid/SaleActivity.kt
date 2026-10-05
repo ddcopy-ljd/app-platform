@@ -33,7 +33,7 @@ import java.util.concurrent.Executors
  * 商品识别三种方式：扫描条码 / 扫描二维码 / 扫描EPC码。
  * EPC 使用【出单功率】小功率单次识别（防止串扫邻柜商品），机身扳机 = 快捷 EPC 识别。
  */
-class SaleActivity : AppCompatActivity() {
+class SaleActivity : BaseActivity() {
 
     private data class Product(
         val id: Int, val code: String, val name: String, val price: Double, val epc: String

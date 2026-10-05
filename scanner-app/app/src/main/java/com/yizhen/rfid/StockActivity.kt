@@ -29,7 +29,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.Executors
 
-class StockActivity : AppCompatActivity() {
+class StockActivity : BaseActivity() {
 
     private lateinit var prefs: Prefs
     private lateinit var api: ApiClient
@@ -69,7 +69,11 @@ class StockActivity : AppCompatActivity() {
 
     override fun attachBaseContext(base: Context) {
         val lang = base.getSharedPreferences("rfid", Context.MODE_PRIVATE).getString("lang", "zh") ?: "zh"
-        val locale = if (lang == "en") Locale.ENGLISH else Locale.SIMPLIFIED_CHINESE
+        val locale = when (lang) {
+            "en" -> Locale.ENGLISH
+            "it" -> Locale.ITALIAN
+            else -> Locale.SIMPLIFIED_CHINESE
+        }
         Locale.setDefault(locale)
         val cfg = Configuration(base.resources.configuration)
         cfg.setLocale(locale)
@@ -134,7 +138,7 @@ class StockActivity : AppCompatActivity() {
 
     private fun setupListeners() {
         findViewById<TextView>(R.id.btnLang).setOnClickListener {
-            prefs.lang = if (prefs.lang == "en") "zh" else "en"
+            cycleLang()
             recreate()
         }
         findViewById<TextView>(R.id.btnSettings).setOnClickListener {

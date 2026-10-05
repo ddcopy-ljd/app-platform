@@ -2,6 +2,7 @@ package com.yizhen.rfid
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import org.json.JSONObject
@@ -10,7 +11,7 @@ import java.util.concurrent.Executors
 /**
  * 主界面：销售出单 / 库存盘点 两个入口 + 参数设置。
  */
-class HomeActivity : AppCompatActivity() {
+class HomeActivity : BaseActivity() {
 
     private lateinit var prefs: Prefs
     private val net = Executors.newSingleThreadExecutor()
@@ -40,6 +41,13 @@ class HomeActivity : AppCompatActivity() {
         }
         findViewById<TextView>(R.id.btnHomeSettings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
+        }
+        // 临时工具入口：DevFlags.SHOW_EPC_COLLECTOR 置 false 即隐藏
+        findViewById<TextView>(R.id.btnHomeEpcCollect).apply {
+            visibility = if (DevFlags.SHOW_EPC_COLLECTOR) View.VISIBLE else View.GONE
+            setOnClickListener {
+                startActivity(Intent(this@HomeActivity, EpcCollectActivity::class.java))
+            }
         }
         findViewById<TextView>(R.id.btnHomeLogout).setOnClickListener {
             androidx.appcompat.app.AlertDialog.Builder(this)

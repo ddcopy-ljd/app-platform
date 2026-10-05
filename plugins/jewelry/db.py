@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS languages (
 
 CREATE TABLE IF NOT EXISTS biz_config (
   id INTEGER PRIMARY KEY CHECK (id = 1),
-  epc_prefix TEXT DEFAULT 'E280',
+  epc_prefix TEXT DEFAULT 'E28',
   seq_bits INTEGER DEFAULT 8
 );
 
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS product_types (
 
 CREATE TABLE IF NOT EXISTS products (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  code TEXT UNIQUE NOT NULL,
+  code TEXT NOT NULL,
   name TEXT NOT NULL,
   name_i18n TEXT DEFAULT '{}',
   category TEXT DEFAULT '黄金',
@@ -353,6 +353,57 @@ def _has_column(conn: sqlite3.Connection, table: str, col: str) -> bool:
     return col in names
 
 
+def _relax_products_code_unique(conn: sqlite3.Connection) -> None:
+    """放开 products.code 的唯一约束（同款多件可共享货号，底层仍以 EPC/条码 唯一标识单件）。
+
+    SQLite 不允许直接 DROP 由 UNIQUE 约束生成的自动索引，只能重建表。这里按当前表结构
+    （含 ALTER 增补列）重建，保留全部数据与列，仅去掉 code 上的 UNIQUE。
+    """
+    has_unique = False
+    for row in conn.execute("PRAGMA index_list(products)"):
+        # index_list 列：seq, name, unique, origin, partial
+        if row[2] == 1 and row[3] == "u":
+            cols = conn.execute(f"PRAGMA index_info({row[1]})").fetchall()
+            if len(cols) == 1 and cols[0][2] == "code":
+                has_unique = True
+                break
+    if not has_unique:
+        return
+    cols = conn.execute("PRAGMA table_info(products)").fetchall()
+    col_defs = []
+    for r in cols:
+        name, ctype, notnull, dflt, pk = r[1], r[2], r[3], r[4], r[5]
+        d = f'"{name}" {ctype}'
+        if pk:
+            d += " PRIMARY KEY"
+        if notnull:
+            d += " NOT NULL"
+        if dflt is not None:
+            d += f" DEFAULT ({dflt})"
+        col_defs.append(d)
+    new_sql = "CREATE TABLE products_new (\n  " + ",\n  ".join(col_defs) + "\n)"
+    # 自建索引（sql 非空者）需重建；自动索引随旧表删除
+    user_indexes = [
+        dict(r) for r in conn.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name='products' AND sql IS NOT NULL"
+        ).fetchall()
+    ]
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        conn.execute(new_sql)
+        conn.execute("INSERT INTO products_new SELECT * FROM products")
+        conn.execute("DROP TABLE products")
+        conn.execute("ALTER TABLE products_new RENAME TO products")
+        for idx in user_indexes:
+            if idx["sql"]:
+                try:
+                    conn.execute(idx["sql"])
+                except Exception:
+                    pass
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
+
+
 def migrate_schema(conn: sqlite3.Connection) -> None:
     """幂等建表，并为旧库补齐列。"""
     conn.executescript(SCHEMA)
@@ -376,11 +427,13 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("products", "product_type_code", "TEXT DEFAULT ''"),
         ("products", "image", "BLOB"),
         ("products", "image_ts", "TEXT DEFAULT ''"),
+        ("products", "barcode", "TEXT DEFAULT ''"),
         ("biz_config", "epc_cleaned", "INTEGER DEFAULT 0"),
     ]
     for table, col, decl in alters:
         if not _has_column(conn, table, col):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    _relax_products_code_unique(conn)
     conn.commit()
     _seed_base_dicts(conn)
     _backfill_category_code(conn)
@@ -396,7 +449,7 @@ def _seed_base_dicts(conn: sqlite3.Connection) -> None:
         "INSERT OR IGNORE INTO languages(code,name,is_default,sort_order) VALUES(?,?,?,?)",
         [("zh", "中文", 1, 1), ("en", "English", 0, 2), ("it", "Italiano", 0, 3)],
     )
-    conn.execute("INSERT OR IGNORE INTO biz_config(id,epc_prefix,seq_bits) VALUES(1,'E280',8)")
+    conn.execute("INSERT OR IGNORE INTO biz_config(id,epc_prefix,seq_bits) VALUES(1,'E28',6)")
     categories = [
         ("01", '{"zh":"黄金","en":"Gold","it":"Oro"}', 1),
         ("02", '{"zh":"钻石","en":"Diamond","it":"Diamante"}', 2),
@@ -594,6 +647,64 @@ def _backfill_category_code(conn: sqlite3.Connection) -> None:
         )
 
 
+def _backfill_demo_i18n(conn: sqlite3.Connection) -> None:
+    """为内置演示商品补 中/英/意 三语名称与橱窗描述（幂等：直接覆盖）。"""
+    import json as _json
+    # code -> (zh名, en名, it名, zh橱窗, en橱窗, it橱窗)
+    data = {
+    "J001": ("足金手镯", "Gold Bangle", "Bracciale in oro",
+             "产地：深圳水贝｜材质：足金999｜金重：28.60g｜尺寸：56号｜经典光面圆条，福韵满堂，妈妈婚嫁首选｜参考价：¥21,800",
+             "Origin: Shenzhen Shuibei | Material: 999 gold | Weight: 28.60g | Size: 56 | Classic smooth bangle, fortune & joy, ideal for mothers/weddings | Ref: ¥21,800",
+             "Origine: Shuibei, Shenzhen | Materiale: oro 999 | Peso: 28,60g | Taglia: 56 | Cerchio liscio classico, augurio di fortuna, ideale per mamme/matrimoni | Prezzo: ¥21.800"),
+    "J002": ("钻石耳钉", "Diamond Stud Earrings", "Orecchini a punta con diamante",
+             "产地：比利时安特卫普｜材质：18K金镶嵌30分天然真钻｜金重：2.40g｜H色VVS净度｜通勤百搭，闪耀出众｜参考价：¥4,280",
+             "Origin: Antwerp, Belgium | 18K gold with natural 0.30ct diamond | Weight: 2.40g | Color H, VVS clarity | Versatile everyday sparkle | Ref: ¥4,280",
+             "Origine: Anversa, Belgio | Oro 18K con diamante naturale 0,30ct | Peso: 2,40g | Colore H, purezza VVS | Brillante per tutti i giorni | Prezzo: ¥4.280"),
+    "J003": ("翡翠观音吊坠", "Jadeite Guanyin Pendant", "Ciondolo in giada con Guanyin",
+             "产地：缅甸帕敢｜材质：天然A货冰种翡翠｜总重：12.80g｜飘绿花雕，观音慈面，护佑平安｜附国检证书｜参考价：¥8,600",
+             "Origin: Hpakan, Myanmar | Natural type-A icy jadeite | Weight: 12.80g | Green-float carving, Guanyin, blessing & safety | With certificate | Ref: ¥8,600",
+             "Origine: Hpakan, Myanmar | Giada naturale tipo A, ghiaccio | Peso: 12,80g | Scultura Guanyin, protezione | Con certificato | Prezzo: ¥8.600"),
+    "J004": ("铂金肖邦项链", "Platinum Chopard Chain", "Collana in platino Chopard",
+             "产地：上海老庙｜材质：PT950 铂金｜金重：9.20g｜链长：45cm｜肖邦链柔韧有光，日常轻奢｜参考价：¥8,900",
+             "Origin: Laomiao, Shanghai | Platinum PT950 | Weight: 9.20g | Length: 45cm | Supple shiny Chopard chain, daily luxury | Ref: ¥8,900",
+             "Origine: Laomiao, Shanghai | Platino PT950 | Peso: 9,20g | Lunghezza: 45cm | Catena Chopard morbida e lucida, lusso quotidiano | Prezzo: ¥8.900"),
+    "J005": ("红碧玺彩宝戒指", "Red Tourmaline Ring", "Anello con tormalina rossa",
+             "产地：巴西米纳斯｜材质：18K金+3.2ct天然红碧玺｜金重：3.10g｜13号戒圈｜旺运招财，女王气场｜参考价：¥5,600",
+             "Origin: Minas, Brazil | 18K gold + natural 3.2ct red tourmaline | Weight: 3.10g | Size 13 | Lucky & charismatic | Ref: ¥5,600",
+             "Origine: Minas, Brasile | Oro 18K + tormalina rossa naturale 3,2ct | Peso: 3,10g | Taglia 13 | Portafortuna, carisma | Prezzo: ¥5.600"),
+    "J006": ("黄金福字吊坠", "Gold Fortune Pendant", "Ciondolo della fortuna in oro", "", "", ""),
+    "J007": ("银质一生一世对戒", "Silver Couple Rings", "Fedi d'argento (coppia)",
+             "产地：广州番禺｜材质：925纯银镀铂金｜总重：8.50g｜17号戒圈｜刻字「一生一世」，情侣首选｜参考价：¥1,280",
+             "Origin: Panyu, Guangzhou | 925 silver platinum-plated | Weight: 8.50g | Size 17 | Engraved «for ever», for couples | Ref: ¥1,280",
+             "Origine: Panyu, Guangzhou | Argento 925 placcato platino | Peso: 8,50g | Taglia 17 | Inciso «per sempre», per coppie | Prezzo: ¥1.280"),
+    "J008": ("古法黄金传承手串", "Heritage Gold Bracelet", "Bracciale in oro heritage",
+             "产地：深圳百泰｜材质：足金999 古法工艺｜金重：42.30g｜18cm手围｜哑光磨砂，传家臻品｜参考价：¥32,600",
+             "Origin: Baitai, Shenzhen | 999 gold, ancient craft | Weight: 42.30g | Wrist 18cm | Matte frosted, family heirloom | Ref: ¥32,600",
+             "Origine: Baitai, Shenzhen | Oro puro 999, lavorazione antica | Peso: 42,30g | Polso 18cm | Opaco, pezzo di famiglia | Prezzo: ¥32.600"),
+    "J009": ("祖母绿锁骨链", "Emerald Necklace", "Collana con smeraldo",
+             "产地：哥伦比亚｜材质：18K金镶嵌1.8ct天然祖母绿｜金重：2.80g｜42cm锁骨链｜高贵典雅，收藏级｜参考价：¥12,800",
+             "Origin: Muzo, Colombia | 18K gold with natural 1.8ct emerald | Weight: 2.80g | 42cm collarbone chain | Elegant, collectible | Ref: ¥12,800",
+             "Origine: Muzo, Colombia | Oro 18K con smeraldo naturale 1,8ct | Peso: 2,80g | Collana 42cm | Elegante, da collezione | Prezzo: ¥12.800"),
+    "J0095": ("蓝宝石戒指", "Sapphire Ring", "Anello con zaffiro",
+              "产地：斯里兰卡｜材质：18K金+2.5ct皇家蓝蓝宝石｜金重：3.50g｜15号戒圈｜丝绒皇家蓝，尊贵非凡｜参考价：¥10,800",
+              "Origin: Sri Lanka | 18K gold + 2.5ct royal blue sapphire | Weight: 3.50g | Size 15 | Velvet royal blue, noble | Ref: ¥10,800",
+              "Origine: Sri Lanka | Oro 18K + zaffiro blu reale 2,5ct | Peso: 3,50g | Taglia 15 | Blu reale vellutato, nobile | Prezzo: ¥10.800"),
+    "J010": ("和田玉平安扣", "Hetian Jade Peace Button", "Ciondolo di giada Hetian",
+             "产地：新疆和田｜材质：和田玉羊脂白玉｜总重：15.60g｜平安扣圆圆满满，馈赠长辈佳品｜附鉴定证书｜参考价：¥7,800",
+             "Origin: Hotan, Xinjiang | Hetian mutton-fat white jade | Weight: 15.60g | Peace button, ideal gift for elders | With certificate | Ref: ¥7,800",
+             "Origine: Hotan, Xinjiang | Giada bianca Hetian di alta qualità | Peso: 15,60g | Ciondolo di pace, ideale in regalo agli anziani | Con certificato | Prezzo: ¥7.800"),
+    "J011": ("珍珠项链", "Pearl Necklace", "Collana di perle", "", "", ""),
+    }
+    for code, (zh, en, it, dz, de, di) in data.items():
+        ni = _json.dumps({"zh": zh, "en": en, "it": it}, ensure_ascii=False)
+        di_ = _json.dumps({"zh": dz, "en": de, "it": di}, ensure_ascii=False)
+        conn.execute(
+            "UPDATE products SET name_i18n=?, showcase_desc_i18n=? WHERE code=?",
+            (ni, di_, code),
+        )
+
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
     migrate_schema(conn)
 
@@ -714,6 +825,8 @@ def seed_demo(conn: sqlite3.Connection) -> None:
     _backfill_category_code(conn)
     # 再迁移为 英文材质 + 新品类
     _migrate_material_and_type(conn)
+    # 补内置演示商品的中/英/意三语名称与橱窗描述
+    _backfill_demo_i18n(conn)
     conn.commit()
 
     customers = [("王晓丽", "13800001111", "金卡", 43600, 0, "1990-05-12", "偏好足金手镯"),
