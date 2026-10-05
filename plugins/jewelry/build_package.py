@@ -19,9 +19,10 @@ PLUGIN_REL = "plugins/jewelry"
 OUT_DIR = ROOT / "dist"
 
 # 打包白名单
-INCLUDE_FILES = ["plugin.json", "main.py", "db.py", "requirements.txt"]
+INCLUDE_FILES = ["plugin.json", "main.py", "db.py", "rfid_print.py", "requirements.txt"]
 INCLUDE_DIRS = ["scripts", "frontend", "promo", "logo"]
-EXCLUDE_PARTS = ("__pycache__", ".pyc")
+EXCLUDE_PARTS = ("__pycache__", ".pyc", "build", "dist")  # scripts/build、scripts/dist 为打印桥接 EXE 构建产物，另行分发
+EXCLUDE_NAMES = ("print_agent.json",)  # 门店本地运行配置，不入包
 
 
 def fail(msg: str) -> None:
@@ -97,7 +98,8 @@ def main() -> None:
         if not base.is_dir():
             continue
         for f in sorted(base.rglob("*")):
-            if f.is_file() and not any(p in f.parts or f.suffix == p for p in EXCLUDE_PARTS):
+            if f.is_file() and f.name not in EXCLUDE_NAMES \
+                    and not any(p in f.parts or f.suffix == p for p in EXCLUDE_PARTS):
                 files.append(f)
     if not files:
         fail("没有可打包的文件")

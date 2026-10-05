@@ -554,7 +554,7 @@ function showOverlay(title, sub) {
 // ================= 启动 =================
 (function init() {
   if (!TOKEN) { showOverlay('未登录', '请从手持机 App 扫码登录后进入盘点'); return; }
-  fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + TOKEN } }).then(function (r) {
+  fetch((window.__APP_BASE__ || '') + '/api/auth/me', { headers: { 'Authorization': 'Bearer ' + TOKEN } }).then(function (r) {
     if (!r.ok) throw new Error('unauthorized');
     window.__yzLoginOk = true;
     devInfo();

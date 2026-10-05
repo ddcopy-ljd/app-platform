@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS stores (
   name TEXT NOT NULL,
   name_i18n TEXT DEFAULT '{}',
   code TEXT UNIQUE,
-  owner TEXT
+  owner TEXT,
+  bridge_key TEXT DEFAULT '',
+  printer_name TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS languages (
@@ -35,7 +37,8 @@ CREATE TABLE IF NOT EXISTS languages (
 CREATE TABLE IF NOT EXISTS biz_config (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   epc_prefix TEXT DEFAULT 'E28',
-  seq_bits INTEGER DEFAULT 8
+  seq_bits INTEGER DEFAULT 8,
+  bridge_key TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS categories (
@@ -427,6 +430,9 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("products", "product_type_code", "TEXT DEFAULT ''"),
         ("products", "image", "BLOB"),
         ("products", "image_ts", "TEXT DEFAULT ''"),
+        ("biz_config", "bridge_key", "TEXT DEFAULT ''"),
+        ("stores", "bridge_key", "TEXT DEFAULT ''"),
+        ("stores", "printer_name", "TEXT DEFAULT ''"),
         ("products", "barcode", "TEXT DEFAULT ''"),
         ("biz_config", "epc_cleaned", "INTEGER DEFAULT 0"),
     ]
@@ -567,10 +573,19 @@ def _migrate_material_and_type(conn: sqlite3.Connection) -> None:
             by_name = _infer_material_by_name(r["name"] or "")
             if by_name:
                 want = by_name
-        # 需要写入：空/非法值一律补；当前是兜底 OTH 且能推断出精确材质时升级
-        if want and (cur_mat not in _VALID_MAT or (cur_mat == "OTH" and want != "OTH")):
+        # 需要写入：
+        # ① 旧英文长码（PLATINUM/GOLD…）必须收敛为简写落库——即使推断值
+        #   与转换结果一致，库里存的仍是长码（不能用转换后的局部变量判断）；
+        # ② 空/非法值一律补；当前是兜底 OTH 且能推断出精确材质时升级
+        target = ""
+        if cur_up in _MAT_FULL_TO_SHORT:
+            # 长码本身就是确定材质：推断得到精确值时用推断值，否则直接用转换简写
+            target = cur_mat if want in ("", "OTH") else want
+        elif want and (cur_mat not in _VALID_MAT or (cur_mat == "OTH" and want != "OTH")):
+            target = want
+        if target:
             sets.append("material=?")
-            args.append(want)
+            args.append(target)
         # 品类：按品名推断
         if not (r["product_type_code"] or "").strip():
             tcode, tzh = _infer_product_type(r["name"] or "")
@@ -583,47 +598,94 @@ def _migrate_material_and_type(conn: sqlite3.Connection) -> None:
             conn.execute(f"UPDATE products SET {', '.join(sets)} WHERE id=?", args)
 
 
-def _migrate_clean_dirty_epc(conn: sqlite3.Connection) -> None:
-    """一次性清理历史脏 EPC（随机十六进制串、尾部混入货号、品类码错位/空值）。
+def store_segment(code: str, store_id: int = 0) -> str:
+    """门店码归一化为 2 位十六进制段：本身恰为 2 位 0-9A-F 则原样保留；
+    否则回退为门店序号的 2 位 hex（与 main.py 的 _hex_store_code 保持一致）。"""
+    code = (code or "").strip().upper()
+    if len(code) == 2 and all(c in "0123456789ABCDEF" for c in code):
+        return code
+    return f"{(store_id or 0) % 256:02X}"
 
-    规则：合法 EPC = 配置前缀 + 2 位品类码 + seq_bits 位十六进制序号，
-    且品类码必须与商品 product_type_code 一致；不合规的按品类顺序重新分配，
-    各品类已占用的最大序号之后续号，避免冲突。仅执行一次（biz_config.epc_cleaned）。
-    """
-    import re as _re
-    flag = conn.execute("SELECT epc_cleaned FROM biz_config WHERE id=1").fetchone()
-    if flag and flag[0]:
-        return
+
+def _epc_rule(conn: sqlite3.Connection):
+    """返回 (prefix, seq_bits, 合规正则)。序号固定 4-6 位 hex。"""
     cfg = conn.execute("SELECT epc_prefix,seq_bits FROM biz_config WHERE id=1").fetchone()
-    prefix, bits = cfg[0], cfg[1]
-    pat = _re.compile(r"^" + _re.escape(prefix) + r"(\d{2})([0-9A-F]{%d})$" % bits)
-    used: dict[str, set[int]] = {}
-    for (epc,) in conn.execute("SELECT rfid_epc FROM products WHERE COALESCE(rfid_epc,'')<>''"):
-        m = pat.match((epc or "").upper())
-        if m:
-            used.setdefault(m.group(1), set()).add(int(m.group(2), 16))
+    if cfg:
+        prefix = (cfg[0] or "E28").strip() or "E28"
+        bits = max(4, min(6, int(cfg[1] or 6)))
+    else:
+        prefix, bits = "E28", 6
+    pat = re.compile(
+        r"^" + re.escape(prefix) + r"([0-9A-F]{2})(\d{2})([0-9A-F]{%d})$" % bits
+    )
+    return prefix, bits, pat
 
-    def _take(code: str) -> int:
-        s = used.setdefault(code, set())
+
+def assign_rule_epcs(conn: sqlite3.Connection) -> dict[str, str]:
+    """把全部商品的 EPC 校正为现行规则：前缀 + 门店码(2位hex) + 品类码(2位) + 序号。
+
+    - 已合规、品类一致且不重复的 EPC 原样保留；
+    - 空值、旧格式（无门店码）、随机芯片 TID、尾部混货号、品类错位、重复 EPC
+      一律按「门店 + 品类」分组，从该组已占用序号之后续号重新分配；
+    - 幂等：对已合规库重复执行不产生任何改动。
+    返回 {旧EPC大写: 新EPC}（空 EPC 新建的不计入映射），供同步日志/盘点引用表。
+    """
+    prefix, bits, pat = _epc_rule(conn)
+    seg_cache: dict[int, str] = {}
+
+    def _seg(sid: int) -> str:
+        if sid not in seg_cache:
+            r = conn.execute("SELECT code FROM stores WHERE id=?", (sid,)).fetchone()
+            seg_cache[sid] = store_segment(r[0] if r else "", sid)
+        return seg_cache[sid]
+
+    rows = conn.execute(
+        "SELECT id,COALESCE(store_id,1),COALESCE(product_type_code,''),COALESCE(rfid_epc,'') "
+        "FROM products ORDER BY id"
+    ).fetchall()
+    used: dict[tuple[str, str], set[int]] = {}
+    seen: set[str] = set()
+    parsed = []
+    for pid, sid, tc, epc in rows:
+        code = (tc or "99").strip().upper()[:2].ljust(2, "0") or "99"
+        up = (epc or "").strip().upper()
+        m = pat.match(up) if up else None
+        keep = bool(m) and m.group(2) == code and up not in seen
+        if keep:
+            seen.add(up)
+            used.setdefault((m.group(1), m.group(2)), set()).add(int(m.group(3), 16))
+        parsed.append((pid, sid, code, epc or "", keep))
+
+    def _take(key: tuple[str, str]) -> int:
+        s = used.setdefault(key, set())
         n = 1
         while n in s:
             n += 1
         s.add(n)
         return n
 
-    rows = conn.execute(
-        "SELECT id,COALESCE(product_type_code,''),COALESCE(rfid_epc,'') FROM products"
-    ).fetchall()
-    for pid, tc, epc in rows:
-        code = tc or "99"
-        m = pat.match(epc.upper()) if epc else None
-        if m and m.group(1) == code:
-            continue  # 合规且品类一致，保留
-        seq = _take(code)
-        conn.execute(
-            "UPDATE products SET rfid_epc=? WHERE id=?",
-            (f"{prefix}{code}{seq:0{bits}X}", pid),
-        )
+    changed: dict[str, str] = {}
+    for pid, sid, code, epc, keep in parsed:
+        if keep:
+            continue
+        seg = _seg(sid)
+        new = f"{prefix}{seg}{code}{_take((seg, code)):0{bits}X}"
+        conn.execute("UPDATE products SET rfid_epc=? WHERE id=?", (new, pid))
+        if epc:
+            changed[epc.strip().upper()] = new
+    return changed
+
+
+def _migrate_clean_dirty_epc(conn: sqlite3.Connection) -> None:
+    """一次性清理历史脏 EPC（随机十六进制串、尾部混入货号、品类码错位/空值）。
+
+    规则与校正逻辑统一由 assign_rule_epcs 实现；本函数只保留
+    「仅执行一次」（biz_config.epc_cleaned）的迁移闸门语义。
+    """
+    flag = conn.execute("SELECT epc_cleaned FROM biz_config WHERE id=1").fetchone()
+    if flag and flag[0]:
+        return
+    assign_rule_epcs(conn)
     conn.execute("UPDATE biz_config SET epc_cleaned=1 WHERE id=1")
 
 
@@ -768,7 +830,7 @@ def seed_demo(conn: sqlite3.Connection) -> None:
 
     products = [
         # J001 - 足金手镯 (1)
-        ("J001", "足金手镯", "黄金", "足金999", 28.6, "56号", "GDH-88231", 18500, 21800, "在库", 1, "E28011606000020999A1C14501", 1, 1,
+        ("J001", "足金手镯", "黄金", "足金999", 28.6, "56号", "GDH-88231", 18500, 21800, "在库", 1, "", 1, 1,
          "产地：深圳水贝｜材质：足金999｜金重：28.60g｜尺寸：56号｜经典光面圆条，福韵满堂，妈妈婚嫁首选｜参考价：¥21,800",
          "深圳·水贝"),
         # J002 - 钻石耳钉 (2)
@@ -788,7 +850,7 @@ def seed_demo(conn: sqlite3.Connection) -> None:
          "产地：巴西米纳斯｜材质：18K金+3.2ct天然红碧玺｜金重：3.10g｜13号戒圈｜旺运招财，女王气场｜参考价：¥5,600",
          "巴西·米纳斯"),
         # J006 - 黄金吊坠（已定，不进橱窗）
-        ("J006", "黄金福字吊坠", "黄金", "足金999", 6.8, "", "GDH-90344", 4600, 5600, "已定", 1, "E28011606000020999A1C14588", 0, 0, "",
+        ("J006", "黄金福字吊坠", "黄金", "足金999", 6.8, "", "GDH-90344", 4600, 5600, "已定", 1, "", 0, 0, "",
          "深圳·水贝"),
         # J007 - 银质对戒 (6)
         ("J007", "银质一生一世对戒", "银饰", "925银", 8.5, "17号", "AG-12098", 900, 1280, "在库", 2, "", 1, 6,
@@ -827,6 +889,8 @@ def seed_demo(conn: sqlite3.Connection) -> None:
     _migrate_material_and_type(conn)
     # 补内置演示商品的中/英/意三语名称与橱窗描述
     _backfill_demo_i18n(conn)
+    # 种子 EPC 统一按现行规则生成（前缀+门店码+品类码+序号），幂等
+    assign_rule_epcs(conn)
     conn.commit()
 
     customers = [("王晓丽", "13800001111", "金卡", 43600, 0, "1990-05-12", "偏好足金手镯"),

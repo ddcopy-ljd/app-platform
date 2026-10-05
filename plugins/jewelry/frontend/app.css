@@ -134,6 +134,26 @@ a { text-decoration: none; color: inherit; }
 .card-list { margin-top: 8px; }
 .card-item { background: var(--white); border-radius: 14px; padding: 16px; border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(92,34,51,.04), 0 4px 16px -8px rgba(92,34,51,.08); margin-bottom: 12px; position: relative; overflow: hidden; }
 
+/* ---------- 自适应网格卡片（内容较少的列表：维修/采购/委外/借货/预约/日志） ---------- */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; margin-top: 8px; }
+.card-grid.card-grid-sm { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.rec-card { cursor: pointer; transition: box-shadow .15s, transform .15s, border-color .15s; }
+.rec-card:hover { box-shadow: 0 6px 18px -6px rgba(92,34,51,.22); border-color: var(--gold); transform: translateY(-1px); }
+.rec-card:active { transform: translateY(0); }
+.rec-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.rec-lines { min-width: 0; flex: 1; }
+.rec-line { font-size: 13px; color: var(--text2); line-height: 1.55; margin-top: 3px; word-break: break-word; white-space: normal; }
+.rec-line:first-child { margin-top: 0; }
+.rec-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.rec-status { flex-shrink: 0; align-self: flex-start; }
+.rec-actions { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.detail-list { display: flex; flex-direction: column; gap: 2px; }
+.detail-row { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--border); }
+.detail-row:last-child { border-bottom: none; }
+.detail-k { width: 88px; flex-shrink: 0; color: var(--text3); font-size: 13px; }
+.detail-v { flex: 1; color: var(--text); font-size: 14px; word-break: break-word; white-space: pre-wrap; }
+.detail-empty { color: var(--text3); text-align: center; padding: 18px 0; }
+
 /* ---------- deposit ---------- */
 .deposit-card { border-left: 4px solid var(--gold); }
 .deposit-card.urgent { border-left-color: var(--danger); }
@@ -351,6 +371,41 @@ a { text-decoration: none; color: inherit; }
 .data-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text); }
 .data-table tr:hover td { background: rgba(201,169,97,.04); }
 .data-table tr:last-child td { border-bottom: none; }
+
+/* —— 列表现代化：列宽拖拽（初始自适应）/ 列显隐 / 排序 —— */
+.mt-wrap { position: relative; }
+.mt-bar { position: absolute; top: 8px; right: 10px; z-index: 20; }
+.mt-gear { border: 1px solid var(--border); background: var(--white); border-radius: 8px; width: 28px; height: 28px; font-size: 15px; line-height: 1; cursor: pointer; color: var(--text2); padding: 0; }
+.mt-gear:hover { border-color: var(--gold); color: var(--gold); }
+.mt-menu { position: fixed; z-index: 300; background: var(--white); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(92,34,51,.14); padding: 8px 12px; min-width: 160px; max-height: 60vh; overflow: auto; display: none; }
+.mt-menu.open { display: block; }
+.mt-item { display: flex; align-items: center; gap: 6px; padding: 4px 2px; font-size: 13px; cursor: pointer; white-space: nowrap; color: var(--text); }
+table.mt-fixed { table-layout: fixed; }
+table.mt-fixed th, table.mt-fixed td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.data-table th { position: relative; }
+.mt-grip { position: absolute; top: 0; right: -4px; width: 9px; height: 100%; cursor: col-resize; z-index: 5; touch-action: none; }
+.mt-grip::after { content: ''; position: absolute; top: 22%; bottom: 22%; right: 3px; width: 2px; background: transparent; border-radius: 2px; }
+.data-table th:hover .mt-grip::after { background: var(--gold); }
+th.mt-sortable { cursor: pointer; user-select: none; }
+th.mt-sortable:hover { color: var(--gold); }
+th.mt-asc::after { content: '▲'; font-size: 10px; color: var(--gold); margin-left: 4px; }
+th.mt-desc::after { content: '▼'; font-size: 10px; color: var(--gold); margin-left: 4px; }
+th.mt-hide { display: none; }
+body.mt-dragging { cursor: col-resize !important; user-select: none !important; }
+
+/* —— 模板设计器：分组字段面板 —— */
+.tpl-grp-title { font-size: 12px; font-weight: 600; color: var(--gold); margin: 2px 0 4px; letter-spacing: .5px; }
+.tpl-fld-btn { text-align: left; justify-content: flex-start; padding: 5px 8px; font-size: 12.5px; }
+.tpl-fld-type { color: #b0a08c; font-size: 11px; margin-left: 4px; white-space: nowrap; }
+/* 表单组行内布局：标签与输入框同一行 */
+.form-group.inline { display: flex; align-items: center; gap: 6px; }
+.form-group.inline label { margin: 0; white-space: nowrap; flex-shrink: 0; }
+.form-group.inline input, .form-group.inline select { flex: 1; min-width: 0; width: auto; }
+
+/* 模板设计器：槽位右下角缩放手柄 */
+.tpl-rs { position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize; opacity: 0; touch-action: none; z-index: 5; }
+.tpl-rs::after { content: ''; position: absolute; right: 1px; bottom: 1px; width: 9px; height: 9px; border-right: 2px solid var(--gold); border-bottom: 2px solid var(--gold); border-radius: 0 0 3px 0; }
+.tpl-slot:hover .tpl-rs, .tpl-slot.active .tpl-rs { opacity: 1; }
 
 /* PC section layout：内容区占满全屏宽度并自适应 */
 .app-shell.pc section { max-width: none; width: 100%; min-width: 0; }
@@ -657,6 +712,21 @@ select.lang-code {
 tr.row-flash, tr.row-flash:hover { background-color: #FFF3CD !important; transition: background-color .6s ease; }
 .card-item.row-flash { background-color: #FFF3CD !important; transition: background-color .6s ease; }
 
+/* 在库商品：按货号合并展示 */
+.grp-row { cursor: pointer; background: rgba(201,169,97,.10); font-weight: 600; }
+.grp-row:hover td { background: rgba(201,169,97,.16); }
+.grp-row.open { background: rgba(201,169,97,.18); }
+.grp-row td { border-bottom: 2px solid var(--border); }
+.grp-code { font-weight: 700; color: var(--wine); }
+.sub-row td { background: #faf8f4; }
+.cnt-badge { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: var(--gold); color: #fff; font-size: 12px; font-weight: 700; }
+.grp-head { cursor: pointer; background: rgba(201,169,97,.12); border-left: 3px solid var(--gold); }
+.grp-head.open { background: rgba(201,169,97,.20); }
+.sub-card { margin-left: 14px; border-left: 3px solid var(--border); }
+.grp-toggle { color: var(--gold); font-size: 13px; font-weight: 700; white-space: nowrap; margin-left: 10px; }
+.merge-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text2); margin-left: 12px; cursor: pointer; user-select: none; }
+.merge-toggle input { accent-color: var(--gold); width: 15px; height: 15px; }
+
 /* ---------- 标签打印模板设计器 ---------- */
 .tpl-bgbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
 .tpl-canvas { position: relative; background: #fff; border: 1.5px solid var(--border, #ddd); border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 1px #f5f5f5; background-image: linear-gradient(#f2f2f2 1px, transparent 1px), linear-gradient(90deg, #f2f2f2 1px, transparent 1px); background-size: 20px 20px; }
@@ -699,3 +769,15 @@ tr.row-flash, tr.row-flash:hover { background-color: #FFF3CD !important; transit
 .scan-btns .btn-small { flex: 1; }
 .scan-hint { margin-top: 6px; font-size: 11px; color: #b8860b; }
 .side-foot-btns { display: flex; gap: 8px; margin-top: 8px; }
+
+/* ===== 门店与打印代理（多门店） ===== */
+.bridge-store { border: 1px solid #ece4d3; border-radius: 8px; padding: 10px; margin-top: 10px; background: #fdfbf6; }
+.bridge-state { font-size: 14px; padding: 2px 10px; border-radius: 12px; white-space: nowrap; }
+.bridge-state.st-on { background: #e6f6ea; color: #1d7a37; }
+.bridge-state.st-off { background: #f0f0f0; color: #999; }
+.bridge-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.bridge-row > label { margin: 0; font-size: 14px; color: #555; }
+.bridge-keybox { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.bridge-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.bridge-actions .btn-small { min-width: 64px; }
+.bridge-actions .btn-small:disabled { opacity: .45; cursor: not-allowed; }

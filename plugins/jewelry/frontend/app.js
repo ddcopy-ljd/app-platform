@@ -1,6 +1,8 @@
 /* ===== 懿臻珠宝云 · Vue3 SPA 主逻辑 ===== */
 
-var API = '';
+// 经平台网关访问时，平台会在页面注入 window.__APP_BASE__（如 /app/jewelry/t001/）；
+// 直连插件服务时该变量不存在，退化为空串（根路径）。所有 API 均经此拼接。
+var API = (window.__APP_BASE__ || '');
 
 // ---- 响应式布局判定 ----
 // 有鼠标/触控板等精确指针的设备（台式机、笔记本）一律使用 PC 宽屏布局，
@@ -19,6 +21,8 @@ var ST = Vue.reactive({
   softName: '懿臻珠宝云',   // 软件名：启动时从 /api/health 拉取（源自 plugin.json），此处仅为兜底
   tab: 'dashboard', subView: '',
   isPc: isPcLayout(),
+  // 列表排序状态：{ 表key: { key: 排序列, dir: 1升/-1降 } }
+  tblSort: { products: { key: '', dir: 1 }, stock: { key: '', dir: 1 } },
   lang: currentLang, langKeys: LANG_KEYS, langLabels: LANG_LABELS,
   loginUser: 'admin', loginPwd: '123456',
   // data
@@ -45,13 +49,20 @@ var ST = Vue.reactive({
   showcaseDirty: false,  // 是否有未保存修改
   // sheet
   sheetMode: '', sheetTitle: '', sheetData: {},
+  detailKind: '',        // 详情面板对应的列表类型（repairs/purchases/...）
   rfidResult: null, printItem: null,
   // RFID 标签排版打印
   labelDlg: false,
   labelItems: [],          // 已选商品 [{id,code,name}]
   printSel: {},            // 商品列表勾选待打印：{productId: true}
   printers: [], printerName: '', printSupported: true,
-  labelFields: { store: true, name: true, spec: true, price: true, cert: false, barcode: true, epc_text: false },
+  // 本地打印桥（门店级）：各门店代理状态/上报打印机/绑定信息
+  bridges: [],
+  // 打印对话框当前商品所属门店的代理状态（由 bridges 派生）
+  agent: { online: false, name: '' },
+  // 手机 App 蓝牙打印（安卓 WebView 注入 window.YzApp 时生效）
+  btPrinter: { address: '', name: '' }, btPrinters: [],
+  labelFields: { store: true, name: true, spec: true, price: true, cert: false, barcode: true, epc_text: false, epc_barcode: false },
   writeEpc: true, labelCopies: 1, labelFont: 'E:SIMSUN.FNT',
   simulatePrint: true, labelBusy: false, labelResult: null,
   // 标签模板设计器
@@ -67,6 +78,8 @@ var ST = Vue.reactive({
   coTask: null, coTaskHost: '', coBusy: false, coTimer: null,
   invSub: 'stock',              // 库存页子页签：stock=在库商品，count=库存盘点
   invQ: '',                     // 在库商品搜索词
+  invMerge: true,               // 在库商品：按货号合并展示
+  expandedCodes: [],            // 合并视图中已展开(显示各件)的货号集合
   _coTaskSeen: false,           // 内部标记：任务是否已被自动切换过（防止定时器反复把用户拽回盘点页签）
   coQrUrl: '', _qrFor: 0, _coQrObj: '',
   // 手持机扫码登录（网页端弹窗）
@@ -261,7 +274,7 @@ function filteredProducts() {
              (p.rfid_epc && p.rfid_epc.toLowerCase().indexOf(q) >= 0);
     });
   }
-  return list;
+  return applyTblSort(list, 'products', prodSortVal);
 }
 
 function todoCount() {
@@ -290,7 +303,51 @@ function invStockList() {
              (p.rfid_epc && p.rfid_epc.toLowerCase().indexOf(q) >= 0);
     });
   }
-  return list;
+  return applyTblSort(list, 'stock', function (p, k) { return k === 'count' ? 1 : prodSortVal(p, k); });
+}
+
+// ---- 在库商品：按货号合并（同货号多件合并成一行，显示件数，可展开看各件）----
+function invStockGroups() {
+  var list = invStockList();
+  var map = {};
+  list.forEach(function (p) {
+    // 货号为空的商品不并入其他组，各自独立成组（避免全部空货号被错误合并）
+    var k = (p.code && String(p.code).trim()) ? p.code : ('__id__' + p.id);
+    if (!map[k]) map[k] = { key: k, code: (p.code || ''), items: [] };
+    map[k].items.push(p);
+  });
+  var groups = Object.keys(map).map(function (k) {
+    var g = map[k];
+    g.count = g.items.length;
+    g.first = g.items[0];
+    g.name = g.items[0].name || '';
+    return g;
+  });
+  var _sk = ST.tblSort && ST.tblSort.stock && ST.tblSort.stock.key;
+  if (_sk) {
+    // 用户点了表头排序：按所选列（合并视图取组内首件）升/降序
+    var _dir = ST.tblSort.stock.dir || 1;
+    groups.sort(function (a, b) {
+      var va, vb;
+      if (_sk === 'count') { va = a.count; vb = b.count; }
+      else { va = prodSortVal(a.first, _sk); vb = prodSortVal(b.first, _sk); }
+      var c = (typeof va === 'number' && typeof vb === 'number') ? (va - vb)
+              : String(va).localeCompare(String(vb), 'zh');
+      return (c || ((a.code || '~').toLowerCase() < (b.code || '~').toLowerCase() ? -1 : 1)) * _dir;
+    });
+  } else {
+    groups.sort(function (a, b) {
+      var ca = (a.code || '~').toLowerCase(), cb = (b.code || '~').toLowerCase();
+      if (ca !== cb) return ca < cb ? -1 : 1;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+  }
+  return groups;
+}
+function toggleInvGroup(code) {
+  var i = ST.expandedCodes.indexOf(code);
+  if (i >= 0) ST.expandedCodes.splice(i, 1);
+  else ST.expandedCodes.push(code);
 }
 
 // ---- 全局盘点冻结状态 ----
@@ -380,6 +437,8 @@ function go(tab) {
   if (tab === 'inventory') { loadInv(); loadStockBatches(); loadCoTask(); }
   if (tab === 'appointments') loadAppt();
   if (tab === 'profile') { loadProfile(); loadProductTypes(); }
+  // PC 侧边栏直接进入子列表页（维修/采购/委外/借货/客户/日志）时也要拉数据
+  if (SUB_VIEWS.indexOf(tab) >= 0) { ST.subView = tab; ST.subPage = 1; loadSubList(); }
 }
 
 function openSubView(name) {
@@ -408,6 +467,7 @@ function refreshAll() {
   api('GET', '/api/biz-config').then(function (r) { ST.bizConfig = r; }).catch(function () {});
   api('GET', '/api/languages').then(function (r) { ST.languages = r || []; }).catch(function () {});
   loadTemplates();
+  loadBridgeList();
 }
 
 function loadSubList() {
@@ -420,6 +480,135 @@ function loadSubList() {
 
 function loadInv() {
   api('GET', '/api/inventory/summary').then(function (r) { ST.invSum = r; }).catch(function () {});
+}
+
+// ---------------------------------------------------------------- 列表卡片
+// 内容较少的列表（维修/采购/委外/借货/客户/日志/预约）：
+// 卡片按字段自适应 1~3 行（空字段自动省略），点击整卡打开详情面板。
+
+// 拼接非空片段为一行，全空则返回空串（由调用方过滤）
+function joinLine(parts) {
+  return (parts || []).filter(function (x) {
+    return x !== null && x !== undefined && String(x).trim() !== '';
+  }).join(' · ');
+}
+
+function recordLines(kind, d) {
+  var L = [];
+  if (!d) return L;
+  if (kind === 'repairs') {
+    L.push(joinLine([d.item, d.issue]));
+    L.push(joinLine([d.customer, d.phone, d.technician ? (t('lbl.technician') + ' ' + d.technician) : '']));
+    L.push(joinLine([
+      d.receive_date ? (t('rec.receive') + ' ' + d.receive_date) : '',
+      d.promised_date ? (t('rec.promised') + ' ' + d.promised_date) : '',
+      d.done_date ? (t('rec.done') + ' ' + d.done_date) : '',
+      (d.est_fee || d.actual_fee) ? (fmtY(d.est_fee || 0) + (d.actual_fee ? ' / ' + fmtY(d.actual_fee) : '')) : '',
+      d.remark
+    ]));
+  } else if (kind === 'purchases') {
+    L.push(joinLine([d.product, d.qty ? '×' + d.qty : '']));
+    L.push(joinLine([d.supplier, fmtY(d.cost), d.paid != null ? (t('rec.paid') + ' ' + fmtY(d.paid)) : '']));
+    L.push(joinLine([
+      d.order_date ? (t('rec.order') + ' ' + d.order_date) : '',
+      d.expected_date ? (t('rec.expected') + ' ' + d.expected_date) : '',
+      d.received_date ? (t('rec.received') + ' ' + d.received_date) : ''
+    ]));
+  } else if (kind === 'outsourcings') {
+    L.push(joinLine([d.product, d.material, d.weight ? d.weight + 'g' : '']));
+    L.push(joinLine([d.factory, fmtY((d.gold_price || 0) * (d.weight || 0) + (d.labor_fee || 0))]));
+    L.push(joinLine([
+      d.send_date ? (t('rec.send') + ' ' + d.send_date) : '',
+      d.expected_date ? (t('rec.expected') + ' ' + d.expected_date) : '',
+      d.received_date ? (t('rec.received') + ' ' + d.received_date) : ''
+    ]));
+  } else if (kind === 'loans') {
+    L.push(joinLine([d.product, d.code]));
+    L.push(joinLine([directionText(d.direction), d.party, d.qty ? '×' + d.qty : '']));
+    L.push(joinLine([
+      d.loan_date ? (t('rec.date') + ' ' + d.loan_date) : '',
+      d.due_date ? (t('rec.due') + ' ' + d.due_date) : ''
+    ]));
+  } else if (kind === 'customers') {
+    L.push(joinLine([d.name, levelText(d.level)]));
+    L.push(joinLine([d.phone, d.birthday ? (t('dash.birthday') + ' ' + d.birthday) : '']));
+    L.push(joinLine([fmtY(d.total_amount), d.due_amount ? (t('dash.due') + ' ' + fmtY(d.due_amount)) : '', d.preference]));
+  } else if (kind === 'logs') {
+    L.push(joinLine([d.action, d.result]));
+    L.push(joinLine([d.operator, d.store, d.target]));
+    L.push(joinLine([d.time]));
+  } else if (kind === 'appointments') {
+    L.push(joinLine([d.name, catText(d.category)]));
+    L.push(joinLine([d.contact, d.product]));
+    L.push(joinLine([d.want_date ? (t('appt.want') + ' ' + d.want_date + ' ' + (d.want_slot || '')) : '', d.remark]));
+  }
+  return L.filter(function (s) { return s && String(s).trim(); });
+}
+
+// 当前列表类型（PC 走 tab，手机端子页走 subView）
+function recordKind() { return ST.subView || ST.tab; }
+
+// 详情面板：字段表（[显示名, 字段名]，空值自动跳过）
+var DETAIL_FIELDS = {
+  repairs: [['维修物品', 'item'], ['客户', 'customer'], ['电话', 'phone'], ['问题描述', 'issue'],
+            ['预估费用', 'est_fee'], ['实收费用', 'actual_fee'], ['收件日', 'receive_date'],
+            ['承诺交期', 'promised_date'], ['完成日', 'done_date'], ['技师', 'technician'],
+            ['状态', 'status'], ['备注', 'remark']],
+  purchases: [['采购商品', 'product'], ['供应商', 'supplier'], ['数量', 'qty'], ['金额', 'cost'],
+              ['已付', 'paid'], ['下单日', 'order_date'], ['预计到货', 'expected_date'],
+              ['入库日', 'received_date'], ['状态', 'status']],
+  outsourcings: [['加工品', 'product'], ['加工厂', 'factory'], ['材质', 'material'], ['重量(g)', 'weight'],
+                 ['金价', 'gold_price'], ['工费', 'labor_fee'], ['送出日', 'send_date'],
+                 ['预计回厂', 'expected_date'], ['收货日', 'received_date'], ['状态', 'status']],
+  loans: [['商品', 'product'], ['货号', 'code'], ['往来方', 'party'], ['数量', 'qty'],
+          ['方向', 'direction'], ['借出日', 'loan_date'], ['应还日', 'due_date'], ['状态', 'status']],
+  customers: [['姓名', 'name'], ['电话', 'phone'], ['等级', 'level'], ['累计消费', 'total_amount'],
+              ['欠款', 'due_amount'], ['生日', 'birthday'], ['偏好', 'preference']],
+  logs: [['时间', 'time'], ['操作人', 'operator'], ['门店', 'store'], ['动作', 'action'],
+         ['对象', 'target'], ['结果', 'result']],
+  appointments: [['姓名', 'name'], ['联系方式', 'contact'], ['类型', 'category'], ['意向商品', 'product'],
+                 ['期望日期', 'want_date'], ['时段', 'want_slot'], ['备注', 'remark'], ['状态', 'status']]
+};
+
+// 详情面板里的取值：金额格式化、状态/等级/方向翻译
+function detailValue(k, v) {
+  if (v === null || v === undefined || String(v).trim() === '') return '';
+  if (k === 'status') return statusText(v);
+  if (k === 'level') return levelText(v);
+  if (k === 'direction') return directionText(v);
+  if (k === 'category') return catText(v);
+  if (k === 'cost' || k === 'paid' || k === 'total_amount' || k === 'due_amount' ||
+      k === 'est_fee' || k === 'actual_fee' || k === 'labor_fee') return fmtY(v);
+  return String(v);
+}
+
+function openRecordDetail(kind, d) {
+  ST.detailKind = kind || recordKind();
+  openSheet('detail', t(SUB_TITLES[ST.detailKind] || '') || t('act.detail'), Object.assign({}, d));
+}
+
+function detailRows() {
+  var kind = ST.detailKind, d = ST.sheetData || {};
+  var map = DETAIL_FIELDS[kind];
+  var keys = map || Object.keys(d).filter(function (k) { return k.charAt(0) !== '_'; })
+    .map(function (k) { return [k, k]; });
+  var out = [];
+  keys.forEach(function (f) {
+    var v = detailValue(f[1], d[f[1]]);
+    if (v) out.push({ k: f[0], v: v });
+  });
+  return out;
+}
+
+// 从详情面板切到编辑表单（沿用各自的编辑面板）
+function editFromDetail() {
+  var d = ST.sheetData || {}, kind = ST.detailKind;
+  if (kind === 'repairs') editRepair(d);
+  else if (kind === 'customers') editCustomer(d);
+  else if (kind === 'loans') openSheet('loan', t('sheet.loan'), Object.assign({}, d));
+  else if (kind === 'purchases') openSheet('purchase', t('sheet.purchase'), Object.assign({}, d));
+  else if (kind === 'outsourcings') openSheet('outsource', t('sheet.outsource'), Object.assign({}, d));
+  else closeSheet();
 }
 
 function loadAppt() {
@@ -512,9 +701,13 @@ function applyScanToSale(code, type) {
   var p = null;
   if (type === 'epc') {
     p = ST.stockOptions.find(function (x) { return String(x.rfid_epc || '').toUpperCase() === c; });
+    // 兼容“印刷 EPC 条码（已去前缀）”扫描：按后缀匹配
+    if (!p) p = ST.stockOptions.find(function (x) { return String(x.rfid_epc || '').toUpperCase().endsWith(c); });
   } else {
     p = ST.stockOptions.find(function (x) { return String(x.code || '').toUpperCase() === c; });
     if (!p) p = ST.stockOptions.find(function (x) { return String(x.code || '').toUpperCase() === c.replace(/^0+/, ''); });
+    // 兼容“门店+品类+序号”印刷条码扫描
+    if (!p) p = ST.stockOptions.find(function (x) { return String(x.barcode || '').toUpperCase() === c; });
   }
   if (p) {
     ST.sheetData.product_id = p.id;
@@ -861,7 +1054,7 @@ function removeProductImage(pid) {
 // ---------------- 店铺管理：EPC 规则 ----------------
 function saveBizConfig() {
   var cfg = ST.bizConfig;
-  api('PUT', '/api/biz-config', { epc_prefix: (cfg.epc_prefix || '').trim().toUpperCase(), seq_bits: Number(cfg.seq_bits) || 8 }).then(function () {
+  api('PUT', '/api/biz-config', { epc_prefix: (cfg.epc_prefix || '').trim().toUpperCase(), seq_bits: Math.min(6, Math.max(4, Number(cfg.seq_bits) || 6)) }).then(function () {
     toast(t('toast.saveOk'));
     api('GET', '/api/biz-config').then(function (r) { ST.bizConfig = r; });
   }).catch(function (e) { toast(e.message, 'error'); });
@@ -1082,37 +1275,52 @@ function doRfid(simulate) {
 // ---- RFID 标签排版打印 ----
 var FIELD_LABELS = {
   store: '门店名称', name: '商品名称', spec: '材质克重',
-  price: '售价', cert: '证书号', barcode: '货号条码', epc_text: 'EPC明文',
+  price: '售价', cert: '证书号', barcode: '条码', epc_text: 'EPC', epc_barcode: 'EPC条码',
 };
 var FIELD_LABEL_I18N_KEYS = {
   store: 'label.fld.store', name: 'label.fld.name', spec: 'label.fld.spec',
-  price: 'label.fld.price', cert: 'label.fld.cert', barcode: 'label.fld.barcode', epc_text: 'label.fld.epcText',
+  price: 'label.fld.price', cert: 'label.fld.cert', barcode: 'label.fld.barcode', epc_text: 'label.fld.epcText', epc_barcode: 'label.fld.epcBarcode',
 };
 function fieldLabelText(k) { return FIELD_LABEL_I18N_KEYS[k] ? t(FIELD_LABEL_I18N_KEYS[k]) : (FIELD_LABELS[k] || k); }
 
 // ---- 标签模板设计器 ----
-// 可用字段定义：key, 显示名(i18n key), 渲染类型, 默认字体
+// 可用字段定义：key, 分组 grp, 显示名(i18n key), 渲染类型, 默认字体
 var LABEL_FIELDS = [
-  { key: 'name',     i18n: 'label.fld.name',     type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 30, h: 30 } },
-  { key: 'spec',     i18n: 'label.fld.spec',     type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 22, h: 22 } },
-  { key: 'price',    i18n: 'label.fld.price',    type: 'ascii', defFont: { type: 'ascii', w: 42, h: 42 } },
-  { key: 'barcode',  i18n: 'label.fld.barcode',  type: 'barcode', defFont: { type: 'barcode', h: 64 } },
-  { key: 'code',     i18n: 'label.fld.code',     type: 'ascii', defFont: { type: 'ascii', w: 22, h: 22 } },
-  { key: 'cert',     i18n: 'label.fld.cert',     type: 'ascii', defFont: { type: 'ascii', w: 20, h: 20 } },
-  { key: 'epc_text', i18n: 'label.fld.epcText',  type: 'ascii', defFont: { type: 'ascii', w: 18, h: 18 } },
-  { key: 'store',    i18n: 'label.fld.store',    type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 20, h: 20 } },
-  { key: 'category', i18n: 'label.fld.category', type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 18, h: 18 } },
-  { key: 'material', i18n: 'label.fld.material', type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 18, h: 18 } },
-  { key: 'weight',   i18n: 'label.fld.weight',   type: 'ascii', defFont: { type: 'ascii', w: 18, h: 18 } },
-  { key: 'size',     i18n: 'label.fld.size',     type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 18, h: 18 } },
-  { key: 'cost',     i18n: 'label.fld.cost',     type: 'ascii', defFont: { type: 'ascii', w: 18, h: 18 } },
-  { key: 'empty',    i18n: 'label.fld.empty',    type: 'empty', defFont: { type: 'empty' } },
+  // 商品信息
+  { key: 'name',     grp: 'prod',  i18n: 'label.fld.name',     type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 30, h: 30 } },
+  { key: 'code',     grp: 'prod',  i18n: 'label.fld.code',     type: 'ascii', defFont: { type: 'ascii', w: 22, h: 22 } },
+  { key: 'category', grp: 'prod',  i18n: 'label.fld.category', type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 18, h: 18 } },
+  { key: 'material', grp: 'prod',  i18n: 'label.fld.material', type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 18, h: 18 } },
+  { key: 'weight',   grp: 'prod',  i18n: 'label.fld.weight',   type: 'ascii', defFont: { type: 'ascii', w: 18, h: 18 } },
+  { key: 'size',     grp: 'prod',  i18n: 'label.fld.size',     type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 18, h: 18 } },
+  { key: 'origin',   grp: 'prod',  i18n: 'label.fld.origin',   type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 18, h: 18 } },
+  // 价格
+  { key: 'price',    grp: 'price', i18n: 'label.fld.price',    type: 'ascii', defFont: { type: 'ascii', w: 42, h: 42 } },
+  { key: 'cost',     grp: 'price', i18n: 'label.fld.cost',     type: 'ascii', defFont: { type: 'ascii', w: 18, h: 18 } },
+  // 证书
+  { key: 'cert',     grp: 'cert',  i18n: 'label.fld.cert',     type: 'ascii', defFont: { type: 'ascii', w: 20, h: 20 } },
+  // 条码与识别（是否以条码输出由槽位「输出类型」决定；条码=门店+品类+序号，每件唯一可扫）
+  { key: 'barcode',  grp: 'code',  i18n: 'label.fld.barcode',  type: 'barcode', defFont: { type: 'barcode', h: 64 } },
+  { key: 'epc_text', grp: 'code',  i18n: 'label.fld.epcText',  type: 'ascii', defFont: { type: 'ascii', w: 18, h: 18 } },
+  // 其他
+  { key: 'store',    grp: 'misc',  i18n: 'label.fld.store',    type: 'cn',    defFont: { type: 'cn', name: 'E:SIMSUN.FNT', w: 20, h: 20 } },
+  { key: 'empty',    grp: 'misc',  i18n: 'label.fld.empty',    type: 'empty', defFont: { type: 'empty' } },
 ];
 
 function labelFieldText(k) {
   var f = LABEL_FIELDS.find(function (x) { return x.key === k; });
   return f ? t(f.i18n) : k;
 }
+
+// 字段按分组整理（保持首次出现顺序），供设计器左侧面板分组渲染
+var LABEL_FIELD_GROUPS = (function () {
+  var order = [], map = {};
+  LABEL_FIELDS.forEach(function (f) {
+    if (!map[f.grp]) { map[f.grp] = []; order.push(f.grp); }
+    map[f.grp].push(f);
+  });
+  return order.map(function (g) { return { key: g, fields: map[g] }; });
+})();
 
 // 模板 CRUD
 function loadTemplates() {
@@ -1333,22 +1541,26 @@ function qrSvgDataUrl(text, size) {
   } catch (e) { return ''; }
 }
 
-// 拖拽：mousedown 开始，mousemove 移动，mouseup 结束
+// 拖拽：mousedown 开始，mousemove 移动/缩放，mouseup 结束
 var _dragState = null;
-function startDragSlot(e, idx) {
+function _beginSlotDrag(e, idx, mode) {
   if (!ST.tplEdit || !ST.tplEdit.definition.slots[idx]) return;
   e.preventDefault();
   ST.tplSelIdx = idx;
   var slot = ST.tplEdit.definition.slots[idx];
   _dragState = {
     idx: idx,
+    mode: mode || 'move',
     startX: e.clientX, startY: e.clientY,
     origX: slot.x, origY: slot.y,
+    origW: slot.w || 200, origH: slot.h || 30,
     scale: _getCanvasScale(),
   };
   document.addEventListener('mousemove', _onDragMove);
   document.addEventListener('mouseup', _onDragEnd);
 }
+function startDragSlot(e, idx) { _beginSlotDrag(e, idx, 'move'); }
+function startResizeSlot(e, idx) { e.stopPropagation(); _beginSlotDrag(e, idx, 'resize'); }
 
 function _getCanvasScale() {
   var el = document.querySelector('.tpl-canvas');
@@ -1369,10 +1581,16 @@ function _onDragMove(e) {
   if (slot) {
     var dotsW = Math.round((ST.tplEdit.size_width || 70) * 300 / 25.4);
     var dotsH = Math.round((ST.tplEdit.size_height || 35) * 300 / 25.4);
-    var maxX = Math.max(0, dotsW - (slot.w || 0));
-    var maxY = Math.max(0, dotsH - (slot.h || 0));
-    slot.x = Math.min(maxX, Math.max(0, Math.round(_dragState.origX + dx)));
-    slot.y = Math.min(maxY, Math.max(0, Math.round(_dragState.origY + dy)));
+    if (_dragState.mode === 'resize') {
+      // 右下角缩放：不改变原点，宽高不超出画布
+      slot.w = Math.min(dotsW - slot.x, Math.max(30, Math.round(_dragState.origW + dx)));
+      slot.h = Math.min(dotsH - slot.y, Math.max(14, Math.round(_dragState.origH + dy)));
+    } else {
+      var maxX = Math.max(0, dotsW - (slot.w || 0));
+      var maxY = Math.max(0, dotsH - (slot.h || 0));
+      slot.x = Math.min(maxX, Math.max(0, Math.round(_dragState.origX + dx)));
+      slot.y = Math.min(maxY, Math.max(0, Math.round(_dragState.origY + dy)));
+    }
   }
 }
 
@@ -1425,6 +1643,7 @@ function openLabelPrint(items) {
   if (!ST.labelTemplates.length) loadTemplates();
   var arr = Array.isArray(items) ? items : (items ? [items] : []);
   ST.labelItems = arr.map(_labelItemOf);
+  if (appPrintReady()) loadBtPrinters();
   // 若已选商品属于同一品类且该品类绑定了模板，自动加载模板
   _autoPickTemplate();
   api('GET', '/api/print/printers').then(function (r) {
@@ -1440,6 +1659,14 @@ function openLabelPrint(items) {
       ST.printers = [];
     }
   }).catch(function () {});
+  // 多门店代理状态 → 派生出本对话框商品所属门店的在线状态
+  loadBridgeList().then(updateLabelAgent).catch(function () {});
+}
+
+// 根据已选商品第一件的所属门店，更新打印对话框的代理在线状态
+function updateLabelAgent() {
+  var b = labelStoreBridge();
+  ST.agent = b ? { online: !!b.online, name: b.agent_name || '' } : { online: false, name: '' };
 }
 
 function _autoPickTemplate() {
@@ -1457,6 +1684,7 @@ function _autoPickTemplate() {
 function removeLabelItem(id) {
   ST.labelItems = ST.labelItems.filter(function (x) { return x.id !== id; });
   _autoPickTemplate();
+  updateLabelAgent();
 }
 function closeLabel() { ST.labelDlg = false; ST.printSel = {}; }
 
@@ -1484,12 +1712,14 @@ function _labelVal(field, it, store) {
   }
   if (field === 'price') return p.price ? 'RMB ' + (+p.price).toLocaleString('en-US', { maximumFractionDigits: 0 }) : '';
   if (field === 'cert') return p.cert ? 'CERT ' + p.cert : '';
-  if (field === 'barcode') return p.code || '';
-  if (field === 'epc_text') { var e = p.rfid_epc || it.rfid_epc || ''; return e ? 'EPC ' + e.slice(-12) : ''; }
+  if (field === 'barcode') return p.barcode || p.code || '';
+  if (field === 'epc_barcode') { var eb = (p.rfid_epc || it.rfid_epc || '').toUpperCase(); var pre = ((ST.bizConfig && ST.bizConfig.epc_prefix) || 'E280').toUpperCase(); return eb.indexOf(pre) === 0 ? eb.slice(pre.length) : eb; }
+  if (field === 'epc_text') { var e = p.rfid_epc || it.rfid_epc || ''; return e ? 'EPC ' + e : ''; }
   if (field === 'category') return p.product_type || '';
   if (field === 'material') return p.material || '';
   if (field === 'weight') return p.weight ? (+p.weight).toFixed(2) + 'g' : '';
   if (field === 'size') return p.size || '';
+  if (field === 'origin') return p.origin || '';
   if (field === 'cost') return p.cost ? '￥' + (+p.cost).toLocaleString('en-US', { maximumFractionDigits: 0 }) : '';
   return '';
 }
@@ -1513,6 +1743,12 @@ function labelPreview() {
         // 不可打印区：仅占位，不渲染也不打印
         if ((f.type || 'ascii') === 'empty') return;
         var val = _labelVal(s0.field, it, store);
+        // EPC 字段以条码输出时，去掉「EPC 」前缀与企业前缀，保证可扫描
+        if ((f.type || 'ascii') === 'barcode' && s0.field === 'epc_text') {
+          var eb = (p.rfid_epc || it.rfid_epc || '').toUpperCase();
+          var pre = ((ST.bizConfig && ST.bizConfig.epc_prefix) || 'E280').toUpperCase();
+          val = eb.indexOf(pre) === 0 ? eb.slice(pre.length) : eb;
+        }
         if (!val) return;
         slots.push({ x: +s0.x || 0, y: +s0.y || 0, w: +s0.w || 200, h: +s0.h || 30,
           type: (f.type || 'ascii'), val: String(val),
@@ -1526,7 +1762,8 @@ function labelPreview() {
       if (F.name && p.name) { slots.push({ x: 24, y: y, w: 780, h: 30, type: 'cn', val: p.name, fw: 30, fh: 30 }); y += 44; }
       var spec = _labelVal('spec', it, store);
       if (F.spec && spec) { slots.push({ x: 24, y: y, w: 780, h: 22, type: 'cn', val: spec, fw: 22, fh: 22 }); y += 34; }
-      if (F.barcode && p.code) { slots.push({ x: 24, y: y + 4, w: 320, h: 94, type: 'barcode', val: p.code, fw: 22, fh: 22, bh: 64 }); }
+      if (F.barcode && (p.barcode || p.code)) { slots.push({ x: 24, y: y + 4, w: 320, h: 94, type: 'barcode', val: (p.barcode || p.code), fw: 22, fh: 22, bh: 64 }); }
+      if (F.epc_barcode && p.rfid_epc) { slots.push({ x: 420, y: 210, w: 380, h: 70, type: 'barcode', val: (p.rfid_epc || it.rfid_epc || ''), fw: 18, fh: 18, bh: 50 }); }
       if (F.price && p.price) slots.push({ x: 560, y: 24, w: 240, h: 42, type: 'ascii', val: _labelVal('price', it, store), fw: 42, fh: 42 });
       if (F.cert && p.cert) slots.push({ x: 520, y: 108, w: 280, h: 20, type: 'ascii', val: _labelVal('cert', it, store), fw: 20, fh: 20 });
       if (F.epc_text && p.rfid_epc) slots.push({ x: 420, y: 373, w: 380, h: 18, type: 'ascii', val: _labelVal('epc_text', it, store), fw: 18, fh: 18 });
@@ -1539,8 +1776,40 @@ function labelPreview() {
   });
 }
 
+// ---- 手机 App 蓝牙打印桥（安卓手持机 WebView 注入 window.YzApp 时生效）----
+function appPrintReady() {
+  return !!(window.YzApp && typeof window.YzApp.printZpl === 'function');
+}
+function loadBtPrinters() {
+  if (!appPrintReady()) return;
+  try {
+    ST.btPrinters = JSON.parse(window.YzApp.printers() || '[]');
+    var cur = JSON.parse(window.YzApp.printer() || '{}');
+    ST.btPrinter = { address: cur.address || '', name: cur.name || '' };
+  } catch (e) {}
+}
+function pickBtPrinter(addr) {
+  if (!appPrintReady()) return;
+  window.YzApp.pickPrinter(addr || '');
+  try {
+    var cur = JSON.parse(window.YzApp.printer() || '{}');
+    ST.btPrinter = { address: cur.address || '', name: cur.name || '' };
+  } catch (e) {}
+}
+// App 打印结果回调（安卓侧 evaluateJavascript 调用）
+window.YzPrinter = {
+  onResult: function (ok, msg) {
+    ST.labelBusy = false;
+    if (ok) toast(t('label.btSent'));
+    else toast(t('label.btFail') + (msg ? '：' + msg : ''), 'error');
+  },
+  onPrinter: function () { try { var cur = JSON.parse(window.YzApp.printer() || '{}'); ST.btPrinter = { address: cur.address || '', name: cur.name || '' }; } catch (e) {} },
+  onPermission: function () { loadBtPrinters(); },
+};
+
 function submitLabelPrint() {
   if (!ST.labelItems.length) { toast(t('toast.pickLabel'), 'error'); return; }
+  if (appPrintReady()) { submitLabelPrintApp(); return; }
   ST.labelBusy = true;
   var body = {
     product_ids: ST.labelItems.map(function (x) { return x.id; }),
@@ -1548,6 +1817,13 @@ function submitLabelPrint() {
     write_epc: ST.writeEpc, font: ST.labelFont || '',
     simulate: ST.simulatePrint || !ST.printSupported,
   };
+  // 云端无打印机：经门店打印桥下发（云端按商品所属门店路由到对应代理）
+  if (!ST.printSupported) {
+    if (!ST.agent || !ST.agent.online) { toast(t('sb.offlineToast'), 'error'); return; }
+    body.simulate = false;
+    body.route = 'agent';
+    body.printer = '';
+  }
   // 仅当每件商品都绑定同一模板时才传 template_id；混打/含无模板商品时由后端逐件解析
   var perTpl = ST.labelItems.map(function (it) { var t0 = _tplOfItem(it); return t0 ? t0.id : 0; });
   var firstTpl = perTpl[0];
@@ -1562,6 +1838,31 @@ function submitLabelPrint() {
     refreshAll();
   }).catch(function (e) { toast(e.message, 'error'); })
    .finally(function () { ST.labelBusy = false; });
+}
+
+// 手机 App 蓝牙直打：云端只生成 ZPL，由 App 经蓝牙 SPP 发给便携标签机（结果经 window.YzPrinter.onResult 回调）
+function submitLabelPrintApp() {
+  if (!ST.btPrinter || !ST.btPrinter.address) { toast(t('label.btNone'), 'error'); return; }
+  ST.labelBusy = true;
+  var body = {
+    product_ids: ST.labelItems.map(function (x) { return x.id; }),
+    printer: '', copies: ST.labelCopies || 1,
+    write_epc: ST.writeEpc, font: ST.labelFont || '',
+    simulate: true,
+  };
+  var perTpl = ST.labelItems.map(function (it) { var t0 = _tplOfItem(it); return t0 ? t0.id : 0; });
+  var firstTpl = perTpl[0];
+  if (firstTpl && perTpl.every(function (id) { return id === firstTpl; })) {
+    body.template_id = firstTpl;
+  } else {
+    body.fields = Object.keys(ST.labelFields).filter(function (k) { return ST.labelFields[k]; });
+  }
+  api('POST', '/api/print/labels', body).then(function (r) {
+    ST.labelResult = r;
+    if (!r.zpl) { ST.labelBusy = false; toast(t('label.btFail'), 'error'); return; }
+    window.YzApp.printZpl(String(r.zpl));
+    refreshAll();
+  }).catch(function (e) { ST.labelBusy = false; toast(e.message, 'error'); });
 }
 
 // ---- 盘点批次历史 ----
@@ -1661,6 +1962,51 @@ function clearCoTimer() {
   if (ST.coTimer) { clearInterval(ST.coTimer); ST.coTimer = null; }
 }
 
+// ---- 本地打印桥（门店级）----
+function loadBridgeList() {
+  return api('GET', '/api/print-agent/status').then(function (r) { ST.bridges = r.bridges || []; }).catch(function () {});
+}
+function createStore() {
+  var name = prompt(t('sb.storeName'));
+  if (!name || !name.trim()) return;
+  api('POST', '/api/stores', { name: name.trim() }).then(function () {
+    toast(t('toast.saveOk'));
+    loadBridgeList();
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+function rotateStoreKey(sid) {
+  api('POST', '/api/stores/' + sid + '/bridge-key', {}).then(function (r) {
+    var b = ST.bridges.find(function (x) { return x.store_id === sid; });
+    if (b) b.newKey = r.key || '';
+    toast(t('sb.keyGen'));
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+function copyStoreKey(sid) {
+  var b = ST.bridges.find(function (x) { return x.store_id === sid; });
+  if (b && b.newKey && navigator.clipboard) navigator.clipboard.writeText(b.newKey).then(function () { toast(t('toast.keyCopied')); });
+}
+function bindStorePrinter(sid, printer) {
+  api('POST', '/api/stores/' + sid + '/bind-printer', { printer: printer || '' }).then(function (r) {
+    var b = ST.bridges.find(function (x) { return x.store_id === sid; });
+    if (b) b.printer_name = r.printer || '';
+    toast(t('toast.saveOk'));
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+function storeControl(sid, action) {
+  api('POST', '/api/stores/' + sid + '/print-control', { action: action }).then(function () {
+    toast(t('sb.ctlOk'));
+    if (action === 'refresh') loadBridgeList();
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+// 打印对话框：取第一批商品的门店桥状态
+function labelStoreBridge() {
+  var it = ST.labelItems[0];
+  if (!it) return null;
+  var p = ST.products.find(function (x) { return x.id === it.id; }) || it;
+  var sid = p.store_id || 1;
+  return ST.bridges.find(function (b) { return b.store_id === sid; }) || null;
+}
+
 // ---- resize ----
 window.addEventListener('resize', function () { ST.isPc = isPcLayout(); });
 
@@ -1671,6 +2017,205 @@ window.addEventListener('resize', function () { ST.isPc = isPcLayout(); });
   }).catch(function () {});
 })();
 
+// ---------------- 列表排序（Vue 数据层，表头点击升/降/恢复默认） ----------------
+function prodSortVal(p, k) {
+  switch (k) {
+    case 'code': return (p.code || '').toLowerCase();
+    case 'name': return (p.name || '').toLowerCase();
+    case 'type': return (productTypeName(p) || '').toLowerCase();
+    case 'mat': return (materialText(p.material) || '').toLowerCase();
+    case 'weight': return Number(p.weight) || 0;
+    case 'price': return Number(p.price) || 0;
+    case 'cost': return Number(p.cost) || 0;
+    case 'status': return p.status || '';
+    case 'epc': return (p.rfid_epc || '').toLowerCase();
+    case 'size': return p.size || '';
+    case 'showcase': return p.showcase_public ? 1 : 0;
+    case 'hv': return p.high_value ? 1 : 0;
+    default: return '';
+  }
+}
+function applyTblSort(list, tbl, valFn) {
+  var s = ST.tblSort[tbl];
+  if (!s || !s.key) return list;
+  var dir = s.dir || 1;
+  return list.slice().sort(function (a, b) {
+    var va = valFn(a, s.key), vb = valFn(b, s.key);
+    var c = (typeof va === 'number' && typeof vb === 'number') ? (va - vb)
+            : String(va).localeCompare(String(vb), 'zh');
+    return (c || ((a.id || 0) - (b.id || 0))) * dir;
+  });
+}
+function sortTbl(tbl, key) {
+  var s = ST.tblSort[tbl];
+  if (s.key !== key) { s.key = key; s.dir = 1; }
+  else if (s.dir === 1) s.dir = -1;
+  else { s.key = ''; s.dir = 1; }
+}
+function sortCls(tbl, key) {
+  var s = ST.tblSort[tbl];
+  if (!s || s.key !== key) return 'mt-sortable';
+  return 'mt-sortable ' + (s.dir === 1 ? 'mt-asc' : 'mt-desc');
+}
+
+// ---------------- 列表现代化：列宽拖拽（初始自适应）+ 列显隐 ----------------
+// 通过 colgroup + table-layout:fixed + visibility:collapse 实现，
+// Vue 重渲染 tbody 不影响；配置存 localStorage（按表区分）。
+var MT_TABLES = [
+  { sel: 'table.table-products', key: 'products' },
+  { sel: 'table.table-stock', key: 'stock' }
+];
+function mtLoad(key) {
+  try { return JSON.parse(localStorage.getItem('jw_tbl_' + key) || 'null'); } catch (e) { return null; }
+}
+function mtStore(key, data) {
+  try { localStorage.setItem('jw_tbl_' + key, JSON.stringify(data)); } catch (e) {}
+}
+function mtEnhance(table, key) {
+  if (!table || !table.tHead || !table.tHead.rows.length || table.dataset.mt) return;
+  table.dataset.mt = '1';
+  var headRow = table.tHead.rows[0];
+  var ncol = headRow.cells.length;
+  var wrap = table.closest('.table-wrap') || table.parentElement;
+  var saved = mtLoad(key) || {};
+  var hiddenIdx = (saved.hiddenIdx || []).filter(function (i) { return i >= 0 && i < ncol; });
+  var pct = (saved.pct && saved.pct.length === ncol) ? saved.pct.slice() : null;
+
+  table.classList.add('mt-fixed');
+  var cg = document.createElement('colgroup');
+  for (var i = 0; i < ncol; i++) cg.appendChild(document.createElement('col'));
+  table.insertBefore(cg, table.tHead);
+  var cols = cg.children;
+
+  function applyCols() {
+    for (var i = 0; i < ncol; i++) {
+      var hid = hiddenIdx.indexOf(i) >= 0;
+      cols[i].style.visibility = hid ? 'collapse' : '';
+      cols[i].style.width = pct ? pct[i] + '%' : '';
+      headRow.cells[i].classList.toggle('mt-hide', hid);
+    }
+  }
+
+  // 初始自适应：按表头+前30行内容测量列宽，按比例铺满容器宽
+  function autofit() {
+    if (pct) { applyCols(); return; }
+    table.classList.remove('mt-fixed');
+    for (var i = 0; i < ncol; i++) { cols[i].style.width = ''; cols[i].style.visibility = ''; }
+    var wrapW = wrap.clientWidth - 2;
+    var rows = table.tBodies.length ? table.tBodies[0].rows : [];
+    var sample = Math.min(rows.length, 30);
+    var ws = [];
+    for (var c = 0; c < ncol; c++) {
+      var w = headRow.cells[c].getBoundingClientRect().width;
+      for (var r = 0; r < sample; r++) {
+        var td = rows[r].cells[c];
+        if (td) w = Math.max(w, td.getBoundingClientRect().width);
+      }
+      ws.push(Math.max(52, Math.ceil(w) + 14));
+    }
+    table.classList.add('mt-fixed');
+    var sum = ws.reduce(function (a, b) { return a + b; }, 0);
+    var total = Math.max(sum, wrapW, 1);
+    pct = ws.map(function (w) { return w / total * 100; });
+    var s2 = pct.reduce(function (a, b) { return a + b; }, 0) || 1;
+    pct = pct.map(function (v) { return v / s2 * 100; });
+    applyCols();
+    mtStore(key, { hiddenIdx: hiddenIdx, pct: pct });
+  }
+
+  // 拖拽调宽：拖第 i 列右缘，与相邻列互补；最后一列独立伸缩
+  function bindGrip(th, i) {
+    var grip = document.createElement('span');
+    grip.className = 'mt-grip';
+    th.appendChild(grip);
+    grip.addEventListener('pointerdown', function (ev) {
+      ev.preventDefault(); ev.stopPropagation();
+      var startX = ev.clientX, wrapW = wrap.clientWidth || 1;
+      var w0 = pct[i], w1 = (i + 1 < ncol) ? pct[i + 1] : null;
+      document.body.classList.add('mt-dragging');
+      function mv(e) {
+        var d = (e.clientX - startX) / wrapW * 100;
+        var nw0 = Math.max(3, w0 + d);
+        pct[i] = nw0;
+        if (w1 !== null) pct[i + 1] = Math.max(3, w1 - (nw0 - w0));
+        applyCols();
+      }
+      function up() {
+        window.removeEventListener('pointermove', mv);
+        document.body.classList.remove('mt-dragging');
+        mtStore(key, { hiddenIdx: hiddenIdx, pct: pct });
+      }
+      window.addEventListener('pointermove', mv);
+      window.addEventListener('pointerup', up, { once: true });
+    });
+    grip.addEventListener('click', function (e) { e.stopPropagation(); });
+  }
+  for (var g = 0; g < ncol; g++) bindGrip(headRow.cells[g], g);
+
+  // 列显隐菜单（fixed 定位，避免被 wrap 裁剪）
+  var bar = document.createElement('div'); bar.className = 'mt-bar';
+  var gear = document.createElement('button'); gear.type = 'button';
+  gear.className = 'mt-gear'; gear.title = t('tbl.cols'); gear.textContent = '⚙';
+  var menu = document.createElement('div'); menu.className = 'mt-menu';
+  for (var m = 0; m < ncol; m++) {
+    (function (idx) {
+      var th = headRow.cells[idx];
+      var label = (th.textContent || '').trim() || th.title || ('#' + (idx + 1));
+      var item = document.createElement('label'); item.className = 'mt-item';
+      var cb = document.createElement('input'); cb.type = 'checkbox';
+      cb.checked = hiddenIdx.indexOf(idx) < 0;
+      cb.addEventListener('change', function () {
+        var at = hiddenIdx.indexOf(idx);
+        if (cb.checked) { if (at >= 0) hiddenIdx.splice(at, 1); }
+        else if (at < 0) hiddenIdx.push(idx);
+        applyCols();
+        mtStore(key, { hiddenIdx: hiddenIdx, pct: pct });
+      });
+      item.appendChild(cb);
+      item.appendChild(document.createTextNode(' ' + label));
+      menu.appendChild(item);
+    })(m);
+  }
+  gear.addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    var open = menu.classList.toggle('open');
+    if (open) {
+      var r = gear.getBoundingClientRect();
+      menu.style.top = (r.bottom + 6) + 'px';
+      menu.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+      menu.style.left = 'auto';
+    }
+  });
+  document.addEventListener('click', function (ev) {
+    if (!menu.contains(ev.target) && !gear.contains(ev.target)) menu.classList.remove('open');
+  });
+  bar.appendChild(gear);
+  wrap.appendChild(bar);
+  wrap.appendChild(menu);
+  wrap.classList.add('mt-wrap');
+
+  autofit();
+}
+function mtScan() {
+  if (!ST.isPc) return;
+  MT_TABLES.forEach(function (cfg) {
+    var tb = document.querySelector(cfg.sel);
+    if (tb) mtEnhance(tb, cfg.key);
+  });
+}
+// 表格随页签 v-if 挂载/卸载，用轻量观察器在渲染后增强（去抖，避免与 Vue 渲染互相触发）
+(function mtSetup() {
+  var pending = false;
+  var scan = function () { pending = false; try { mtScan(); } catch (e) {} };
+  var ob = new MutationObserver(function () {
+    if (pending) return;
+    pending = true;
+    setTimeout(scan, 120);
+  });
+  if (document.body) ob.observe(document.body, { childList: true, subtree: true });
+  else document.addEventListener('DOMContentLoaded', function () { ob.observe(document.body, { childList: true, subtree: true }); });
+})();
+
 // ---- Vue app ----
 var app = Vue.createApp({
   data: function () { return ST; },
@@ -1678,6 +2223,7 @@ var app = Vue.createApp({
     filteredProducts: filteredProducts,
     printSelCount: printSelCount, printAllChecked: printAllChecked,
     invStockList: invStockList,
+    invStockGroups: invStockGroups,
     todoCount: todoCount,
     frozen: isFrozen,
     currentTitle: currentTitle,
@@ -1695,6 +2241,9 @@ var app = Vue.createApp({
     materials: function () { return MATERIALS; },
     FIELD_LABELS: function () { return FIELD_LABELS; },
     LABEL_FIELDS: function () { return LABEL_FIELDS; },
+    labelFieldGroups: function () { return LABEL_FIELD_GROUPS; },
+    // 打印代理下载地址（随挂载前缀拼接）
+    agentDownload: function () { return API + '/api/print-agent/download'; },
   },
   methods: {
     t: t, fmt: fmt, fmtY: fmtY, dateFmt: dateFmt,
@@ -1706,6 +2255,7 @@ var app = Vue.createApp({
     openHandheldLogin: openHandheldLogin, closeHandheldLogin: closeHandheldLogin,
     handheldConfirm: handheldConfirm, yzScan: yzScan,
     go: go, openSubView: openSubView, setLang: setLang,
+    sortTbl: sortTbl, sortCls: sortCls,
     openSheet: openSheet, closeSheet: closeSheet, submitSheet: submitSheet,
     onPickProduct: onPickProduct,
     addProduct: addProduct, editProduct: editProduct, delProduct: delProduct, printLabel: printLabel,
@@ -1725,10 +2275,14 @@ var app = Vue.createApp({
     cropPointerDown: cropPointerDown, cropWheel: cropWheel,
     confirmImgCrop: confirmImgCrop, removeProductImage: removeProductImage,
     saveBizConfig: saveBizConfig,
-    openInbound: openInbound, copyInbound: copyInbound, openRfid: openRfid, doRfid: doRfid,
+    loadBridgeList: loadBridgeList, createStore: createStore, rotateStoreKey: rotateStoreKey,
+    copyStoreKey: copyStoreKey, bindStorePrinter: bindStorePrinter, storeControl: storeControl,
+    labelStoreBridge: labelStoreBridge,
+    openInbound: openInbound, copyInbound: copyInbound, openRfid: openRfid, doRfid: doRfid, toggleInvGroup: toggleInvGroup,
     openLabelPrint: openLabelPrint, removeLabelItem: removeLabelItem, closeLabel: closeLabel,
     togglePrintSel: togglePrintSel, togglePrintAll: togglePrintAll, openPrintSelected: openPrintSelected,
     submitLabelPrint: submitLabelPrint, labelPreview: labelPreview,
+    appPrintReady: appPrintReady, loadBtPrinters: loadBtPrinters, pickBtPrinter: pickBtPrinter,
     loadStockBatches: loadStockBatches,
     viewStockBatch: viewStockBatch, viewBatchProduct: viewBatchProduct,
     startCoTask: startCoTask, loadCoTask: loadCoTask, endCoTask: endCoTask,
@@ -1741,13 +2295,15 @@ var app = Vue.createApp({
     openOutsource: openOutsource, receiveOut: receiveOut,
     openCustomer: openCustomer,
     setAppt: setAppt, saveProfile: saveProfile, exportLogs: exportLogs,
+    recordLines: recordLines, recordKind: recordKind, statusClass: statusClass,
+    openRecordDetail: openRecordDetail, detailRows: detailRows, editFromDetail: editFromDetail,
     loadAppt: loadAppt, loadProfile: loadProfile,
     // 标签模板设计器
     openTplDesigner: openTplDesigner, closeTplDesigner: closeTplDesigner,
     saveTemplate: saveTemplate, delTemplate: delTemplate, bindCatTemplate: bindCatTemplate,
     addSlotToCanvas: addSlotToCanvas, removeSlot: removeSlot, updateSlot: updateSlot,
     onSlotTypeChange: onSlotTypeChange, qrSvgDataUrl: qrSvgDataUrl, dotsToMm: dotsToMm,
-    startDragSlot: startDragSlot, previewTemplate: previewTemplate, loadTemplates: loadTemplates,
+    startDragSlot: startDragSlot, startResizeSlot: startResizeSlot, previewTemplate: previewTemplate, loadTemplates: loadTemplates,
     tplDotScale: tplDotScale,
     uploadTplBg: uploadTplBg, rotateTplBg: rotateTplBg, removeTplBg: removeTplBg,
     tplBgStyle: tplBgStyle, lpBgStyle: lpBgStyle,

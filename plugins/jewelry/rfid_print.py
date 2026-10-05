@@ -46,14 +46,16 @@ FIELD_OPTIONS = {
     "spec": "材质克重",
     "price": "售价",
     "cert": "证书号",
-    "barcode": "货号条码",
+    "barcode": "条码",
     "epc_text": "EPC明文",
+    "epc_barcode": "EPC条码",
     "code": "货号",
     "category": "品类",
     "material": "材质",
     "weight": "克重",
     "size": "尺寸",
     "cost": "成本",
+    "origin": "产地",
 }
 
 DEFAULT_FIELDS = {"store", "name", "spec", "price", "barcode"}
@@ -80,7 +82,16 @@ def _spec_str(product: dict) -> str:
     return " ".join(parts)
 
 
-def _field_value(field: str, product: dict, store_name: str) -> str:
+def _strip_epc_prefix(epc: str, prefix: str = "E280") -> str:
+    """去掉 EPC 企业前缀，仅保留品类+序号段（店内全局唯一），用于缩短印刷条码。"""
+    epc = (epc or "").strip().upper()
+    prefix = (prefix or "").strip().upper()
+    if prefix and epc.startswith(prefix):
+        return epc[len(prefix):]
+    return epc
+
+
+def _field_value(field: str, product: dict, store_name: str, rfid_prefix: str = "E280") -> str:
     """根据字段 key 从 product 或 store_name 中取实际值。"""
     p = product or {}
     if field == "store":
@@ -98,10 +109,12 @@ def _field_value(field: str, product: dict, store_name: str) -> str:
         v = _ascii_safe(p.get("cert", ""))
         return f"CERT {v}" if v else ""
     if field == "barcode":
-        return _ascii_safe(p.get("code", ""))
+        return _ascii_safe(p.get("barcode") or p.get("code") or "")
     if field == "epc_text":
         v = _ascii_safe(p.get("rfid_epc", ""))
-        return f"EPC {v[-12:]}" if v else ""
+        return f"EPC {v}" if v else ""
+    if field == "epc_barcode":
+        return _strip_epc_prefix(_ascii_safe(p.get("rfid_epc", "")), rfid_prefix)
     if field == "category":
         return _cn(p.get("product_type") or p.get("category", ""))
     if field == "material":
@@ -114,13 +127,18 @@ def _field_value(field: str, product: dict, store_name: str) -> str:
     if field == "cost":
         v = p.get("cost")
         return f"￥{float(v):,.0f}" if v else ""
+    if field == "origin":
+        return _cn(p.get("origin", ""))
     return ""
 
 
-def _render_slot(slot: dict, product: dict, store_name: str) -> list[str]:
+def _render_slot(slot: dict, product: dict, store_name: str, rfid_prefix: str = "E280") -> list[str]:
     """根据 slot 定义生成 ZPL 片段。"""
     field = slot.get("field", "")
-    value = _field_value(field, product, store_name)
+    value = _field_value(field, product, store_name, rfid_prefix)
+    # EPC 字段以条码输出时，去掉「EPC 」前缀与企业前缀，保证可扫描
+    if field in ("epc_text", "epc_barcode") and (slot.get("font") or {}).get("type", "ascii") == "barcode":
+        value = _strip_epc_prefix(_ascii_safe((product or {}).get("rfid_epc", "")), rfid_prefix)
     if not value:
         return []
 
@@ -206,7 +224,7 @@ def build_label_zpl(product: dict, *, fields: set[str] | None = None,
             definition = {}
         slots = definition.get("slots", [])
         for slot in slots:
-            L.extend(_render_slot(slot, product, store_name))
+            L.extend(_render_slot(slot, product, store_name, rfid_prefix))
         # 模板中可覆盖 write_epc
         if definition.get("write_epc") is False:
             # 已在上面写入，无法撤销；若模板明确关闭则需要在生成前判断
@@ -229,9 +247,17 @@ def build_label_zpl(product: dict, *, fields: set[str] | None = None,
                 L.append(f"^FO24,{y}^A0N,22,22^FD{_ascii_safe(spec)}^FS")
             y += 34
 
-        if fields and "barcode" in fields and code:
-            L.append(f"^FO24,{y + 34}^BY2^BCN,64,Y,N,N^FD{code}^FS")
-            L.append(f"^FO24,{y + 4}^A0N,22,22^FD{code}^FS")
+        if fields and "barcode" in fields:
+            bc = _ascii_safe(product.get("barcode") or code)
+            if bc:
+                L.append(f"^FO24,{y + 34}^BY2^BCN,64,Y,N,N^FD{bc}^FS")
+                L.append(f"^FO24,{y + 4}^A0N,22,22^FD{bc}^FS")
+
+        if fields and "epc_barcode" in fields and epc:
+            # 可扫描的 EPC 条码：去掉企业前缀（仅品类+序号），缩短条码；完整 EPC 仍存芯片/见 epc_text
+            epc_short = _strip_epc_prefix(epc, rfid_prefix)
+            L.append(f"^FO420,210^BY2^BCN,50,Y,N,N^FD{epc_short}^FS")
+            L.append(f"^FO420,190^A0N,18,18^FDEPC {epc_short}^FS")
 
         if fields and "price" in fields and price:
             price_s = f"RMB {float(price):,.0f}"
@@ -241,7 +267,7 @@ def build_label_zpl(product: dict, *, fields: set[str] | None = None,
             L.append(f"^FO520,108^A0N,20,20^FDCERT {cert}^FS")
 
         if fields and "epc_text" in fields and epc:
-            L.append(f"^FO420,{LABEL_HEIGHT_DOTS - 40}^A0N,18,18^FDEPC {epc[-12:]}^FS")
+            L.append(f"^FO420,{LABEL_HEIGHT_DOTS - 40}^A0N,18,18^FDEPC {epc}^FS")
 
         if fields and "store" in fields and store:
             if cn_font:

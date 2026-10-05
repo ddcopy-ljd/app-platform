@@ -1,7 +1,12 @@
 """懿臻珠宝云 - 数据迁移脚本（版本升级用）。
 
-当前 dataVersion 1.0.0 尚未有旧库迁移需求，仅做幂等建表与新增列补全。
-参数约定与 init 一致，另支持 --old-db-path 等。
+平台先把旧库完整复制到 NEW_DB_PATH，本脚本只做增量迁移：
+- 幂等执行 SCHEMA 建表与 migrate_schema 新增列补全（含 dataVersion 1.0.3 的
+  biz_config.bridge_key、1.0.4 的 stores.bridge_key/stores.printer_name 多门店打印桥）；
+- 幂等执行 EPC 现行规则化（前缀+门店段+品类码+序号）与材质英文长码收敛为简写。
+参数/环境变量与平台约定一致：
+  OLD_DB_PATH / NEW_DB_PATH / OLD_STORAGE / NEW_STORAGE /
+  TENANT_ID / OLD_DATA_VERSION / NEW_DATA_VERSION（或 --old-db-path 等）。
 """
 
 import os
@@ -27,6 +32,8 @@ def _arg(name: str, fallback: str = "") -> str:
 def main() -> None:
     tenant_id = _arg("tenant-id", "tenant_trial")
     new_db = Path(_arg("new-db-path", ""))
+    old_dv = _arg("old-data-version", "?")
+    new_dv = _arg("new-data-version", "?")
 
     if new_db:
         conn = sqlite3.connect(new_db)
@@ -35,7 +42,8 @@ def main() -> None:
         migrate_schema(conn)  # 幂等补齐新增列（如 showcase_order、origin 等）
         conn.commit()
         conn.close()
-        print(f"upgrade 完成：租户 {tenant_id} -> {new_db.name}（schema 已幂等更新至 v1.0.0）")
+        print(f"upgrade 完成：租户 {tenant_id} -> {new_db.name}"
+              f"（schema 已幂等迁移，dataVersion {old_dv} -> {new_dv}）")
     else:
         print("警告：未传入 --new-db-path，跳过迁移", file=sys.stderr)
 

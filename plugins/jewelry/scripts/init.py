@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from db import SCHEMA, seed_demo, migrate_schema  # noqa: E402
+from db import SCHEMA, seed_demo, migrate_schema, ensure_new_seeds  # noqa: E402
 
 
 def _arg(name: str, fallback: str = "") -> str:
@@ -44,6 +44,9 @@ def main() -> None:
         migrate_schema(conn)  # 幂等补列
         conn.commit()
         seed_demo(conn)
+        # seed_demo 在 products 已存在时会提前返回，可能漏建管理员账号；
+        # ensure_new_seeds 兜底保证 admin/staff 等核心账号一定存在。
+        ensure_new_seeds(conn)
         conn.close()
         print(f"init 完成：租户 {tenant_id} -> {new_db.name}")
     else:

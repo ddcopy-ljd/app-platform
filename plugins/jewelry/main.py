@@ -6,10 +6,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
 import os
+import random
 import re
 import secrets
 import socket
@@ -21,7 +23,7 @@ from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
@@ -233,11 +235,57 @@ def _pinyin_initials(name: str, n: int = 3) -> str:
     return "".join(out)[:n]
 
 
-def _gen_type_epc(conn: sqlite3.Connection, type_code: str) -> str:
-    """EPC = 企业前缀 + 品类码 + 十六进制递增序号（各品类独立计数）。"""
+def _hex_store_code(code: str, store_id: int = 0) -> str:
+    """门店码归一化为定长 2 位十六进制段：本身恰为 2 位 0-9A-F 则原样保留；否则回退为门店序号的 2 位 hex。"""
+    code = (code or "").strip().upper()
+    if len(code) == 2 and all(c in "0123456789ABCDEF" for c in code):
+        return code
+    return f"{(store_id or 0) % 256:02X}"
+
+
+def _compute_item_barcode(conn: sqlite3.Connection, product: dict) -> str:
+    """印刷条码 = 门店码(2,hex) + 品类码(2) + 序号(4-6)，每件唯一，与 EPC 解耦（EPC 不改）。
+
+    序号为「同门店+同品类」下的全局递增序号（与 EPC 序号同思路、但独立计数）；
+    补全时按货号排序赋值，使同货号多件获得连续序号（01/02/03…），既保证条码唯一可扫中单件，
+    又体现“序号按货号聚集”。
+    """
+    sid = product.get("store_id") or 1
+    sc = conn.execute("SELECT code FROM stores WHERE id=?", (sid,)).fetchone()
+    store_seg = _hex_store_code(sc[0] if sc else "", sid)
+    tc = (product.get("product_type_code") or "99") or "99"
+    cat = tc.strip().upper()[:2].ljust(2, "0")
+    _, seq_bits = _epc_cfg(conn)
+    seq_bits = max(4, min(6, int(seq_bits or 6)))
+    head = f"{store_seg}{cat}"
+    maxseq = 0
+    for (b,) in conn.execute("SELECT barcode FROM products WHERE barcode LIKE ?", (head + "%",)).fetchall():
+        tail = (b or "")[len(head):]
+        if len(tail) == seq_bits:
+            try:
+                maxseq = max(maxseq, int(tail, 16))
+            except ValueError:
+                continue
+    seq = maxseq + 1
+    if seq > 16 ** seq_bits - 1:  # 极端溢出兜底（几乎不会发生）
+        seq = 1
+    return f"{head}{seq:0{seq_bits}X}"
+
+
+def _gen_type_epc(conn: sqlite3.Connection, type_code: str, store_id: int = 1) -> str:
+    """EPC = 企业前缀(配置) + 门店码(2,hex) + 品类码(2) + 序号(seq_bits,4-6)；各(门店+品类)独立计数。"""
     prefix, seq_bits = _epc_cfg(conn)
-    code = (type_code or "99").strip() or "99"
-    head = f"{prefix}{code}"
+    seq_bits = max(4, min(6, int(seq_bits or 6)))  # 序号固定 4-6 位
+    code = (type_code or "99").strip().upper() or "99"
+    code = code[:2].ljust(2, "0")  # 品类码固定 2 位
+    store_seg = "00"
+    try:
+        r = conn.execute("SELECT code FROM stores WHERE id=?", (store_id,)).fetchone()
+        if r is not None:
+            store_seg = _hex_store_code(r[0], store_id)
+    except Exception:
+        store_seg = "00"
+    head = f"{prefix}{store_seg}{code}"
     maxseq = 0
     row = conn.execute(
         "SELECT rfid_epc FROM products WHERE rfid_epc LIKE ?", (head + "%",)
@@ -258,7 +306,7 @@ def _gen_type_epc(conn: sqlite3.Connection, type_code: str) -> str:
 # 列表/详情不回传图片 BLOB（图片走专用接口），用 image_ts 判断是否有图
 _PRODUCT_COLS = (
     "id,code,name,name_i18n,category,category_code,material,product_type,product_type_code,"
-    "weight,size,cert,cost,price,status,store_id,rfid_epc,"
+    "weight,size,cert,cost,price,status,store_id,rfid_epc,barcode,"
     "showcase_public,showcase_order,showcase_desc,showcase_desc_i18n,origin,high_value,"
     "image_ts,created,"
     "(SELECT MAX(ts) FROM inventory_logs il WHERE il.product_id=products.id AND il.type='rfid') AS label_printed_at,"
@@ -1073,7 +1121,7 @@ def biz_config_get(request: Request):
 
 class BizConfigUpdate(BaseModel):
     epc_prefix: str
-    seq_bits: int = 8
+    seq_bits: int = 6
 
 
 @app.put("/api/biz-config")
@@ -1089,8 +1137,8 @@ def biz_config_update(request: Request, body: BizConfigUpdate):
             raise HTTPException(400, "EPC 前缀为空，且无法从企业名称自动生成（请先在店铺资料填写企业名称）")
         if not re.fullmatch(r"[A-Z0-9]{1,6}", prefix):
             raise HTTPException(400, "EPC 前缀只能用 1~6 位英文字母或数字")
-        if not (1 <= body.seq_bits <= 8):
-            raise HTTPException(400, "序号位数需在 1~8 之间")
+        if not (4 <= body.seq_bits <= 6):
+            raise HTTPException(400, "序号位数需在 4~6 之间")
         conn.execute(
             "INSERT INTO biz_config(id,epc_prefix,seq_bits) VALUES(1,?,?) "
             "ON CONFLICT(id) DO UPDATE SET epc_prefix=excluded.epc_prefix, seq_bits=excluded.seq_bits",
@@ -1340,8 +1388,14 @@ def label_template_preview(tid: int, request: Request, product_id: int = 1):
         store_name = prof["name"] if prof and prof["name"] else ""
         product = dict(p)
         product.pop("image", None)
-        product["rfid_epc"] = product.get("rfid_epc") or _gen_type_epc(conn, product.get("product_type_code") or "99")
-        zpl = rfid_print.build_label_zpl(product, store_name=store_name, template=dict(tpl))
+        product["rfid_epc"] = product.get("rfid_epc") or _gen_type_epc(conn, product.get("product_type_code") or "99", product.get("store_id") or 1)
+        bc = _compute_item_barcode(conn, product)
+        if product.get("barcode") != bc:
+            conn.execute("UPDATE products SET barcode=? WHERE id=?", (bc, product["id"]))
+            conn.commit()
+        product["barcode"] = bc
+        prefix_cfg, _ = _epc_cfg(conn)
+        zpl = rfid_print.build_label_zpl(product, store_name=store_name, template=dict(tpl), rfid_prefix=prefix_cfg)
         return {"ok": True, "zpl": zpl, "product": product}
 
 
@@ -1370,18 +1424,52 @@ def category_bind_template(code: str, body: CategoryTemplateIn, request: Request
 
 @app.post("/api/products/{pid}/generate-epc")
 def product_generate_epc(pid: int, request: Request):
-    """按 EPC 前缀+品类码+递增序号 生成并回写 RFID EPC（已有则直接复用）。"""
+    """按 EPC = 前缀+门店码+品类码+递增序号 生成并回写 RFID EPC（已有则直接复用）。"""
     _require_auth(request)
     with _db(request) as conn:
-        p = conn.execute("SELECT product_type_code, rfid_epc FROM products WHERE id=?", (pid,)).fetchone()
+        p = conn.execute("SELECT product_type_code, rfid_epc, store_id FROM products WHERE id=?", (pid,)).fetchone()
         if not p:
             raise HTTPException(404, "商品不存在")
         if p["rfid_epc"]:
             return {"ok": True, "epc": p["rfid_epc"], "reused": True}
-        epc = _gen_type_epc(conn, p["product_type_code"] or "99")
+        epc = _gen_type_epc(conn, p["product_type_code"] or "99", p["store_id"] or 1)
         conn.execute("UPDATE products SET rfid_epc=? WHERE id=?", (epc, pid))
         conn.commit()
         return {"ok": True, "epc": epc}
+
+
+class RebuildBarcodeIn(BaseModel):
+    make_groups: bool = False
+
+
+@app.post("/api/admin/rebuild-barcodes")
+def admin_rebuild_barcodes(body: RebuildBarcodeIn, request: Request):
+    """补全印刷条码：可选先把同品类商品随机编成同货号分组，再按(门店+品类+货号)计算并写回条码。EPC 不受影响。"""
+    _require_auth(request)
+    with _db(request) as conn:
+        if body.make_groups:
+            from collections import defaultdict
+            rows = conn.execute("SELECT id, product_type_code, code FROM products").fetchall()
+            by_cat: dict = defaultdict(list)
+            for r in rows:
+                by_cat[r["product_type_code"] or "99"].append(r)
+            for items in by_cat.values():
+                if len(items) < 2:
+                    continue
+                random.shuffle(items)
+                k = max(1, len(items) // 2)
+                base = items[0]["code"]
+                for it in items[1:k + 1]:
+                    conn.execute("UPDATE products SET code=? WHERE id=?", (base, it["id"]))
+            conn.commit()
+        n = 0
+        for (pid,) in conn.execute("SELECT id FROM products ORDER BY code, id").fetchall():
+            p = dict(conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone())
+            bc = _compute_item_barcode(conn, p)
+            conn.execute("UPDATE products SET barcode=? WHERE id=?", (bc, pid))
+            n += 1
+        conn.commit()
+        return {"ok": True, "updated": n}
 
 
 @app.get("/api/products")
@@ -1409,9 +1497,9 @@ def product_options(request: Request, status: str = "在库"):
     _require_auth(request)
     with _db(request) as conn:
         if status:
-            rows = conn.execute("SELECT id, code, name, price, status, rfid_epc FROM products WHERE status=? ORDER BY id", (status,)).fetchall()
+            rows = conn.execute("SELECT id, code, name, price, status, rfid_epc, barcode, store_id, product_type_code FROM products WHERE status=? ORDER BY id", (status,)).fetchall()
         else:
-            rows = conn.execute("SELECT id, code, name, price, status, rfid_epc FROM products ORDER BY id").fetchall()
+            rows = conn.execute("SELECT id, code, name, price, status, rfid_epc, barcode, store_id, product_type_code FROM products ORDER BY id").fetchall()
         return {"items": [dict(r) for r in rows]}
 
 
@@ -1430,12 +1518,10 @@ def product_create(body: ProductIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
         _assert_stock_unfrozen(conn)
-        if conn.execute("SELECT 1 FROM products WHERE code=?", (body.code,)).fetchone():
-            raise HTTPException(400, "商品编码已存在")
         type_code, type_name = _resolve_type(conn, body.product_type_code, body.product_type)
         epc = (body.rfid_epc or "").strip()
         if not epc:
-            epc = _gen_type_epc(conn, type_code)  # 新商品保存即自动生成 EPC
+            epc = _gen_type_epc(conn, type_code, body.store_id)  # 新商品保存即自动生成 EPC
         cur = conn.execute(
             """INSERT INTO products(code,name,name_i18n,category,category_code,material,product_type,product_type_code,
                                      weight,size,cert,cost,price,status,store_id,rfid_epc,
@@ -1460,8 +1546,6 @@ def product_update(pid: int, body: ProductIn, request: Request):
         row = conn.execute("SELECT rfid_epc FROM products WHERE id=?", (pid,)).fetchone()
         if not row:
             raise HTTPException(404, "商品不存在")
-        if conn.execute("SELECT 1 FROM products WHERE code=? AND id<>?", (body.code, pid)).fetchone():
-            raise HTTPException(400, "商品编码已存在")
         type_code, type_name = _resolve_type(conn, body.product_type_code, body.product_type)
         epc = (body.rfid_epc or "").strip() or row["rfid_epc"]
         conn.execute(
@@ -1618,7 +1702,7 @@ def inventory_inbound(body: InboundIn, request: Request):
         if conn.execute("SELECT 1 FROM products WHERE code=?", (code,)).fetchone():
             raise HTTPException(400, "商品编码已存在")
         type_code, type_name = _resolve_type(conn, body.product_type_code, body.product_type)
-        epc = (body.rfid_epc or "").strip() or _gen_type_epc(conn, type_code)
+        epc = (body.rfid_epc or "").strip() or _gen_type_epc(conn, type_code, 1)  # 入库固定归属默认门店
         cur = conn.execute(
             """INSERT INTO products(code,name,category,category_code,material,product_type,product_type_code,
                                     weight,size,cert,cost,price,status,store_id,rfid_epc,showcase_public)
@@ -1642,7 +1726,7 @@ def inventory_copy(pid: int, request: Request):
             raise HTTPException(404, "源商品不存在")
         code = _next_code(conn)
         type_code = src["product_type_code"] or "99"
-        epc = _gen_type_epc(conn, type_code)
+        epc = _gen_type_epc(conn, type_code, src["store_id"])
         cur = conn.execute(
             """INSERT INTO products(code,name,name_i18n,category,category_code,material,product_type,product_type_code,
                                     weight,size,cert,cost,price,status,store_id,rfid_epc,showcase_public,origin,high_value)
@@ -1717,6 +1801,7 @@ class LabelPrintIn(BaseModel):
     font: str = rfid_print.DEFAULT_FONT
     simulate: bool = False  # True 时只生成 ZPL 不实际发送
     template_id: int | None = None  # 指定模板后按模板 slots 排版，忽略 fields
+    route: str = ""  # 'agent'=经本地打印桥下发（店里电脑 print_agent.py 取任务打印）
 
 
 @app.post("/api/print/labels")
@@ -1755,18 +1840,22 @@ def print_labels(body: LabelPrintIn, request: Request):
 
         jobs = []
         for p in products:
-            epc = p.get("rfid_epc") or _gen_type_epc(conn, p.get("product_type_code") or "99")
+            epc = p.get("rfid_epc") or _gen_type_epc(conn, p.get("product_type_code") or "99", p.get("store_id") or 1)
             if not p.get("rfid_epc"):
                 conn.execute("UPDATE products SET rfid_epc=? WHERE id=?", (epc, p["id"]))
             p["rfid_epc"] = epc
+            bc = _compute_item_barcode(conn, p)
+            conn.execute("UPDATE products SET barcode=? WHERE id=?", (bc, p["id"]))
+            p["barcode"] = bc
             _inv(conn, p["id"], epc, "rfid", op["username"], body.copies)
-            jobs.append({"id": p["id"], "code": p["code"], "name": p["name"], "rfid_epc": epc})
+            jobs.append({"id": p["id"], "code": p["code"], "name": p["name"], "rfid_epc": epc, "barcode": bc})
 
         # 逐件生成：显式模板优先，否则按各商品品类绑定模板，无模板回退默认字段布局
         fields = {f for f in body.fields if f in rfid_print.FIELD_OPTIONS}
         copies = max(1, body.copies)
         epc_prefix_cfg, _ = _epc_cfg(conn)
         zpl_parts = []
+        per_store: dict[int, list[str]] = {}   # store_id -> 该门店商品的 ZPL 列表
         used_template_ids = set()
         for p in products:
             tpl_i = explicit_tpl or _bound_tpl(p.get("product_type_code") or "")
@@ -1782,27 +1871,349 @@ def print_labels(body: LabelPrintIn, request: Request):
                     font=(body.font or ""), write_epc=body.write_epc,
                     rfid_prefix=epc_prefix_cfg,
                 )
-            zpl_parts.append(one.replace("^PQ1", f"^PQ{copies}"))
+            z0 = one.replace("^PQ1", f"^PQ{copies}")
+            zpl_parts.append(z0)
+            per_store.setdefault(p.get("store_id") or 1, []).append(z0)
         zpl = "".join(zpl_parts)
         tpl_desc = f" 模板#{explicit_tpl['id']}" if explicit_tpl else (" 各自品类模板" if used_template_ids else "")
 
         sent = False
+        printer_desc = body.printer or ""
         if not body.simulate:
-            if not body.printer:
-                raise HTTPException(400, "未选择打印机（无打印机时可勾选“仅生成指令”）")
-            try:
-                rfid_print.send_raw(body.printer, zpl, job_title=f"jewelry-labels-{len(jobs)}")
+            if body.route == "agent":
+                # 按商品所属门店分组，路由到各自门店的打印桥（任务内带该店绑定打印机）
+                stores_cfg: dict[int, dict] = {}
+                for sid0 in per_store:
+                    srow = conn.execute(
+                        "SELECT name,printer_name FROM stores WHERE id=?", (sid0,)).fetchone()
+                    stores_cfg[sid0] = {
+                        "name": srow["name"] if srow else f"门店{sid0}",
+                        "printer": (srow["printer_name"] if srow else "") or "",
+                    }
+                with _bridges_lock:
+                    missing = [c["name"] for sid0, c in stores_cfg.items()
+                               if sid0 not in _bridges
+                               or time.time() - _bridges[sid0].last_seen >= 15]
+                if missing:
+                    raise HTTPException(400, "打印代理不在线：" + "、".join(missing))
+                for sid0, parts in per_store.items():
+                    _bridge_enqueue(sid0, "".join(parts), len(parts))
                 sent = True
-            except Exception as e:
-                raise HTTPException(500, f"发送打印机失败：{e}")
+                printer_desc = "打印桥（" + "、".join(stores_cfg[s]["name"] for s in per_store) + "）"
+            else:
+                if not body.printer:
+                    raise HTTPException(400, "未选择打印机（无打印机时可勾选“仅生成指令”）")
+                try:
+                    rfid_print.send_raw(body.printer, zpl, job_title=f"jewelry-labels-{len(jobs)}")
+                    sent = True
+                except Exception as e:
+                    raise HTTPException(500, f"发送打印机失败：{e}")
         conn.commit()
         _log(conn, op["username"], "RFID标签打印",
-             f"{len(jobs)}件×{body.copies}张 {body.printer or '仅生成指令'}" + tpl_desc)
+             f"{len(jobs)}件×{body.copies}张 {printer_desc or '仅生成指令'}" + tpl_desc)
         return {
             "ok": True, "sent": sent, "count": len(jobs) * body.copies,
-            "printer": body.printer or "", "jobs": jobs, "zpl": zpl,
+            "printer": printer_desc, "jobs": jobs, "zpl": zpl,
             "template_id": explicit_tpl["id"] if explicit_tpl else None,
         }
+
+
+# ---------------------------------------------------------------- 本地打印桥（门店级，多代理）
+# 每个门店一把桥接密钥（stores.bridge_key）；代理以密钥连接 /ws/print-agent，
+# 连接即上报本机全部打印机；门店在云端指派绑定打印机（stores.printer_name）；
+# 打印任务按商品 store_id 路由到对应门店的代理，任务内带绑定打印机名。
+
+class _Bridge:
+    __slots__ = ("ws", "loop", "name", "printers", "last_seen", "last_job")
+
+    def __init__(self, ws, loop, name: str):
+        self.ws = ws
+        self.loop = loop
+        self.name = name
+        self.printers: list[str] = []
+        self.last_seen = time.time()
+        self.last_job: dict | None = None
+
+
+_bridges: dict[int, _Bridge] = {}              # store_id -> 代理连接
+_bridges_lock = threading.Lock()
+_bridge_results: dict[str, dict] = {}          # control_id -> 回执
+_bridge_waiters: dict[str, threading.Event] = {}
+_bridge_seq = [0]
+
+
+def _bridge_send(sid: int, payload: dict) -> None:
+    """同步上下文向门店代理推送消息（跨线程投递到其事件循环）。"""
+    with _bridges_lock:
+        b = _bridges.get(sid)
+    if b is None:
+        raise RuntimeError("打印桥不在线")
+    fut = asyncio.run_coroutine_threadsafe(
+        b.ws.send_text(json.dumps(payload, ensure_ascii=False)), b.loop)
+    fut.result(timeout=10)
+
+
+def _bridge_enqueue(sid: int, zpl: str, count: int) -> str:
+    with _bridges_lock:
+        _bridge_seq[0] += 1
+        jid = f"PJ{_bridge_seq[0]:06d}"
+    _bridge_send(sid, {"type": "job", "job": {"job_id": jid, "zpl": zpl,
+                                              "title": "jewelry-labels", "count": count}})
+    return jid
+
+
+def _build_test_zpl(store_name: str, printer: str) -> str:
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    sn = str(store_name or "").replace("^", " ").replace("~", " ")
+    pn = str(printer or "").replace("^", " ").replace("~", " ")
+    code = ts.replace("-", "").replace(":", "").replace(" ", "")
+    return ("^XA^CI28^LH30,30"
+            "^A0N,42,42^FDPrintBridge Test^FS"
+            f"^A0N,32,32^FO30,60^FD{sn}^FS"
+            f"^A0N,26,26^FO30,100^FD{pn or '-'}  {ts}^FS"
+            f"^FO30,140^BY2^BCN,70,Y,N,N^FD{code}^FS"
+            "^XZ")
+
+
+@app.get("/api/print-agent/status")
+def print_agent_status(request: Request):
+    """各门店打印桥状态（供店铺管理与打印对话框轮询）。"""
+    _require_auth(request)
+    now = time.time()
+    out = []
+    with _db(request) as conn:
+        rows = conn.execute(
+            "SELECT id,name,code,printer_name,bridge_key FROM stores ORDER BY id").fetchall()
+    with _bridges_lock:
+        for r in rows:
+            b = _bridges.get(r["id"])
+            online = bool(b and now - b.last_seen < 15)
+            out.append({
+                "store_id": r["id"], "store_name": r["name"], "code": r["code"],
+                "online": online, "agent_name": (b.name if online else ""),
+                "printers": list(b.printers) if online else [],
+                "printer_name": r["printer_name"] or "",
+                "has_key": bool((r["bridge_key"] or "").strip()),
+                "last_job": (dict(b.last_job) if online and b.last_job else None),
+            })
+    return {"bridges": out}
+
+
+@app.get("/api/print-agent/download")
+def print_agent_download():
+    """下载打印代理：优先返回已构建的单文件 exe，未构建时返回 py 源码（需门店电脑有 Python）。"""
+    exe = ROOT / "scripts" / "dist" / "PrintBridge.exe"
+    if exe.is_file():
+        return FileResponse(exe, filename="PrintBridge.exe",
+                            media_type="application/vnd.microsoft.portable-executable")
+    src = ROOT / "scripts" / "print_agent.py"
+    return FileResponse(src, filename="print_agent.py", media_type="text/x-python")
+
+
+@app.get("/api/stores/bridge-whoami")
+def store_bridge_whoami(request: Request, key: str = ""):
+    """代理人工确认用：凭门店 Token 换门店名称（免账号登录）。"""
+    key = (key or "").strip()
+    with _db(request) as conn:
+        r = conn.execute("SELECT id,name FROM stores WHERE bridge_key=?", (key,)).fetchone()
+    if not r:
+        raise HTTPException(401, "门店 Token 无效")
+    return {"store_id": r["id"], "store_name": r["name"]}
+
+
+@app.post("/api/stores")
+def store_create(body: dict, request: Request):
+    _require_auth(request)
+    name = str(body.get("name") or "").strip()
+    code = str(body.get("code") or "").strip()
+    if not name:
+        raise HTTPException(400, "门店名称必填")
+    with _db(request) as conn:
+        sid = conn.execute("SELECT COALESCE(MAX(id),0)+1 FROM stores").fetchone()[0]
+        if not code:
+            code = f"{sid:02X}"
+        try:
+            conn.execute("INSERT INTO stores(id,name,code,owner) VALUES(?,?,?,?)",
+                         (sid, name, code, str(body.get("owner") or "")))
+            conn.commit()
+        except sqlite3.IntegrityError:
+            raise HTTPException(400, "门店编码已存在")
+    return {"ok": True, "id": sid, "code": code}
+
+
+@app.post("/api/stores/{sid}/bridge-key")
+def store_bridge_key_rotate(sid: int, request: Request):
+    """生成/重置门店 Token（旧 Token 立即失效）。"""
+    _require_auth(request)
+    key = secrets.token_urlsafe(18)
+    with _db(request) as conn:
+        if not conn.execute("SELECT id FROM stores WHERE id=?", (sid,)).fetchone():
+            raise HTTPException(404, "门店不存在")
+        conn.execute("UPDATE stores SET bridge_key=? WHERE id=?", (key, sid))
+        conn.commit()
+    return {"key": key, "store_id": sid}
+
+
+@app.post("/api/stores/{sid}/bind-printer")
+def store_bind_printer(sid: int, body: dict, request: Request):
+    """门店指派绑定打印机：落库并即时推送给在线代理。
+
+    必须是同步端点：FastAPI 在线程池执行本函数，_bridge_send 才能跨线程
+    投递到代理所在事件循环；若用 async 会在事件循环线程上自锁。
+    """
+    _require_auth(request)
+    printer = str(body.get("printer") or "").strip()
+    with _db(request) as conn:
+        if not conn.execute("SELECT id FROM stores WHERE id=?", (sid,)).fetchone():
+            raise HTTPException(404, "门店不存在")
+        conn.execute("UPDATE stores SET printer_name=? WHERE id=?", (printer, sid))
+        conn.commit()
+    try:
+        _bridge_send(sid, {"type": "config", "printer": printer})
+    except Exception:
+        pass  # 代理离线时静默：重连后会收到 config 补推
+    return {"ok": True, "printer": printer}
+
+
+@app.post("/api/stores/{sid}/print-control")
+async def store_print_control(sid: int, body: dict, request: Request):
+    """向门店代理下发控制指令：feed 进纸 / backfeed 退纸 / test 测试页 / refresh 重新搜索打印机。"""
+    _require_auth(request)
+    action = str(body.get("action") or "")
+    if action not in ("feed", "backfeed", "test", "refresh"):
+        raise HTTPException(400, "未知控制指令")
+    with _db(request) as conn:
+        s = conn.execute("SELECT name,printer_name FROM stores WHERE id=?", (sid,)).fetchone()
+    if not s:
+        raise HTTPException(404, "门店不存在")
+    with _bridges_lock:
+        b = _bridges.get(sid)
+        online = bool(b and time.time() - b.last_seen < 15)
+    if not online:
+        raise HTTPException(400, f"门店「{s['name']}」打印代理不在线")
+    payload: dict = {"type": "control", "action": action,
+                     "printer": s["printer_name"] or ""}
+    if action == "test":
+        payload["zpl"] = _build_test_zpl(s["name"], s["printer_name"] or "")
+    if action != "refresh":
+        with _bridges_lock:
+            _bridge_seq[0] += 1
+            payload["control_id"] = f"C{_bridge_seq[0]:06d}"
+        ev = threading.Event()
+        with _bridges_lock:
+            _bridge_waiters[payload["control_id"]] = ev
+    try:
+        await b.ws.send_text(json.dumps(payload, ensure_ascii=False))
+    except Exception as e:
+        with _bridges_lock:
+            _bridge_waiters.pop(payload.get("control_id"), None)
+        raise HTTPException(400, f"发送失败：{e}")
+    if action == "refresh":
+        return {"ok": True, "action": action}
+    ok = await asyncio.to_thread(_bridge_waiters[payload["control_id"]].wait, 12)
+    with _bridges_lock:
+        res = _bridge_results.pop(payload["control_id"], None)
+        _bridge_waiters.pop(payload["control_id"], None)
+    if not ok or not res:
+        raise HTTPException(400, "打印桥未响应（超时 12 秒）")
+    if not res.get("ok"):
+        raise HTTPException(400, f"执行失败：{res.get('message') or '未知错误'}")
+    return {"ok": True, "action": action}
+
+
+@app.websocket("/ws/print-agent")
+async def print_agent_ws(websocket: WebSocket, key: str = "", name: str = ""):
+    """门店打印桥连接：key=门店Token（stores.bridge_key），一个门店一个代理连接。
+
+    连接即上报本机打印机（hello）；云端回推绑定打印机（config）；
+    任务/控制指令实时推送，回执经同一连接返回。
+    """
+    key = (key or "").strip()
+    store = None
+    if key:
+        with _db(websocket) as conn:
+            store = conn.execute(
+                "SELECT id,name,printer_name FROM stores WHERE bridge_key=?", (key,)).fetchone()
+    await websocket.accept()
+    if not store:
+        await websocket.close(code=4401)
+        return
+    sid = store["id"]
+    b = _Bridge(websocket, asyncio.get_running_loop(),
+                (name or "").strip() or f"{store['name']}打印桥")
+    with _bridges_lock:
+        old = _bridges.get(sid)
+        _bridges[sid] = b
+    if old is not None:
+        try:
+            await old.ws.close()
+        except Exception:
+            pass
+
+    stop = asyncio.Event()
+
+    async def _push_config():
+        await websocket.send_text(json.dumps(
+            {"type": "config", "store_name": store["name"],
+             "printer": store["printer_name"] or ""}, ensure_ascii=False))
+
+    async def _receiver():
+        try:
+            while True:
+                msg = await websocket.receive_text()
+                b.last_seen = time.time()
+                try:
+                    d = json.loads(msg)
+                except Exception:
+                    continue
+                mtype = d.get("type")
+                if mtype in ("hello", "printers"):
+                    b.printers = [str(x) for x in (d.get("printers") or []) if str(x).strip()]
+                    await _push_config()
+                elif mtype == "heartbeat":
+                    pass  # 每收到一帧已刷新 last_seen，心跳本身无需处理
+                elif mtype == "ack":
+                    # 打印任务回执：记录该桥最近一次任务结果（只代表已写入打印队列，
+                    # 物理出纸仍需人眼确认——RAW 通道读不到硬件状态）
+                    jid = str(d.get("job_id") or "")
+                    if jid:
+                        b.last_job = {"job_id": jid, "ok": bool(d.get("ok")),
+                                      "message": str(d.get("message") or ""),
+                                      "ts": datetime.now().strftime("%m-%d %H:%M:%S")}
+                        continue
+                    cid = str(d.get("control_id") or "")
+                    if not cid:
+                        continue
+                    with _bridges_lock:
+                        _bridge_results[cid] = {
+                            "ok": bool(d.get("ok")), "message": str(d.get("message") or ""),
+                        }
+                        if len(_bridge_results) > 200:
+                            for k in list(_bridge_results)[:100]:
+                                _bridge_results.pop(k, None)
+                        ev = _bridge_waiters.get(cid)
+                    if ev:
+                        ev.set()
+        except Exception:
+            stop.set()
+
+    recv_task = asyncio.create_task(_receiver())
+    try:
+        await _push_config()
+        # 在线状态完全以代理上报为准：hello + 每 5 秒心跳都会经 _receiver 刷新 last_seen；
+        # 服务端不能自己刷新，否则代理静默掉线会被误判为在线。
+        while not stop.is_set():
+            await asyncio.sleep(5)
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    except Exception:
+        pass
+    finally:
+        stop.set()
+        recv_task.cancel()
+        with _bridges_lock:
+            if _bridges.get(sid) is b:
+                _bridges.pop(sid, None)
 
 
 # ---------------------------------------------------------------- RFID 手持机盘点
