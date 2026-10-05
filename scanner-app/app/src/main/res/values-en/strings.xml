@@ -25,7 +25,6 @@
     <!-- home -->
     <string name="home_sale">Sales Checkout</string>
     <string name="home_stock">Stock Take</string>
-    <string name="home_admin">🏷 Management (Print Labels)</string>
     <string name="home_logout">Sign Out</string>
 
     <!-- sale -->

@@ -39,12 +39,6 @@ class HomeActivity : BaseActivity() {
         findViewById<TextView>(R.id.btnHomeStock).setOnClickListener {
             startActivity(Intent(this, StockActivity::class.java))
         }
-        // 管理后台（完整 Web 应用，含蓝牙打印标签）
-        findViewById<TextView>(R.id.btnHomeAdmin).setOnClickListener {
-            val i = Intent(this, WebActivity::class.java)
-            i.putExtra("url", "index.html")
-            startActivity(i)
-        }
         findViewById<TextView>(R.id.btnHomeSettings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }

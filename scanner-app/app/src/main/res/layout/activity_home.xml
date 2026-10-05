@@ -83,19 +83,6 @@
             android:textStyle="bold" />
 
         <TextView
-            android:id="@+id/btnHomeAdmin"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:background="@drawable/bg_btn_dark"
-            android:gravity="center"
-            android:paddingVertical="20dp"
-            android:text="@string/home_admin"
-            android:textColor="@color/orange"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-
-        <TextView
             android:id="@+id/btnHomeEpcCollect"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

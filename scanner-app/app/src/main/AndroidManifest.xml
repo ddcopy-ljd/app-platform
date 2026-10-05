@@ -62,13 +62,6 @@
             android:configChanges="orientation|screenSize|keyboardHidden|locale|layoutDirection" />
 
         <activity
-            android:name=".WebActivity"
-            android:screenOrientation="portrait"
-            android:exported="false"
-            android:configChanges="orientation|screenSize|keyboardHidden|locale|layoutDirection"
-            android:windowSoftInputMode="adjustResize" />
-
-        <activity
             android:name=".PortraitCaptureActivity"
             android:exported="false"
             android:screenOrientation="portrait"
