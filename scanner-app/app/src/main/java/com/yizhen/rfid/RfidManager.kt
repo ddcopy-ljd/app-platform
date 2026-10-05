@@ -112,13 +112,15 @@ object RfidManager {
     fun start(onTag: (String, Int) -> Unit): Boolean {
         if (scanning) return false
         if (!ready) return false
-        if (tryStart(onTag)) return true
-        // 模块可能仍处于盘存态（上次 stop 未彻底生效 / 页面切换未停扫）：
-        // 先 stopInventory 再重试一次。C27 不允许重复申请串口资源，绝不能在此 free()+init()。
-        Log.w(TAG, "startInventoryTag() 首次失败，stopInventory 后重试（不重新 init）")
-        try { uhf?.stopInventory() } catch (_: Exception) {}
-        try { Thread.sleep(60) } catch (_: InterruptedException) {}
-        return tryStart(onTag)
+        // 该 C27 固件在 init 后首次 startInventoryTag 偶发返回 false（errCode=0），
+        // 但模块实际可用（同机其他 App 亦如此且能扫到）。直接重试数次即可恢复，
+        // 不要在重试间调用 stopInventory（会把正常态打断）。
+        repeat(3) { attempt ->
+            if (tryStart(onTag)) return true
+            Log.w(TAG, "startInventoryTag() 第 ${attempt + 1} 次失败，200ms 后重试")
+            try { Thread.sleep(200) } catch (_: InterruptedException) {}
+        }
+        return false
     }
 
     private fun tryStart(onTag: (String, Int) -> Unit): Boolean {
