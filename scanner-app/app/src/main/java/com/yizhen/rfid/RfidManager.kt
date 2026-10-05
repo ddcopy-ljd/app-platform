@@ -66,25 +66,10 @@ object RfidManager {
                 Log.w(TAG, lastError)
             }
             ready = true
-            // C27 休眠/重启后 UHF 射频可能未上电，导致 startInventoryTag() 返回 false；先确保上电
-            ensurePowerOn()
         } catch (e: Throwable) {
             lastError = e.javaClass.simpleName + ": " + (e.message ?: "未知异常")
             Log.e(TAG, "RFID init failed", e)
             ready = false
-        }
-    }
-
-    /** 确保 UHF 模块已上电（C27 射频电源被系统关闭时，startInventoryTag 会返回 false）。 */
-    private fun ensurePowerOn() {
-        if (uhf == null) return
-        try {
-            if (!uhf!!.isPowerOn) {
-                Log.w(TAG, "UHF 模块未上电，调用 setPowerOnBySystem 上电")
-                appContext?.let { uhf!!.setPowerOnBySystem(it) }
-            }
-        } catch (e: Throwable) {
-            Log.w(TAG, "setPowerOnBySystem 异常", e)
         }
     }
 
@@ -139,10 +124,8 @@ object RfidManager {
     private fun tryStart(onTag: (String, Int) -> Unit): Boolean {
         if (!ready || scanning) return false
         return try {
-            // 确保功率合法，部分固件功率非法会令 startInventoryTag 返回 false
-            try { uhf?.setPower(lastPower) } catch (_: Exception) {}
-            // 防御：确保模块不在盘存态（否则 startInventoryTag 直接返回 false）
-            try { uhf?.stopInventory() } catch (_: Exception) {}
+            // 原始可用版本即直接 startInventoryTag()；功率由调用方在 start 前 setPower(prefs.power) 设置。
+            // 注意：不要在此调用 setPowerOnBySystem()，C27 上会反向切断 UHF 供电导致 errCode=0 且启动失败。
             val ok = uhf?.startInventoryTag() ?: false
             if (!ok) {
                 val code = runCatching { uhf?.getErrCode() ?: -1 }.getOrDefault(-1)
