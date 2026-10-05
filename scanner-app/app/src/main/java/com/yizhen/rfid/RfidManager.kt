@@ -140,7 +140,11 @@ object RfidManager {
         try { uhf?.free() } catch (_: Exception) {}
         ready = false
         uhf = null
-        appContext?.let { initInternal() }
+        appContext?.let { ctx ->
+            // C27 重启后射频常处于断电态：无论 isPowerOn 报告如何，都先尝试上电再初始化
+            try { RFIDWithUHFUART.getInstance()?.setPowerOnBySystem(ctx) } catch (_: Exception) {}
+            initInternal()
+        }
     }
 
     private fun tryStart(onTag: (String, Int) -> Unit): Boolean {
