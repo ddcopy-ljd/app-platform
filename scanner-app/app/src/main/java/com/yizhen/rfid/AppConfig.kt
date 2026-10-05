@@ -6,5 +6,5 @@ package com.yizhen.rfid
  * 方便现场装包时一眼确认是否是最新构建（无需比对 versionCode）。
  */
 object AppConfig {
-    const val APP_VERSION = "1.3.2"
+    const val APP_VERSION = "1.3.3"
 }
