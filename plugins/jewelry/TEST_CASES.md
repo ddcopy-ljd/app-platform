@@ -60,11 +60,12 @@
 - **根因**：不能只看 API 返回，必须直接比对新旧库文件。
 - **验证方法**：用 sqlite3 分别打开 `platform/data/tenant_dbs/jewelry/` 下旧版本库与新版本库，比对核心表（products/stores 等）行数一致。
 
-## TC-10 epc_cleaned 一次性闸门导致种子/造数脏码永久漏网
+## TC-10 epc_cleaned 一次性闸门导致种子/造数/历史脏码永久漏网
 
-- **问题现象**：开发库 100 件商品 EPC 100% 不合规（手持机实扫 24 位芯片 TID），迁移清理却从不触发：init 顺序为「SCHEMA→migrate_schema（置 epc_cleaned=1）→灌种子」，种子与造数脚本在闸门置位后写入脏码，且 seed_test_data.py 还主动置位闸门。
-- **根因**：清理闸门只能挡住"闸门之前就存在"的脏数据；种子/造数路径必须自行保证合规。
-- **验证方法**：①全新 init 后校验 12 件种子 EPC 全部匹配现行正则且品类段一致；②造数脚本产物 100% 合规；③`db.assign_rule_epcs(conn)` 连跑两次，第二次返回空映射（幂等）；④历史脏库（含不合规/品类错位/重复）经该函数重排后，inventory_logs、stocktake_items（按 product_id）、stocktake_scans（按旧→新映射）引用一致，盘盈未登记标签（product_id IS NULL）保留原值。
+- **问题现象**：开发库 100 件商品 EPC 100% 不合规（手持机实扫 24 位芯片 TID），迁移清理却从不触发：init 顺序为「SCHEMA→migrate_schema（置 epc_cleaned=1）→灌种子」，种子与造数脚本在闸门置位后写入脏码，且 seed_test_data.py 还主动置位闸门；更严重的是旧版本在脏数据仍存在时提前置位闸门，之后任何升级都永远跳过清理。
+- **根因**：①清理闸门只能挡住"闸门之前就存在"的脏数据，种子/造数路径必须自行保证合规；②一次性闸门与"幂等校正"不兼容——闸门一旦被错误置位不可挽回。
+- **修复**：种子/造数落库即合规；`_migrate_clean_dirty_epc` 取消闸门 early-return，每次迁移都调用幂等的 `assign_rule_epcs`（合规码原样保留，第二次执行零改动；products.rfid_epc 全部写入入口均为系统规则生成，重跑不误伤）。
+- **验证方法**：①全新 init 后校验 12 件种子 EPC 全部匹配现行正则且品类段一致；②造数脚本产物 100% 合规；③`db.assign_rule_epcs(conn)` 连跑两次，第二次返回空映射（幂等）；④构造 `epc_cleaned=1` 且含 100 件脏 EPC 的库执行 migrate_schema，迁移后 0 不合规/0 品类错位，再跑一次 EPC 零变化；⑤干净库执行 migrate_schema，EPC 零变化；⑥历史脏库经重排后 inventory_logs、stocktake_items（按 product_id）、stocktake_scans（按旧→新映射）引用一致，盘盈未登记标签（product_id IS NULL）保留原值。
 
 ## TC-11 材质英文长码迁移转换后不落库
 

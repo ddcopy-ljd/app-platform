@@ -677,14 +677,14 @@ def assign_rule_epcs(conn: sqlite3.Connection) -> dict[str, str]:
 
 
 def _migrate_clean_dirty_epc(conn: sqlite3.Connection) -> None:
-    """一次性清理历史脏 EPC（随机十六进制串、尾部混入货号、品类码错位/空值）。
+    """把历史脏 EPC（随机十六进制串、尾部混入货号、品类码错位/空值）校正为现行规则。
 
-    规则与校正逻辑统一由 assign_rule_epcs 实现；本函数只保留
-    「仅执行一次」（biz_config.epc_cleaned）的迁移闸门语义。
+    校正逻辑统一由 assign_rule_epcs 实现且天然幂等（合规且品类一致、不冲突的
+    EPC 原样保留，第二次执行零改动），因此不再使用 biz_config.epc_cleaned
+    一次性闸门：旧版本曾在脏数据仍存在时提前把闸门置 1，导致之后的升级永久
+    跳过清理。products.rfid_epc 的全部写入入口均为系统规则生成，每次迁移
+    幂等重跑不会误伤真实标签。
     """
-    flag = conn.execute("SELECT epc_cleaned FROM biz_config WHERE id=1").fetchone()
-    if flag and flag[0]:
-        return
     assign_rule_epcs(conn)
     conn.execute("UPDATE biz_config SET epc_cleaned=1 WHERE id=1")
 
