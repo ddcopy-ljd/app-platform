@@ -72,6 +72,13 @@
             android:theme="@style/Theme.Rfid" />
 
         <activity
+            android:name=".EpcCollectActivity"
+            android:screenOrientation="portrait"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden|locale|layoutDirection"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".SettingsActivity"
             android:screenOrientation="portrait"
             android:exported="false"

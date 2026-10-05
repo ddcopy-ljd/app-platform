@@ -44,6 +44,7 @@ class LoginActivity : BaseActivity() {
 
         etName.setText(prefs.deviceName.ifBlank { prefs.deviceKey })
         tvServer.text = prefs.authOrigin
+        findViewById<TextView>(R.id.tvAppVer).text = "v" + AppConfig.APP_VERSION
 
         findViewById<TextView>(R.id.btnLang).setOnClickListener {
             cycleLang()

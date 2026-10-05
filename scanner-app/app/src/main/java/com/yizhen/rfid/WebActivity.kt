@@ -263,7 +263,7 @@ class WebActivity : BaseActivity() {
         if (!ok) {
             epcScanning = false
             jsState(false)
-            toast(R.string.rfid_fail)
+            rfidErrorToast(this, R.string.rfid_fail)
         }
     }
 

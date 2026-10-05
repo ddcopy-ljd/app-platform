@@ -195,7 +195,7 @@ class SaleActivity : BaseActivity() {
         if (!ok) {
             epcScanning = false
             setEpcUi(false)
-            Toast.makeText(this, R.string.rfid_fail, Toast.LENGTH_SHORT).show()
+            rfidErrorToast(this, R.string.rfid_fail, Toast.LENGTH_SHORT)
         }
     }
 

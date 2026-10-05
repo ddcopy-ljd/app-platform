@@ -5,6 +5,7 @@
     <string name="settings_title">Impostazioni</string>
     <string name="btn_settings">Impostazioni</string>
     <string name="btn_save">Salva</string>
+    <string name="st_app_ver">Versione app</string>
 
     <!-- login -->
     <string name="login_title">Scansiona per accedere</string>

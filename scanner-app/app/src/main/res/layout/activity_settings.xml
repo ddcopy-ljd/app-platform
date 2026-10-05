@@ -333,6 +333,10 @@
                     <TextView style="@style/StInfoLabel" android:text="@string/st_fw_ver" />
                     <TextView android:id="@+id/stFwVer" style="@style/StInfoValue" />
                 </LinearLayout>
+                <LinearLayout style="@style/StInfoRow">
+                    <TextView style="@style/StInfoLabel" android:text="@string/st_app_ver" />
+                    <TextView android:id="@+id/stAppVer" style="@style/StInfoValue" />
+                </LinearLayout>
                 <TextView
                     android:id="@+id/btnReset"
                     android:layout_width="match_parent"

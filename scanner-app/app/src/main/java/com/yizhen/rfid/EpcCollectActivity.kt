@@ -148,10 +148,10 @@ class EpcCollectActivity : BaseActivity() {
 
     private fun toggleScan() {
         if (scanning) { stopScan(); return }
-        if (!RfidManager.ready) { toast(R.string.epc_rfid_fail); return }
+        if (!RfidManager.ready) { rfidErrorToast(this, R.string.epc_rfid_fail); return }
         RfidManager.setPower(prefs.power)
         val ok = RfidManager.start { epc, rssi -> onTag(epc, rssi) }
-        if (!ok) { toast(R.string.epc_rfid_fail); return }
+        if (!ok) { rfidErrorToast(this, R.string.epc_rfid_fail); return }
         scanning = true
         refreshUi()
     }

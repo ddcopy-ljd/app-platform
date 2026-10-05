@@ -347,7 +347,7 @@ class StockActivity : BaseActivity() {
             RfidManager.start { epc, rssi -> onTag(epc, rssi) }
         else true // 演示模式
         if (!ok && RfidManager.ready) {
-            toast(R.string.rfid_fail); return
+            rfidErrorToast(this, R.string.rfid_fail); return
         }
         scanning = true
         refreshUi()

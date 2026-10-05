@@ -5,6 +5,7 @@
     <string name="settings_title">参数设置</string>
     <string name="btn_settings">设置</string>
     <string name="btn_save">保存</string>
+    <string name="st_app_ver">软件版本</string>
 
     <!-- 登录页 -->
     <string name="login_title">扫码登录</string>
@@ -25,6 +26,36 @@
     <string name="home_sale">销售出单</string>
     <string name="home_stock">库存盘点</string>
     <string name="home_logout">退出登录</string>
+    <string name="home_epc_collect">🧪 EPC 采集（临时）</string>
+
+    <!-- 临时工具：EPC 采集 -->
+    <string name="epc_title">EPC 采集（临时工具）</string>
+    <string name="epc_hint">按机身扳机或下方按钮连续扫描，自动去重、实时计数；导出后可作为测试商品的 EPC。</string>
+    <string name="epc_server_hint">电脑采集服务地址，如 http://192.168.1.10:8790</string>
+    <string name="epc_batch_hint">批次名（可选，如 柜台第一批）</string>
+    <string name="epc_btn_scan">▶ 开始采集</string>
+    <string name="epc_btn_stop">■ 停止采集</string>
+    <string name="epc_btn_clear">清空</string>
+    <string name="epc_btn_copy">复制全部</string>
+    <string name="epc_btn_save">保存到本机</string>
+    <string name="epc_btn_upload">上传到电脑</string>
+    <string name="epc_btn_origin">用登录地址</string>
+    <string name="epc_empty">尚未采集到 EPC</string>
+    <string name="epc_count">已采集 %1$d 条（新扫 %2$d · 重复 %3$d）</string>
+    <string name="epc_state_idle">未开始</string>
+    <string name="epc_state_scanning">采集中…再按一次停止</string>
+    <string name="epc_cleared">已清空 %1$d 条</string>
+    <string name="epc_copied">已复制 %1$d 条 EPC 到剪贴板</string>
+    <string name="epc_saved">已保存到：%1$s</string>
+    <string name="epc_saved_path">TXT：%1$s\nJSON：%2$s</string>
+    <string name="epc_save_fail">保存失败：%1$s</string>
+    <string name="epc_origin_filled">已填入：%1$s</string>
+    <string name="epc_uploading">正在上传…</string>
+    <string name="epc_upload_ok">上传成功：本次新增 %1$d 条，电脑端累计 %2$d 条</string>
+    <string name="epc_upload_fail">上传失败：%1$s</string>
+    <string name="epc_no_data">还没有采集到 EPC</string>
+    <string name="epc_no_server">请先填写电脑采集服务地址</string>
+    <string name="epc_rfid_fail">UHF 模块未就绪，请在 C27 手持机上使用</string>
 
     <!-- 销售出单页 -->
     <string name="sale_title">销售出单</string>

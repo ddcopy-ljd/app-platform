@@ -141,6 +141,7 @@ class SettingsActivity : BaseActivity() {
         findViewById<TextView>(R.id.stDeviceId).text = prefs.deviceKey
         findViewById<TextView>(R.id.stSdkVer).text = "DeviceAPI 20220518"
         findViewById<TextView>(R.id.stFwVer).text = RfidManager.version().ifBlank { "—" }
+        findViewById<TextView>(R.id.stAppVer).text = AppConfig.APP_VERSION
     }
 
     // -------------------------------- 试扫（边扫边调功率）
@@ -162,7 +163,7 @@ class SettingsActivity : BaseActivity() {
         val ok = RfidManager.start { _, _ -> testBeep() }
         if (!ok) {
             testMode = 0
-            Toast.makeText(this, R.string.rfid_fail, Toast.LENGTH_SHORT).show()
+            rfidErrorToast(this, R.string.rfid_fail, Toast.LENGTH_SHORT)
             return
         }
         refreshTestBtns()

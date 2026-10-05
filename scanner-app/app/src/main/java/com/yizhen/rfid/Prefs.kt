@@ -10,6 +10,11 @@ class Prefs(context: Context) {
         get() = sp.getString("server_url", "") ?: ""
         set(v) = sp.edit().putString("server_url", v.trim()).apply()
 
+    /** 临时工具：EPC 采集服务（电脑端）地址，如 http://192.168.1.10:8790 */
+    var epcServerUrl: String
+        get() = sp.getString("epc_server_url", "") ?: ""
+        set(v) = sp.edit().putString("epc_server_url", v.trim()).apply()
+
     var pullInterval: Int
         get() = sp.getInt("pull_interval", 15)
         set(v) = sp.edit().putInt("pull_interval", v).apply()

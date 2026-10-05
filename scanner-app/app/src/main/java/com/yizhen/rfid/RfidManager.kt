@@ -3,6 +3,7 @@ package com.yizhen.rfid
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.rscja.deviceapi.RFIDWithUHFUART
 import com.rscja.deviceapi.entity.UHFTAGInfo
 
@@ -11,11 +12,17 @@ import com.rscja.deviceapi.entity.UHFTAGInfo
  * 单例；start() 后内部线程持续读取标签缓冲并回调主线程。
  */
 object RfidManager {
+    private const val TAG = "RfidManager"
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var uhf: RFIDWithUHFUART? = null
 
     var ready = false
+        private set
+
+    /** 最近一次初始化/启动失败的原因（供 UI 直接展示，便于现场排查）。 */
+    @Volatile
+    var lastError: String = ""
         private set
 
     // 初始化后由独立线程探测的模块信息（如 "v2.3 · 20dBm"），失败为空串
@@ -30,11 +37,26 @@ object RfidManager {
 
     fun init(context: Context) {
         if (ready) return
+        lastError = ""
         try {
             uhf = RFIDWithUHFUART.getInstance()
-            uhf?.init(context)
+            if (uhf == null) {
+                lastError = "getInstance() 返回 null（SDK 类未加载）"
+                Log.e(TAG, lastError)
+                ready = false
+                return
+            }
+            val ret = uhf!!.init(context)
+            // 注意：部分 C27 固件 init() 会返回 false，但模块实际可用，
+            // 因此不把“返回 false”当作失败，维持旧版可用行为；仅记录告警。
+            if (!ret) {
+                lastError = "init() 返回 false（C27 固件常见，按可用处理）"
+                Log.w(TAG, lastError)
+            }
             ready = true
-        } catch (_: Throwable) {
+        } catch (e: Throwable) {
+            lastError = e.javaClass.simpleName + ": " + (e.message ?: "未知异常")
+            Log.e(TAG, "RFID init failed", e)
             ready = false
         }
     }
@@ -76,7 +98,11 @@ object RfidManager {
         if (!ready || scanning) return false
         return try {
             val ok = uhf?.startInventoryTag() ?: false
-            if (!ok) return false
+            if (!ok) {
+                lastError = "startInventoryTag() 返回 false（模块已 init 但盘存启动失败）"
+                Log.e(TAG, lastError)
+                return false
+            }
             scanning = true
             worker = Thread {
                 while (scanning) {
@@ -135,4 +161,16 @@ object RfidManager {
         uhf = null
         ready = false
     }
+}
+
+/**
+ * 弹出 RFID 失败提示，并附带 RfidManager.lastError 中的真实原因，
+ * 方便在现场（无需抓 logcat）直接看到初始化/盘存为何失败。
+ */
+fun rfidErrorToast(context: Context, resId: Int, duration: Int = android.widget.Toast.LENGTH_LONG) {
+    val msg = buildString {
+        append(context.getString(resId))
+        if (RfidManager.lastError.isNotBlank()) append("\n[${RfidManager.lastError}]")
+    }
+    android.widget.Toast.makeText(context, msg, duration).show()
 }
