@@ -10,9 +10,10 @@ import com.rscja.deviceapi.entity.UHFTAGInfo
  * C27 UHF RFID 模块封装（RSCJA DeviceAPI UART）。
  * 单例；start() 后内部线程持续读取标签缓冲并回调主线程。
  *
- * 实现与 d7435ec（v1.2.0，现场验证可用）逐字一致，仅额外保留 lastError 供 UI 提示。
- * 任何“自愈 / 重试 / setPowerOnBySystem / 换 ApplicationContext”等改动均已移除，
- * 因为它们在现场会导致与可用版本不一致的行为。
+ * init() 与 d7435ec（v1.2.0，现场验证可用）保持一致，仅加了串行锁防止多页面并发 init。
+ * start() 针对 C72_6763 固件的「首次 startInventoryTag 假失败」做了最多 3 次重试
+ * （2026-10-05 真机 logcat 实测：首次返回 false 但模块实际已开始盘存，第二次即成功）。
+ * 重试期间不 free()/init()、不 stopInventory()。
  */
 object RfidManager {
 
@@ -37,14 +38,20 @@ object RfidManager {
 
     private var worker: Thread? = null
 
+    // 多页面（Home/Stock/Epc/Sale）可能几乎同时触发 init，串行化避免两个线程
+    // 同时调用 SDK init() 重复打开 /dev/ttyMT1。
+    private val initLock = Any()
+
     fun init(context: Context) {
-        if (ready) return
-        try {
-            uhf = RFIDWithUHFUART.getInstance()
-            uhf?.init(context)
-            ready = true
-        } catch (_: Throwable) {
-            ready = false
+        synchronized(initLock) {
+            if (ready) return
+            try {
+                uhf = RFIDWithUHFUART.getInstance()
+                uhf?.init(context)
+                ready = true
+            } catch (_: Throwable) {
+                ready = false
+            }
         }
     }
 
@@ -83,37 +90,49 @@ object RfidManager {
      */
     fun start(onTag: (String, Int) -> Unit): Boolean {
         if (!ready || scanning) return false
-        return try {
-            val ok = uhf?.startInventoryTag() ?: false
-            if (!ok) {
-                lastError = "startInventoryTag() 返回 false（模块已 init 但盘存启动失败）"
-                return false
+        // C72_6763 固件实测：init 之后首次 startInventoryTag() 会假失败——返回 false，
+        // 但模块其实已经进入盘存态（日志 Um7_Send bStatus=1，实际能读到标签；
+        // 同一台机器上第二次调用即返回 true）。因此此处连续重试最多 3 次，
+        // 重试间隔 200ms；期间绝不 free()+init()（重复申请串口会把模块打坏），
+        // 也不调用 stopInventory()（会打断已经开始的盘存）。
+        repeat(3) { attempt ->
+            val started = try {
+                uhf?.startInventoryTag() ?: false
+            } catch (e: Exception) {
+                false
             }
-            scanning = true
-            worker = Thread {
-                while (scanning) {
-                    try {
-                        val tag: UHFTAGInfo? = uhf?.readTagFromBuffer()
-                        if (tag != null) {
-                            val epc = tag.getEPC()
-                            if (!epc.isNullOrEmpty()) {
-                                val rssi = parseIntSafe(tag.getRssi()?.toString())
-                                mainHandler.post {
-                                    if (scanning) onTag(epc, rssi)
+            if (started) {
+                scanning = true
+                worker = Thread {
+                    while (scanning) {
+                        try {
+                            val tag: UHFTAGInfo? = uhf?.readTagFromBuffer()
+                            if (tag != null) {
+                                val epc = tag.getEPC()
+                                if (!epc.isNullOrEmpty()) {
+                                    val rssi = parseIntSafe(tag.getRssi()?.toString())
+                                    mainHandler.post {
+                                        if (scanning) onTag(epc, rssi)
+                                    }
                                 }
+                            } else {
+                                Thread.sleep(20)
                             }
-                        } else {
-                            Thread.sleep(20)
+                        } catch (e: Exception) {
+                            Thread.sleep(50)
                         }
-                    } catch (e: Exception) {
-                        Thread.sleep(50)
                     }
-                }
-            }.also { it.start() }
-            true
-        } catch (e: Exception) {
-            false
+                }.also { it.start() }
+                lastError = ""
+                return true
+            }
+            lastError = "startInventoryTag() 第 ${attempt + 1} 次返回 false（C72 固件首次假失败，重试中）"
+            if (attempt < 2) {
+                try { Thread.sleep(200) } catch (_: InterruptedException) {}
+            }
         }
+        lastError = "startInventoryTag() 重试 3 次仍失败（模块已 init 但盘存启动失败）"
+        return false
     }
 
     private fun parseIntSafe(s: String?): Int {
