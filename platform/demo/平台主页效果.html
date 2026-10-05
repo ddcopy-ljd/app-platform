@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>懿臻珠宝云 - 综合业务应用服务平台</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 配置自定义时尚主题色: 碳黑 + 香槟金 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        gold: {
+                            50: '#FDFBF7',
+                            100: '#F7F2E8',
+                            200: '#EBE0C9',
+                            500: '#C19D67', // 核心香槟金
+                            600: '#A37F49',
+                        },
+                        dark: '#18181B', // 碳黑
+                    },
+                    fontFamily: {
+                        sans: ['-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Helvetica Neue"', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- 引入 Phosphor Icons (使用细线版本 thin/light 更显高级) -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <style>
+        /* 优雅的细体滚动条 */
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #e4e4e7; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #d4d4d8; }
+        body { -webkit-font-smoothing: antialiased; }
+    </style>
+</head>
+<body class="bg-[#FAFAFA] text-zinc-800 h-screen flex overflow-hidden">
+
+    <!-- 1. 最左侧导航栏 (极简黑白) -->
+    <aside class="w-56 bg-white border-r border-zinc-100 flex flex-col z-10">
+        <!-- 顶部 Logo 区 (黑底金标) -->
+        <div class="h-16 bg-dark flex items-center px-5 text-white">
+            <i class="ph-fill ph-diamonds-four text-gold-500 text-xl mr-2"></i>
+            <span class="font-medium tracking-wide text-sm">综合业务平台</span>
+        </div>
+        <!-- 菜单列表 -->
+        <div class="p-4 space-y-1">
+            <div class="text-[11px] text-zinc-400 font-medium tracking-widest uppercase mb-3 px-2">Menu</div>
+            <a href="#" class="flex items-center px-3 py-2.5 bg-zinc-50 text-dark rounded-lg text-sm font-medium transition-colors">
+                <i class="ph ph-puzzle-piece text-lg mr-3 text-gold-500"></i> 应用插件管理
+            </a>
+            <a href="#" class="flex items-center px-3 py-2.5 text-zinc-500 hover:text-dark hover:bg-zinc-50 rounded-lg text-sm transition-all">
+                <i class="ph ph-chart-bar text-lg mr-3"></i> 服务流量统计
+            </a>
+        </div>
+    </aside>
+
+    <!-- 2. 中间插件列表 -->
+    <aside class="w-[300px] bg-[#FCFCFC] border-r border-zinc-100 flex flex-col z-0">
+        <!-- 列表头部 -->
+        <div class="h-16 flex items-center justify-between px-5 border-b border-zinc-100 bg-white/80 backdrop-blur-md">
+            <span class="font-medium text-sm text-dark tracking-wide">插件列表</span>
+            <!-- 胶囊状主操作按钮 -->
+            <button class="bg-dark hover:bg-black text-white text-xs px-4 py-2 rounded-full flex items-center transition-all shadow-md shadow-dark/10">
+                <i class="ph ph-plus mr-1.5"></i> 上传插件包
+            </button>
+        </div>
+        <!-- 列表项 -->
+        <div class="overflow-y-auto flex-1 p-4 space-y-3">
+            <!-- 列表项 1 -->
+            <div class="bg-white p-4 rounded-xl border border-zinc-100 cursor-pointer hover:shadow-md transition-all flex">
+                <div class="w-10 h-10 bg-zinc-50 rounded-full text-zinc-400 flex items-center justify-center mr-3 shrink-0 border border-zinc-100">
+                    <i class="ph ph-package text-xl"></i>
+                </div>
+                <div class="flex-1 min-w-0 pt-0.5">
+                    <div class="text-sm font-medium text-zinc-700 truncate">库存管理</div>
+                    <div class="text-xs text-zinc-400 mt-1 font-light">v2.5.0 · 3 个版本</div>
+                </div>
+            </div>
+            <!-- 列表项 2 (当前选中 - 金色描边与微阴影) -->
+            <div class="bg-white p-4 rounded-xl border border-gold-500 cursor-pointer flex shadow-[0_4px_16px_-4px_rgba(193,157,103,0.15)] relative overflow-hidden">
+                <!-- 侧边小金条装饰 -->
+                <div class="absolute left-0 top-0 bottom-0 w-1 bg-gold-500"></div>
+                <div class="w-10 h-10 bg-gold-50 rounded-full text-gold-600 flex items-center justify-center mr-3 shrink-0 border border-gold-100">
+                    <i class="ph ph-sketch-logo text-xl"></i>
+                </div>
+                <div class="flex-1 min-w-0 pt-0.5">
+                    <div class="text-sm font-semibold text-dark truncate">懿臻珠宝云</div>
+                    <div class="text-xs text-gold-600 mt-1">v1.0.3 · 3 个版本</div>
+                    <div class="flex items-center mt-3">
+                        <span class="flex items-center text-[10px] text-zinc-500 tracking-wide">
+                            <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5"></span> 1 运行中
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 3. 右侧主内容区 (大留白与柔和卡片) -->
+    <main class="flex-1 overflow-y-auto">
+        <div class="p-8 lg:p-12 max-w-6xl mx-auto space-y-8">
+            
+            <!-- 卡片 1：基础信息头部 -->
+            <div class="bg-white rounded-2xl shadow-[0_2px_24px_-4px_rgba(0,0,0,0.02)] border border-zinc-100 p-8 flex justify-between items-start">
+                <div class="flex items-start">
+                    <!-- 时尚大图标 -->
+                    <div class="w-20 h-20 bg-gradient-to-br from-gold-50 to-white rounded-2xl text-gold-500 flex items-center justify-center mr-6 shrink-0 border border-gold-100 shadow-sm">
+                        <i class="ph-light ph-sketch-logo text-4xl"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center mb-3">
+                            <h1 class="text-2xl font-semibold text-dark mr-4 tracking-tight">懿臻珠宝云</h1>
+                            <!-- 极简线条标签 -->
+                            <span class="border border-zinc-200 text-zinc-500 text-[11px] px-2.5 py-1 rounded-full font-medium mr-2 tracking-wide">业务应用</span>
+                            <span class="border border-gold-200 text-gold-600 bg-gold-50 text-[11px] px-2.5 py-1 rounded-full font-medium tracking-wide">网关 NORMAL</span>
+                        </div>
+                        <p class="text-sm text-zinc-500 leading-relaxed mb-6 max-w-3xl font-light">
+                            面向高级珠宝门店的一站式数智化平台，涵盖商品、库存、销售、定制、委外等核心业务流，支持全端无缝协同。
+                        </p>
+                        <div class="flex items-center text-xs text-zinc-400 space-x-5 font-light">
+                            <span>ID: <span class="text-zinc-700 font-medium">jewelry</span></span>
+                            <span class="w-1 h-1 rounded-full bg-zinc-200"></span>
+                            <span>作者: <span class="text-zinc-700">懿臻珠宝研发组</span></span>
+                            <span class="w-1 h-1 rounded-full bg-zinc-200"></span>
+                            <span>正式版本: <span class="text-gold-600 font-medium">v1.0.3</span></span>
+                            <span class="w-1 h-1 rounded-full bg-zinc-200"></span>
+                            <a href="#" class="text-zinc-500 hover:text-dark transition-colors flex items-center">推广页 <i class="ph ph-arrow-up-right ml-1"></i></a>
+                        </div>
+                    </div>
+                </div>
+                <!-- 线框高级按钮 -->
+                <button class="bg-white border border-zinc-200 hover:border-dark text-dark text-sm px-5 py-2.5 rounded-full shadow-sm flex items-center transition-all">
+                    <i class="ph ph-upload-simple mr-2"></i> 上传新版本
+                </button>
+            </div>
+
+            <div class="grid grid-cols-3 gap-8">
+                <!-- 卡片 2：运行控制 -->
+                <div class="col-span-1 bg-white rounded-2xl shadow-[0_2px_24px_-4px_rgba(0,0,0,0.02)] border border-zinc-100 p-8">
+                    <h2 class="text-sm font-medium text-dark mb-6 flex items-center uppercase tracking-widest">
+                        <i class="ph-light ph-faders text-gold-500 text-lg mr-2"></i> 运行控制
+                    </h2>
+                    <div class="mb-4">
+                        <div class="inline-flex bg-zinc-100/80 p-1 rounded-full w-full">
+                            <button class="w-1/2 bg-white shadow-sm text-dark text-xs font-medium py-2 rounded-full flex items-center justify-center">
+                                <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-2"></span> 开放
+                            </button>
+                            <button class="w-1/2 text-zinc-500 hover:text-dark text-xs py-2 rounded-full flex items-center justify-center transition-colors">
+                                <i class="ph ph-wrench mr-2"></i> 维护
+                            </button>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-zinc-400 font-light leading-relaxed">维护状态下拦截企业常规访问，管理员沙箱/运维穿透仍可进入。</p>
+                </div>
+
+                <!-- 卡片 3：功能介绍 -->
+                <div class="col-span-2 bg-white rounded-2xl shadow-[0_2px_24px_-4px_rgba(0,0,0,0.02)] border border-zinc-100 p-8">
+                    <h2 class="text-sm font-medium text-dark mb-6 flex items-center uppercase tracking-widest">
+                        <i class="ph-light ph-list-dashes text-gold-500 text-lg mr-2"></i> 功能矩阵
+                    </h2>
+                    <div class="grid grid-cols-2 gap-y-4 gap-x-8">
+                        <div class="flex items-center text-sm text-zinc-600 font-light">
+                            <span class="w-1.5 h-1.5 bg-gold-400 rounded-full mr-3"></span> 商品一物一码归档 (含 RFID)
+                        </div>
+                        <div class="flex items-center text-sm text-zinc-600 font-light">
+                            <span class="w-1.5 h-1.5 bg-gold-400 rounded-full mr-3"></span> 库存管理 (入库/盘点/打印)
+                        </div>
+                        <div class="flex items-center text-sm text-zinc-600 font-light">
+                            <span class="w-1.5 h-1.5 bg-gold-400 rounded-full mr-3"></span> 销售开单 (普通/定金尾款)
+                        </div>
+                        <div class="flex items-center text-sm text-zinc-600 font-light">
+                            <span class="w-1.5 h-1.5 bg-gold-400 rounded-full mr-3"></span> 借货、客户、委外与售后
+                        </div>
+                        <div class="flex items-center text-sm text-zinc-600 font-light">
+                            <span class="w-1.5 h-1.5 bg-gold-400 rounded-full mr-3"></span> RFID 批量隔空秒盘
+                        </div>
+                        <div class="flex items-center text-sm text-zinc-600 font-light">
+                            <span class="w-1.5 h-1.5 bg-gold-400 rounded-full mr-3"></span> 多门店数据互通统一管理
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 卡片 4：版本链表格 (极简线框表) -->
+            <div class="bg-white rounded-2xl shadow-[0_2px_24px_-4px_rgba(0,0,0,0.02)] border border-zinc-100 overflow-hidden">
+                <div class="px-8 py-5 border-b border-zinc-100 flex justify-between items-center">
+                    <h2 class="text-sm font-medium text-dark flex items-center uppercase tracking-widest">
+                        版本链 <span class="ml-3 bg-zinc-100 text-zinc-500 text-[10px] px-2 py-0.5 rounded-full font-normal">3</span>
+                    </h2>
+                    <div class="text-[11px] text-zinc-400 font-light tracking-wide">
+                        库命名规则: db_{plugin_id}_{tenant_id}_v{version}
+                    </div>
+                </div>
+                
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="text-[11px] text-zinc-400 uppercase tracking-widest bg-zinc-50/50">
+                            <th class="font-normal px-8 py-4 w-1/4">版本</th>
+                            <th class="font-normal px-6 py-4 w-1/5">软件包</th>
+                            <th class="font-normal px-6 py-4 w-1/5">上传时间</th>
+                            <th class="font-normal px-6 py-4 w-[15%]">数据状态</th>
+                            <th class="font-normal px-6 py-4 w-[15%]">服务</th>
+                            <th class="font-normal px-8 py-4 text-right">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-sm">
+                        
+                        <!-- 时尚表格行 1 (当前运行) -->
+                        <tr class="border-b border-zinc-50 hover:bg-zinc-50/50 transition-colors relative group">
+                            <!-- 侧边隐形提示线 -->
+                            <td class="absolute left-0 top-0 bottom-0 w-0.5 bg-gold-500"></td>
+                            <td class="px-8 py-6 align-top">
+                                <div class="flex items-center mb-2">
+                                    <span class="font-semibold text-dark text-base mr-3">v1.0.3</span>
+                                    <span class="bg-dark text-white text-[10px] px-2 py-0.5 rounded-full flex items-center tracking-wide">
+                                        正式版本
+                                    </span>
+                                </div>
+                                <div class="text-xs text-zinc-400 font-light">
+                                    数据源 <span class="text-dark font-medium">v1.0.2</span> · 结构沿用
+                                </div>
+                            </td>
+                            <td class="px-6 py-6 align-top">
+                                <div class="text-dark font-medium text-sm">684.8 KB</div>
+                                <div class="text-xs text-zinc-400 mt-1 font-light">jewelry_v1.0.3.zip</div>
+                            </td>
+                            <td class="px-6 py-6 align-top text-zinc-500 text-xs font-light tracking-wide">
+                                2026-10-05<br>10:17:09
+                            </td>
+                            <td class="px-6 py-6 align-top">
+                                <div class="flex items-center text-xs text-zinc-600 mb-1.5 font-medium">
+                                    <i class="ph-fill ph-database text-emerald-500 mr-1.5 text-sm"></i> 数据就绪
+                                </div>
+                            </td>
+                            <td class="px-6 py-6 align-top">
+                                <div class="flex items-center text-emerald-600 text-xs font-medium mb-1.5">
+                                    <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-2"></span> 运行中
+                                </div>
+                                <div class="text-[10px] text-zinc-400 font-mono tracking-wider">:59484 · PID 23584</div>
+                            </td>
+                            <td class="px-8 py-6 align-top text-right space-y-2">
+                                <button class="block w-full text-[11px] font-medium border border-zinc-200 hover:border-dark text-dark px-3 py-2 rounded-full transition-all">
+                                    任务日志
+                                </button>
+                                <button class="block w-full text-[11px] font-medium border border-gold-200 bg-gold-50 hover:bg-gold-500 hover:text-white text-gold-600 px-3 py-2 rounded-full transition-all">
+                                    推广页
+                                </button>
+                            </td>
+                        </tr>
+
+                        <!-- 时尚表格行 2 (历史版本) -->
+                        <tr class="border-b border-zinc-50 hover:bg-zinc-50/50 transition-colors">
+                            <td class="px-8 py-6 align-top">
+                                <div class="flex items-center mb-2">
+                                    <span class="font-medium text-zinc-500 text-base mr-3">v1.0.2</span>
+                                    <button class="text-zinc-400 hover:text-dark border border-zinc-200 hover:border-dark text-[10px] px-2 py-0.5 rounded-full transition-all">
+                                        设为正式
+                                    </button>
+                                </div>
+                                <div class="text-xs text-zinc-400 font-light mb-2">
+                                    结构升级 <span class="text-zinc-600">v1.0.0 → v1.0.2</span>
+                                </div>
+                                <span class="inline-flex items-center text-[10px] bg-zinc-100 text-zinc-500 px-2 py-0.5 rounded-full font-medium tracking-wide">
+                                    <i class="ph-fill ph-lock-key mr-1"></i> 受保护
+                                </span>
+                            </td>
+                            <td class="px-6 py-6 align-top">
+                                <div class="text-zinc-600 font-medium text-sm">680.8 KB</div>
+                                <div class="text-xs text-zinc-400 mt-1 font-light">jewelry_v1.0.2.zip</div>
+                            </td>
+                            <td class="px-6 py-6 align-top text-zinc-500 text-xs font-light tracking-wide">
+                                2026-10-05<br>10:10:08
+                            </td>
+                            <td class="px-6 py-6 align-top">
+                                <div class="flex items-center text-xs text-zinc-600 mb-1.5 font-medium">
+                                    <i class="ph-fill ph-database text-emerald-500 mr-1.5 text-sm"></i> 数据就绪
+                                </div>
+                                <div class="text-[10px] text-zinc-400 tracking-wide font-light">切于 2026-10-05</div>
+                            </td>
+                            <td class="px-6 py-6 align-top">
+                                <div class="flex items-center text-zinc-400 text-xs mb-2.5 font-medium">
+                                    <span class="w-1.5 h-1.5 bg-zinc-300 rounded-full mr-2"></span> 已停止
+                                </div>
+                                <div class="flex space-x-2">
+                                    <button class="bg-dark hover:bg-black text-white text-[11px] px-3 py-1.5 rounded-full shadow-sm transition-all flex items-center">
+                                        启动
+                                    </button>
+                                    <button class="bg-white border border-zinc-200 hover:border-dark text-dark text-[11px] px-3 py-1.5 rounded-full transition-all">
+                                        日志
+                                    </button>
+                                </div>
+                            </td>
+                            <td class="px-8 py-6 align-top text-right space-y-2">
+                                <button class="block w-full text-[11px] font-medium border border-zinc-200 hover:border-dark text-dark px-3 py-2 rounded-full transition-all">
+                                    任务日志
+                                </button>
+                                <button class="block w-full text-[11px] font-medium border border-gold-200 bg-gold-50 hover:bg-gold-500 hover:text-white text-gold-600 px-3 py-2 rounded-full transition-all">
+                                    推广页
+                                </button>
+                            </td>
+                        </tr>
+
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- 底部留白 -->
+            <div class="h-8"></div>
+        </div>
+    </main>
+</body>
+</html>

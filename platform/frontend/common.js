@@ -1,4 +1,9 @@
 // 主框架与各功能 iframe 页面共用：登录令牌、API 调用、格式化
+
+// 前端版本标识（由开发侧手动维护）。每次改动前端后递增末位，
+// 页面会显示它，便于快速判断浏览器是否加载了最新页面（排查缓存问题）。
+window.APP_VERSION = '2026.10.05.13';
+
 window.Platform = (() => {
   const TOKEN_KEY = 'token';
   const getToken = () => localStorage.getItem(TOKEN_KEY) || '';
@@ -31,5 +36,5 @@ window.Platform = (() => {
 
   const fmtSize = b => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
 
-  return { api, getToken, setToken, fmtSize, inFrame };
+  return { api, getToken, setToken, fmtSize, inFrame, version: window.APP_VERSION };
 })();

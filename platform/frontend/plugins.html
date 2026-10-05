@@ -43,7 +43,7 @@
 
       <div v-else class="panel">
         <div v-if="dragging" class="drop-overlay" @dragleave="dragging = false">⬆️ 松开鼠标，上传新版本插件包</div>
-        <div class="panel-title-bar">应用插件升级管理</div>
+        <div class="panel-title-bar">应用插件升级管理<span class="ver-tag">v{{ version }}</span></div>
 
         <section class="guide">
           <div class="guide-head" @click="guideOpen = !guideOpen">
@@ -112,12 +112,16 @@
               <tr v-for="v in detail.versions" :key="v.id" :class="rowClass(v)">
                 <td>
                   <div class="cell-col">
-                    <span class="ver-no">v{{ v.software_version }}<span v-if="v.is_current" class="badge b-current" style="margin-left:6px">⭐ 正式版本</span></span>
+                    <span class="ver-no">v{{ v.software_version }}<span v-if="v.is_current" class="badge b-current" style="margin-left:6px">⭐ 正式版本</span><button v-else-if="v.status === 'ready'" class="btn ghost sm" style="margin-left:8px" :disabled="busy" @click="confirmFormal(v)">⭐ 设为正式版本</button></span>
                     <span class="sub"><span class="mono" style="color:#4f46e5;font-weight:600">数据 v{{ v.data_version }}</span>
                       <template v-if="v.structure === 'initial'"> · 初始结构</template>
                       <template v-else-if="v.structure === 'same'"> · 结构沿用</template>
                       <template v-else> · 结构升级 v{{ v.prev_data_version }}→v{{ v.data_version }}</template>
                     </span>
+                    <div class="ver-side-actions">
+                      <span v-if="v.protected" class="badge b-protect" title="最后两个版本及正式版本不可删除">🔒 受保护</span>
+                      <button v-else class="btn danger-ghost sm" :disabled="busy" @click="confirmDelete(v)">删除</button>
+                    </div>
                   </div>
                 </td>
                 <td><div class="cell-col"><span>{{ fmtSize(v.package_size) }}</span><span class="sub">{{ v.package_name }}</span></div></td>
@@ -136,8 +140,10 @@
                   <div class="cell-col">
                     <template v-if="!v.has_entry"><span class="badge b-gray">无服务入口</span></template>
                     <template v-else>
-                      <span class="badge" :class="v.service.state === 'running' ? 'b-ok' : 'b-gray'">{{ v.service.state === 'running' ? '● 运行中' : '○ 已停止' }}</span>
-                      <span v-if="v.service.state === 'running'" class="sub mono">:{{ v.service.port }} · PID {{ v.service.pid }}</span>
+                      <span class="cell-row">
+                        <span class="badge" :class="v.service.state === 'running' ? 'b-ok' : 'b-gray'">{{ v.service.state === 'running' ? '● 运行中' : '○ 已停止' }}</span>
+                        <span v-if="v.service.state === 'running'" class="sub mono">:{{ v.service.port }} · PID {{ v.service.pid }}</span>
+                      </span>
                       <button v-if="v.service.state !== 'running'" class="btn primary sm" :disabled="svcBusy === v.id || !canStart(v)" :title="canStart(v) ? '' : '数据就绪（初始化/试运行/已切换）后可启动'" @click="serviceAction(v, 'start')">{{ svcBusy === v.id ? '启动中…' : '▶ 启动' }}</button>
                       <button v-else class="btn danger-ghost sm" :disabled="svcBusy === v.id" @click="confirmStopService(v)">■ 停止</button>
                       <button class="btn ghost sm" @click="openServiceLog(v)">服务日志</button>
@@ -156,11 +162,8 @@
                       <button class="btn ghost sm" @click="openPrepare(v)">重新准备</button>
                     </template>
                     <button v-if="v.status === 'trial_passed'" class="btn warn sm" :disabled="busy" @click="confirmSwitch(v)">⏸ 正式切换</button>
-                    <button v-if="v.status === 'ready' && !v.is_current" class="btn ghost sm" :disabled="busy" @click="confirmFormal(v)">⭐ 设为正式版本</button>
                     <button class="btn ghost sm" @click="openLog(v)">任务日志</button>
                     <a v-if="v.has_promo" class="btn ghost sm" :href="'/market-preview/' + detail.id + '/' + v.software_version + '/'" target="_blank" rel="noopener">📣 推广页</a>
-                    <span v-if="v.protected" class="badge b-protect" title="最后两个版本及正式版本不可删除">🔒 受保护</span>
-                    <button v-else class="btn danger-ghost sm" :disabled="busy" @click="confirmDelete(v)">删除</button>
                   </div>
                 </td>
               </tr>

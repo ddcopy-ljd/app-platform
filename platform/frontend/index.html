@@ -36,11 +36,20 @@
     </div>
 
     <header class="topbar">
-      <div class="brand"><i>◆</i>综合业务应用服务平台</div>
+      <div class="brand"><i>◆</i>综合业务应用服务平台<span class="ver-tag">v{{ version }}</span></div>
       <div class="spacer"></div>
       <span class="user">{{ user.display_name }}（{{ user.username }}）</span>
       <button class="btn sm" @click="doLogout">退出</button>
     </header>
+
+    <div class="digest-bar" v-if="digest">
+      <span class="dg-item">昨日 下行 <b>{{ fmtMB(digest.yesterday.out_bytes) }}</b> · 请求 {{ num(digest.yesterday.requests) }} ·
+        <span :class="digest.yesterday.errors ? 'dg-bad' : ''">错误 {{ num(digest.yesterday.errors) }}</span></span>
+      <span class="dg-sep">｜</span>
+      <span class="dg-item">今日 下行 <b>{{ fmtMB(digest.today.out_bytes) }}</b> · 请求 {{ num(digest.today.requests) }} ·
+        <span :class="digest.today.errors ? 'dg-bad' : ''">错误 {{ num(digest.today.errors) }}</span></span>
+      <span class="dg-alert" v-for="a in digest.alerts" :key="a">⚠ {{ a }}</span>
+    </div>
 
     <div class="body">
       <nav class="menu">

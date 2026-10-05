@@ -213,3 +213,38 @@ def stop_all() -> None:
                 "UPDATE plugin_versions SET service_state='stopped', service_pid=NULL, service_port=NULL "
                 "WHERE service_state='running'"
             )
+
+
+def start_serving_versions() -> list[str]:
+    """平台启动时自动拉起各插件的「正式版本」(current_version) 服务，使其调试入口开箱即用。
+
+    同时拉起处于试运行/试运行通过状态的版本，因为沙箱模式需要它对外提供服务。
+    单个插件启动失败不影响其他插件，结果逐条记录返回。
+    """
+    messages: list[str] = []
+    with get_conn() as conn:
+        plugins = conn.execute("SELECT id, current_version FROM plugins ORDER BY id").fetchall()
+
+    for p in plugins:
+        plugin_id = p["id"]
+        current = p["current_version"]
+        with get_conn() as conn:
+            targets: list[tuple[int, str]] = []
+            if current:
+                v = _find_version(conn, plugin_id, current)
+                if v and v["service_state"] != "running" and v["status"] in STARTABLE_STATUSES:
+                    targets.append((v["id"], f"v{current}(正式)"))
+            for t in conn.execute(
+                "SELECT id, software_version FROM plugin_versions "
+                "WHERE plugin_id=? AND status IN ('trial','trial_passed') AND service_state<>'running'",
+                (plugin_id,),
+            ).fetchall():
+                targets.append((t["id"], f"v{t['software_version']}(试运行)"))
+
+        for version_id, label in targets:
+            try:
+                start_service(plugin_id, version_id, "system")
+                messages.append(f"{plugin_id} {label} 已随平台启动")
+            except Exception as e:  # noqa: BLE001 - 自动启动需兜底，避免单点失败阻断其他插件
+                messages.append(f"{plugin_id} {label} 启动失败：{e}")
+    return messages

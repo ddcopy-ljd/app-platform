@@ -50,8 +50,16 @@ createApp({
     }
 
     // ------------------------------------------------ 数据刷新
+    const LAST_KEY = 'last_plugin_id';
+
     async function refresh() {
       plugins.value = await api('/api/plugins');
+      // 默认展示上次打开的插件；未打开过或该插件已删除则回退到列表第一个
+      if (!activeId.value && plugins.value.length) {
+        const saved = localStorage.getItem(LAST_KEY);
+        const target = plugins.value.find(p => p.id === saved) || plugins.value[0];
+        activeId.value = target.id;
+      }
       if (activeId.value) {
         try {
           detail.value = await api('/api/plugins/' + activeId.value);
@@ -65,10 +73,11 @@ createApp({
     function schedulePoll() {
       clearTimeout(pollTimer);
       const active = plugins.value.some(p => p.busy || p.gateway_state === 'MAINTENANCE');
+      // 操作进行中 1s 快轮询；空闲时 15s；页面不可见时降到 60s，减少后台无谓流量
       pollTimer = setTimeout(async () => {
         try { await refresh(); } catch (_) { /* 下次重试 */ }
         schedulePoll();
-      }, active ? 1000 : 5000);
+      }, active ? 1000 : (document.hidden ? 60000 : 15000));
     }
 
     async function reload() {
@@ -78,6 +87,7 @@ createApp({
 
     async function openPlugin(id) {
       activeId.value = id;
+      localStorage.setItem(LAST_KEY, id);
       gw.tenant_id = '';
       gw.version = '';
       detail.value = await api('/api/plugins/' + id);
@@ -117,6 +127,7 @@ createApp({
         const r = await api('/api/plugins/upload', { method: 'POST', body: fd });
         toast(`已登记 ${r.plugin_id} v${r.software_version}（数据版本 v${r.data_version}）`);
         activeId.value = r.plugin_id;
+        localStorage.setItem(LAST_KEY, r.plugin_id);
         await reload();
       } catch (e) {
         toast(e.message, true);
@@ -303,7 +314,7 @@ createApp({
       modal, modalVer, prepareTenants, confirmBox, logData, logBox, logLines,
       act, openPrepare, doPrepare, confirmSwitch, confirmFormal, confirmDelete, openLog, openServiceLog,
       gw, openEntry, fixedUrl,
-      statusMeta, rowClass, isNewer, fmtSize, toastMsg, toastErr,
+      statusMeta, rowClass, isNewer, fmtSize, toastMsg, toastErr, version: Platform.version,
     };
   },
 }).mount('#app');

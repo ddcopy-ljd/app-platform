@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>服务流量统计</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="frame-page">
+<div id="app" v-cloak>
+  <div class="workspace">
+    <main class="stage">
+      <div class="panel">
+        <div class="panel-title-bar">服务流量统计<span class="ver-tag">v{{ version }}</span></div>
+
+        <!-- ================= 概览卡片 ================= -->
+        <div class="block">
+          <div class="tf-cards" v-if="summary">
+            <div class="tf-card">
+              <div class="tf-card-label">今日 · 下行（实际流量 · gzip 后）</div>
+              <div class="tf-card-value blue">{{ fmt(summary.today.out_bytes) }}</div>
+              <div class="tf-card-sub">上行 {{ fmt(summary.today.in_bytes) }} · {{ summary.today.requests }} 次请求 · {{ summary.today.errors }} 次错误</div>
+              <div class="tf-card-sub" v-if="savedPct(summary.today)">压缩前 {{ fmt(rawOut(summary.today)) }} · 已节省 {{ savedPct(summary.today) }}%</div>
+            </div>
+            <div class="tf-card">
+              <div class="tf-card-label">本月 · 下行（实际流量）</div>
+              <div class="tf-card-value indigo">{{ fmt(summary.month.out_bytes) }}</div>
+              <div class="tf-card-sub">上行 {{ fmt(summary.month.in_bytes) }} · {{ summary.month.requests }} 次请求 · {{ summary.month.errors }} 次错误</div>
+              <div class="tf-card-sub" v-if="savedPct(summary.month)">压缩前 {{ fmt(rawOut(summary.month)) }} · 已节省 {{ savedPct(summary.month) }}%</div>
+            </div>
+            <div class="tf-card">
+              <div class="tf-card-label">近 {{ summary.keep_months }} 个月 · 下行（实际流量）</div>
+              <div class="tf-card-value purple">{{ fmt(summary.months12.out_bytes) }}</div>
+              <div class="tf-card-sub">上行 {{ fmt(summary.months12.in_bytes) }} · {{ summary.months12.requests }} 次请求</div>
+              <div class="tf-card-sub" v-if="savedPct(summary.months12)">压缩前 {{ fmt(rawOut(summary.months12)) }} · 已节省 {{ savedPct(summary.months12) }}%</div>
+            </div>
+            <div class="tf-card">
+              <div class="tf-card-label">数据保留起点</div>
+              <div class="tf-card-value gray">{{ summary.keep_from }}</div>
+              <div class="tf-card-sub">小时级汇总表滚动保留 {{ summary.keep_months }} 个自然月</div>
+            </div>
+          </div>
+          <div class="tip" v-else>加载中…</div>
+        </div>
+
+        <!-- ================= 查询条件 ================= -->
+        <div class="block">
+          <div class="tf-toolbar">
+            <div class="tf-group">
+              <span class="tf-label">统计维度</span>
+              <div class="seg">
+                <button :class="{on: dim === 'tenant'}" @click="switchDim('tenant')">按租户</button>
+                <button :class="{on: dim === 'app'}" @click="switchDim('app')">按应用</button>
+              </div>
+            </div>
+            <div class="tf-group">
+              <span class="tf-label">时间粒度</span>
+              <div class="seg">
+                <button :class="{on: granularity === 'month'}" @click="switchGranularity('month')">月</button>
+                <button :class="{on: granularity === 'day'}" @click="switchGranularity('day')">日</button>
+                <button :class="{on: granularity === 'hod'}" @click="switchGranularity('hod')">各时段</button>
+              </div>
+            </div>
+            <div class="tf-group">
+              <span class="tf-label">统计范围</span>
+              <div class="seg">
+                <button :class="{on: rangeMode === 'months12'}" @click="switchRange('months12')">近 12 个月</button>
+                <button :class="{on: rangeMode === 'd30'}" @click="switchRange('d30')">近 30 天</button>
+                <button :class="{on: rangeMode === 'month'}" @click="switchRange('month')">本月</button>
+                <button :class="{on: rangeMode === 'custom'}" @click="switchRange('custom')">自定义</button>
+              </div>
+            </div>
+            <div class="tf-group" v-if="rangeMode === 'custom'">
+              <input type="date" v-model="startDate"> <span class="tf-sep">至</span>
+              <input type="date" v-model="endDate">
+            </div>
+            <div class="tf-group" v-if="dim === 'tenant'">
+              <span class="tf-label">应用筛选</span>
+              <select v-model="pluginFilter" @change="load">
+                <option value="">全部应用</option>
+                <option v-for="p in plugins" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </select>
+            </div>
+            <div class="tf-group" v-else>
+              <span class="tf-label">租户筛选</span>
+              <select v-model="tenantFilter" @change="load">
+                <option value="">全部租户</option>
+                <option v-for="t in tenants" :key="t.id" :value="t.id">{{ t.name }}</option>
+              </select>
+            </div>
+            <div class="spacer" style="flex:1"></div>
+            <button class="btn sm" @click="load" :disabled="loading">刷新</button>
+          </div>
+          <div class="info-box" style="margin-top:12px">
+            按「租户 × 应用 × 小时」记录上行（客户端 → 平台）与下行（平台 → 客户端），日 / 月 / 各时段均由小时数据汇总得出。
+            下行统计的是 gzip 压缩后在网络上实际传输的字节（真实流量），同时记录压缩前字节数并展示节省比例。
+            字节数含请求头与响应头，不含 TLS 开销；平台自身后台流量记为「平台自身」，票据失效等无法归属的流量记为「未归属」，保证总量守恒。
+          </div>
+        </div>
+
+        <!-- ================= 明细表 ================= -->
+        <div class="block">
+          <div class="block-head">
+            <h3 class="block-title">{{ dim === 'tenant' ? '租户流量' : '应用流量' }}<span class="count">{{ rows.length }}</span></h3>
+            <span class="tip">合计 下行 {{ fmt(total.out_bytes) }} · 上行 {{ fmt(total.in_bytes) }} · {{ total.requests }} 次请求</span>
+          </div>
+          <div class="ver-empty" v-if="!loading && !rows.length">{{ error || '当前范围内暂无流量数据' }}</div>
+          <div v-else class="tf-loading" v-if="loading">加载中…</div>
+          <div v-if="!loading && rows.length" class="tf-bars" style="margin-bottom:14px">
+            <div v-for="r in rows" :key="r.id" class="tf-bar-row">
+              <span class="tf-bar-name" :title="r.name">{{ labelOf(r) }}</span>
+              <span class="tf-bar-track"><i :style="{width: barWidth(r)}"></i></span>
+              <span class="tf-bar-value">{{ fmt(r.total.out_bytes + r.total.in_bytes) }}</span>
+            </div>
+          </div>
+          <table class="ver-table" v-if="!loading && rows.length">
+            <thead>
+              <tr>
+                <th style="width:180px">{{ dim === 'tenant' ? '租户' : '应用' }}</th>
+                <th style="width:90px">请求数</th>
+                <th style="width:80px">错误</th>
+                <th style="width:110px">上行</th>
+                <th style="width:110px">下行</th>
+                <th style="width:110px">合计</th>
+                <th>明细</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in rows" :key="r.id" :class="{active: activeId === r.id}">
+                <td>
+                  <div class="cell-col">
+                    <span style="font-weight:600">{{ labelOf(r) }}</span>
+                    <span class="sub">{{ r.id }}</span>
+                  </div>
+                </td>
+                <td>{{ num(r.total.requests) }}</td>
+                <td :class="{'sub err': r.total.errors}">{{ r.total.errors || 0 }}</td>
+                <td>{{ fmt(r.total.in_bytes) }}</td>
+                <td>{{ fmt(r.total.out_bytes) }}<span v-if="savedPct(r.total)" class="sub" style="display:block;margin-top:3px">压缩前 {{ fmt(rawOut(r.total)) }} · 省 {{ savedPct(r.total) }}%</span></td>
+                <td style="font-weight:600">{{ fmt(r.total.out_bytes + r.total.in_bytes) }}</td>
+                <td><button class="btn sm" @click="toggleDetail(r)">{{ activeId === r.id ? '收起' : '查看分布' }}</button></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- 单行的分布明细 -->
+          <div v-if="detailOpen" class="tf-detail">
+            <div class="block-head">
+              <h3 class="block-title">{{ labelOf(activeRow) }} · 分布明细</h3>
+              <span class="tip">{{ detailLabel }}</span>
+            </div>
+            <div class="tf-detail-grid">
+              <div>
+                <div class="tf-sub-title">{{ dim === 'tenant' ? '各应用占比' : '各租户占比' }}</div>
+                <table class="ver-table">
+                  <thead><tr><th>{{ dim === 'tenant' ? '应用' : '租户' }}</th><th>请求数</th><th>上行</th><th>下行</th></tr></thead>
+                  <tbody>
+                    <tr v-for="x in crossRows" :key="x.id">
+                      <td>{{ labelOf(x) }}</td>
+                      <td>{{ num(x.total.requests) }}</td>
+                      <td>{{ fmt(x.total.in_bytes) }}</td>
+                      <td>{{ fmt(x.total.out_bytes) }}</td>
+                    </tr>
+                    <tr v-if="!crossRows.length"><td colspan="4" class="ver-empty">无数据</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <div class="tf-sub-title">每日各时段（0–23 时）</div>
+                <div class="tf-hours">
+                  <div v-for="h in hourRows" :key="h.bucket" class="tf-hour">
+                    <i :style="{height: hourHeight(h)}"></i>
+                    <span>{{ Number(h.bucket) }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <table class="ver-table" style="margin-top:14px">
+              <thead><tr><th style="width:140px">{{ bucketTitle }}</th><th>请求数</th><th>错误</th><th>上行</th><th>下行</th></tr></thead>
+              <tbody>
+                <tr v-for="c in activeSeries" :key="c.bucket">
+                  <td>{{ c.bucket }}</td>
+                  <td>{{ num(c.requests) }}</td>
+                  <td>{{ c.errors }}</td>
+                  <td>{{ fmt(c.in_bytes) }}</td>
+                  <td>{{ fmt(c.out_bytes) }}</td>
+                </tr>
+                <tr v-if="!activeSeries.length"><td colspan="5" class="ver-empty">该范围内无数据</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ================= 接口 / 路径 Top ================= -->
+        <div class="block">
+          <div class="block-head">
+            <h3 class="block-title">接口 / 路径 Top 20<span class="count">{{ topRows.length }}</span></h3>
+            <span class="tip">统计范围 {{ topRange }} · 合计 请求 {{ num(topTotal.requests) }} · 错误 {{ num(topTotal.errors) }}</span>
+          </div>
+          <div class="ver-empty" v-if="!loading && !topRows.length">该范围内暂无路径数据</div>
+          <table class="ver-table" v-if="topRows.length">
+            <thead>
+              <tr>
+                <th style="width:28%">路径</th>
+                <th style="width:14%">归属</th>
+                <th style="width:20%">流量占比</th>
+                <th style="width:80px">请求</th>
+                <th style="width:64px">错误</th>
+                <th style="width:92px">上行</th>
+                <th style="width:92px">下行</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in topRows" :key="r.route + r.owner">
+                <td><span class="mono" style="word-break:break-all">{{ r.route }}</span></td>
+                <td><span class="badge b-gray">{{ r.owner }}</span></td>
+                <td><div class="tf-bar-track"><i :style="{width: topWidth(r)}"></i></div></td>
+                <td>{{ num(r.requests) }}</td>
+                <td :class="{'sub err': r.errors}">{{ num(r.errors) }}</td>
+                <td>{{ fmt(r.in_bytes) }}</td>
+                <td>{{ fmt(r.out_bytes) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/static/vendor/vue.global.prod.js"></script>
+<script src="/static/common.js"></script>
+<script src="/static/traffic.js"></script>
+</body>
+</html>
