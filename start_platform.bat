@@ -3,13 +3,18 @@ cd /d "%~dp0"
 title Platform 8000 - close this window to STOP
 
 REM ============================================================
-REM   Æ½Ì¨ºËÐÄÆô¶¯½Å±¾
-REM   Èë¿Ú: platform\app\main.py  (FastAPI + Uvicorn)
+REM   Æ½Ì¨ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Å±ï¿½
+REM   ï¿½ï¿½ï¿½: platform\app\main.py  (FastAPI + Uvicorn)
 REM ============================================================
 
 set "HOST=0.0.0.0"
 set "PORT=8000"
 set "PYEXE=%~dp0.venv\Scripts\python.exe"
+
+REM Agent pipeline is enabled only when env var AGENT_API_KEY is set (X-Agent-Key).
+REM Set it once at user level, e.g. in PowerShell:
+REM   [Environment]::SetEnvironmentVariable('AGENT_API_KEY','your-new-key','User')
+REM then reopen this window. Never put the key itself in this file.
 
 echo ============================================================
 echo    Platform  -  Port %PORT%

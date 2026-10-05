@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -16,9 +17,9 @@ SESSION_TTL_SECONDS = 8 * 3600
 MAX_PACKAGE_BYTES = 50 * 1024 * 1024
 SCRIPT_TIMEOUT_SECONDS = 120
 
-# AI Agent 升级流水线接口的鉴权密钥（请求头 X-Agent-Key）。
-# 留空 = Agent 接口整体禁用；改成随机串即启用。泄露后在此更换即可。
-AGENT_API_KEY = "ag_9f4e2c7b1d5a8e36f0c4b7d2e9a15c83"
+# AI Agent 升级流水线接口的鉴权密钥：从环境变量 AGENT_API_KEY 读取（请求头 X-Agent-Key）。
+# 未设置/为空 = Agent 接口整体禁用；更换密钥只需改环境变量后重启平台，代码与 git 历史中不落明文。
+AGENT_API_KEY = os.environ.get("AGENT_API_KEY", "").strip()
 
 for _d in (DATA_DIR, PACKAGES_DIR, TENANT_DB_DIR, STORAGE_DIR):
     _d.mkdir(parents=True, exist_ok=True)
