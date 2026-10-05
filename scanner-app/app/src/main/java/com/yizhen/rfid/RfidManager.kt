@@ -128,23 +128,12 @@ object RfidManager {
         if (scanning) return false
         if (!ready) return false
         if (tryStart(onTag)) return true
-        // 模块可能卡在异常态（C27 常见）：释放后重新初始化再试一次（自愈）
-        Log.w(TAG, "startInventoryTag() 首次失败，执行 free+init 自愈重试")
-        recoverAndRetry()
-        return tryStart(onTag)
-    }
-
-    /** 释放并重新初始化（自愈），使卡住的 UHF 模块恢复正常。 */
-    private fun recoverAndRetry() {
+        // 模块可能仍处于盘存态（上次 stop 未彻底生效 / 页面切换未停扫）：
+        // 先 stopInventory 再重试一次。C27 不允许重复申请串口资源，绝不能在此 free()+init()。
+        Log.w(TAG, "startInventoryTag() 首次失败，stopInventory 后重试（不重新 init）")
         try { uhf?.stopInventory() } catch (_: Exception) {}
-        try { uhf?.free() } catch (_: Exception) {}
-        ready = false
-        uhf = null
-        appContext?.let { ctx ->
-            // C27 重启后射频常处于断电态：无论 isPowerOn 报告如何，都先尝试上电再初始化
-            try { RFIDWithUHFUART.getInstance()?.setPowerOnBySystem(ctx) } catch (_: Exception) {}
-            initInternal()
-        }
+        try { Thread.sleep(60) } catch (_: InterruptedException) {}
+        return tryStart(onTag)
     }
 
     private fun tryStart(onTag: (String, Int) -> Unit): Boolean {
@@ -152,6 +141,8 @@ object RfidManager {
         return try {
             // 确保功率合法，部分固件功率非法会令 startInventoryTag 返回 false
             try { uhf?.setPower(lastPower) } catch (_: Exception) {}
+            // 防御：确保模块不在盘存态（否则 startInventoryTag 直接返回 false）
+            try { uhf?.stopInventory() } catch (_: Exception) {}
             val ok = uhf?.startInventoryTag() ?: false
             if (!ok) {
                 val code = runCatching { uhf?.getErrCode() ?: -1 }.getOrDefault(-1)
@@ -195,15 +186,16 @@ object RfidManager {
     }
 
     fun stop() {
-        if (!scanning) return
         scanning = false
+        // 无论如何都尝试停盘存，确保模块回到空闲态（幂等，可多次调用）
         try {
             uhf?.stopInventory()
         } catch (_: Exception) {
         }
-        worker?.let {
+        worker?.let { t ->
+            t.interrupt()
             try {
-                it.join(600)
+                t.join(1000)
             } catch (_: Exception) {
             }
         }
