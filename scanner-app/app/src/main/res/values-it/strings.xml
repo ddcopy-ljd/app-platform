@@ -25,6 +25,7 @@
     <!-- home -->
     <string name="home_sale">Vendita / Scontrino</string>
     <string name="home_stock">Inventario</string>
+    <string name="home_admin">🏷 Gestione (Stampa Etichette)</string>
     <string name="home_logout">Esci</string>
     <string name="home_epc_collect">🧪 Raccolta EPC (provvisoria)</string>
 

@@ -25,6 +25,7 @@
     <!-- 主界面 -->
     <string name="home_sale">销售出单</string>
     <string name="home_stock">库存盘点</string>
+    <string name="home_admin">🏷 管理后台（打印标签）</string>
     <string name="home_logout">退出登录</string>
     <string name="home_epc_collect">🧪 EPC 采集（临时）</string>
 

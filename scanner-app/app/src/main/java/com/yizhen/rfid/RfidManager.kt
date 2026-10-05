@@ -3,16 +3,18 @@ package com.yizhen.rfid
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import com.rscja.deviceapi.RFIDWithUHFUART
 import com.rscja.deviceapi.entity.UHFTAGInfo
 
 /**
  * C27 UHF RFID 模块封装（RSCJA DeviceAPI UART）。
  * 单例；start() 后内部线程持续读取标签缓冲并回调主线程。
+ *
+ * 实现与 d7435ec（v1.2.0，现场验证可用）逐字一致，仅额外保留 lastError 供 UI 提示。
+ * 任何“自愈 / 重试 / setPowerOnBySystem / 换 ApplicationContext”等改动均已移除，
+ * 因为它们在现场会导致与可用版本不一致的行为。
  */
 object RfidManager {
-    private const val TAG = "RfidManager"
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var uhf: RFIDWithUHFUART? = null
@@ -20,7 +22,7 @@ object RfidManager {
     var ready = false
         private set
 
-    /** 最近一次初始化/启动失败的原因（供 UI 直接展示，便于现场排查）。 */
+    /** 最近一次启动失败的原因（供 UI 直接展示）。 */
     @Volatile
     var lastError: String = ""
         private set
@@ -35,40 +37,13 @@ object RfidManager {
 
     private var worker: Thread? = null
 
-    /** 保存 ApplicationContext，供自愈重试时重新初始化使用。 */
-    private var appContext: Context? = null
-
-    /** 最近一次设置的功率（dBm），用于自愈重试时恢复。 */
-    private var lastPower = 20
-
     fun init(context: Context) {
         if (ready) return
-        appContext = context.applicationContext ?: context
-        initInternal()
-    }
-
-    /** 真正的初始化逻辑（init / 自愈重试共用）。 */
-    private fun initInternal() {
-        lastError = ""
         try {
             uhf = RFIDWithUHFUART.getInstance()
-            if (uhf == null) {
-                lastError = "getInstance() 返回 null（SDK 类未加载）"
-                Log.e(TAG, lastError)
-                ready = false
-                return
-            }
-            val ret = uhf!!.init(appContext!!)
-            // 注意：部分 C27 固件 init() 会返回 false，但模块实际可用，
-            // 因此不把“返回 false”当作失败，维持旧版可用行为；仅记录告警。
-            if (!ret) {
-                lastError = "init() 返回 false（C27 固件常见，按可用处理）"
-                Log.w(TAG, lastError)
-            }
+            uhf?.init(context)
             ready = true
-        } catch (e: Throwable) {
-            lastError = e.javaClass.simpleName + ": " + (e.message ?: "未知异常")
-            Log.e(TAG, "RFID init failed", e)
+        } catch (_: Throwable) {
             ready = false
         }
     }
@@ -96,11 +71,8 @@ object RfidManager {
     }
 
     fun setPower(dbm: Int) {
-        // 钳到合法区间，避免非法功率导致 startInventoryTag() 返回 false
-        val p = dbm.coerceIn(5, 30)
-        lastPower = p
         try {
-            uhf?.setPower(p)
+            uhf?.setPower(dbm)
         } catch (_: Exception) {
         }
     }
@@ -110,29 +82,11 @@ object RfidManager {
      * @param onTag 主线程回调 (epc, rssi)
      */
     fun start(onTag: (String, Int) -> Unit): Boolean {
-        if (scanning) return false
-        if (!ready) return false
-        // 该 C27 固件在 init 后首次 startInventoryTag 偶发返回 false（errCode=0），
-        // 但模块实际可用（同机其他 App 亦如此且能扫到）。直接重试数次即可恢复，
-        // 不要在重试间调用 stopInventory（会把正常态打断）。
-        repeat(3) { attempt ->
-            if (tryStart(onTag)) return true
-            Log.w(TAG, "startInventoryTag() 第 ${attempt + 1} 次失败，200ms 后重试")
-            try { Thread.sleep(200) } catch (_: InterruptedException) {}
-        }
-        return false
-    }
-
-    private fun tryStart(onTag: (String, Int) -> Unit): Boolean {
         if (!ready || scanning) return false
         return try {
-            // 原始可用版本即直接 startInventoryTag()；功率由调用方在 start 前 setPower(prefs.power) 设置。
-            // 注意：不要在此调用 setPowerOnBySystem()，C27 上会反向切断 UHF 供电导致 errCode=0 且启动失败。
             val ok = uhf?.startInventoryTag() ?: false
             if (!ok) {
-                val code = runCatching { uhf?.getErrCode() ?: -1 }.getOrDefault(-1)
-                lastError = "startInventoryTag() 返回 false（errCode=$code，模块已 init 但盘存启动失败）"
-                Log.e(TAG, lastError)
+                lastError = "startInventoryTag() 返回 false（模块已 init 但盘存启动失败）"
                 return false
             }
             scanning = true
@@ -158,8 +112,6 @@ object RfidManager {
             }.also { it.start() }
             true
         } catch (e: Exception) {
-            lastError = e.javaClass.simpleName + ": " + (e.message ?: "未知异常")
-            Log.e(TAG, "start failed", e)
             false
         }
     }
@@ -171,16 +123,15 @@ object RfidManager {
     }
 
     fun stop() {
+        if (!scanning) return
         scanning = false
-        // 无论如何都尝试停盘存，确保模块回到空闲态（幂等，可多次调用）
         try {
             uhf?.stopInventory()
         } catch (_: Exception) {
         }
-        worker?.let { t ->
-            t.interrupt()
+        worker?.let {
             try {
-                t.join(1000)
+                it.join(600)
             } catch (_: Exception) {
             }
         }

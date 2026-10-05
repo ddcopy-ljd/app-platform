@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
@@ -208,6 +209,74 @@ class WebActivity : BaseActivity() {
                     @Suppress("DEPRECATION") vibrator?.vibrate(d)
                 }
             } catch (_: Exception) {}
+        }
+
+        // —— 蓝牙标签打印桥（window.YzPrinter 回调）——
+
+        /** 当前所选蓝牙打印机 {address,name}。 */
+        @JavascriptInterface
+        fun printer(): String = JSONObject()
+            .put("address", prefs.btPrinterAddr)
+            .put("name", prefs.btPrinterName)
+            .toString()
+
+        /** 已配对蓝牙设备列表 [{name,address}]。 */
+        @JavascriptInterface
+        fun printers(): String {
+            if (!PrintBridge.hasPermission(this@WebActivity)) {
+                main.post { PrintBridge.requestPermission(this@WebActivity) }
+                return "[]"
+            }
+            return PrintBridge.paired(this@WebActivity).toString()
+        }
+
+        /** 页面选定打印机（需已配对）。 */
+        @JavascriptInterface
+        fun pickPrinter(address: String) {
+            val addr = address.trim()
+            prefs.btPrinterAddr = addr
+            prefs.btPrinterName = if (addr.isBlank()) "" else PrintBridge.nameOf(this@WebActivity, addr)
+            main.post { jsPrinterChanged() }
+        }
+
+        /** 发送 ZPL 到蓝牙标签机；结果经 window.YzPrinter.onResult(ok,msg) 回调。 */
+        @JavascriptInterface
+        fun printZpl(zpl: String) {
+            val addr = prefs.btPrinterAddr
+            if (addr.isBlank()) {
+                main.post { jsPrintResult(false, "no printer selected") }
+                return
+            }
+            if (!PrintBridge.hasPermission(this@WebActivity)) {
+                PrintBridge.requestPermission(this@WebActivity)
+                main.post { jsPrintResult(false, "bluetooth permission required") }
+                return
+            }
+            PrintBridge.send(this@WebActivity, addr, zpl) { ok, msg ->
+                main.post { jsPrintResult(ok, msg) }
+            }
+        }
+    }
+
+    private fun jsPrinterChanged() {
+        if (isFinishing) return
+        web.evaluateJavascript(
+            "window.YzPrinter && window.YzPrinter.onPrinter('${jsEscape(prefs.btPrinterName)}')", null)
+    }
+
+    private fun jsPrintResult(ok: Boolean, msg: String) {
+        if (isFinishing) return
+        web.evaluateJavascript(
+            "window.YzPrinter && window.YzPrinter.onResult($ok,'${jsEscape(msg)}')", null)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PrintBridge.REQ_BT) {
+            val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+            if (isFinishing) return
+            web.evaluateJavascript(
+                "window.YzPrinter && window.YzPrinter.onPermission($granted)", null)
         }
     }
 

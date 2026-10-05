@@ -96,6 +96,15 @@ class Prefs(context: Context) {
         get() = sp.getInt("device_no", 0)
         set(v) = sp.edit().putInt("device_no", v).apply()
 
+    // —— 蓝牙标签打印机（手机直打）——
+    var btPrinterAddr: String
+        get() = sp.getString("bt_printer_addr", "") ?: ""
+        set(v) = sp.edit().putString("bt_printer_addr", v.trim()).apply()
+
+    var btPrinterName: String
+        get() = sp.getString("bt_printer_name", "") ?: ""
+        set(v) = sp.edit().putString("bt_printer_name", v.trim()).apply()
+
     // —— 任务态 ——
     var taskKey: String
         get() = sp.getString("task_key", "") ?: ""
