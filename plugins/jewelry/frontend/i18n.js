@@ -21,6 +21,7 @@ var I18N = {
     'nav.outsourcings': '委外加工', 'nav.logs': '操作日志', 'nav.appointments': '到店预约',
     'nav.profile': '店铺管理', 'nav.site': '企业网站', 'nav.sale': '快速开单',
     'nav.logout': '退出登录', 'nav.more': '我的', 'nav.rfid': 'RFID盘点', 'nav.showcase': '橱窗展示',
+    'nav.security': '安防中心',
     // login
     'login.user': '用户名', 'login.userPh': '请输入用户名', 'login.pass': '密码',
     'login.passPh': '请输入密码', 'login.submit': '登 录', 'login.hint': '演示账号：admin / 123456',
@@ -338,6 +339,7 @@ var I18N = {
     'nav.outsourcings': 'Outsourcing', 'nav.logs': 'Audit Logs', 'nav.appointments': 'Appointments',
     'nav.profile': 'Store Management', 'nav.site': 'Website', 'nav.sale': 'New Sale',
     'nav.logout': 'Sign Out', 'nav.more': 'Me', 'nav.rfid': 'RFID Count', 'nav.showcase': 'Showcase',
+    'nav.security': 'Security',
     // login
     'login.user': 'Username', 'login.userPh': 'Enter username', 'login.pass': 'Password',
     'login.passPh': 'Enter password', 'login.submit': 'Sign In', 'login.hint': 'Demo: admin / 123456',
@@ -756,6 +758,7 @@ var I18N = {
     'nav.outsourcings': 'Lavorazioni Esterne', 'nav.logs': 'Log Operazioni', 'nav.appointments': 'Appuntamenti',
     'nav.profile': 'Gestione Negozio', 'nav.site': 'Sito Web', 'nav.sale': 'Nuova Vendita',
     'nav.logout': 'Esci', 'nav.more': 'Area Personale', 'nav.rfid': 'Inventario RFID', 'nav.showcase': 'Vetrina',
+    'nav.security': 'Sicurezza',
     // login
     'login.user': 'Nome Utente', 'login.userPh': 'Inserisci nome utente', 'login.pass': 'Password',
     'login.passPh': 'Inserisci password', 'login.submit': 'Accedi', 'login.hint': 'Account demo: admin / 123456',
