@@ -13,10 +13,11 @@
     "RFID 批量隔空盘点",
     "本地打印桥接（PrintBridge，门店电脑免驱直连标签打印机）",
     "多门店统一管理",
-    "企业网站与到店预约"
+    "企业网站与到店预约",
+    "智能安防（RFID/EAS 防盗设备接入与离店告警）"
   ],
-  "softwareVersion": "1.0.6",
-  "dataVersion": "1.0.4",
+  "softwareVersion": "1.0.7",
+  "dataVersion": "1.0.7",
   "scripts": {
     "init": "scripts/init.py",
     "upgrade": "scripts/upgrade.py"

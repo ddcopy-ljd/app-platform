@@ -12,10 +12,13 @@
 用法：
   python print_agent.py list   # 列出本机打印机（复制名称填入 print_agent.json）
   python print_agent.py run    # 启动桥接（首次运行自动生成 print_agent.json）
+  python print_agent.py burn <目标exe副本> <门店Token>
+                               # 把门店Token烧录进 exe 尾部（overlay），分发后免填 Token
 
 登录方式（多门店流程，无需账号）：
   1. 首次运行填 云端地址；
   2. 粘贴该门店的桥接密钥（云端【店铺管理 → 门店与打印代理】生成），不填门店码；
+     —— 若 exe 已用 burn 烧录门店Token，此步自动跳过；
   3. 云端直接显示密钥所属门店名称，人工核对确认后才进入服务；
   4. 身份名默认「{门店名}打印桥」，连接即上报本机全部打印机，由门店在云端指派。
   一个密钥绑定一家门店；多家门店需在各自门店电脑上用各自密钥分别启动。
@@ -44,11 +47,19 @@ else:
     _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(_BASE_DIR, "print_agent.json")
 
+# ---- exe 尾部内嵌门店 Token（overlay）----
+# 结构：token字节 + 4字节大端长度 + 魔术"PBTKN001"，共 len+12 字节附加在文件末尾。
+# Windows 加载器只按 PE 头读取映像，尾部 overlay 被完全忽略，不影响启动与运行。
+# 分发流程：build_exe.bat 生成 dist\PrintBridge.exe 后，对每店副本执行 burn 烧录各自 Token。
+_TOKEN_MAGIC = b"PBTKN001"
+_TOKEN_MAX = 4096
+
 DEFAULT_CONFIG = {
     "server": "http://127.0.0.1:8002",
     "token": "",                     # 门店Token（云端【店铺管理 → 门店与打印代理】生成）
     "name": "",                      # 代理身份名：留空则默认「{门店名}打印桥」
-    "printer": "",                   # 绑定打印机（由云端指派后自动写入，也可手填）
+    "printer": "",                   # 标签业务打印机（云端按业务指派，自动写入，也可手填）
+    "biz_printers": {},              # 全部打印业务 -> 打印机名（云端 config 推送，自动持久化）
     "cmd_feed": "~JA",               # 进纸指令（ZPL）
     "cmd_backfeed": "~JD",           # 退纸指令（机型相关，可按打印机手册修改）
     "insecure_ssl": False,           # 云端自签名证书时置 true
@@ -224,6 +235,77 @@ def raw_print(printer, data, title):
 
 # ---------------------------------------------------------------- 主循环
 
+def _self_exe_path():
+    """本程序自身路径：冻结态为 exe，脚本态为 .py（脚本态无 overlay，读不到即视为未烧录）。"""
+    return os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__)
+
+
+def _read_embedded_token(path=None):
+    """读取 exe 尾部内嵌的门店 Token；未烧录/文件不可读返回 ''。"""
+    p = path or _self_exe_path()
+    try:
+        with open(p, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            if size < 12:
+                return ""
+            f.seek(size - 12)
+            tail = f.read(12)
+            if tail[4:] != _TOKEN_MAGIC:
+                return ""
+            tlen = struct.unpack(">I", tail[:4])[0]
+            if tlen <= 0 or tlen > _TOKEN_MAX or size < 12 + tlen:
+                return ""
+            f.seek(size - 12 - tlen)
+            return f.read(tlen).decode("utf-8", errors="replace").strip()
+    except Exception:
+        return ""
+
+
+def embed_token_bytes(exe_bytes, token):
+    """纯字节版烧录：剥除旧 overlay 后追加 token+长度+魔术，返回新 exe 字节。
+    供后端下载接口在内存中按门店动态注入 Token（不落临时文件）。"""
+    token = (token or "").strip()
+    if not token:
+        raise ValueError("Token 不能为空")
+    data = token.encode("utf-8")
+    if len(data) > _TOKEN_MAX:
+        raise ValueError("Token 过长")
+    if exe_bytes[:2] != b"MZ":
+        raise ValueError("目标不是 Windows 可执行文件（MZ 头校验失败）")
+    size = len(exe_bytes)
+    if size >= 12:
+        tail = exe_bytes[-12:]
+        if tail[4:] == _TOKEN_MAGIC:
+            tlen = struct.unpack(">I", tail[:4])[0]
+            if 0 < tlen <= _TOKEN_MAX and size >= 12 + tlen:
+                exe_bytes = exe_bytes[:size - 12 - tlen]
+    return exe_bytes + data + struct.pack(">I", len(data)) + _TOKEN_MAGIC
+
+
+def embed_token(target, token):
+    """文件版烧录：读目标 exe → 字节烧录 → 写回。
+    注意：Windows 不允许改写正在运行的 exe，请对未运行的副本操作。"""
+    token = (token or "").strip()
+    with open(target, "rb") as f:
+        raw = f.read()
+    if _read_embedded_token(target):
+        print("[burn] 已剥除旧内嵌 Token")
+    try:
+        out = embed_token_bytes(raw, token)
+    except ValueError as e:
+        raise SystemExit(f"[burn] {e}")
+    try:
+        with open(target, "wb") as f:
+            f.write(out)
+    except PermissionError:
+        raise SystemExit("[burn] 写入失败：目标 exe 正在运行或被占用，请换未运行的副本")
+    ok = _read_embedded_token(target) == token
+    print(f"[burn] {'成功' if ok else '失败'}：门店 Token（{len(token)} 字符）-> {target}")
+    if not ok:
+        raise SystemExit(1)
+
+
 def _ensure_config():
     if not os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -239,6 +321,12 @@ def _ensure_config():
     if not str(merged.get("server") or "").strip():
         merged["server"] = input("云端地址（如 https://xxx.yourdomain.com）：").strip()
         changed = True
+    if not str(merged.get("token") or "").strip():
+        # 配置文件无 Token 时兜底读 exe 尾部内嵌值（burn 烧录的分发场景）
+        embedded = _read_embedded_token()
+        if embedded:
+            merged["token"] = embedded
+            print(f"[config] 使用 exe 内嵌门店 Token（{len(embedded)} 字符），跳过手工粘贴")
     if not str(merged.get("token") or "").strip():
         merged["token"] = input("门店Token（云端【店铺管理 → 门店与打印代理】生成）：").strip()
         changed = True
@@ -328,20 +416,37 @@ def run(cfg):
                 mtype = d.get("type")
 
                 if mtype == "config":
-                    # 云端指派/补推绑定打印机
-                    p = str(d.get("printer") or "")
+                    # 云端指派/补推：全量「业务 -> 打印机」映射；printer 字段为标签业务兼容值
+                    bp_in = d.get("biz_printers")
+                    changed = False
+                    if isinstance(bp_in, dict):
+                        norm = {str(k): str(v or "") for k, v in bp_in.items()}
+                        if norm != cfg.get("biz_printers"):
+                            cfg["biz_printers"] = norm
+                            changed = True
+                    p = str(d.get("printer")
+                            or (cfg.get("biz_printers") or {}).get("label_product") or "")
                     if p and p != cur_printer:
                         cur_printer = p
                         cfg["printer"] = p
+                        changed = True
+                    if changed:
                         _save_config(cfg)
+                    nbiz = len(cfg.get("biz_printers") or {})
                     print(f"[config] 所属门店：{d.get('store_name') or '?'} · "
-                          f"绑定打印机：{cur_printer or '(未指派，用系统默认)'}")
+                          f"标签打印机：{cur_printer or '(未指派，用系统默认)'}"
+                          f" · 已收业务指派 {nbiz} 项")
 
                 elif mtype == "job":
                     job = d.get("job") or {}
                     jid = job.get("job_id") or ""
+                    # 打印机优先级：任务自带 > 该业务在映射中的指派 > 标签默认打印机
+                    bpmap = cfg.get("biz_printers") or {}
+                    jprinter = (str(job.get("printer") or "")
+                                or str(bpmap.get(str(job.get("biz") or "")) or "")
+                                or cur_printer or "")
                     try:
-                        raw_print(str(job.get("printer") or cur_printer or ""),
+                        raw_print(jprinter,
                                   job["zpl"].encode("latin-1", errors="replace"),
                                   job.get("title") or "jewelry-labels")
                         print(f"[print] {jid} 已发送到打印机（{job.get('count', '?')} 张）")
@@ -399,6 +504,14 @@ def main():
         print("本机打印机：")
         for n in names:
             print(" -", n)
+        return
+    if cmd == "burn":
+        if len(sys.argv) < 4:
+            print("用法：PrintBridge.exe burn <目标exe副本路径> <门店Token>")
+            print("说明：把门店 Token 烧录进 exe 尾部（overlay，不影响程序启动与运行）。")
+            print("      Windows 不能改写正在运行的 exe，请复制一份副本后再烧录分发。")
+            sys.exit(1)
+        embed_token(sys.argv[2], sys.argv[3])
         return
     if cmd == "run":
         run(_ensure_config())

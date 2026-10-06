@@ -777,7 +777,48 @@ tr.row-flash, tr.row-flash:hover { background-color: #FFF3CD !important; transit
 .bridge-state.st-off { background: #f0f0f0; color: #999; }
 .bridge-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .bridge-row > label { margin: 0; font-size: 14px; color: #555; }
+/* 代理离线黄色提示条（PC 端附下载入口，移动端仅提示） */
+.agent-warn { margin: 8px 0; padding: 8px 10px; background: #fff8e1; border: 1px solid #f0d98c;
+  border-radius: 6px; color: #8a6d1a; font-size: 14px; line-height: 1.5; }
+
+/* 系统自检铃铛：正常绿色静止；有启用检查项异常时黄色并间歇摇动（4s 周期内前 10% 摇动） */
+.health-wrap { position: relative; display: inline-flex; align-items: center; }
+.health-bell { background: none; border: none; cursor: pointer; padding: 4px; color: #1d7a37; display: inline-flex; }
+.health-bell.bad { color: #d4a017; }
+.health-bell.bad svg { animation: bellShake 4s ease-in-out infinite; transform-origin: 50% 0; }
+@keyframes bellShake {
+  0%, 100% { transform: rotate(0); }
+  2% { transform: rotate(18deg); }
+  4% { transform: rotate(-14deg); }
+  6% { transform: rotate(10deg); }
+  8% { transform: rotate(-6deg); }
+  10% { transform: rotate(0); }
+}
+.health-panel { position: absolute; right: 0; top: 30px; z-index: 60; min-width: 240px;
+  background: #fff; border: 1px solid #e5dcc8; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.12);
+  padding: 10px; }
+.health-title { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.health-line { display: flex; align-items: center; gap: 6px; padding: 4px 0; font-size: 14px; cursor: pointer; }
+.health-dot { width: 10px; height: 10px; border-radius: 50%; background: #ccc; flex: none; }
+.health-dot.ok { background: #1d7a37; }
+.health-dot.bad { background: #d4a017; }
+.health-name { flex: 1; }
+.health-state { font-size: 14px; color: #999; }
 .bridge-keybox { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
 .bridge-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .bridge-actions .btn-small { min-width: 64px; }
 .bridge-actions .btn-small:disabled { opacity: .45; cursor: not-allowed; }
+
+/* 门店 × 打印业务指派打印机 */
+.bridge-biz { margin-top: 8px; }
+.bridge-biz > summary { cursor: pointer; font-size: 14px; color: #8a6d1b; user-select: none; }
+.biz-grp { margin-top: 6px; }
+.biz-grp-title { font-size: 12px; color: #999; margin-bottom: 2px; letter-spacing: 1px; }
+.biz-line { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.biz-line-name { flex: 0 0 40%; font-size: 13px; color: #555; }
+.biz-line-sel { flex: 1; min-width: 0; padding: 3px 4px; font-size: 13px; }
+.biz-test { flex: 0 0 auto; min-width: 30px; padding: 2px 6px; }
+.biz-test:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 768px) {
+  .biz-line-name { flex-basis: 38%; }
+}

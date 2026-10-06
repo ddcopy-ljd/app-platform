@@ -4,6 +4,7 @@
 仅在插件进程上下文（环境变量）下使用，不依赖平台数据库。
 """
 
+import json
 import os
 import re
 import sqlite3
@@ -15,6 +16,25 @@ DB_DIR = Path(os.environ.get("TENANT_DB_DIR", ""))
 
 TENANT_RE = re.compile(r"^[A-Za-z0-9_]{1,64}$")
 
+# 打印业务固定枚举（code, 分组）：每家门店按业务指派打印机，多个业务可指向同一台打印机。
+# 分组：label=标签（ZPL标签机）/ receipt=票据（热敏小票机）/ doc=单据报表（A4办公机或PDF）。
+# 业务名称走前端 i18n（pbiz.<code>）；新增业务在此加一行并由 seed_store_printers 幂等补行。
+PRINT_BIZ = [
+    ("label_product", "label"),        # 商品RFID标签（价签/吊牌，现有打印输出）
+    ("label_shelf", "label"),          # 货架库位标签（盘库定位条码）
+    ("receipt_sale", "receipt"),       # 销售小票（成交客户联）
+    ("receipt_deposit", "receipt"),    # 定金收据
+    ("receipt_loan", "receipt"),       # 借货单（借出/借入签字凭证）
+    ("receipt_repair", "receipt"),     # 维修单（接件受理 + 取件联）
+    ("receipt_purchase", "receipt"),   # 采购入库单（供应商对账）
+    ("receipt_outsourcing", "receipt"),# 委外加工单（发料/回收凭证）
+    ("receipt_inout", "receipt"),      # 出入库单（调拨/其他库存移动）
+    ("cert_warranty", "doc"),          # 质保证书（随货交付客户）
+    ("report_stocktake", "doc"),       # 盘点表/盘点差异报告
+    ("report_business", "doc"),        # 经营报表（销售日/月报等）
+]
+PRINT_BIZ_CODES = [c for c, _g in PRINT_BIZ]
+
 # 数据库结构（dataVersion 1.0.0）
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS stores (
@@ -25,6 +45,14 @@ CREATE TABLE IF NOT EXISTS stores (
   owner TEXT,
   bridge_key TEXT DEFAULT '',
   printer_name TEXT DEFAULT ''
+);
+
+-- 门店按打印业务指派打印机（store_id × biz_code 唯一；多个业务可指向同一台打印机）
+CREATE TABLE IF NOT EXISTS store_printers (
+  store_id INTEGER NOT NULL,
+  biz_code TEXT NOT NULL,
+  printer_name TEXT DEFAULT '',
+  PRIMARY KEY (store_id, biz_code)
 );
 
 CREATE TABLE IF NOT EXISTS languages (
@@ -320,6 +348,51 @@ CREATE TABLE IF NOT EXISTS stocktake_scans (
   scanned_at TEXT DEFAULT (datetime('now','localtime')),
   UNIQUE(session_id, epc)
 );
+
+-- 智能安防：防盗传感器设备（UHF通道门/EAS门禁/开关量等，driver_code 区分类型）
+CREATE TABLE IF NOT EXISTS sensors (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  store_id INTEGER DEFAULT 1,
+  location TEXT DEFAULT '',
+  driver_code TEXT NOT NULL,
+  auth_key TEXT DEFAULT '',
+  enabled INTEGER DEFAULT 1,
+  last_seen REAL DEFAULT 0,
+  created TEXT DEFAULT (datetime('now','localtime'))
+);
+
+-- 智能安防：事件流水（alarm/pass/info；告警可处置）
+CREATE TABLE IF NOT EXISTS sensor_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sensor_id INTEGER DEFAULT 0,
+  event_type TEXT DEFAULT 'info',
+  severity TEXT DEFAULT 'info',
+  epcs TEXT DEFAULT '[]',
+  raw TEXT DEFAULT '{}',
+  event_ts TEXT DEFAULT (datetime('now','localtime')),
+  handle_status TEXT DEFAULT '',
+  handler TEXT DEFAULT '',
+  handle_note TEXT DEFAULT '',
+  handled_at TEXT DEFAULT ''
+);
+
+-- 智能安防：手工临时放行（委外/展览/临时拿出等商品状态之外的补充）
+CREATE TABLE IF NOT EXISTS sensor_pass (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  epc TEXT NOT NULL,
+  reason TEXT DEFAULT '',
+  expires_at TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_sensor_pass_epc ON sensor_pass(epc);
+
+-- 智能安防：单行设置（布防状态/每日布撤防时刻/webhook/抑制秒数）
+CREATE TABLE IF NOT EXISTS sensor_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  data TEXT DEFAULT '{}'
+);
 """
 
 
@@ -407,6 +480,26 @@ def _relax_products_code_unique(conn: sqlite3.Connection) -> None:
         conn.execute("PRAGMA foreign_keys=ON")
 
 
+def seed_store_printers(conn: sqlite3.Connection) -> None:
+    """幂等：为每家门店 × 每个打印业务补齐指派行；旧 stores.printer_name 迁入 label_product。
+
+    新增门店/新增打印业务时重复调用均安全；已有指派不被覆盖。
+    """
+    for code in PRINT_BIZ_CODES:
+        conn.execute(
+            "INSERT OR IGNORE INTO store_printers(store_id,biz_code,printer_name) "
+            "SELECT s.id, ?, '' FROM stores s",
+            (code,))
+    rows = conn.execute(
+        "SELECT id,printer_name FROM stores WHERE IFNULL(printer_name,'')<>''").fetchall()
+    for r in rows:
+        conn.execute(
+            "UPDATE store_printers SET printer_name=? WHERE store_id=? AND biz_code='label_product'"
+            " AND IFNULL(printer_name,'')=''",
+            (r["printer_name"], r["id"]))
+    conn.commit()
+
+
 def migrate_schema(conn: sqlite3.Connection) -> None:
     """幂等建表，并为旧库补齐列。"""
     conn.executescript(SCHEMA)
@@ -441,6 +534,7 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
     _relax_products_code_unique(conn)
     conn.commit()
+    seed_store_printers(conn)
     _seed_base_dicts(conn)
     _backfill_category_code(conn)
     _migrate_material_and_type(conn)
@@ -456,6 +550,12 @@ def _seed_base_dicts(conn: sqlite3.Connection) -> None:
         [("zh", "中文", 1, 1), ("en", "English", 0, 2), ("it", "Italiano", 0, 3)],
     )
     conn.execute("INSERT OR IGNORE INTO biz_config(id,epc_prefix,seq_bits) VALUES(1,'E28',6)")
+    # 智能安防默认设置：撤防、每日21:00布防/10:00撤防、抑制60秒
+    conn.execute(
+        "INSERT OR IGNORE INTO sensor_settings(id,data) VALUES(1,?)",
+        (json.dumps({"armed": False, "arm_time": "21:00", "disarm_time": "10:00",
+                     "webhook_url": "", "webhook_secret": "", "dedup_sec": 60,
+                     "webhook_last": ""}, ensure_ascii=False),))
     categories = [
         ("01", '{"zh":"黄金","en":"Gold","it":"Oro"}', 1),
         ("02", '{"zh":"钻石","en":"Diamond","it":"Diamante"}', 2),
@@ -827,6 +927,7 @@ def seed_demo(conn: sqlite3.Connection) -> None:
         return
     stores = [("总店", "HQ", "管理员"), ("分店A", "A001", "店长小张")]
     conn.executemany("INSERT INTO stores(name,code,owner) VALUES(?,?,?)", stores)
+    seed_store_printers(conn)  # 演示门店也补齐每个打印业务的指派行
 
     products = [
         # J001 - 足金手镯 (1)

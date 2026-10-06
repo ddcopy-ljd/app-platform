@@ -58,6 +58,12 @@ var ST = Vue.reactive({
   printers: [], printerName: '', printSupported: true,
   // 本地打印桥（门店级）：各门店代理状态/上报打印机/绑定信息
   bridges: [],
+  // 代理下载下拉框选中的门店（仅列已生成密钥的门店，密钥服务端内嵌，用户不可见）
+  agentDlStore: 0,
+  // 系统自检铃铛：面板开关 / 被关闭的检查项（localStorage 持久化）/ 轮询定时器
+  healthOpen: false,
+  healthOff: (function () { try { return JSON.parse(localStorage.getItem('yz_health_off') || '[]'); } catch (e) { return []; } })(),
+  healthTimer: null,
   // 打印对话框当前商品所属门店的代理状态（由 bridges 派生）
   agent: { online: false, name: '' },
   // 手机 App 蓝牙打印（安卓 WebView 注入 window.YzApp 时生效）
@@ -85,6 +91,11 @@ var ST = Vue.reactive({
   // 手持机扫码登录（网页端弹窗）
   hqShow: false, hqStatus: '', hqDevice: '', hqImg: '', hqKey: '', hqTimer: null,
   yzScanReady: false,   // App WebView 注入 YzApp 桥接后为 true，出单表单显示扫码按钮
+  // 智能安防
+  secSensors: [], secEvents: [], secPending: 0, secSettings: null, secPass: [],
+  secDrivers: [], secNew: null, secNewKey: null,
+  secAlarm: null, secMuted: false, _secWs: null,
+  secSimEpc: '', secPassEpc: '', secPassReason: '', secPassMin: 60,
   // 复制入库高亮（flashIds 中的商品 ID 列表，3.5s 后自动移除）
   flashIds: [],
   // toast
@@ -133,6 +144,7 @@ var NAV_ITEMS = [
   { id: 'outsourcings', icon: '🏭', key: 'nav.outsourcings' },
   { id: 'appointments', icon: '📅', key: 'nav.appointments' },
   { id: 'showcase', icon: '🪟', key: 'nav.showcase' },
+  { id: 'security', icon: '🛡️', key: 'nav.security' },
   { id: 'profile', icon: '🏪', key: 'nav.profile' },
   { id: 'logs', icon: '📋', key: 'nav.logs' },
 ];
@@ -435,6 +447,7 @@ function go(tab) {
   ST.tab = tab;
   ST.subView = '';
   if (tab === 'inventory') { loadInv(); loadStockBatches(); loadCoTask(); }
+  if (tab === 'security') loadSecurity();
   if (tab === 'appointments') loadAppt();
   if (tab === 'profile') { loadProfile(); loadProductTypes(); }
   // PC 侧边栏直接进入子列表页（维修/采购/委外/借货/客户/日志）时也要拉数据
@@ -458,6 +471,7 @@ function loadDash() {
 function refreshAll() {
   loadDash();
   loadCoTask();   // 全局同步盘点冻结状态，各页面据此屏蔽出入库操作
+  secWsConnect(); // 安防告警推送常驻（任意页面收到告警都会弹窗）
   api('GET', '/api/products?page=1&size=200').then(function (r) { ST.products = r.items; ST.prodTotal = r.total; }).catch(function () {});
   api('GET', '/api/deposits?page=1&size=100').then(function (r) { ST.deposits = r.items; ST.depTotal = r.total; }).catch(function () {});
   api('GET', '/api/sales?page=1&size=100').then(function (r) { ST.sales = r.items; ST.saleTotal = r.total; }).catch(function () {});
@@ -467,7 +481,8 @@ function refreshAll() {
   api('GET', '/api/biz-config').then(function (r) { ST.bizConfig = r; }).catch(function () {});
   api('GET', '/api/languages').then(function (r) { ST.languages = r || []; }).catch(function () {});
   loadTemplates();
-  loadBridgeList();
+  loadHealth();
+  startHealthTimer();
 }
 
 function loadSubList() {
@@ -1865,6 +1880,143 @@ function submitLabelPrintApp() {
   }).catch(function (e) { ST.labelBusy = false; toast(e.message, 'error'); });
 }
 
+// ---- 智能安防 ----
+function loadSecurity() {
+  api('GET', '/api/sensors').then(function (r) { ST.secSensors = r.items || []; }).catch(function () {});
+  api('GET', '/api/sensors/drivers').then(function (r) { ST.secDrivers = r.items || []; }).catch(function () {});
+  api('GET', '/api/sensors/events?size=50').then(function (r) {
+    ST.secEvents = r.items || []; ST.secPending = r.pending || 0;
+  }).catch(function () {});
+  api('GET', '/api/sensors/settings').then(function (r) { ST.secSettings = r; }).catch(function () {});
+  api('GET', '/api/sensors/pass').then(function (r) { ST.secPass = r.items || []; }).catch(function () {});
+  if (!ST.bridges.length) {
+    api('GET', '/api/print-agent/status').then(function (r) { ST.bridges = r.bridges || []; }).catch(function () {});
+  }
+  secWsConnect();
+}
+
+// 工作区告警推送：断线自动重连
+function secWsConnect() {
+  if (!ST.token || (ST._secWs && ST._secWs.readyState <= 1)) return;
+  var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  var ws = new WebSocket(proto + '://' + location.host + API + '/ws/security?token=' + encodeURIComponent(ST.token));
+  ST._secWs = ws;
+  ws.onmessage = function (e) {
+    try {
+      var d = JSON.parse(e.data);
+      if (d.type === 'alarm') {
+        ST.secAlarm = d;
+        if (!ST.secMuted) secBeep();
+        loadSecurity();
+      }
+    } catch (err) {}
+  };
+  ws.onclose = function () {
+    ST._secWs = null;
+    setTimeout(secWsConnect, 5000);
+  };
+}
+
+// 告警提示音（Web Audio 蜂鸣，无需音频文件）
+function secBeep() {
+  try {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    var ctx = secBeep._ctx || (secBeep._ctx = new Ctx());
+    var n = 0;
+    var timer = setInterval(function () {
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'square'; o.frequency.value = 880;
+      g.gain.setValueAtTime(0.15, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + 0.3);
+      if (++n >= 6) clearInterval(timer);
+    }, 350);
+  } catch (e) {}
+}
+
+function secAckAlarm(note) {
+  var d = ST.secAlarm;
+  if (!d) return;
+  var first = (d.alarms || [])[0];
+  if (first && first.id) {
+    api('POST', '/api/sensors/events/' + first.id + '/handle', { action: 'confirm', note: note || '' })
+      .then(function () { loadSecurity(); }).catch(function () {});
+  }
+  ST.secAlarm = null;
+}
+
+function secToggleArm() {
+  if (!ST.secSettings) return;
+  var target = !ST.secSettings.armed;
+  api('PUT', '/api/sensors/settings', { armed: target }).then(function () {
+    ST.secSettings.armed = target;
+    toast(target ? t('sec.armed') : t('sec.disarmed'));
+  }).catch(function () {});
+}
+
+function secSaveSettings() {
+  var s = ST.secSettings;
+  api('PUT', '/api/sensors/settings', {
+    arm_time: s.arm_time, disarm_time: s.disarm_time,
+    webhook_url: s.webhook_url,
+    webhook_secret: s.webhook_secret === '******' ? null : s.webhook_secret,
+    dedup_sec: s.dedup_sec,
+  }).then(function () { toast(t('act.save') + ' OK'); loadSecurity(); }).catch(function () {});
+}
+
+function secNewOpen() {
+  ST.secNewKey = null;
+  ST.secNew = { name: '', store_id: 1, location: '',
+                driver_code: (ST.secDrivers[0] || {}).code || 'uhf_rfid_gate', enabled: true };
+}
+
+function secCreate() {
+  api('POST', '/api/sensors', ST.secNew).then(function (r) {
+    ST.secNewKey = r;   // {id, auth_key, http_url, ws_url} 密钥仅此一次展示
+    ST.secNew = null;
+    loadSecurity();
+  }).catch(function () {});
+}
+
+function secRotateKey(s) {
+  if (!confirm(t('sec.rotateConfirm'))) return;
+  api('POST', '/api/sensors/' + s.id + '/rotate-key').then(function (r) {
+    ST.secNewKey = { id: s.id, auth_key: r.auth_key, http_url: '', ws_url: r.ws_url, rotated: true };
+  }).catch(function () {});
+}
+
+function secDelete(s) {
+  if (!confirm(t('act.del') + ' ' + s.name + '?')) return;
+  api('DELETE', '/api/sensors/' + s.id).then(function () { loadSecurity(); }).catch(function () {});
+}
+
+function secSimulate(s, kind) {
+  var body = kind === 'alarm'
+    ? { kind: 'signal', alarm: true }
+    : { kind: 'epc', epcs: [(ST.secSimEpc || '').trim()] };
+  api('POST', '/api/sensors/' + s.id + '/simulate', body).then(function (r) {
+    toast(t('sec.simOk') + ': ' + (r.alarms ? '🚨' + r.alarms : '✓'));
+    loadSecurity();
+  }).catch(function () {});
+}
+
+function secHandleEvent(ev, action) {
+  var note = action === 'confirm' ? (prompt(t('sec.handleNote')) || '') : '';
+  api('POST', '/api/sensors/events/' + ev.id + '/handle', { action: action, note: note })
+    .then(function () { loadSecurity(); }).catch(function () {});
+}
+
+function secAddPass() {
+  var epc = (ST.secPassEpc || '').trim();
+  if (!epc) { toast(t('sec.epcRequired'), 'error'); return; }
+  api('POST', '/api/sensors/pass', { epc: epc, reason: ST.secPassReason || '', minutes: ST.secPassMin || 60 })
+    .then(function () { ST.secPassEpc = ''; ST.secPassReason = ''; loadSecurity(); }).catch(function () {});
+}
+
+function secDelPass(p) {
+  api('DELETE', '/api/sensors/pass/' + p.id).then(function () { loadSecurity(); }).catch(function () {});
+}
+
 // ---- 盘点批次历史 ----
 function loadStockBatches() {
   api('GET', '/api/stocktake/list?limit=8').then(function (r) { ST.stockBatches = r.list || []; }).catch(function () {});
@@ -1963,8 +2115,80 @@ function clearCoTimer() {
 }
 
 // ---- 本地打印桥（门店级）----
+// 打印业务固定枚举镜像（须与 db.py PRINT_BIZ 一致）：[code, 分组]
+var PRINT_BIZ = [
+  ['label_product', 'label'], ['label_shelf', 'label'],
+  ['receipt_sale', 'receipt'], ['receipt_deposit', 'receipt'], ['receipt_loan', 'receipt'],
+  ['receipt_repair', 'receipt'], ['receipt_purchase', 'receipt'],
+  ['receipt_outsourcing', 'receipt'], ['receipt_inout', 'receipt'],
+  ['cert_warranty', 'doc'], ['report_stocktake', 'doc'], ['report_business', 'doc'],
+];
+
+function bizGroups() {
+  return ['label', 'receipt', 'doc'].map(function (g) {
+    return {group: g, items: PRINT_BIZ.filter(function (x) { return x[1] === g; })
+      .map(function (x) { return x[0]; })};
+  });
+}
+
+// 某门店某打印业务当前指派的打印机名
+function bizPrinterOf(b, code) {
+  var row = (b.biz || []).find(function (x) { return x.code === code; });
+  return row ? (row.printer || '') : '';
+}
+
 function loadBridgeList() {
-  return api('GET', '/api/print-agent/status').then(function (r) { ST.bridges = r.bridges || []; }).catch(function () {});
+  return api('GET', '/api/print-agent/status').then(function (r) {
+    ST.bridges = r.bridges || [];
+    // 下载下拉框默认选中第一个已生成密钥的门店；已选门店失效时回退
+    var keyed = ST.bridges.filter(function (b) { return b.has_key; });
+    if (!keyed.some(function (b) { return b.store_id === ST.agentDlStore; })) {
+      ST.agentDlStore = keyed.length ? keyed[0].store_id : 0;
+    }
+  }).catch(function () {});
+}
+
+// ---------------------------------------------------------------- 系统自检铃铛
+// 健康检查注册表：run() 返回 'ok' | 'bad' | 'na'（未配置不计异常）。
+// 新增检查项只需在此加一行，i18n 补 hc.<id> 文案，铃铛/面板/摇动自动生效。
+var HEALTH_CHECKS = [
+  { id: 'print_agent', run: function () {
+      if (!ST.bridges.length) return 'na';
+      return ST.bridges.some(function (b) { return b.online; }) ? 'ok' : 'bad';
+  }},
+  { id: 'anti_theft', run: function () {
+      if (!ST.secSensors.length) return 'na';
+      var armed = !!(ST.secSettings && ST.secSettings.armed);
+      var anyOn = ST.secSensors.some(function (s) { return s.enabled && s.online; });
+      return (armed && anyOn) ? 'ok' : 'bad';
+  }},
+];
+
+function healthItems() {
+  return HEALTH_CHECKS.map(function (c) {
+    return { id: c.id, enabled: ST.healthOff.indexOf(c.id) < 0, state: c.run() };
+  });
+}
+function healthBad() {
+  return HEALTH_CHECKS.some(function (c) {
+    return ST.healthOff.indexOf(c.id) < 0 && c.run() === 'bad';
+  });
+}
+function toggleHealth(id) {
+  var i = ST.healthOff.indexOf(id);
+  if (i >= 0) ST.healthOff.splice(i, 1); else ST.healthOff.push(id);
+  localStorage.setItem('yz_health_off', JSON.stringify(ST.healthOff));
+}
+
+// 轻量轮询：登录后拉一次，此后每 30s（页面隐藏时跳过），铃铛状态全局实时
+function loadHealth() {
+  loadBridgeList();
+  api('GET', '/api/sensors').then(function (r) { ST.secSensors = r.items || []; }).catch(function () {});
+  api('GET', '/api/sensors/settings').then(function (r) { ST.secSettings = r; }).catch(function () {});
+}
+function startHealthTimer() {
+  if (ST.healthTimer) return;
+  ST.healthTimer = setInterval(function () { if (!document.hidden) loadHealth(); }, 30000);
 }
 function createStore() {
   var name = prompt(t('sb.storeName'));
@@ -1985,15 +2209,21 @@ function copyStoreKey(sid) {
   var b = ST.bridges.find(function (x) { return x.store_id === sid; });
   if (b && b.newKey && navigator.clipboard) navigator.clipboard.writeText(b.newKey).then(function () { toast(t('toast.keyCopied')); });
 }
-function bindStorePrinter(sid, printer) {
-  api('POST', '/api/stores/' + sid + '/bind-printer', { printer: printer || '' }).then(function (r) {
+function bindBizPrinter(sid, code, printer) {
+  api('POST', '/api/stores/' + sid + '/bind-printer',
+      { biz: code, printer: printer || '' }).then(function (r) {
     var b = ST.bridges.find(function (x) { return x.store_id === sid; });
-    if (b) b.printer_name = r.printer || '';
+    if (b) {
+      var row = (b.biz || []).find(function (x) { return x.code === code; });
+      if (row) row.printer = r.printer || '';
+      if (code === 'label_product') b.printer_name = r.printer || '';
+    }
     toast(t('toast.saveOk'));
   }).catch(function (e) { toast(e.message, 'error'); });
 }
-function storeControl(sid, action) {
-  api('POST', '/api/stores/' + sid + '/print-control', { action: action }).then(function () {
+function storeControl(sid, action, biz) {
+  api('POST', '/api/stores/' + sid + '/print-control',
+      { action: action, biz: biz || 'label_product' }).then(function () {
     toast(t('sb.ctlOk'));
     if (action === 'refresh') loadBridgeList();
   }).catch(function (e) { toast(e.message, 'error'); });
@@ -2242,11 +2472,23 @@ var app = Vue.createApp({
     FIELD_LABELS: function () { return FIELD_LABELS; },
     LABEL_FIELDS: function () { return LABEL_FIELDS; },
     labelFieldGroups: function () { return LABEL_FIELD_GROUPS; },
-    // 打印代理下载地址（随挂载前缀拼接）
-    agentDownload: function () { return API + '/api/print-agent/download'; },
+    // 已生成密钥的门店（代理下载下拉框数据源）
+    keyedStores: function () { return ST.bridges.filter(function (b) { return b.has_key; }); },
+    // 是否有任一门店代理在线（PC 端据此提示下载，移动端仅提示）
+    anyAgentOnline: function () { return ST.bridges.some(function (b) { return b.online; }); },
+    // 代理下载地址：按所选门店服务端内嵌密钥后下发 exe
+    agentDlUrl: function () {
+      return ST.agentDlStore ? API + '/api/stores/' + ST.agentDlStore + '/agent-download' : '';
+    },
+    // 打印业务分组（标签 / 票据 / 单据报表）
+    bizGroups: bizGroups,
+    // 系统自检铃铛：检查项列表 / 是否有启用项异常
+    healthItems: healthItems,
+    healthBad: healthBad,
   },
   methods: {
     t: t, fmt: fmt, fmtY: fmtY, dateFmt: dateFmt,
+    toggleHealth: toggleHealth,
     statusClass: statusClass,
     statusText: statusText, methodText: methodText, levelText: levelText,
     directionText: directionText, printedTip: printedTip, coStatusText: coStatusText, resultText: resultText,
@@ -2276,7 +2518,8 @@ var app = Vue.createApp({
     confirmImgCrop: confirmImgCrop, removeProductImage: removeProductImage,
     saveBizConfig: saveBizConfig,
     loadBridgeList: loadBridgeList, createStore: createStore, rotateStoreKey: rotateStoreKey,
-    copyStoreKey: copyStoreKey, bindStorePrinter: bindStorePrinter, storeControl: storeControl,
+    copyStoreKey: copyStoreKey, bindBizPrinter: bindBizPrinter, bizPrinterOf: bizPrinterOf,
+    storeControl: storeControl,
     labelStoreBridge: labelStoreBridge,
     openInbound: openInbound, copyInbound: copyInbound, openRfid: openRfid, doRfid: doRfid, toggleInvGroup: toggleInvGroup,
     openLabelPrint: openLabelPrint, removeLabelItem: removeLabelItem, closeLabel: closeLabel,
@@ -2307,6 +2550,11 @@ var app = Vue.createApp({
     tplDotScale: tplDotScale,
     uploadTplBg: uploadTplBg, rotateTplBg: rotateTplBg, removeTplBg: removeTplBg,
     tplBgStyle: tplBgStyle, lpBgStyle: lpBgStyle,
+    // 智能安防
+    loadSecurity: loadSecurity, secToggleArm: secToggleArm, secSaveSettings: secSaveSettings,
+    secNewOpen: secNewOpen, secCreate: secCreate, secRotateKey: secRotateKey,
+    secDelete: secDelete, secSimulate: secSimulate, secHandleEvent: secHandleEvent,
+    secAddPass: secAddPass, secDelPass: secDelPass, secAckAlarm: secAckAlarm,
   }
 });
 

@@ -18,12 +18,13 @@ import socket
 import sqlite3
 import threading
 import time
+import urllib.parse
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
-from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Body, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
@@ -31,6 +32,7 @@ import uvicorn
 
 import db
 import rfid_print
+import sensors
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("jewelry")
@@ -1881,14 +1883,16 @@ def print_labels(body: LabelPrintIn, request: Request):
         printer_desc = body.printer or ""
         if not body.simulate:
             if body.route == "agent":
-                # 按商品所属门店分组，路由到各自门店的打印桥（任务内带该店绑定打印机）
+                # 按商品所属门店分组，路由到各自门店的打印桥；
+                # 任务带「标签业务(label_product)」在该门店指派的打印机名
                 stores_cfg: dict[int, dict] = {}
                 for sid0 in per_store:
                     srow = conn.execute(
-                        "SELECT name,printer_name FROM stores WHERE id=?", (sid0,)).fetchone()
+                        "SELECT name FROM stores WHERE id=?", (sid0,)).fetchone()
+                    bmap = _biz_printer_map(conn, sid0)
                     stores_cfg[sid0] = {
                         "name": srow["name"] if srow else f"门店{sid0}",
-                        "printer": (srow["printer_name"] if srow else "") or "",
+                        "printer": bmap.get("label_product", "") or "",
                     }
                 with _bridges_lock:
                     missing = [c["name"] for sid0, c in stores_cfg.items()
@@ -1897,7 +1901,8 @@ def print_labels(body: LabelPrintIn, request: Request):
                 if missing:
                     raise HTTPException(400, "打印代理不在线：" + "、".join(missing))
                 for sid0, parts in per_store.items():
-                    _bridge_enqueue(sid0, "".join(parts), len(parts))
+                    _bridge_enqueue(sid0, "".join(parts), len(parts),
+                                    biz="label_product", printer=stores_cfg[sid0]["printer"])
                 sent = True
                 printer_desc = "打印桥（" + "、".join(stores_cfg[s]["name"] for s in per_store) + "）"
             else:
@@ -1920,8 +1925,17 @@ def print_labels(body: LabelPrintIn, request: Request):
 
 # ---------------------------------------------------------------- 本地打印桥（门店级，多代理）
 # 每个门店一把桥接密钥（stores.bridge_key）；代理以密钥连接 /ws/print-agent，
-# 连接即上报本机全部打印机；门店在云端指派绑定打印机（stores.printer_name）；
-# 打印任务按商品 store_id 路由到对应门店的代理，任务内带绑定打印机名。
+# 连接即上报本机全部打印机；门店在云端「按打印业务」指派打印机（store_printers，
+# 多个业务可指向同一台）；打印任务按商品 store_id 路由，任务内带业务码与指派打印机名。
+
+
+def _biz_printer_map(conn, sid: int) -> dict:
+    """门店各打印业务 -> 打印机名（db.PRINT_BIZ 全量，未指派为空串）。"""
+    rows = conn.execute(
+        "SELECT biz_code,printer_name FROM store_printers WHERE store_id=?", (sid,)).fetchall()
+    have = {r["biz_code"]: (r["printer_name"] or "") for r in rows}
+    return {code: have.get(code, "") or "" for code in db.PRINT_BIZ_CODES}
+
 
 class _Bridge:
     __slots__ = ("ws", "loop", "name", "printers", "last_seen", "last_job")
@@ -1953,12 +1967,14 @@ def _bridge_send(sid: int, payload: dict) -> None:
     fut.result(timeout=10)
 
 
-def _bridge_enqueue(sid: int, zpl: str, count: int) -> str:
+def _bridge_enqueue(sid: int, zpl: str, count: int,
+                    biz: str = "label_product", printer: str = "") -> str:
     with _bridges_lock:
         _bridge_seq[0] += 1
         jid = f"PJ{_bridge_seq[0]:06d}"
     _bridge_send(sid, {"type": "job", "job": {"job_id": jid, "zpl": zpl,
-                                              "title": "jewelry-labels", "count": count}})
+                                              "title": "jewelry-labels", "count": count,
+                                              "biz": biz, "printer": printer}})
     return jid
 
 
@@ -1984,15 +2000,20 @@ def print_agent_status(request: Request):
     with _db(request) as conn:
         rows = conn.execute(
             "SELECT id,name,code,printer_name,bridge_key FROM stores ORDER BY id").fetchall()
+        # 连接关闭前预取每店的业务指派
+        biz_maps = {r["id"]: _biz_printer_map(conn, r["id"]) for r in rows}
     with _bridges_lock:
         for r in rows:
             b = _bridges.get(r["id"])
             online = bool(b and now - b.last_seen < 15)
+            biz_map = biz_maps[r["id"]]
             out.append({
                 "store_id": r["id"], "store_name": r["name"], "code": r["code"],
                 "online": online, "agent_name": (b.name if online else ""),
                 "printers": list(b.printers) if online else [],
-                "printer_name": r["printer_name"] or "",
+                "printer_name": biz_map.get("label_product", "") or r["printer_name"] or "",
+                "biz": [{"code": c0, "printer": biz_map.get(c0, "")}
+                        for c0 in db.PRINT_BIZ_CODES],
                 "has_key": bool((r["bridge_key"] or "").strip()),
                 "last_job": (dict(b.last_job) if online and b.last_job else None),
             })
@@ -2008,6 +2029,54 @@ def print_agent_download():
                             media_type="application/vnd.microsoft.portable-executable")
     src = ROOT / "scripts" / "print_agent.py"
     return FileResponse(src, filename="print_agent.py", media_type="text/x-python")
+
+
+_PA_BURN = None
+
+
+def _pa_burn():
+    """惰性加载 scripts/print_agent.py 取 embed_token_bytes（exe 尾部 overlay 烧录）。"""
+    global _PA_BURN
+    if _PA_BURN is None:
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "print_agent", str(ROOT / "scripts" / "print_agent.py"))
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            _PA_BURN = m.embed_token_bytes
+        except Exception:
+            _PA_BURN = False
+    return _PA_BURN or None
+
+
+@app.get("/api/stores/{sid}/agent-download")
+def store_agent_download(sid: int, request: Request):
+    """按门店下载已内嵌该店 Token 的打印代理 exe（管理员操作，Token 服务端注入，用户不可见）。"""
+    _require_auth(request)
+    with _db(request) as conn:
+        r = conn.execute(
+            "SELECT id,name,bridge_key FROM stores WHERE id=?", (sid,)).fetchone()
+    if not r:
+        raise HTTPException(404, "门店不存在")
+    key = (r["bridge_key"] or "").strip()
+    if not key:
+        raise HTTPException(400, "该门店尚未生成密钥，请先点【生成/重置】")
+    exe = ROOT / "scripts" / "dist" / "PrintBridge.exe"
+    if not exe.is_file():
+        raise HTTPException(404, "代理尚未打包：请先运行 scripts/build_exe.bat 生成 PrintBridge.exe")
+    burn = _pa_burn()
+    if not burn:
+        raise HTTPException(500, "烧录模块加载失败")
+    data = burn(exe.read_bytes(), key)
+    fname = ("PrintBridge-"
+             + re.sub(r'[\\/:*?"<>|\s]+', "_", (r["name"] or "").strip() or f"store{sid}")
+             + ".exe")
+    return Response(
+        content=data,
+        media_type="application/vnd.microsoft.portable-executable",
+        headers={"Content-Disposition":
+                 "attachment; filename*=UTF-8''" + urllib.parse.quote(fname)})
 
 
 @app.get("/api/stores/bridge-whoami")
@@ -2035,6 +2104,10 @@ def store_create(body: dict, request: Request):
         try:
             conn.execute("INSERT INTO stores(id,name,code,owner) VALUES(?,?,?,?)",
                          (sid, name, code, str(body.get("owner") or "")))
+            # 新门店补齐每个打印业务的指派行（空指派）
+            conn.executemany(
+                "INSERT INTO store_printers(store_id,biz_code,printer_name) VALUES(?,?, '')",
+                [(sid, c0) for c0 in db.PRINT_BIZ_CODES])
             conn.commit()
         except sqlite3.IntegrityError:
             raise HTTPException(400, "门店编码已存在")
@@ -2056,34 +2129,55 @@ def store_bridge_key_rotate(sid: int, request: Request):
 
 @app.post("/api/stores/{sid}/bind-printer")
 def store_bind_printer(sid: int, body: dict, request: Request):
-    """门店指派绑定打印机：落库并即时推送给在线代理。
+    """门店按打印业务指派打印机：upsert store_printers 并即时把全量指派推给在线代理。
 
     必须是同步端点：FastAPI 在线程池执行本函数，_bridge_send 才能跨线程
     投递到代理所在事件循环；若用 async 会在事件循环线程上自锁。
+    body: {"biz": 业务码(默认label_product), "printer": 打印机名(空串=取消指派)}
     """
     _require_auth(request)
+    biz = str(body.get("biz") or "label_product").strip()
+    if biz not in db.PRINT_BIZ_CODES:
+        raise HTTPException(400, "未知打印业务")
     printer = str(body.get("printer") or "").strip()
     with _db(request) as conn:
         if not conn.execute("SELECT id FROM stores WHERE id=?", (sid,)).fetchone():
             raise HTTPException(404, "门店不存在")
-        conn.execute("UPDATE stores SET printer_name=? WHERE id=?", (printer, sid))
+        conn.execute(
+            "INSERT INTO store_printers(store_id,biz_code,printer_name) VALUES(?,?,?)"
+            " ON CONFLICT(store_id,biz_code) DO UPDATE SET printer_name=excluded.printer_name",
+            (sid, biz, printer))
+        if biz == "label_product":
+            # 同步旧列：其他直接读 stores.printer_name 的链路保持一致
+            conn.execute("UPDATE stores SET printer_name=? WHERE id=?", (printer, sid))
         conn.commit()
+        bmap = _biz_printer_map(conn, sid)
     try:
-        _bridge_send(sid, {"type": "config", "printer": printer})
+        _bridge_send(sid, {"type": "config",
+                           "printer": bmap.get("label_product", ""),
+                           "biz_printers": bmap})
     except Exception:
         pass  # 代理离线时静默：重连后会收到 config 补推
-    return {"ok": True, "printer": printer}
+    return {"ok": True, "biz": biz, "printer": printer}
 
 
 @app.post("/api/stores/{sid}/print-control")
 async def store_print_control(sid: int, body: dict, request: Request):
-    """向门店代理下发控制指令：feed 进纸 / backfeed 退纸 / test 测试页 / refresh 重新搜索打印机。"""
+    """向门店代理下发控制指令：feed 进纸 / backfeed 退纸 / test 测试页 / refresh 重新搜索打印机。
+
+    feed/backfeed 走标签业务(label_product)指派机；test 可带 biz 指向任意业务的指派打印机，
+    用于逐台验证指派的打印机是否真的出纸。
+    """
     _require_auth(request)
     action = str(body.get("action") or "")
     if action not in ("feed", "backfeed", "test", "refresh"):
         raise HTTPException(400, "未知控制指令")
+    biz = str(body.get("biz") or "label_product").strip()
+    if biz not in db.PRINT_BIZ_CODES:
+        raise HTTPException(400, "未知打印业务")
     with _db(request) as conn:
-        s = conn.execute("SELECT name,printer_name FROM stores WHERE id=?", (sid,)).fetchone()
+        s = conn.execute("SELECT name FROM stores WHERE id=?", (sid,)).fetchone()
+        bmap = _biz_printer_map(conn, sid)
     if not s:
         raise HTTPException(404, "门店不存在")
     with _bridges_lock:
@@ -2091,10 +2185,11 @@ async def store_print_control(sid: int, body: dict, request: Request):
         online = bool(b and time.time() - b.last_seen < 15)
     if not online:
         raise HTTPException(400, f"门店「{s['name']}」打印代理不在线")
+    target_printer = bmap.get(biz, "") if action == "test" else bmap.get("label_product", "")
     payload: dict = {"type": "control", "action": action,
-                     "printer": s["printer_name"] or ""}
+                     "biz": biz, "printer": target_printer}
     if action == "test":
-        payload["zpl"] = _build_test_zpl(s["name"], s["printer_name"] or "")
+        payload["zpl"] = _build_test_zpl(s["name"], target_printer)
     if action != "refresh":
         with _bridges_lock:
             _bridge_seq[0] += 1
@@ -2130,10 +2225,13 @@ async def print_agent_ws(websocket: WebSocket, key: str = "", name: str = ""):
     """
     key = (key or "").strip()
     store = None
+    biz_map: dict = {}
     if key:
         with _db(websocket) as conn:
             store = conn.execute(
                 "SELECT id,name,printer_name FROM stores WHERE bridge_key=?", (key,)).fetchone()
+            if store:
+                biz_map = _biz_printer_map(conn, store["id"])
     await websocket.accept()
     if not store:
         await websocket.close(code=4401)
@@ -2155,7 +2253,8 @@ async def print_agent_ws(websocket: WebSocket, key: str = "", name: str = ""):
     async def _push_config():
         await websocket.send_text(json.dumps(
             {"type": "config", "store_name": store["name"],
-             "printer": store["printer_name"] or ""}, ensure_ascii=False))
+             "printer": biz_map.get("label_product", "") or store["printer_name"] or "",
+             "biz_printers": dict(biz_map)}, ensure_ascii=False))
 
     async def _receiver():
         try:
@@ -3455,6 +3554,374 @@ def showcase_sync(body: ShowcaseSyncIn, request: Request):
         ids = [str(it.id) for it in body.items]
         _log(conn, op["username"], "同步橱窗", f"{len(body.items)} 件：{','.join(ids[:5])}" + ("..." if len(ids) > 5 else ""))
         return {"ok": True, "count": len(body.items)}
+
+
+# ---------------------------------------------------------------- 智能安防（防盗传感器）
+
+class SensorIn(BaseModel):
+    name: str = ""
+    store_id: int = 1
+    location: str = ""
+    driver_code: str = ""
+    enabled: bool = True
+
+
+def _sensor_view(r) -> dict:
+    """设备视图：密钥永不回显；在线判定只看设备上报刷新的 last_seen。"""
+    d = dict(r)
+    d["online"] = bool(r["last_seen"] and time.time() - r["last_seen"] < sensors.ONLINE_TTL)
+    d["has_key"] = bool((r["auth_key"] or "").strip())
+    d.pop("auth_key", None)
+    drv = sensors.DRIVERS.get(r["driver_code"])
+    d["driver_name"] = drv.name if drv else r["driver_code"]
+    d["reports_epc"] = bool(drv and drv.reports_epc)
+    return d
+
+
+def _lan_base() -> str:
+    return f"http://{_lan_ip()}:{PORT}"
+
+
+@app.get("/api/sensors/drivers")
+def sensor_drivers(request: Request):
+    _require_auth(request)
+    return {"items": [{"code": d.driver_code, "name": d.name, "reports_epc": d.reports_epc}
+                      for d in sensors.DRIVERS.values()]}
+
+
+@app.get("/api/sensors")
+def sensor_list(request: Request):
+    _require_auth(request)
+    with _db(request) as conn:
+        rows = conn.execute("SELECT * FROM sensors ORDER BY id").fetchall()
+        return {"items": [_sensor_view(r) for r in rows]}
+
+
+@app.post("/api/sensors")
+def sensor_create(body: SensorIn, request: Request):
+    op = _require_auth(request)
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "设备名称必填")
+    if body.driver_code not in sensors.DRIVERS:
+        raise HTTPException(400, "未知设备类型")
+    key = sensors.new_key()
+    with _db(request) as conn:
+        if body.store_id and not conn.execute(
+                "SELECT id FROM stores WHERE id=?", (body.store_id,)).fetchone():
+            raise HTTPException(400, "门店不存在")
+        cur = conn.execute(
+            "INSERT INTO sensors(name,store_id,location,driver_code,auth_key,enabled) VALUES(?,?,?,?,?,?)",
+            (name, body.store_id or 1, body.location.strip(), body.driver_code,
+             key, 1 if body.enabled else 0))
+        conn.commit()
+        _log(conn, op["username"], "新增安防设备", name)
+        sid = cur.lastrowid
+    base = _lan_base()
+    return {"id": sid, "auth_key": key,
+            "http_url": f"{base}/api/sensors/ingest",
+            "ws_url": f"{base.replace('http', 'ws', 1)}/ws/sensor?key={key}"}
+
+
+@app.put("/api/sensors/{sid}")
+def sensor_update(sid: int, body: SensorIn, request: Request):
+    op = _require_auth(request)
+    with _db(request) as conn:
+        row = conn.execute("SELECT * FROM sensors WHERE id=?", (sid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "设备不存在")
+        conn.execute(
+            "UPDATE sensors SET name=?,store_id=?,location=?,enabled=? WHERE id=?",
+            (body.name.strip() or row["name"], body.store_id or row["store_id"],
+             body.location.strip(), 1 if body.enabled else 0, sid))
+        conn.commit()
+        _log(conn, op["username"], "修改安防设备", body.name or row["name"])
+        return {"ok": True}
+
+
+@app.delete("/api/sensors/{sid}")
+def sensor_delete(sid: int, request: Request):
+    op = _require_auth(request)
+    with _db(request) as conn:
+        row = conn.execute("SELECT name FROM sensors WHERE id=?", (sid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "设备不存在")
+        conn.execute("DELETE FROM sensors WHERE id=?", (sid,))
+        conn.commit()
+        _log(conn, op["username"], "删除安防设备", row["name"])
+        return {"ok": True}
+
+
+@app.post("/api/sensors/{sid}/rotate-key")
+def sensor_rotate_key(sid: int, request: Request):
+    """轮换接入密钥：旧密钥立即失效，新密钥仅本次返回。"""
+    op = _require_auth(request)
+    key = sensors.new_key()
+    with _db(request) as conn:
+        row = conn.execute("SELECT name FROM sensors WHERE id=?", (sid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "设备不存在")
+        conn.execute("UPDATE sensors SET auth_key=? WHERE id=?", (key, sid))
+        conn.commit()
+        _log(conn, op["username"], "轮换设备密钥", row["name"])
+    return {"auth_key": key,
+            "ws_url": f"{_lan_base().replace('http', 'ws', 1)}/ws/sensor?key={key}"}
+
+
+@app.post("/api/sensors/ingest")
+def sensor_ingest(request: Request, body: dict = Body(default={}), key: str = Query(default="")):
+    """设备 HTTP 上报通道：X-Sensor-Key 头（兼容 ?key=），与 WS 通道共用 handle()。"""
+    k = request.headers.get("X-Sensor-Key") or key
+    with _db(request) as conn:
+        s = sensors.find_by_key(conn, k)
+        if not s:
+            raise HTTPException(401, "设备密钥无效")
+        if not s["enabled"]:
+            raise HTTPException(403, "设备已禁用")
+        sensors.touch(conn, s["id"])
+        res = sensors.handle(conn, s, body if isinstance(body, dict) else {},
+                             sandbox=(_operator_mode(request) == "SANDBOX"))
+        conn.commit()
+        return res
+
+
+@app.websocket("/ws/sensor")
+async def sensor_ws(websocket: WebSocket, key: str = ""):
+    """设备 WS 上报通道：鉴权后接收上报帧；heartbeat 仅刷新在线状态。"""
+    with _db(websocket) as conn:
+        s = sensors.find_by_key(conn, key)
+        sid = s["id"] if (s and s["enabled"]) else 0
+    await websocket.accept()
+    if not sid:
+        await websocket.close(code=4401)
+        return
+    sandbox = (websocket.headers.get("X-Operator-Mode", "").upper() == "SANDBOX")
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            with _db(websocket) as conn:
+                s2 = conn.execute("SELECT * FROM sensors WHERE id=?", (sid,)).fetchone()
+                if not s2 or not s2["enabled"]:
+                    await websocket.close(code=4403)
+                    return
+                sensors.touch(conn, sid)
+                try:
+                    data = json.loads(msg)
+                except Exception:
+                    conn.commit()
+                    continue
+                if not (isinstance(data, dict) and data.get("type") == "heartbeat"):
+                    sensors.handle(conn, s2, data if isinstance(data, dict) else {},
+                                   sandbox=sandbox)
+                conn.commit()
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    except Exception:
+        pass
+
+
+@app.post("/api/sensors/{sid}/simulate")
+def sensor_simulate(sid: int, request: Request, body: dict = Body(default={})):
+    """模拟事件：仅 simulator 驱动设备可用，事件走与真实设备完全相同的管线。"""
+    op = _require_auth(request)
+    with _db(request) as conn:
+        s = conn.execute("SELECT * FROM sensors WHERE id=?", (sid,)).fetchone()
+        if not s:
+            raise HTTPException(404, "设备不存在")
+        if s["driver_code"] != "simulator":
+            raise HTTPException(400, "仅模拟设备支持此操作")
+        sensors.touch(conn, sid)
+        res = sensors.handle(conn, s, body, sandbox=(_operator_mode(request) == "SANDBOX"))
+        conn.commit()
+        _log(conn, op["username"], "模拟安防事件", s["name"])
+        return res
+
+
+@app.get("/api/sensors/settings")
+def sensor_settings_get(request: Request):
+    _require_auth(request)
+    with _db(request) as conn:
+        data = sensors.get_settings(conn)
+    data["webhook_secret"] = "******" if data.get("webhook_secret") else ""
+    data["webhook_last"] = sensors.WEBHOOK_LAST
+    return data
+
+
+class SensorSettingsIn(BaseModel):
+    armed: bool | None = None
+    arm_time: str = ""
+    disarm_time: str = ""
+    webhook_url: str | None = None
+    webhook_secret: str | None = None
+    dedup_sec: int | None = None
+
+
+@app.put("/api/sensors/settings")
+def sensor_settings_put(body: SensorSettingsIn, request: Request):
+    op = _require_auth(request)
+    with _db(request) as conn:
+        data = sensors.get_settings(conn)
+        if body.armed is not None and bool(body.armed) != bool(data.get("armed")):
+            data["armed"] = bool(body.armed)
+            _log(conn, op["username"], "安防布防" if body.armed else "安防撤防", "手动")
+        if body.arm_time:
+            data["arm_time"] = body.arm_time
+        if body.disarm_time:
+            data["disarm_time"] = body.disarm_time
+        if body.webhook_url is not None:
+            data["webhook_url"] = body.webhook_url.strip()
+        if body.webhook_secret:
+            data["webhook_secret"] = body.webhook_secret.strip()
+        if body.dedup_sec is not None:
+            data["dedup_sec"] = max(0, int(body.dedup_sec))
+        sensors.save_settings(conn, data)
+        conn.commit()
+    return {"ok": True}
+
+
+@app.get("/api/sensors/events")
+def sensor_event_list(request: Request, status: str = "", page: int = 1, size: int = 50):
+    _require_auth(request)
+    with _db(request) as conn:
+        where, args = "", []
+        if status == "pending":
+            where = "WHERE e.event_type='alarm' AND e.handle_status='未处理'"
+        total = conn.execute(
+            f"SELECT COUNT(*) n FROM sensor_events e {where}", args).fetchone()["n"]
+        rows = conn.execute(
+            f"""SELECT e.*, s.name AS sensor_name, s.location AS sensor_location
+                  FROM sensor_events e LEFT JOIN sensors s ON s.id=e.sensor_id
+                  {where} ORDER BY e.id DESC LIMIT ? OFFSET ?""",
+            args + [size, (page - 1) * size]).fetchall()
+        pending = conn.execute(
+            "SELECT COUNT(*) n FROM sensor_events WHERE event_type='alarm' AND handle_status='未处理'"
+        ).fetchone()["n"]
+        items = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["raw"] = json.loads(d.get("raw") or "{}")
+            except Exception:
+                pass
+            try:
+                d["epcs"] = json.loads(d.get("epcs") or "[]")
+            except Exception:
+                pass
+            items.append(d)
+        return {"total": total, "page": page, "size": size, "pending": pending, "items": items}
+
+
+class EventHandleIn(BaseModel):
+    action: str  # confirm=确认 / false_alarm=误报
+    note: str = ""
+
+
+@app.post("/api/sensors/events/{eid}/handle")
+def sensor_event_handle(eid: int, body: EventHandleIn, request: Request):
+    op = _require_auth(request)
+    st = {"confirm": "已确认", "false_alarm": "误报"}.get(body.action)
+    if not st:
+        raise HTTPException(400, "未知处置动作")
+    with _db(request) as conn:
+        row = conn.execute("SELECT id FROM sensor_events WHERE id=?", (eid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "事件不存在")
+        conn.execute(
+            "UPDATE sensor_events SET handle_status=?,handler=?,handle_note=?,handled_at=datetime('now','localtime')"
+            " WHERE id=?", (st, op["username"], body.note.strip(), eid))
+        conn.commit()
+        _log(conn, op["username"], "告警处置", f"#{eid} {st}")
+        return {"ok": True}
+
+
+class SensorPassIn(BaseModel):
+    epc: str
+    reason: str = ""
+    minutes: int = 60
+
+
+@app.get("/api/sensors/pass")
+def sensor_pass_list(request: Request):
+    _require_auth(request)
+    with _db(request) as conn:
+        rows = conn.execute(
+            "SELECT * FROM sensor_pass WHERE expires_at>datetime('now','localtime')"
+            " ORDER BY id DESC").fetchall()
+        return {"items": [dict(r) for r in rows]}
+
+
+@app.post("/api/sensors/pass")
+def sensor_pass_create(body: SensorPassIn, request: Request):
+    op = _require_auth(request)
+    epc = body.epc.strip().upper()
+    if not epc:
+        raise HTTPException(400, "EPC 必填")
+    with _db(request) as conn:
+        cur = conn.execute(
+            "INSERT INTO sensor_pass(epc,reason,expires_at,created_by)"
+            " VALUES(?,?,datetime('now','localtime',?),?)",
+            (epc, body.reason.strip(), f"+{max(1, body.minutes)} minutes", op["username"]))
+        conn.commit()
+        _log(conn, op["username"], "手工临时放行", f"{epc} {body.reason}")
+        return {"id": cur.lastrowid}
+
+
+@app.delete("/api/sensors/pass/{pid}")
+def sensor_pass_delete(pid: int, request: Request):
+    op = _require_auth(request)
+    with _db(request) as conn:
+        row = conn.execute("SELECT epc FROM sensor_pass WHERE id=?", (pid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "记录不存在")
+        conn.execute("DELETE FROM sensor_pass WHERE id=?", (pid,))
+        conn.commit()
+        _log(conn, op["username"], "取消临时放行", row["epc"])
+        return {"ok": True}
+
+
+@app.websocket("/ws/security")
+async def security_ws(websocket: WebSocket, token: str = ""):
+    """工作区告警推送：浏览器 WS 无法带头，用 ?token= 业务令牌鉴权。"""
+    with _lock:
+        sess = _sessions.get(token)
+    await websocket.accept()
+    if not sess:
+        await websocket.close(code=4401)
+        return
+    sensors.sec_clients().add(websocket)
+    try:
+        while True:
+            await websocket.receive_text()  # 客户端无需发消息，仅保活
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    except Exception:
+        pass
+    finally:
+        sensors.sec_clients().discard(websocket)
+
+
+async def _security_schedule_loop():
+    """每日布防/撤防定时调度：30 秒检查一次，状态不符即切换（source=定时计划）。"""
+    tenant = os.environ.get("TENANT_ID") or "tenant_trial"
+    while True:
+        try:
+            with _db_for_tenant(tenant) as conn:
+                data = sensors.get_settings(conn)
+                want = sensors.desired_armed(data)
+                if want is not None and want != bool(data.get("armed")):
+                    data["armed"] = want
+                    sensors.save_settings(conn, data)
+                    _log(conn, "系统", "安防布防" if want else "安防撤防", "定时计划")
+                    conn.commit()
+        except Exception as e:
+            logger.warning("安防定时调度异常: %s", e)
+        await asyncio.sleep(30)
+
+
+@app.on_event("startup")
+async def _security_startup():
+    sensors.bind_loop(asyncio.get_running_loop())
+    asyncio.create_task(_security_schedule_loop())
 
 
 # ---------------------------------------------------------------- 静态资源（最后注册）

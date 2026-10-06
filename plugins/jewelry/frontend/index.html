@@ -47,11 +47,39 @@
       <header class="app-bar" v-if="!isPc">
         <div class="brand"><img src="/logo/logo.svg" class="app-logo" alt=""> {{ softName }}</div>
         <div class="store-tag">{{ tenant }}</div>
+        <div class="health-wrap">
+          <button class="health-bell" :class="healthBad ? 'bad' : 'ok'" @click.stop="healthOpen=!healthOpen" :title="t('hc.title')">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5S10.5 3.17 10.5 4v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+          </button>
+          <div v-if="healthOpen" class="health-panel" @click.stop>
+            <div class="health-title">{{ t('hc.title') }}</div>
+            <label class="health-line" v-for="h in healthItems" :key="h.id">
+              <input type="checkbox" :checked="h.enabled" @change="toggleHealth(h.id)">
+              <span class="health-dot" :class="h.enabled ? h.state : 'off'"></span>
+              <span class="health-name">{{ t('hc.' + h.id) }}</span>
+              <span class="health-state">{{ h.enabled ? t('hc.' + h.state) : '—' }}</span>
+            </label>
+          </div>
+        </div>
         <div class="avatar" @click="go('more')">{{ ((user&&user.display_name)||t('misc.role.staff'))[0] }}</div>
       </header>
       <header v-else class="pc-top">
         <h1>{{ currentTitle }}</h1>
         <div class="pc-top-actions">
+          <div class="health-wrap">
+            <button class="health-bell" :class="healthBad ? 'bad' : 'ok'" @click.stop="healthOpen=!healthOpen" :title="t('hc.title')">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5S10.5 3.17 10.5 4v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+            </button>
+            <div v-if="healthOpen" class="health-panel" @click.stop>
+              <div class="health-title">{{ t('hc.title') }}</div>
+              <label class="health-line" v-for="h in healthItems" :key="h.id">
+                <input type="checkbox" :checked="h.enabled" @change="toggleHealth(h.id)">
+                <span class="health-dot" :class="h.enabled ? h.state : 'off'"></span>
+                <span class="health-name">{{ t('hc.' + h.id) }}</span>
+                <span class="health-state">{{ h.enabled ? t('hc.' + h.state) : '—' }}</span>
+              </label>
+            </div>
+          </div>
           <select v-model="lang" @change="setLang(lang)" class="lang-select">
             <option v-for="k in langKeys" :key="k" :value="k">{{ langLabels[k] }}</option>
           </select>
@@ -637,8 +665,17 @@
           <div class="card-item">
             <div class="card-title">{{ t('sb.title') }}</div>
             <div class="hint">{{ t('sb.hint') }}</div>
-            <a class="btn btn-sm btn-outline btn-block" :href="agentDownload" download
-               style="margin:8px 0;text-decoration:none">⬇ {{ t('sb.getAgent') }}</a>
+            <div v-if="!anyAgentOnline" class="agent-warn">⚠ {{ t('sb.agentDownPc') }}</div>
+            <div class="bridge-row" style="margin:8px 0">
+              <select v-model="agentDlStore" style="flex:1;min-width:0" :disabled="!keyedStores.length">
+                <option v-if="!keyedStores.length" :value="0">{{ t('sb.noKeyStore') }}</option>
+                <option v-for="b in keyedStores" :key="b.store_id" :value="b.store_id">{{ b.store_name }}</option>
+              </select>
+              <a class="btn btn-sm btn-outline" :href="agentDlUrl" download
+                 :style="agentDlStore ? '' : 'pointer-events:none;opacity:.5'"
+                 style="text-decoration:none;white-space:nowrap">⬇ {{ t('sb.getAgent') }}</a>
+            </div>
+            <div class="hint" style="margin-bottom:8px">{{ t('sb.dlHint') }}</div>
 
             <div class="bridge-store" v-for="b in bridges" :key="b.store_id">
               <div class="flex-between">
@@ -657,14 +694,25 @@
                 <button class="btn-small" @click="copyStoreKey(b.store_id)">{{ t('common.copy') }}</button>
               </div>
 
-              <div class="form-group" style="margin:6px 0">
-                <label>{{ t('sb.bindPrinter') }}</label>
-                <select :value="b.printer_name" @change="bindStorePrinter(b.store_id, $event.target.value)">
-                  <option value="">{{ b.online ? t('label.selPrinter') : t('sb.waitOnline') }}</option>
-                  <option v-if="b.printer_name && b.printers.indexOf(b.printer_name) < 0" disabled :value="b.printer_name">{{ b.printer_name }}</option>
-                  <option v-for="n in b.printers" :key="n" :value="n">{{ n }}</option>
-                </select>
-              </div>
+              <!-- 按打印业务指派打印机（多个业务可指向同一台；离线也不丢，重连补推） -->
+              <details class="bridge-biz">
+                <summary>{{ t('sb.assignTitle') }}</summary>
+                <div v-for="g in bizGroups" :key="g.group" class="biz-grp">
+                  <div class="biz-grp-title">{{ t('pbizg.' + g.group) }}</div>
+                  <div class="biz-line" v-for="code in g.items" :key="code">
+                    <span class="biz-line-name">{{ t('pbiz.' + code) }}</span>
+                    <select class="biz-line-sel" :value="bizPrinterOf(b, code)"
+                            @change="bindBizPrinter(b.store_id, code, $event.target.value)">
+                      <option value="">{{ b.online ? t('sb.notAssigned') : t('sb.waitOnline') }}</option>
+                      <option v-if="bizPrinterOf(b,code) && b.printers.indexOf(bizPrinterOf(b,code)) < 0"
+                              disabled :value="bizPrinterOf(b,code)">{{ bizPrinterOf(b,code) }}</option>
+                      <option v-for="n in b.printers" :key="n" :value="n">{{ n }}</option>
+                    </select>
+                    <button class="btn-small biz-test" :disabled="!b.online || !bizPrinterOf(b,code)"
+                            @click="storeControl(b.store_id,'test',code)" :title="t('sb.test')">T</button>
+                  </div>
+                </div>
+              </details>
 
               <div class="bridge-actions">
                 <button class="btn-small" :disabled="!b.online" @click="storeControl(b.store_id,'test')">{{ t('sb.test') }}</button>
@@ -709,6 +757,127 @@
             </div>
           </div>
         </section>
+        <!-- ================= 安防中心 ================= -->
+        <section v-if="tab==='security'">
+          <details class="biz-guide"><summary>📖 {{ t('biz.title') }}</summary><div class="biz-body">{{ t('biz.security') }}</div></details>
+
+          <!-- 状态条 -->
+          <div class="sec-status">
+            <div class="sec-state" :class="secSettings && secSettings.armed ? 'armed' : 'disarmed'">
+              {{ secSettings && secSettings.armed ? '🛡️ ' + t('sec.stArmed') : '🔓 ' + t('sec.stDisarmed') }}
+            </div>
+            <button class="btn btn-sm" :class="secSettings && secSettings.armed ? 'btn-outline' : 'btn-gold'" @click="secToggleArm">
+              {{ secSettings && secSettings.armed ? t('sec.disarm') : t('sec.arm') }}
+            </button>
+            <span class="sec-chip">📡 {{ t('sec.online') }} {{ secSensors.filter(function(s){return s.online}).length }}/{{ secSensors.length }}</span>
+            <span class="sec-chip" :class="{alert: secPending>0}">🚨 {{ t('sec.pending') }} {{ secPending }}</span>
+            <button class="btn btn-sm btn-outline" @click="loadSecurity">🔄</button>
+          </div>
+
+          <!-- 事件流 -->
+          <div class="card-item">
+            <div class="card-title">{{ t('sec.events') }}</div>
+            <div class="sec-ev" v-for="ev in secEvents" :key="ev.id" :class="{'sec-ev-alarm': ev.event_type==='alarm'}">
+              <div class="sec-ev-head">
+                <span class="sec-ev-type">{{ ev.event_type==='alarm' ? '🚨 ' + t('sec.evAlarm') : (ev.event_type==='pass' ? '✅ ' + t('sec.evPass') : 'ℹ️ ' + t('sec.evInfo')) }}</span>
+                <span class="sec-ev-time">{{ ev.event_ts }}</span>
+              </div>
+              <div class="sec-ev-body">
+                {{ ev.sensor_name || ('#' + ev.sensor_id) }}<template v-if="ev.sensor_location"> · {{ ev.sensor_location }}</template>
+                <template v-for="e in ev.epcs" :key="e"> <code class="mono">{{ e }}</code></template>
+                <template v-if="ev.raw && ev.raw.products">
+                  <div v-for="p in ev.raw.products" :key="p.epc" class="sec-ev-prod">💎 {{ p.code }} {{ p.name }}（{{ p.status }}）<template v-if="p.price"> · ¥{{ fmt(p.price) }}</template></div>
+                </template>
+              </div>
+              <div class="sec-ev-foot">
+                <span v-if="ev.event_type==='alarm'" class="tag" :class="ev.handle_status==='未处理' ? 'tag-red' : 'tag-gray'">{{ ev.handle_status }}</span>
+                <span v-if="ev.handler" class="sec-ev-handler">{{ ev.handler }}<template v-if="ev.handle_note"> · {{ ev.handle_note }}</template></span>
+                <template v-if="ev.event_type==='alarm' && ev.handle_status==='未处理'">
+                  <button class="btn btn-sm btn-primary" @click="secHandleEvent(ev,'confirm')">{{ t('sec.confirm') }}</button>
+                  <button class="btn btn-sm btn-outline" @click="secHandleEvent(ev,'false_alarm')">{{ t('sec.falseAlarm') }}</button>
+                </template>
+              </div>
+            </div>
+            <div class="empty" v-if="!secEvents.length">{{ t('sec.noEvents') }}</div>
+          </div>
+
+          <!-- 设备管理 -->
+          <details class="card-item sec-panel">
+            <summary class="card-title">{{ t('sec.devices') }}</summary>
+            <div class="sec-dev" v-for="s in secSensors" :key="s.id">
+              <div class="flex-between">
+                <b>{{ s.name }} <span class="prod-meta">{{ s.driver_name }}<template v-if="s.location"> · {{ s.location }}</template></span></b>
+                <span class="bridge-state" :class="s.online ? 'st-on' : 'st-off'">● {{ s.online ? t('sb.online') : t('sb.offline') }}</span>
+              </div>
+              <div class="row-actions" style="margin-top:6px">
+                <button class="btn-small" @click="secRotateKey(s)">{{ t('sec.rotateKey') }}</button>
+                <button class="btn-small" v-if="s.driver_code==='simulator'" @click="secSimulate(s,'epc')">{{ t('sec.simEpc') }}</button>
+                <button class="btn-small" v-if="s.driver_code==='simulator'" @click="secSimulate(s,'alarm')">{{ t('sec.simAlarm') }}</button>
+                <button class="btn-small" style="color:#c0392b" @click="secDelete(s)">{{ t('act.del') }}</button>
+              </div>
+            </div>
+            <div class="empty" v-if="!secSensors.length">{{ t('sec.noDevices') }}</div>
+
+            <!-- 新增设备 -->
+            <div v-if="!secNew && !secNewKey"><button class="btn btn-gold btn-sm" @click="secNewOpen">+ {{ t('sec.addDevice') }}</button></div>
+            <div v-if="secNew" class="sec-new">
+              <div class="form-row">
+                <div class="form-group"><label>{{ t('sec.devName') }}</label><input v-model="secNew.name"></div>
+                <div class="form-group"><label>{{ t('sec.devType') }}</label>
+                  <select v-model="secNew.driver_code"><option v-for="d in secDrivers" :key="d.code" :value="d.code">{{ d.name }}</option></select>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>{{ t('sec.devStore') }}</label>
+                  <select v-model.number="secNew.store_id"><option v-for="b in bridges" :key="b.store_id" :value="b.store_id">{{ b.store_name }}</option></select>
+                </div>
+                <div class="form-group"><label>{{ t('sec.devLoc') }}</label><input v-model="secNew.location" :placeholder="t('sec.devLocPh')"></div>
+              </div>
+              <button class="btn btn-gold btn-sm" @click="secCreate">{{ t('act.save') }}</button>
+              <button class="btn btn-outline btn-sm" @click="secNew=null">{{ t('act.cancel') }}</button>
+            </div>
+            <!-- 一次性密钥展示 -->
+            <div v-if="secNewKey" class="sec-keybox">
+              <div class="sec-key-warn">⚠ {{ t('sec.keyOnce') }}</div>
+              <div class="form-group"><label>{{ t('pa.key') }}</label><code class="mono sec-key">{{ secNewKey.auth_key }}</code></div>
+              <div class="form-group" v-if="secNewKey.http_url"><label>HTTP</label><code class="mono sec-key">{{ secNewKey.http_url }}</code></div>
+              <div class="form-group" v-if="secNewKey.ws_url"><label>WebSocket</label><code class="mono sec-key">{{ secNewKey.ws_url }}</code></div>
+              <button class="btn btn-outline btn-sm" @click="secNewKey=null">{{ t('act.close') }}</button>
+            </div>
+          </details>
+
+          <!-- 临时放行 -->
+          <details class="card-item sec-panel">
+            <summary class="card-title">{{ t('sec.pass') }}</summary>
+            <div class="hint">{{ t('sec.passHint') }}</div>
+            <div class="sec-pass" v-for="p in secPass" :key="p.id">
+              <code class="mono">{{ p.epc }}</code> · {{ p.reason || t('sec.passNoReason') }} · {{ t('sec.passExp') }} {{ p.expires_at }}
+              <button class="btn-small" style="color:#c0392b" @click="secDelPass(p)">{{ t('act.del') }}</button>
+            </div>
+            <div class="empty" v-if="!secPass.length">{{ t('sec.noPass') }}</div>
+            <div class="form-row" style="margin-top:8px">
+              <div class="form-group"><input v-model="secPassEpc" placeholder="EPC"></div>
+              <div class="form-group"><input v-model="secPassReason" :placeholder="t('sec.passReasonPh')"></div>
+              <div class="form-group" style="max-width:110px"><input v-model.number="secPassMin" type="number" min="1" :title="t('sec.passMin')"></div>
+              <button class="btn btn-gold btn-sm" @click="secAddPass">+ {{ t('sec.passAdd') }}</button>
+            </div>
+          </details>
+
+          <!-- 设置 -->
+          <details class="card-item sec-panel" v-if="secSettings">
+            <summary class="card-title">{{ t('sec.settings') }}</summary>
+            <div class="form-row">
+              <div class="form-group"><label>{{ t('sec.armTime') }}</label><input v-model="secSettings.arm_time" type="time"></div>
+              <div class="form-group"><label>{{ t('sec.disarmTime') }}</label><input v-model="secSettings.disarm_time" type="time"></div>
+              <div class="form-group"><label>{{ t('sec.dedup') }}</label><input v-model.number="secSettings.dedup_sec" type="number" min="0"></div>
+            </div>
+            <div class="form-group"><label>Webhook URL</label><input v-model="secSettings.webhook_url" placeholder="https://..."></div>
+            <div class="form-group"><label>Webhook Secret</label><input v-model="secSettings.webhook_secret" :placeholder="t('sec.secretPh')"></div>
+            <div class="hint" v-if="secSettings.webhook_last">{{ t('sec.webhookLast') }}: {{ secSettings.webhook_last }}</div>
+            <button class="btn btn-gold btn-sm" @click="secSaveSettings">{{ t('act.save') }}</button>
+          </details>
+        </section>
+
         <section v-if="isPc && tab==='logs'">
           <div class="page-head">
             <details class="biz-guide">
@@ -772,8 +941,7 @@
           <div class="card-item">
             <div class="card-title">{{ t('sb.title') }}</div>
             <div class="hint">{{ t('sb.hint') }}</div>
-            <a class="btn btn-sm btn-outline" :href="agentDownload" download
-               style="margin:8px 0;text-decoration:none">⬇ {{ t('sb.getAgent') }}</a>
+            <div v-if="!anyAgentOnline" class="agent-warn">⚠ {{ t('sb.agentDownMobile') }}</div>
 
             <div class="bridge-store" v-for="b in bridges" :key="b.store_id">
               <div class="flex-between">
@@ -792,14 +960,25 @@
                 <button class="btn-small" @click="copyStoreKey(b.store_id)">{{ t('common.copy') }}</button>
               </div>
 
-              <div class="form-group" style="margin:6px 0">
-                <label>{{ t('sb.bindPrinter') }}</label>
-                <select :value="b.printer_name" @change="bindStorePrinter(b.store_id, $event.target.value)">
-                  <option value="">{{ b.online ? t('label.selPrinter') : t('sb.waitOnline') }}</option>
-                  <option v-if="b.printer_name && b.printers.indexOf(b.printer_name) < 0" disabled :value="b.printer_name">{{ b.printer_name }}</option>
-                  <option v-for="n in b.printers" :key="n" :value="n">{{ n }}</option>
-                </select>
-              </div>
+              <!-- 按打印业务指派打印机（多个业务可指向同一台；离线也不丢，重连补推） -->
+              <details class="bridge-biz">
+                <summary>{{ t('sb.assignTitle') }}</summary>
+                <div v-for="g in bizGroups" :key="g.group" class="biz-grp">
+                  <div class="biz-grp-title">{{ t('pbizg.' + g.group) }}</div>
+                  <div class="biz-line" v-for="code in g.items" :key="code">
+                    <span class="biz-line-name">{{ t('pbiz.' + code) }}</span>
+                    <select class="biz-line-sel" :value="bizPrinterOf(b, code)"
+                            @change="bindBizPrinter(b.store_id, code, $event.target.value)">
+                      <option value="">{{ b.online ? t('sb.notAssigned') : t('sb.waitOnline') }}</option>
+                      <option v-if="bizPrinterOf(b,code) && b.printers.indexOf(bizPrinterOf(b,code)) < 0"
+                              disabled :value="bizPrinterOf(b,code)">{{ bizPrinterOf(b,code) }}</option>
+                      <option v-for="n in b.printers" :key="n" :value="n">{{ n }}</option>
+                    </select>
+                    <button class="btn-small biz-test" :disabled="!b.online || !bizPrinterOf(b,code)"
+                            @click="storeControl(b.store_id,'test',code)" :title="t('sb.test')">T</button>
+                  </div>
+                </div>
+              </details>
 
               <div class="bridge-actions">
                 <button class="btn-small" :disabled="!b.online" @click="storeControl(b.store_id,'test')">{{ t('sb.test') }}</button>
