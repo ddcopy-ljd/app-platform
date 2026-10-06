@@ -578,13 +578,8 @@ def start_prepare(plugin_id: str, version_id: int, extra_tenants: list[str], ope
         cur = _find_version(conn, plugin_id, p["current_version"])
         if vkey(v["software_version"]) <= vkey(cur["software_version"]):
             raise PluginError("只能对高于当前运行版本的新版本发起试运行")
-        other_trial = conn.execute(
-            "SELECT software_version FROM plugin_versions WHERE plugin_id=? AND id<>? "
-            "AND status IN ('trial','trial_passed')",
-            (plugin_id, version_id),
-        ).fetchone()
-        if other_trial:
-            raise PluginError(f"v{other_trial['software_version']} 正在试运行，同一时间只允许一个试运行版本")
+        # 允许多个版本同时处于试运行状态：各版本拥有独立的服务进程、端口与按版本隔离的
+        # 租户库快照，互不影响；仅数据准备/切换任务通过 _ensure_idle 串行，避免并发迁库。
         allowed = set(_active_tenants(conn, plugin_id))
         invalid = [t for t in extra_tenants if t not in allowed]
         if invalid:
@@ -783,10 +778,13 @@ def resolve_gateway(plugin_id: str, mode: str, tenant_id: str | None, version: s
         else:
             target = None
             if mode == "SANDBOX":
-                target = conn.execute(
+                trials = conn.execute(
                     "SELECT * FROM plugin_versions WHERE plugin_id=? AND status IN ('trial','trial_passed')",
                     (plugin_id,),
-                ).fetchone()
+                ).fetchall()
+                # 多个版本可同时试运行；未显式指定版本时默认进入版本号最高的试运行版本
+                if trials:
+                    target = max(trials, key=lambda r: vkey(r["software_version"]))
             if not target and p["current_version"]:
                 target = _find_version(conn, plugin_id, p["current_version"])
             if not target:
