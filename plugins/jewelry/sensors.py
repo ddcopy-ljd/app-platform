@@ -49,6 +49,8 @@ class SensorDriver:
     driver_code = ""
     name = ""
     reports_epc = False  # 能力：是否上报 EPC 明细
+    # 接入指南：标准字段说明 [{field, required, desc}]，供 drivers 接口/接入文档展示
+    fields_doc: list[dict] = []
 
     def parse(self, raw: dict) -> list[Report]:
         raise NotImplementedError
@@ -70,6 +72,12 @@ class UhfRfidGate(SensorDriver):
     driver_code = "uhf_rfid_gate"
     name = "UHF RFID 防盗通道门"
     reports_epc = True
+    fields_doc = [
+        {"field": "epcs", "required": False, "desc": "EPC 数组，如 [\"E280...\"]；与 epc 二选一"},
+        {"field": "epc", "required": False, "desc": "单个 EPC 字符串；与 epcs 二选一"},
+        {"field": "type", "required": False, "desc": "\"heartbeat\" 表示心跳帧（不产生事件）"},
+        {"field": "ts", "required": False, "desc": "设备侧时间戳（仅留痕）"},
+    ]
 
     def parse(self, raw: dict) -> list[Report]:
         if raw.get("type") == "heartbeat":
@@ -87,6 +95,11 @@ class EasGate(SensorDriver):
 
     driver_code = "eas_gate"
     name = "EAS 防盗门禁"
+    fields_doc = [
+        {"field": "alarm", "required": True, "desc": "true=检测到防盗标签经过；false=正常"},
+        {"field": "type", "required": False, "desc": "\"heartbeat\" 表示心跳帧（不产生事件）"},
+        {"field": "ts", "required": False, "desc": "设备侧时间戳（仅留痕）"},
+    ]
 
     def parse(self, raw: dict) -> list[Report]:
         if raw.get("type") == "heartbeat":
@@ -100,6 +113,11 @@ class ContactSensor(SensorDriver):
 
     driver_code = "contact_sensor"
     name = "通用开关量传感器"
+    fields_doc = [
+        {"field": "state", "required": True, "desc": "alarm/open/tamper/triggered 触发告警，其他值正常"},
+        {"field": "type", "required": False, "desc": "\"heartbeat\" 表示心跳帧（不产生事件）"},
+        {"field": "ts", "required": False, "desc": "设备侧时间戳（仅留痕）"},
+    ]
 
     def parse(self, raw: dict) -> list[Report]:
         if raw.get("type") == "heartbeat":
@@ -116,6 +134,12 @@ class Simulator(SensorDriver):
     driver_code = "simulator"
     name = "模拟设备"
     reports_epc = True
+    fields_doc = [
+        {"field": "kind", "required": False, "desc": "epc（默认）/ signal / ping"},
+        {"field": "epcs", "required": False, "desc": "kind=epc 时的 EPC 数组"},
+        {"field": "alarm", "required": False, "desc": "kind=signal 时是否告警"},
+        {"field": "ts", "required": False, "desc": "时间戳（仅留痕）"},
+    ]
 
     def parse(self, raw: dict) -> list[Report]:
         kind = str(raw.get("kind") or "epc")
@@ -196,6 +220,21 @@ def new_key() -> str:
     return "sk_" + secrets.token_urlsafe(24)
 
 
+def _apply_field_map(raw: dict, field_map: dict) -> dict:
+    """按设备字段映射把原始报文字段重命名为驱动标准名。
+    field_map: {"原始键": "标准键", ...}；标准键不在原始报文中则不做重命名。
+    """
+    if not field_map:
+        return raw
+    if not isinstance(raw, dict):
+        return raw
+    mapped = dict(raw)
+    for src, dst in field_map.items():
+        if src != dst and src in raw:
+            mapped.setdefault(dst, raw[src])
+    return mapped
+
+
 # ---------------------------------------------------------------- 事件判定
 
 
@@ -259,11 +298,20 @@ def handle(conn: sqlite3.Connection, sensor, raw: dict, sandbox: bool = False) -
     drv = DRIVERS.get(sensor["driver_code"])
     if not drv:
         return {"ok": False, "error": f"未知驱动 {sensor['driver_code']}"}
+    # 字段映射（设备厂商字段名可能不同，如 tags→epcs）
     try:
-        reports = drv.parse(raw if isinstance(raw, dict) else {})
+        fm = json.loads(sensor["field_map"] or "{}")
+    except Exception:
+        fm = {}
+    mapped = _apply_field_map(raw if isinstance(raw, dict) else {}, fm)
+    try:
+        reports = drv.parse(mapped)
     except Exception as e:
         logger.warning("驱动 %s 解析报文失败: %s", drv.driver_code, e)
-        return {"ok": False, "error": "报文解析失败"}
+        _insert_event(conn, sensor["id"], "parse_error", "warning", [],
+                      {"raw": raw, "field_map": fm, "error": str(e)})
+        conn.commit()
+        return {"ok": False, "error": "报文解析失败", "parse_error": True}
     settings = get_settings(conn)
     armed = bool(settings.get("armed"))
     dedup_sec = int(settings.get("dedup_sec") or 60)

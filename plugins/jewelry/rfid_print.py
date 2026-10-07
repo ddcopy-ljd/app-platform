@@ -22,6 +22,9 @@ def chip_epc_hex(epc: str, prefix: str = "E280") -> str:
     - 含企业拼音字母前缀（如 YZZ）时，前缀按 ASCII 编码为十六进制
       （YZZ → 595A5A），品类码与十六进制序号保持原样；
       例：YZZ0100000001 → 595A5A0100000001。
+    - 门店段为 2 位字母/数字（如 HQ）：纯 hex 段原样（01 占 2 位），
+      含非 hex 字母时同样转 ASCII-hex（HQ → 4851）；
+      例：YZZHQ01000001 → 595A5A485101000001。
     """
     epc = (epc or "").strip().upper()
     if not epc:
@@ -32,7 +35,17 @@ def chip_epc_hex(epc: str, prefix: str = "E280") -> str:
     except ValueError:
         p = (prefix or "").strip().upper()
         if p and epc.startswith(p):
-            return p.encode("ascii", "ignore").hex().upper() + epc[len(p):]
+            body = epc[len(p):]
+            head = p.encode("ascii", "ignore").hex().upper()
+            # body = 门店段(2位字符) + 品类码(2位数字) + 序号(hex)
+            if len(body) >= 2:
+                seg = body[:2]
+                if all(c in "0123456789ABCDEF" for c in seg):
+                    seg_hex = seg
+                else:
+                    seg_hex = seg.encode("ascii", "ignore").hex().upper()
+                return head + seg_hex + body[2:]
+            return head + body
         return epc.encode("ascii", "ignore").hex().upper()
 
 # 300 DPI 下的标签尺寸

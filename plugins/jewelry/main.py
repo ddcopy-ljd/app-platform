@@ -107,6 +107,8 @@ def _open(request: Request) -> sqlite3.Connection:
         path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout=3000")
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         db.migrate_schema(conn)
         if conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 0:
@@ -145,6 +147,45 @@ def _require_auth(request: Request) -> dict:
     return sess
 
 
+# ---------------------------------------------------------------- 门店授权与当前工作门店
+
+def _accessible_store_rows(conn: sqlite3.Connection, sess: dict) -> list[sqlite3.Row]:
+    """当前会话可访问的门店：TENANT_ADMIN=全部门店；EMPLOYEE=user_stores 授权门店。"""
+    if sess.get("role") == "TENANT_ADMIN":
+        return conn.execute("SELECT * FROM stores ORDER BY id").fetchall()
+    return conn.execute(
+        """SELECT s.* FROM stores s
+           JOIN user_stores us ON us.store_id = s.id
+           JOIN users u ON u.id = us.user_id
+           WHERE u.username=? ORDER BY s.id""",
+        (sess.get("username"),),
+    ).fetchall()
+
+
+def _store_payload(rows: list[sqlite3.Row]) -> list[dict]:
+    return [{"id": r["id"], "name": r["name"], "code": r["code"], "shop_id": r["shop_id"]} for r in rows]
+
+
+def _current_store(request: Request, conn: sqlite3.Connection, sess: dict | None = None) -> tuple[int, list[sqlite3.Row]]:
+    """解析当前工作门店，返回 (store_id, 授权门店行)。
+    - 无任何授权门店 → 403（业务接口统一拦截，前端引导联系店长授权）；
+    - 会话记住的门店失效（被收权/删除）→ 自动落到第一家并回写会话；
+    - 平台网关注入身份（bypass 无会话态）支持 X-Store-Id 头显式指定。"""
+    if sess is None:
+        sess = _require_auth(request)
+    rows = _accessible_store_rows(conn, sess)
+    if not rows:
+        raise HTTPException(status_code=403,
+                            detail="你尚未被授权访问任何门店，请联系店长在「系统管理 · 用户与门店权限」中分配")
+    ids = [r["id"] for r in rows]
+    cur = int(sess.get("store_id") or 0)
+    if cur not in ids:
+        hdr = (request.headers.get("X-Store-Id") or "").strip()
+        cur = int(hdr) if hdr.isdigit() and int(hdr) in ids else ids[0]
+        sess["store_id"] = cur
+    return cur, rows
+
+
 def _log(conn: sqlite3.Connection, operator: str, action: str, target: str, result: str = "成功") -> None:
     try:
         conn.execute(
@@ -156,10 +197,11 @@ def _log(conn: sqlite3.Connection, operator: str, action: str, target: str, resu
         logger.exception("写操作日志失败")
 
 
-def _inv(conn: sqlite3.Connection, product_id: int | None, epc: str, typ: str, operator: str, qty: int = 1) -> None:
+def _inv(conn: sqlite3.Connection, product_id: int | None, epc: str, typ: str, operator: str,
+         qty: int = 1, store_id: int = 0) -> None:
     conn.execute(
-        "INSERT INTO inventory_logs(product_id,epc,type,qty,operator) VALUES(?,?,?,?,?)",
-        (product_id, epc or "", typ, qty, operator),
+        "INSERT INTO inventory_logs(product_id,epc,type,qty,operator,store_id) VALUES(?,?,?,?,?,?)",
+        (product_id, epc or "", typ, qty, operator, store_id),
     )
 
 
@@ -237,16 +279,18 @@ def _pinyin_initials(name: str, n: int = 3) -> str:
     return "".join(out)[:n]
 
 
-def _hex_store_code(code: str, store_id: int = 0) -> str:
-    """门店码归一化为定长 2 位十六进制段：本身恰为 2 位 0-9A-F 则原样保留；否则回退为门店序号的 2 位 hex。"""
+def _store_seg(code: str, store_id: int = 0) -> str:
+    """门店码归一化为定长 2 位字符段：本身恰为 2 位字母/数字则大写原样保留
+    （如 HQ、A1、06）；否则（空/超长/中文等）回退为门店序号的 2 位 hex。
+    注意：含非 hex 字母的段写入 RFID 芯片时由 chip_epc_hex 转 ASCII-hex。"""
     code = (code or "").strip().upper()
-    if len(code) == 2 and all(c in "0123456789ABCDEF" for c in code):
+    if len(code) == 2 and all(c in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ" for c in code):
         return code
     return f"{(store_id or 0) % 256:02X}"
 
 
 def _compute_item_barcode(conn: sqlite3.Connection, product: dict) -> str:
-    """印刷条码 = 门店码(2,hex) + 品类码(2) + 序号(4-6)，每件唯一，与 EPC 解耦（EPC 不改）。
+    """印刷条码 = 门店码(2位字母/数字) + 品类码(2) + 序号(4-6)，每件唯一，与 EPC 解耦（EPC 不改）。
 
     序号为「同门店+同品类」下的全局递增序号（与 EPC 序号同思路、但独立计数）；
     补全时按货号排序赋值，使同货号多件获得连续序号（01/02/03…），既保证条码唯一可扫中单件，
@@ -254,7 +298,7 @@ def _compute_item_barcode(conn: sqlite3.Connection, product: dict) -> str:
     """
     sid = product.get("store_id") or 1
     sc = conn.execute("SELECT code FROM stores WHERE id=?", (sid,)).fetchone()
-    store_seg = _hex_store_code(sc[0] if sc else "", sid)
+    store_seg = _store_seg(sc[0] if sc else "", sid)
     tc = (product.get("product_type_code") or "99") or "99"
     cat = tc.strip().upper()[:2].ljust(2, "0")
     _, seq_bits = _epc_cfg(conn)
@@ -275,7 +319,7 @@ def _compute_item_barcode(conn: sqlite3.Connection, product: dict) -> str:
 
 
 def _gen_type_epc(conn: sqlite3.Connection, type_code: str, store_id: int = 1) -> str:
-    """EPC = 企业前缀(配置) + 门店码(2,hex) + 品类码(2) + 序号(seq_bits,4-6)；各(门店+品类)独立计数。"""
+    """EPC = 企业前缀(配置) + 门店码(2位字母/数字) + 品类码(2) + 序号(seq_bits,4-6)；各(门店+品类)独立计数。"""
     prefix, seq_bits = _epc_cfg(conn)
     seq_bits = max(4, min(6, int(seq_bits or 6)))  # 序号固定 4-6 位
     code = (type_code or "99").strip().upper() or "99"
@@ -284,7 +328,7 @@ def _gen_type_epc(conn: sqlite3.Connection, type_code: str, store_id: int = 1) -
     try:
         r = conn.execute("SELECT code FROM stores WHERE id=?", (store_id,)).fetchone()
         if r is not None:
-            store_seg = _hex_store_code(r[0], store_id)
+            store_seg = _store_seg(r[0], store_id)
     except Exception:
         store_seg = "00"
     head = f"{prefix}{store_seg}{code}"
@@ -307,13 +351,32 @@ def _gen_type_epc(conn: sqlite3.Connection, type_code: str, store_id: int = 1) -
 
 # 列表/详情不回传图片 BLOB（图片走专用接口），用 image_ts 判断是否有图
 _PRODUCT_COLS = (
-    "id,code,name,name_i18n,category,category_code,material,product_type,product_type_code,"
-    "weight,size,cert,cost,price,status,store_id,rfid_epc,barcode,"
-    "showcase_public,showcase_order,showcase_desc,showcase_desc_i18n,origin,high_value,"
-    "image_ts,created,"
+    "products.id,products.code,products.name,products.name_i18n,products.category,products.category_code,"
+    "products.material,products.product_type,products.product_type_code,"
+    "products.weight,products.size,products.cert,products.cost,products.price,products.status,"
+    "products.store_id,products.rfid_epc,products.barcode,"
+    "products.showcase_public,products.showcase_order,products.showcase_desc,products.showcase_desc_i18n,"
+    "products.origin,products.high_value,"
+    "products.location_id,products.cert_location_id,"
+    "(SELECT l.code||' '||l.name FROM locations l WHERE l.id=products.location_id) AS location_name,"
+    "(SELECT l.code||' '||l.name FROM locations l WHERE l.id=products.cert_location_id) AS cert_location_name,"
+    "products.image_ts,products.created,"
     "(SELECT MAX(ts) FROM inventory_logs il WHERE il.product_id=products.id AND il.type='rfid') AS label_printed_at,"
     "(SELECT COUNT(*) FROM inventory_logs il WHERE il.product_id=products.id AND il.type='rfid') AS label_print_count"
 )
+
+
+def _assert_locations_in_store(conn: sqlite3.Connection, store_id: int | None,
+                               location_id: int, cert_location_id: int) -> None:
+    """商品的存放/证书库位必须属于该商品所属门店（停用库位作为历史值保留，允许保存）。"""
+    for lid in (location_id or 0, cert_location_id or 0):
+        if not lid:
+            continue
+        r = conn.execute("SELECT store_id FROM locations WHERE id=?", (lid,)).fetchone()
+        if not r:
+            raise HTTPException(400, "所选库位不存在")
+        if store_id and r["store_id"] != store_id:
+            raise HTTPException(400, "存放位置必须属于商品所属门店")
 
 
 def _resolve_type(conn: sqlite3.Connection, code: str, zh_name: str = "") -> tuple[str, str]:
@@ -797,6 +860,9 @@ def api_login(body: LoginReq, request: Request):
             raise HTTPException(status_code=401, detail="用户名或密码错误")
         token = secrets.token_urlsafe(24)
         info = {"username": user["username"], "display_name": user["display_name"], "role": user["role"]}
+        store_rows = _accessible_store_rows(conn, info)
+        stores = _store_payload(store_rows)
+        info["store_id"] = stores[0]["id"] if stores else 0
         with _lock:
             _sessions[token] = info
         _log(conn, user["username"], "登录", user["username"])
@@ -807,7 +873,30 @@ def api_login(body: LoginReq, request: Request):
             "features": FEATURES,
             "mode": mode,
             "tenant": _tenant_of(request),
+            # 进程所属插件版本（来自启动包的 plugin.json）：多版本并行试运行时供前端标题栏区分
+            "version": SOFT_VERSION,
+            "stores": stores,
+            "store_id": info["store_id"],
         }
+
+
+class SwitchStoreIn(BaseModel):
+    store_id: int
+
+
+@app.post("/api/auth/switch-store")
+def api_switch_store(body: SwitchStoreIn, request: Request):
+    """切换当前工作门店（同租户内免密切换）：仅可切换到本人被授权的门店。"""
+    sess = _require_auth(request)
+    with _db(request) as conn:
+        rows = _accessible_store_rows(conn, sess)
+        ids = [r["id"] for r in rows]
+        if body.store_id not in ids:
+            raise HTTPException(status_code=403, detail="无权访问该门店")
+        sess["store_id"] = body.store_id
+        row = next(r for r in rows if r["id"] == body.store_id)
+        _log(conn, sess["username"], "切换门店", row["name"])
+        return {"ok": True, "store_id": body.store_id, "stores": _store_payload(rows)}
 
 
 @app.post("/api/auth/logout")
@@ -821,7 +910,16 @@ def api_logout(request: Request):
 @app.get("/api/auth/me")
 def api_me(request: Request):
     u = _require_auth(request)
-    return {"user": u, "features": FEATURES, "mode": _operator_mode(request), "tenant": _tenant_of(request)}
+    with _db(request) as conn:
+        rows = _accessible_store_rows(conn, u)
+        stores = _store_payload(rows)
+    cur = int(u.get("store_id") or 0)
+    if cur not in [s["id"] for s in stores]:
+        cur = stores[0]["id"] if stores else 0
+        u["store_id"] = cur
+    return {"user": u, "features": FEATURES, "mode": _operator_mode(request),
+            "tenant": _tenant_of(request), "version": SOFT_VERSION,
+            "stores": stores, "store_id": cur}
 
 
 # ---------------------------------------------------------------- 手持机扫码登录（会话当天有效）
@@ -941,30 +1039,41 @@ def handheld_poll(hkey: str):
 
 @app.get("/api/dashboard/overview")
 def dashboard_overview(request: Request):
-    _require_auth(request)
+    sess = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
         today = date.today().isoformat()
-        stock = conn.execute("SELECT COUNT(*) n, COALESCE(SUM(cost),0) c FROM products WHERE status='在库'").fetchone()
-        reserved = conn.execute("SELECT COUNT(*) n FROM products WHERE status='已定'").fetchone()
-        loaned = conn.execute("SELECT COUNT(*) n FROM products WHERE status='借出'").fetchone()
+        stock = conn.execute("SELECT COUNT(*) n, COALESCE(SUM(cost),0) c FROM products WHERE status='在库' AND store_id=?", (sid,)).fetchone()
+        in_transit = conn.execute("SELECT COUNT(*) n FROM products WHERE status='在途' AND store_id=?", (sid,)).fetchone()
+        reserved = conn.execute("SELECT COUNT(*) n FROM products WHERE status='已定' AND store_id=?", (sid,)).fetchone()
+        loaned = conn.execute("SELECT COUNT(*) n FROM products WHERE status='借出' AND store_id=?", (sid,)).fetchone()
         today_sales = conn.execute(
-            "SELECT COALESCE(SUM(amount),0) a, COUNT(*) n FROM sales WHERE biz_date=? AND status!='已冲红'", (today,)
+            "SELECT COALESCE(SUM(amount),0) a, COUNT(*) n FROM sales "
+            "WHERE biz_date=? AND status!='已冲红' AND (store_id=? OR store_id=0)", (today, sid)
         ).fetchone()
         month = today[:7]
         month_sales = conn.execute(
-            "SELECT COALESCE(SUM(amount),0) a FROM sales WHERE substr(biz_date,1,7)=? AND status!='已冲红'", (month,)
+            "SELECT COALESCE(SUM(amount),0) a FROM sales "
+            "WHERE substr(biz_date,1,7)=? AND status!='已冲红' AND (store_id=? OR store_id=0)", (month, sid)
         ).fetchone()
-        deposit = conn.execute("SELECT COALESCE(SUM(balance),0) a FROM deposits WHERE status='已定'").fetchone()
+        deposit = conn.execute(
+            "SELECT COALESCE(SUM(balance),0) a FROM deposits WHERE status='已定' AND (store_id=? OR store_id=0)",
+            (sid,)).fetchone()
         due = conn.execute("SELECT COALESCE(SUM(due_amount),0) a FROM customers").fetchone()
-        loans = conn.execute("SELECT COUNT(*) n FROM loans WHERE status IN ('借出中','借入中')").fetchone()
-        repairs = conn.execute("SELECT COUNT(*) n FROM repairs WHERE status NOT IN ('已完成','已取走')").fetchone()
+        loans = conn.execute(
+            "SELECT COUNT(*) n FROM loans WHERE status IN ('借出中','借入中') AND (store_id=? OR store_id=0)",
+            (sid,)).fetchone()
+        repairs = conn.execute(
+            "SELECT COUNT(*) n FROM repairs WHERE status NOT IN ('已完成','已取走') AND (store_id=? OR store_id=0)",
+            (sid,)).fetchone()
         recent = conn.execute(
-            "SELECT bill_no, customer, amount, method, biz_date, status FROM sales ORDER BY id DESC LIMIT 8"
+            "SELECT bill_no, customer, amount, method, biz_date, status FROM sales "
+            "WHERE store_id=? OR store_id=0 ORDER BY id DESC LIMIT 8", (sid,)
         ).fetchall()
         return {
             "tenant": _tenant_of(request),
             "date": today,
-            "stock": {"count": stock["n"], "cost": round(stock["c"], 2), "reserved": reserved["n"], "loaned": loaned["n"]},
+            "stock": {"count": stock["n"], "cost": round(stock["c"], 2), "reserved": reserved["n"], "loaned": loaned["n"], "inTransit": in_transit["n"]},
             "todaySales": {"amount": round(today_sales["a"], 2), "count": today_sales["n"]},
             "monthSales": {"amount": round(month_sales["a"], 2)},
             "depositPending": {"amount": round(deposit["a"], 2)},
@@ -977,27 +1086,31 @@ def dashboard_overview(request: Request):
 
 @app.get("/api/dashboard/trend")
 def dashboard_trend(request: Request):
-    _require_auth(request)
+    sess = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
         rows = conn.execute("""
             SELECT substr(biz_date,1,7) m, COALESCE(SUM(amount),0) a
             FROM sales WHERE status!='已冲红' AND biz_date >= date('now','start of month','-5 months')
+              AND (store_id=? OR store_id=0)
             GROUP BY m ORDER BY m
-        """).fetchall()
+        """, (sid,)).fetchall()
         return {"months": [r["m"] for r in rows], "amounts": [round(r["a"], 2) for r in rows]}
 
 
 @app.get("/api/dashboard/category-sales")
 def dashboard_category_sales(request: Request):
     """近6个月各品类销售额占比（与趋势图同口径，未关联档案的销售计入「其他」）。"""
-    _require_auth(request)
+    sess = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
         rows = conn.execute("""
             SELECT COALESCE(NULLIF(p.product_type,''), '其他') cat, COALESCE(SUM(s.amount),0) a, COUNT(*) n
             FROM sales s LEFT JOIN products p ON p.id = s.product_id
             WHERE s.status!='已冲红' AND s.biz_date >= date('now','start of month','-5 months')
+              AND (s.store_id=? OR s.store_id=0)
             GROUP BY cat ORDER BY a DESC
-        """).fetchall()
+        """, (sid,)).fetchall()
         total = sum(r["a"] for r in rows) or 1
         return {"items": [
             {"category": r["cat"], "amount": round(r["a"], 2), "count": r["n"], "pct": round(r["a"] * 100 / total, 1)}
@@ -1007,16 +1120,20 @@ def dashboard_category_sales(request: Request):
 
 @app.get("/api/dashboard/reminders")
 def dashboard_reminders(request: Request):
-    _require_auth(request)
+    sess = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
         deposits_urgent = conn.execute(
-            "SELECT * FROM deposits WHERE status='已定' AND promised_date <= date('now','+7 days') ORDER BY promised_date LIMIT 8"
+            "SELECT * FROM deposits WHERE status='已定' AND promised_date <= date('now','+7 days') "
+            "AND (store_id=? OR store_id=0) ORDER BY promised_date LIMIT 8", (sid,)
         ).fetchall()
         loans_overdue = conn.execute(
-            "SELECT * FROM loans WHERE status IN ('借出中','借入中') AND due_date < date('now') ORDER BY due_date LIMIT 8"
+            "SELECT * FROM loans WHERE status IN ('借出中','借入中') AND due_date < date('now') "
+            "AND (store_id=? OR store_id=0) ORDER BY due_date LIMIT 8", (sid,)
         ).fetchall()
         repairs_pending = conn.execute(
-            "SELECT * FROM repairs WHERE status IN ('待维修','维修中') ORDER BY promised_date LIMIT 8"
+            "SELECT * FROM repairs WHERE status IN ('待维修','维修中') "
+            "AND (store_id=? OR store_id=0) ORDER BY promised_date LIMIT 8", (sid,)
         ).fetchall()
         return {
             "deposits": [dict(r) for r in deposits_urgent],
@@ -1097,6 +1214,8 @@ class ProductIn(BaseModel):
     showcase_desc: str = ""
     origin: str = ""
     high_value: int = 0
+    location_id: int = 0
+    cert_location_id: int = 0
 
 
 # ---------------------------------------------------------------- 语言 / 业务配置 / 分类
@@ -1386,6 +1505,9 @@ def label_template_preview(tid: int, request: Request, product_id: int = 1):
         p = conn.execute("SELECT * FROM products WHERE id=?", (product_id,)).fetchone()
         if not p:
             raise HTTPException(404, "商品不存在")
+        cur_sid, _ = _current_store(request, conn)
+        if p["store_id"] not in (0, cur_sid):
+            raise HTTPException(403, "该商品不属于当前工作门店")
         prof = conn.execute("SELECT name FROM tenant_profiles ORDER BY id DESC LIMIT 1").fetchone()
         store_name = prof["name"] if prof and prof["name"] else ""
         product = dict(p)
@@ -1434,6 +1556,7 @@ def product_generate_epc(pid: int, request: Request):
             raise HTTPException(404, "商品不存在")
         if p["rfid_epc"]:
             return {"ok": True, "epc": p["rfid_epc"], "reused": True}
+        _assert_stock_unfrozen(conn)
         epc = _gen_type_epc(conn, p["product_type_code"] or "99", p["store_id"] or 1)
         conn.execute("UPDATE products SET rfid_epc=? WHERE id=?", (epc, pid))
         conn.commit()
@@ -1475,20 +1598,40 @@ def admin_rebuild_barcodes(body: RebuildBarcodeIn, request: Request):
 
 
 @app.get("/api/products")
-def product_list(request: Request, q: str = "", status: str = "", page: int = 1, size: int = 80):
-    _require_auth(request)
+def product_list(request: Request, q: str = "", status: str = "", page: int = 1, size: int = 80,
+                 store_id: int = 0, location_id: int = 0, cert_location_id: int = 0,
+                 has_cert: int = -1):
+    sess = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
         where, args = [], []
+        join = (" LEFT JOIN locations l1 ON l1.id=products.location_id"
+                " LEFT JOIN locations l2 ON l2.id=products.cert_location_id")
+        # 严格门店隔离：一律以会话当前工作门店为准，忽略前端传入的 store_id
+        where.append("products.store_id=?")
+        args.append(sid)
         if q:
-            where.append("(name LIKE ? OR code LIKE ? OR rfid_epc LIKE ?)")
-            args += [f"%{q}%", f"%{q}%", f"%{q}%"]
+            where.append("(products.name LIKE ? OR products.code LIKE ? OR products.rfid_epc LIKE ?"
+                         " OR l1.name LIKE ? OR l1.code LIKE ? OR l2.name LIKE ? OR l2.code LIKE ?)")
+            args += [f"%{q}%"] * 7
         if status:
-            where.append("status=?")
+            where.append("products.status=?")
             args.append(status)
+        if location_id:
+            where.append("products.location_id=?")
+            args.append(location_id)
+        if cert_location_id:
+            where.append("products.cert_location_id=?")
+            args.append(cert_location_id)
+        if has_cert == 0:
+            where.append("TRIM(IFNULL(products.cert,''))=''")
+        elif has_cert == 1:
+            where.append("TRIM(IFNULL(products.cert,''))<>''")
         cond = ("WHERE " + " AND ".join(where)) if where else ""
-        total = conn.execute(f"SELECT COUNT(*) n FROM products {cond}", args).fetchone()["n"]
+        total = conn.execute(
+            f"SELECT COUNT(*) n FROM products {join} {cond}", args).fetchone()["n"]
         rows = conn.execute(
-            f"SELECT {_PRODUCT_COLS} FROM products {cond} ORDER BY id DESC LIMIT ? OFFSET ?",
+            f"SELECT {_PRODUCT_COLS} FROM products {join} {cond} ORDER BY products.id DESC LIMIT ? OFFSET ?",
             args + [size, (page - 1) * size],
         ).fetchall()
         return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
@@ -1496,22 +1639,26 @@ def product_list(request: Request, q: str = "", status: str = "", page: int = 1,
 
 @app.get("/api/products/options")
 def product_options(request: Request, status: str = "在库"):
-    _require_auth(request)
+    sess = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
         if status:
-            rows = conn.execute("SELECT id, code, name, price, status, rfid_epc, barcode, store_id, product_type_code FROM products WHERE status=? ORDER BY id", (status,)).fetchall()
+            rows = conn.execute("SELECT id, code, name, price, status, rfid_epc, barcode, store_id, product_type_code FROM products WHERE status=? AND store_id=? ORDER BY id", (status, sid)).fetchall()
         else:
-            rows = conn.execute("SELECT id, code, name, price, status, rfid_epc, barcode, store_id, product_type_code FROM products ORDER BY id").fetchall()
+            rows = conn.execute("SELECT id, code, name, price, status, rfid_epc, barcode, store_id, product_type_code FROM products WHERE store_id=? ORDER BY id", (sid,)).fetchall()
         return {"items": [dict(r) for r in rows]}
 
 
 @app.get("/api/products/{pid}")
 def product_detail(pid: int, request: Request):
-    _require_auth(request)
+    sess = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
         row = conn.execute(f"SELECT {_PRODUCT_COLS} FROM products WHERE id=?", (pid,)).fetchone()
         if not row:
             raise HTTPException(404, "商品不存在")
+        if row["store_id"] != sid:
+            raise HTTPException(403, "该商品不属于当前工作门店")
         return dict(row)
 
 
@@ -1519,46 +1666,65 @@ def product_detail(pid: int, request: Request):
 def product_create(body: ProductIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         _assert_stock_unfrozen(conn)
+        body.store_id = sid  # 商品建档强制落入当前工作门店（跨店请走调拨）
         type_code, type_name = _resolve_type(conn, body.product_type_code, body.product_type)
+        _assert_locations_in_store(conn, body.store_id, body.location_id, body.cert_location_id)
         epc = (body.rfid_epc or "").strip()
         if not epc:
             epc = _gen_type_epc(conn, type_code, body.store_id)  # 新商品保存即自动生成 EPC
         cur = conn.execute(
             """INSERT INTO products(code,name,name_i18n,category,category_code,material,product_type,product_type_code,
                                      weight,size,cert,cost,price,status,store_id,rfid_epc,
-                                     showcase_public,showcase_order,showcase_desc,origin,high_value)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                     showcase_public,showcase_order,showcase_desc,origin,high_value,
+                                     location_id,cert_location_id)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (body.code, body.name, body.name_i18n, body.category, body.category_code,
              _norm_material(body.material), type_name, type_code,
              body.weight, body.size, body.cert, body.cost, body.price, body.status, body.store_id, epc,
-             body.showcase_public, body.showcase_order, body.showcase_desc, body.origin, body.high_value),
+             body.showcase_public, body.showcase_order, body.showcase_desc, body.origin, body.high_value,
+             body.location_id or 0, body.cert_location_id or 0),
         )
-        _inv(conn, cur.lastrowid, epc, "in", op["username"])
+        _inv(conn, cur.lastrowid, epc, "in", op["username"], store_id=sid)
         conn.commit()
         _log(conn, op["username"], "新增商品", body.code)
         return {"id": cur.lastrowid, "rfid_epc": epc}
+
+
+def _assert_product_in_store(conn: sqlite3.Connection, pid: int, sid: int) -> sqlite3.Row:
+    row = conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
+    if not row:
+        raise HTTPException(404, "商品不存在")
+    if row["store_id"] != sid:
+        raise HTTPException(403, "该商品不属于当前工作门店，请到所属门店操作")
+    return row
 
 
 @app.put("/api/products/{pid}")
 def product_update(pid: int, body: ProductIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         _assert_stock_unfrozen(conn)
-        row = conn.execute("SELECT rfid_epc FROM products WHERE id=?", (pid,)).fetchone()
-        if not row:
-            raise HTTPException(404, "商品不存在")
+        row = _assert_product_in_store(conn, pid, sid)
+        if row["status"] == "在途":
+            raise HTTPException(400, "商品调拨在途中，验收完成后不可编辑")
+        body.store_id = sid  # 不允许借编辑跨店改归属
         type_code, type_name = _resolve_type(conn, body.product_type_code, body.product_type)
+        _assert_locations_in_store(conn, body.store_id, body.location_id, body.cert_location_id)
         epc = (body.rfid_epc or "").strip() or row["rfid_epc"]
         conn.execute(
             """UPDATE products SET code=?,name=?,name_i18n=?,category=?,category_code=?,material=?,
                product_type=?,product_type_code=?,weight=?,size=?,cert=?,
                cost=?,price=?,status=?,store_id=?,rfid_epc=?,showcase_public=?,
-               showcase_order=?,showcase_desc=?,origin=?,high_value=? WHERE id=?""",
+               showcase_order=?,showcase_desc=?,origin=?,high_value=?,
+               location_id=?,cert_location_id=? WHERE id=?""",
             (body.code, body.name, body.name_i18n, body.category, body.category_code,
              _norm_material(body.material), type_name, type_code,
              body.weight, body.size, body.cert, body.cost, body.price, body.status, body.store_id, epc,
-             body.showcase_public, body.showcase_order, body.showcase_desc, body.origin, body.high_value, pid),
+             body.showcase_public, body.showcase_order, body.showcase_desc, body.origin, body.high_value,
+             body.location_id or 0, body.cert_location_id or 0, pid),
         )
         conn.commit()
         _log(conn, op["username"], "修改商品", f"#{pid} {body.code}")
@@ -1569,10 +1735,9 @@ def product_update(pid: int, body: ProductIn, request: Request):
 def product_delete(pid: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         _assert_stock_unfrozen(conn)
-        row = conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
-        if not row:
-            raise HTTPException(404, "商品不存在")
+        row = _assert_product_in_store(conn, pid, sid)
         if row["status"] not in ("在库",):
             raise HTTPException(400, "仅允许删除在库商品")
         conn.execute("DELETE FROM products WHERE id=?", (pid,))
@@ -1606,8 +1771,8 @@ def product_image_update(pid: int, body: ProductImageIn, request: Request):
     op = _require_auth(request)
     raw = _decode_image_data(body.data)
     with _db(request) as conn:
-        if not conn.execute("SELECT 1 FROM products WHERE id=?", (pid,)).fetchone():
-            raise HTTPException(404, "商品不存在")
+        sid, _ = _current_store(request, conn, op)
+        _assert_product_in_store(conn, pid, sid)
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         conn.execute("UPDATE products SET image=?, image_ts=? WHERE id=?", (raw, ts, pid))
         conn.commit()
@@ -1619,6 +1784,8 @@ def product_image_update(pid: int, body: ProductImageIn, request: Request):
 def product_image_delete(pid: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
+        _assert_product_in_store(conn, pid, sid)
         conn.execute("UPDATE products SET image=NULL, image_ts='' WHERE id=?", (pid,))
         conn.commit()
         _log(conn, op["username"], "删除商品图片", f"#{pid}")
@@ -1651,6 +1818,8 @@ def product_print_label(pid: int, body: PrintLabelIn, request: Request):
         row = conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
         if not row:
             raise HTTPException(404, "商品不存在")
+        if not row["rfid_epc"]:
+            _assert_stock_unfrozen(conn)
         epc = row["rfid_epc"] or _gen_epc(row["code"])
         conn.execute("UPDATE products SET rfid_epc=? WHERE id=?", (epc, pid))
         _inv(conn, pid, epc, "rfid", op["username"], body.copies)
@@ -1663,14 +1832,19 @@ def product_print_label(pid: int, body: PrintLabelIn, request: Request):
 
 @app.get("/api/inventory/summary")
 def inventory_summary(request: Request):
-    _require_auth(request)
+    sess = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
         def cnt(st):
-            r = conn.execute("SELECT COUNT(*) n, COALESCE(SUM(cost),0) c FROM products WHERE status=?", (st,)).fetchone()
+            r = conn.execute("SELECT COUNT(*) n, COALESCE(SUM(cost),0) c FROM products WHERE status=? AND store_id=?",
+                             (st, sid)).fetchone()
             return {"count": r["n"], "cost": round(r["c"], 2)}
-        logs = conn.execute("SELECT * FROM inventory_logs ORDER BY id DESC LIMIT 30").fetchall()
+        logs = conn.execute(
+            "SELECT * FROM inventory_logs WHERE store_id=? OR store_id=0 ORDER BY id DESC LIMIT 30",
+            (sid,)).fetchall()
         return {
             "inStock": cnt("在库"),
+            "inTransit": cnt("在途"),  # 已发出待验收，资产仍归调出店
             "reserved": cnt("已定"),
             "loaned": cnt("借出"),
             "sold": cnt("已售"),
@@ -1681,6 +1855,7 @@ def inventory_summary(request: Request):
 class InboundIn(BaseModel):
     code: str = ""
     name: str
+    store_id: int = 0
     category: str = ""
     category_code: str = ""
     product_type: str = ""
@@ -1693,28 +1868,38 @@ class InboundIn(BaseModel):
     price: float = 0
     rfid_epc: str = ""
     biz_date: str = ""
+    location_id: int = 0
+    cert_location_id: int = 0
 
 
 @app.post("/api/inventory/inbound")
 def inventory_inbound(body: InboundIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         _assert_stock_unfrozen(conn)
+        store_id = sid  # 入库门店强制为当前工作门店
+        store = conn.execute("SELECT id,name FROM stores WHERE id=?", (store_id,)).fetchone()
+        if not store:
+            raise HTTPException(400, "入库门店不存在")
         code = body.code.strip() or _next_code(conn)
         if conn.execute("SELECT 1 FROM products WHERE code=?", (code,)).fetchone():
             raise HTTPException(400, "商品编码已存在")
         type_code, type_name = _resolve_type(conn, body.product_type_code, body.product_type)
-        epc = (body.rfid_epc or "").strip() or _gen_type_epc(conn, type_code, 1)  # 入库固定归属默认门店
+        _assert_locations_in_store(conn, store_id, body.location_id, body.cert_location_id)
+        epc = (body.rfid_epc or "").strip() or _gen_type_epc(conn, type_code, store_id)
         cur = conn.execute(
             """INSERT INTO products(code,name,category,category_code,material,product_type,product_type_code,
-                                    weight,size,cert,cost,price,status,store_id,rfid_epc,showcase_public)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'在库',?, ?,0)""",
+                                    weight,size,cert,cost,price,status,store_id,rfid_epc,showcase_public,
+                                    location_id,cert_location_id)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'在库',?, ?,0,?,?)""",
             (code, body.name, body.category, body.category_code, _norm_material(body.material),
-             type_name, type_code, body.weight, body.size, body.cert, body.cost, body.price, 1, epc),
+             type_name, type_code, body.weight, body.size, body.cert, body.cost, body.price,
+             store_id, epc, body.location_id or 0, body.cert_location_id or 0),
         )
-        _inv(conn, cur.lastrowid, epc, "in", op["username"])
+        _inv(conn, cur.lastrowid, epc, "in", op["username"], store_id=store_id)
         conn.commit()
-        _log(conn, op["username"], "入库登记", code)
+        _log(conn, op["username"], "入库登记", f"{store['name']} {code}")
         return {"id": cur.lastrowid, "code": code, "rfid_epc": epc}
 
 
@@ -1722,13 +1907,12 @@ def inventory_inbound(body: InboundIn, request: Request):
 def inventory_copy(pid: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         _assert_stock_unfrozen(conn)
-        src = conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
-        if not src:
-            raise HTTPException(404, "源商品不存在")
+        src = _assert_product_in_store(conn, pid, sid)
         code = _next_code(conn)
         type_code = src["product_type_code"] or "99"
-        epc = _gen_type_epc(conn, type_code, src["store_id"])
+        epc = _gen_type_epc(conn, type_code, sid)
         cur = conn.execute(
             """INSERT INTO products(code,name,name_i18n,category,category_code,material,product_type,product_type_code,
                                     weight,size,cert,cost,price,status,store_id,rfid_epc,showcase_public,origin,high_value)
@@ -1736,12 +1920,246 @@ def inventory_copy(pid: int, request: Request):
             (code, src["name"], src["name_i18n"], src["category"], src["category_code"],
              _norm_material(src["material"]),
              src["product_type"], type_code, src["weight"], src["size"], src["cert"], src["cost"], src["price"],
-             src["store_id"], epc, src["origin"], src["high_value"]),
+             sid, epc, src["origin"], src["high_value"]),
         )
-        _inv(conn, cur.lastrowid, epc, "in", op["username"])
+        _inv(conn, cur.lastrowid, epc, "in", op["username"], store_id=sid)
         conn.commit()
         _log(conn, op["username"], "复制入库", f"{src['code']}→{code}")
         return {"id": cur.lastrowid, "code": code, "rfid_epc": epc}
+
+
+# ---------------------------------------------------------------- 门店调拨
+# 两步制：发出（商品转「在途」冻结，store_id 不动）→ 调入方逐件验收（相符入库/不符退回）。
+# EPC 终身码：全程只改 products.store_id，绝不重写 rfid_epc。
+
+def _next_transfer_no(conn: sqlite3.Connection) -> str:
+    d = date.today().strftime("%Y%m%d")
+    row = conn.execute("SELECT MAX(transfer_no) m FROM transfers WHERE transfer_no LIKE ?",
+                       (f"DB{d}%",)).fetchone()
+    seq = int(row["m"][-3:]) + 1 if row["m"] else 1
+    return f"DB{d}{seq:03d}"
+
+
+class TransferIn(BaseModel):
+    to_store_id: int
+    product_ids: list[int] = Field(default_factory=list)
+    scan_codes: list[str] = Field(default_factory=list)  # 批量扫码（EPC/条码/货号混合）
+    remark: str = ""
+
+
+class ReceiveItem(BaseModel):
+    product_id: int
+    ok: bool
+    reason: str = ""
+
+
+class TransferReceiveIn(BaseModel):
+    items: list[ReceiveItem] = Field(default_factory=list)
+    scan_codes: list[str] = Field(default_factory=list)  # 验收端扫到的 EPC/条码/货号 → 自动 ok
+
+
+@app.post("/api/transfers")
+def transfer_create(body: TransferIn, request: Request):
+    op = _require_auth(request)
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
+        _assert_stock_unfrozen(conn)
+        # 扫码入参先 resolve 成 product_ids（与原 product_ids 合并）
+        # 注意：EPC / 货号 / 条码 三种码可能 resolve 到同一件商品 → pid 维度去重
+        scan_pids: list[int] = []
+        seen_pid = set()
+        seen_raw = set()
+        for s in (body.scan_codes or []):
+            s2 = (s or "").strip()
+            if not s2 or s2 in seen_raw:
+                continue
+            seen_raw.add(s2)
+            p = _resolve_product(conn, s2, sid)
+            if not p:
+                raise HTTPException(400, f"扫描的码 {s2} 未登记、不存在或不属于当前门店，无法调拨")
+            if p["id"] in seen_pid:
+                continue
+            seen_pid.add(p["id"])
+            scan_pids.append(p["id"])
+        raw_ids = (list(body.product_ids or []) + scan_pids)
+        if not raw_ids:
+            raise HTTPException(400, "请选择或扫码调拨商品")
+        if len(raw_ids) > 50:
+            raise HTTPException(400, "单次调拨最多 50 件")
+        ids = list(dict.fromkeys(raw_ids))  # 去重保序
+        if len(ids) != len(raw_ids):
+            raise HTTPException(400, "调拨商品存在重复选择")
+        qmarks = ",".join("?" * len(ids))
+        prods = conn.execute(
+            f"SELECT * FROM products WHERE id IN ({qmarks})", ids).fetchall()
+        if len(prods) != len(ids):
+            raise HTTPException(400, "部分商品不存在")
+        from_ids = {p["store_id"] for p in prods}
+        if len(from_ids) != 1:
+            raise HTTPException(400, "一次调拨只能选择同一门店的商品")
+        from_sid = from_ids.pop()
+        if from_sid != sid:
+            raise HTTPException(403, "所选商品不属于当前工作门店，不能跨店发起调拨")
+        if from_sid == body.to_store_id:
+            raise HTTPException(400, "调入门店必须与调出门店不同")
+        # 调入门店须真实存在（允许调给本人未被授权的门店，业务上本就是发给别的店）
+        if not conn.execute("SELECT 1 FROM stores WHERE id=?", (body.to_store_id,)).fetchone():
+            raise HTTPException(400, "调入门店不存在")
+        bad = next((p for p in prods if p["status"] != "在库"), None)
+        if bad:
+            raise HTTPException(400, f"商品 {bad['code']} 当前状态为{bad['status']}，无法调拨")
+        no = _next_transfer_no(conn)
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cur = conn.execute(
+            """INSERT INTO transfers(transfer_no,from_store_id,to_store_id,status,total_count,
+                                     matched_count,diff_count,remark,created_by,sent_at,created)
+               VALUES(?,?,?, '在途', ?,0,0,?,?,?,?)""",
+            (no, from_sid, body.to_store_id, len(ids), (body.remark or "").strip()[:200],
+             op["username"], now, now))
+        tid = cur.lastrowid
+        conn.executemany(
+            "INSERT INTO transfer_items(transfer_id,product_id,epc,product_name,result) VALUES(?,?,?,?,'')",
+            [(tid, p["id"], p["rfid_epc"] or "", p["name"] or "") for p in prods])
+        conn.execute(f"UPDATE products SET status='在途' WHERE id IN ({qmarks})", ids)
+        for p in prods:
+            _inv(conn, p["id"], p["rfid_epc"], "transfer_out", op["username"], store_id=sid)
+        conn.commit()
+        _log(conn, op["username"], "调拨发出", f"{no}（{len(ids)}件）")
+        return {"id": tid, "transfer_no": no}
+
+
+def _transfer_list_rows(conn, where: str, args: list, limit: int, offset: int):
+    sql = f"""
+        SELECT t.*, fs.name from_store_name, ts.name to_store_name
+        FROM transfers t
+        JOIN stores fs ON fs.id=t.from_store_id
+        JOIN stores ts ON ts.id=t.to_store_id
+        {where}
+        ORDER BY t.id DESC LIMIT ? OFFSET ?"""
+    return conn.execute(sql, args + [limit, offset]).fetchall()
+
+
+@app.get("/api/transfers")
+def transfer_list(request: Request, scope: str = "out", status: str = "",
+                  store_id: int = 0, page: int = 1, size: int = 50):
+    """调拨单列表。scope=out 当前店调出视角 / in 当前店调入视角；严格按当前工作门店收敛。"""
+    sess = _require_auth(request)
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
+        where, args = [], []
+        dir_col = "t.to_store_id" if scope == "in" else "t.from_store_id"
+        where.append(f"{dir_col}=?")
+        args.append(sid)
+        if status:
+            where.append("t.status=?")
+            args.append(status)
+        cond = ("WHERE " + " AND ".join(where)) if where else ""
+        total = conn.execute(
+            f"SELECT COUNT(*) n FROM transfers t {cond}", args).fetchone()["n"]
+        rows = _transfer_list_rows(conn, cond, args, size, (page - 1) * size)
+        return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
+
+
+@app.get("/api/transfers/{tid}")
+def transfer_detail(tid: int, request: Request):
+    sess = _require_auth(request)
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
+        t = conn.execute(
+            """SELECT t.*, fs.name from_store_name, ts.name to_store_name
+               FROM transfers t
+               JOIN stores fs ON fs.id=t.from_store_id
+               JOIN stores ts ON ts.id=t.to_store_id
+               WHERE t.id=?""", (tid,)).fetchone()
+        if not t:
+            raise HTTPException(404, "调拨单不存在")
+        if t["from_store_id"] != sid and t["to_store_id"] != sid:
+            raise HTTPException(403, "该调拨单与当前工作门店无关")
+        items = conn.execute(
+            """SELECT i.*, p.code product_code, p.status product_status, p.store_id product_store_id
+               FROM transfer_items i JOIN products p ON p.id=i.product_id
+               WHERE i.transfer_id=? ORDER BY i.id""", (tid,)).fetchall()
+        d = dict(t)
+        d["items"] = [dict(r) for r in items]
+        return d
+
+
+@app.post("/api/transfers/{tid}/receive")
+def transfer_receive(tid: int, body: TransferReceiveIn, request: Request):
+    op = _require_auth(request)
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
+        _assert_stock_unfrozen(conn)
+        t = conn.execute("SELECT * FROM transfers WHERE id=?", (tid,)).fetchone()
+        if not t:
+            raise HTTPException(404, "调拨单不存在")
+        if t["to_store_id"] != sid:
+            raise HTTPException(403, "该调拨单不是发往当前工作门店的，无权验收")
+        if t["status"] != "在途":
+            raise HTTPException(400, f"该调拨单状态为{t['status']}，不可重复验收")
+        db_items = conn.execute(
+            "SELECT * FROM transfer_items WHERE transfer_id=? ORDER BY id", (tid,)).fetchall()
+        # 扫码入参 resolve 成 ReceiveItem（默认 ok=True）
+        merged_items = list(body.items or [])
+        seen_pid = {it.product_id for it in merged_items}
+        for s in (body.scan_codes or []):
+            s2 = (s or "").strip()
+            if not s2:
+                continue
+            p = _resolve_product(conn, s2)
+            if not p:
+                raise HTTPException(400, f"验收扫码 {s2} 未登记或不存在")
+            if p["id"] in seen_pid:
+                continue
+            seen_pid.add(p["id"])
+            merged_items.append(ReceiveItem(product_id=p["id"], ok=True, reason=""))
+        # 必须与调拨明细完全一致（前端若扫漏，会把"未扫到的"当不符处理）
+        scan_pids_ok = {it.product_id: it.ok for it in merged_items}
+        if set(scan_pids_ok) != {i["product_id"] for i in db_items}:
+            # 把调拨明细里未被扫到的自动补为不符，要求前端填写原因
+            missing = [i for i in db_items if i["product_id"] not in scan_pids_ok]
+            raise HTTPException(400,
+                f"验收明细必须与调拨明细完全一致：未扫到 {len(missing)} 件，请继续扫码或标记不符（{', '.join(str(i['product_id']) for i in missing[:3])}{'...' if len(missing) > 3 else ''}）")
+        decisions = {it.product_id: it for it in merged_items}
+        # 先全量校验（不符必填原因），通过后再写库，保证事务原子
+        for i in db_items:
+            d = decisions[i["product_id"]]
+            if not d.ok and not (d.reason or "").strip():
+                raise HTTPException(400, f"商品 {i['product_name']} 标记不符时必须填写原因")
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        matched = diff = 0
+        for i in db_items:
+            d = decisions[i["product_id"]]
+            if d.ok:
+                cur = conn.execute(
+                    "UPDATE products SET store_id=?, status='在库' WHERE id=? AND status='在途'",
+                    (t["to_store_id"], i["product_id"]))
+                if cur.rowcount != 1:
+                    raise HTTPException(400, f"商品 {i['product_name']} 已不在在途状态，验收中止")
+                conn.execute(
+                    "UPDATE transfer_items SET result='相符', received_at=? WHERE id=?",
+                    (now, i["id"]))
+                _inv(conn, i["product_id"], i["epc"], "transfer_in", op["username"])
+                matched += 1
+            else:
+                cur = conn.execute(
+                    "UPDATE products SET status='在库' WHERE id=? AND status='在途'",
+                    (i["product_id"],))
+                if cur.rowcount != 1:
+                    raise HTTPException(400, f"商品 {i['product_name']} 已不在在途状态，验收中止")
+                conn.execute(
+                    "UPDATE transfer_items SET result='不符', diff_reason=?, received_at=? WHERE id=?",
+                    ((d.reason or "").strip()[:100], now, i["id"]))
+                _inv(conn, i["product_id"], i["epc"], "transfer_back", op["username"])
+                diff += 1
+        new_status = "已完成" if diff == 0 else "部分完成"
+        conn.execute(
+            "UPDATE transfers SET status=?, matched_count=?, diff_count=?, received_by=?, received_at=? WHERE id=?",
+            (new_status, matched, diff, op["username"], now, tid))
+        conn.commit()
+        _log(conn, op["username"], "调拨验收",
+             f"{t['transfer_no']} 相符{matched}件" + (f" 不符{diff}件" if diff else ""))
+        return {"id": tid, "status": new_status, "matched": matched, "diff": diff}
 
 
 class RfidScanIn(BaseModel):
@@ -1753,7 +2171,11 @@ class RfidScanIn(BaseModel):
 def rfid_scan(body: RfidScanIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
-        book = conn.execute("SELECT * FROM products WHERE status IN ('在库','已定','借出') AND rfid_epc!=''").fetchall()
+        sid, _ = _current_store(request, conn, op)
+        _assert_stock_unfrozen(conn)
+        book = conn.execute(
+            "SELECT * FROM products WHERE status IN ('在库','已定','借出') AND rfid_epc!='' AND store_id=?",
+            (sid,)).fetchall()
         book_map = {r["rfid_epc"]: dict(r) for r in book}
         epcs = [e.strip() for e in body.epcs if e and e.strip()]
         if body.simulate and not epcs:
@@ -1764,7 +2186,7 @@ def rfid_scan(body: RfidScanIn, request: Request):
             if epc in seen:
                 continue
             seen.add(epc)
-            _inv(conn, book_map.get(epc, {}).get("id"), epc, "scan", op["username"])
+            _inv(conn, book_map.get(epc, {}).get("id"), epc, "scan", op["username"], store_id=sid)
             if epc in book_map:
                 p = book_map[epc]
                 scanned.append({"epc": epc, "product": p["name"], "code": p["code"], "status": p["status"], "result": "账实相符"})
@@ -1841,6 +2263,8 @@ def print_labels(body: LabelPrintIn, request: Request):
             return dict(row) if row else None
 
         jobs = []
+        if any(not p.get("rfid_epc") for p in products):
+            _assert_stock_unfrozen(conn)
         for p in products:
             epc = p.get("rfid_epc") or _gen_type_epc(conn, p.get("product_type_code") or "99", p.get("store_id") or 1)
             if not p.get("rfid_epc"):
@@ -2090,27 +2514,78 @@ def store_bridge_whoami(request: Request, key: str = ""):
     return {"store_id": r["id"], "store_name": r["name"]}
 
 
+@app.get("/api/health/summary")
+def health_summary(request: Request):
+    """系统自检聚合接口（顶栏铃铛数据源）：
+    防盗待处理事件数、盘点任务停滞、在库商品缺EPC、距上次盘点天数、客户欠款总额。"""
+    _require_auth(request)
+    with _db(request) as conn:
+        pending = conn.execute(
+            "SELECT COUNT(*) n FROM sensor_events WHERE event_type='alarm' AND handle_status='未处理'"
+        ).fetchone()["n"]
+        # 盘点任务停滞：进行中 且 30 分钟内无任何扫描上报与设备心跳
+        stall = 0
+        s = _active_session(conn)
+        if s:
+            r = conn.execute(
+                "SELECT MAX(x) m FROM ("
+                " SELECT MAX(scanned_at) x FROM task_scans WHERE task_id=?"
+                " UNION ALL SELECT MAX(last_seen) FROM task_devices WHERE task_id=?"
+                " UNION ALL SELECT ?)", (s["id"], s["id"], s["created"])).fetchone()
+            idle = conn.execute(
+                "SELECT (julianday('now','localtime')-julianday(?))*86400 d",
+                (r["m"] or s["created"],)).fetchone()["d"]
+            stall = 1 if (idle or 0) > 1800 else 0
+        ep = conn.execute(
+            "SELECT COUNT(*) t, IFNULL(SUM(CASE WHEN IFNULL(rfid_epc,'')='' THEN 1 ELSE 0 END),0) m"
+            " FROM products WHERE status='在库'").fetchone()
+        last_st = conn.execute("SELECT MAX(created) c FROM stocktakes").fetchone()["c"]
+        st_days = (conn.execute(
+            "SELECT CAST(julianday('now','localtime')-julianday(?) AS INTEGER) d",
+            (last_st,)).fetchone()["d"] if last_st else None)
+        due = conn.execute(
+            "SELECT IFNULL(SUM(due_amount),0) d FROM customers").fetchone()["d"]
+    return {"pending_events": pending, "task_stall": stall,
+            "in_stock": ep["t"] or 0, "missing_epc": ep["m"] or 0,
+            "last_stocktake_days": st_days, "credit_due": round(due or 0, 2)}
+
+
 @app.post("/api/stores")
 def store_create(body: dict, request: Request):
-    _require_auth(request)
+    _require_admin(request)
     name = str(body.get("name") or "").strip()
     code = str(body.get("code") or "").strip()
     if not name:
         raise HTTPException(400, "门店名称必填")
+    if code:
+        code_u = code.upper()
+        if len(code_u) != 2 or not all(c in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ" for c in code_u):
+            raise HTTPException(400, "门店编码需为 2 位字母或数字（如 HQ、A1、06）；留空则自动生成")
+        code = code_u
     with _db(request) as conn:
-        sid = conn.execute("SELECT COALESCE(MAX(id),0)+1 FROM stores").fetchone()[0]
-        if not code:
-            code = f"{sid:02X}"
+        shop_id = int(body.get("shop_id") or 0)
+        if shop_id:
+            if not conn.execute("SELECT 1 FROM shops WHERE id=?", (shop_id,)).fetchone():
+                raise HTTPException(400, "所属店铺不存在")
+        else:
+            shop_id = conn.execute("SELECT id FROM shops ORDER BY id LIMIT 1").fetchone()["id"]
         try:
-            conn.execute("INSERT INTO stores(id,name,code,owner) VALUES(?,?,?,?)",
-                         (sid, name, code, str(body.get("owner") or "")))
+            cur = conn.execute(
+                "INSERT INTO stores(name,code,owner,shop_id) VALUES(?,?,?,?)",
+                (name, code or None, str(body.get("owner") or ""), shop_id))
+            sid = cur.lastrowid
+            if not code:
+                code = f"{sid:02X}"
             # 新门店补齐每个打印业务的指派行（空指派）
             conn.executemany(
                 "INSERT INTO store_printers(store_id,biz_code,printer_name) VALUES(?,?, '')",
                 [(sid, c0) for c0 in db.PRINT_BIZ_CODES])
             conn.commit()
-        except sqlite3.IntegrityError:
-            raise HTTPException(400, "门店编码已存在")
+        except sqlite3.IntegrityError as e:
+            msg = str(e)
+            if "code" in msg.lower() or "UNIQUE constraint failed: stores.code" in msg:
+                raise HTTPException(400, "门店编码已存在")
+            raise HTTPException(400, "门店创建失败：数据约束冲突")
     return {"ok": True, "id": sid, "code": code}
 
 
@@ -2341,13 +2816,25 @@ def _next_batch_no(conn: sqlite3.Connection) -> str:
     return "PD" + datetime.now().strftime("%Y%m%d%H%M%S") + secrets.token_hex(1).upper()
 
 
-def _run_stocktake(conn: sqlite3.Connection, epcs: list[str], device: str, operator: str) -> dict:
-    """核心盘点：扫到的 EPC 集合对比账面，落库批次与明细，返回结果。"""
-    book_rows = conn.execute(
-        "SELECT * FROM products WHERE status IN ('在库','已定','借出') AND rfid_epc!=''"
-    ).fetchall()
+def _run_stocktake(conn: sqlite3.Connection, epcs: list[str], device: str, operator: str,
+                  commit: bool = True, store_id: int = 0) -> dict:
+    """核心盘点：扫到的 EPC 集合对比账面，落库批次与明细，返回结果。
+
+    store_id>0 时只盘点该门店的商品（协同盘点任务按发起门店隔离）；0 为旧版全租户盘点。
+    commit=False 时不提交（供任务 submit/terminate 在同一事务内完成「终态抢占+报告+回填」，
+    避免报告已落库但终态 CAS 失败而产生重复批次/脏流水），由调用方负责 commit 与操作日志。"""
+    if store_id:
+        book_rows = conn.execute(
+            "SELECT * FROM products WHERE status IN ('在库','已定','借出') AND rfid_epc!='' AND store_id=?",
+            (store_id,)).fetchall()
+        all_rows = conn.execute(
+            "SELECT * FROM products WHERE rfid_epc!='' AND store_id=?", (store_id,)).fetchall()
+    else:
+        book_rows = conn.execute(
+            "SELECT * FROM products WHERE status IN ('在库','已定','借出') AND rfid_epc!=''"
+        ).fetchall()
+        all_rows = conn.execute("SELECT * FROM products WHERE rfid_epc!=''").fetchall()
     book_map = {r["rfid_epc"]: dict(r) for r in book_rows}
-    all_rows = conn.execute("SELECT * FROM products WHERE rfid_epc!=''").fetchall()
     all_map = {r["rfid_epc"]: dict(r) for r in all_rows}
 
     # 重复读取计数
@@ -2376,11 +2863,11 @@ def _run_stocktake(conn: sqlite3.Connection, epcs: list[str], device: str, opera
     batch_no = _next_batch_no(conn)
     cur = conn.execute(
         """INSERT INTO stocktakes(batch_no,device,scanned_count,book_count,matched_count,
-                                  surplus_count,shortage_count,abnormal_count,dup_count,operator)
-           VALUES(?,?,?,?,?,0,?,?,?,?)""",
+                                  surplus_count,shortage_count,abnormal_count,dup_count,operator,store_id)
+           VALUES(?,?,?,?,?,0,?,?,?,?,?)""",
         (batch_no, device, len(seen), len(book_map), len(matched),
          len(shortage), len(abnormal),
-         sum(v - 1 for v in read_count.values() if v > 1), operator),
+         sum(v - 1 for v in read_count.values() if v > 1), operator, store_id or 0),
     )
     sid = cur.lastrowid
     for it in matched + shortage + abnormal:
@@ -2392,10 +2879,11 @@ def _run_stocktake(conn: sqlite3.Connection, epcs: list[str], device: str, opera
              it["code"], it["product"], it["book_status"], it["dup_count"]),
         )
         if it["epc"] in book_map:
-            _inv(conn, book_map[it["epc"]]["id"], it["epc"], "scan", operator)
-    conn.commit()
-    _log(conn, operator, "RFID批量盘点",
-         f"{batch_no} 扫描{len(seen)} 盘亏{len(shortage)} 异常{len(abnormal)}")
+            _inv(conn, book_map[it["epc"]]["id"], it["epc"], "scan", operator, store_id=store_id or 0)
+    if commit:
+        conn.commit()
+        _log(conn, operator, "RFID批量盘点",
+             f"{batch_no} 扫描{len(seen)} 盘亏{len(shortage)} 异常{len(abnormal)}")
     items = matched + abnormal + shortage
     return {
         "id": sid, "batch_no": batch_no, "device": device,
@@ -2470,27 +2958,33 @@ def stocktake_upload(key: str, body: StocktakeUploadIn):
     if not epcs:
         raise HTTPException(400, "未收到任何 EPC 数据")
     with _db_for_tenant(tenant) as conn:
+        _assert_stock_unfrozen(conn)
         result = _run_stocktake(conn, epcs, body.device or "RFID手持机", "手持机")
     return {"ok": True, **result}
 
 
 @app.get("/api/stocktake/list")
 def stocktake_list(request: Request, limit: int = 10):
-    _require_auth(request)
+    sess = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
         rows = conn.execute(
-            "SELECT * FROM stocktakes ORDER BY id DESC LIMIT ?", (max(1, min(limit, 50)),)
+            "SELECT * FROM stocktakes WHERE store_id=? OR store_id=0 ORDER BY id DESC LIMIT ?",
+            (sid, max(1, min(limit, 50)))
         ).fetchall()
         return {"list": [dict(r) for r in rows]}
 
 
 @app.get("/api/stocktake/{sid}")
 def stocktake_detail(sid: int, request: Request):
-    _require_auth(request)
+    sess = _require_auth(request)
     with _db(request) as conn:
+        cur_sid, _ = _current_store(request, conn, sess)
         head = conn.execute("SELECT * FROM stocktakes WHERE id=?", (sid,)).fetchone()
         if not head:
             raise HTTPException(404, "盘点批次不存在")
+        if head["store_id"] not in (0, cur_sid):
+            raise HTTPException(403, "该盘点批次不属于当前工作门店")
         items = conn.execute(
             "SELECT * FROM stocktake_items WHERE stocktake_id=? ORDER BY id", (sid,)
         ).fetchall()
@@ -2553,428 +3047,1240 @@ def stocktake_upload_page(key: str):
     return HTMLResponse(_UPLOAD_PAGE)
 
 
-# ------------------------------------------------- 多终端协同盘点（主管端，需登录）
+# ------------------------------------------------- 统一工作任务（发起端，需登录）
 
 def _next_task_no(conn: sqlite3.Connection) -> str:
-    return "RW" + time.strftime("%Y%m%d%H%M%S")
+    # 秒级时间戳 + 2 字节随机后缀，防止同秒发起多个任务撞 task_no 唯一约束
+    return "RW" + time.strftime("%Y%m%d%H%M%S") + secrets.token_hex(2).upper()
 
 
 def _active_session(conn: sqlite3.Connection):
+    """统一任务引擎：进行中的盘点任务（冻结判定唯一数据源）。"""
     return conn.execute(
-        "SELECT * FROM stocktake_sessions WHERE status IN ('进行中','待核对') ORDER BY id DESC LIMIT 1"
+        "SELECT * FROM tasks WHERE type='stocktake' AND status='进行中' ORDER BY id DESC LIMIT 1"
     ).fetchone()
 
 
 def _assert_stock_unfrozen(conn: sqlite3.Connection):
-    """协同盘点进行中/待核对期间冻结一切改变库存的操作（销售、出入库、借还、状态变更）。"""
+    """盘点任务进行中期间冻结一切改变库存的操作（销售、出入库、借还、状态变更）。
+    任务一经关闭（提交完结/撤销/终止）立即解冻，无「待核对」中间态。"""
     s = _active_session(conn)
     if s:
-        raise HTTPException(409, f"盘点任务 {s['task_no']} {s['status']}，库存操作已暂停，主管核对确认后恢复")
+        raise HTTPException(409, f"盘点任务 {s['task_no']} 进行中，库存操作已暂停，任务结束后恢复")
 
 
-class TaskStartIn(BaseModel):
-    host: str = ""
+def _task_event(conn: sqlite3.Connection, task_id: int, event: str, actor: str, detail: str = ""):
+    conn.execute(
+        "INSERT INTO task_events(task_id,event,actor,detail) VALUES(?,?,?,?)",
+        (task_id, event, actor, detail))
 
 
-@app.post("/api/stocktake/task/start")
-def task_start(body: TaskStartIn, request: Request):
-    """主管开启协同盘点任务：冻结销售/出入库，返回任务密钥与手持机接入地址。"""
-    op = _require_auth(request)
-    with _db(request) as conn:
-        if _active_session(conn):
-            raise HTTPException(409, "已有盘点任务进行中，请先结束当前任务")
-        task_no = _next_task_no(conn)
-        key = secrets.token_urlsafe(18)
-        cur = conn.execute(
-            "INSERT INTO stocktake_sessions(task_no,task_key,status,operator) VALUES(?,?, '进行中',?)",
-            (task_no, key, op["username"]),
-        )
-        sid = cur.lastrowid
-        conn.commit()
-        _log(conn, op["username"], "开启协同盘点", task_no)
-        host = (body.host or "").strip().rstrip("/")
-        if not host:
-            host = f"{_lan_ip()}:{PORT}"
-        if not host.startswith("http"):
-            host = "http://" + host
-        row = conn.execute("SELECT * FROM stocktake_sessions WHERE id=?", (sid,)).fetchone()
-        # 返回完整任务对象（含 devices/status/result 等），与 active 轮询结构一致，前端可直接渲染
-        return {**_session_progress(conn, row),
-                "key": key, "co_url": f"{host}/api/stocktake/co/join?key={key}"}
+def _free_task_devices(conn: sqlite3.Connection, task_id: int):
+    """任务关闭后释放所有设备的任务占用。"""
+    conn.execute("UPDATE devices SET current_task_id=0 WHERE current_task_id=?", (task_id,))
 
 
-@app.get("/api/stocktake/task/active")
-def task_active(request: Request):
-    _require_auth(request)
-    with _db(request) as conn:
-        s = _active_session(conn)
-        if not s:
-            return {"active": False}
-        return {"active": True, **_session_progress(conn, s)}
+def _task_device_online(last_seen: str, now: float) -> bool:
+    """设备在线判定：任务内 last_seen 60 秒内（只信设备上报帧刷新）。"""
+    try:
+        ts = time.mktime(time.strptime(last_seen, "%Y-%m-%d %H:%M:%S"))
+    except Exception:
+        return False
+    return (now - ts) <= 60
 
 
-@app.post("/api/stocktake/task/{sid}/end")
-def task_end(sid: int, request: Request):
-    """结束扫描阶段：合并所有设备的 EPC，统一核对生成差异；销售仍冻结，等待主管确认。"""
-    op = _require_auth(request)
-    with _db(request) as conn:
-        s = conn.execute("SELECT * FROM stocktake_sessions WHERE id=?", (sid,)).fetchone()
-        if not s:
-            raise HTTPException(404, "盘点任务不存在")
-        if s["status"] != "进行中":
-            raise HTTPException(409, "任务扫描阶段已结束")
-        epcs = [r["epc"] for r in conn.execute(
-            "SELECT epc FROM stocktake_scans WHERE session_id=? ORDER BY id", (sid,)).fetchall()]
-        if not epcs:
-            raise HTTPException(400, "没有任何扫描数据，无法核对。如手持机故障或误开任务，请点「强制终止任务」立即解除冻结")
-        result = _run_stocktake(conn, epcs, "协同盘点", op["username"])
-        conn.execute(
-            "UPDATE stocktake_sessions SET status='待核对', ended=datetime('now','localtime'), result_id=? WHERE id=?",
-            (result["id"], sid))
-        conn.commit()
-        _log(conn, op["username"], "结束协同盘点-待核对", s["task_no"])
-        return {"ok": True, "result": result}
-
-
-@app.post("/api/stocktake/task/{sid}/confirm")
-def task_confirm(sid: int, request: Request):
-    """主管核对确认：解除销售冻结，任务完成。"""
-    op = _require_auth(request)
-    with _db(request) as conn:
-        s = conn.execute("SELECT * FROM stocktake_sessions WHERE id=?", (sid,)).fetchone()
-        if not s:
-            raise HTTPException(404, "盘点任务不存在")
-        conn.execute("UPDATE stocktake_sessions SET status='已完成' WHERE id=?", (sid,))
-        conn.commit()
-        _log(conn, op["username"], "确认协同盘点完成", s["task_no"])
-        return {"ok": True}
-
-
-@app.post("/api/stocktake/task/{sid}/abort")
-def task_abort(sid: int, request: Request):
-    """主管强制终止任务：无论扫描进度如何立即解除冻结，不生成盘点结果。
-
-    用于手持机故障、无法加入、误开任务等异常场景，避免业务被永久冻结。
-    """
-    op = _require_auth(request)
-    with _db(request) as conn:
-        s = conn.execute("SELECT * FROM stocktake_sessions WHERE id=?", (sid,)).fetchone()
-        if not s:
-            raise HTTPException(404, "盘点任务不存在")
-        if s["status"] == "已完成":
-            return {"ok": True, "already": True}
-        conn.execute(
-            "UPDATE stocktake_sessions SET status='已完成', ended=datetime('now','localtime') WHERE id=?",
-            (sid,))
-        conn.commit()
-        _log(conn, op["username"], "强制终止协同盘点任务", s["task_no"])
-        return {"ok": True}
-
-
-@app.get("/api/stocktake/task/{sid}")
-def task_detail(sid: int, request: Request):
-    _require_auth(request)
-    with _db(request) as conn:
-        s = conn.execute("SELECT * FROM stocktake_sessions WHERE id=?", (sid,)).fetchone()
-        if not s:
-            raise HTTPException(404, "盘点任务不存在")
-        return _session_progress(conn, s)
-
-
-@app.get("/api/stocktake/task/{sid}/qr")
-def task_qr(sid: int, request: Request):
-    """协同任务二维码，内容为手持机 join 完整地址。"""
-    _require_auth(request)
-    with _db(request) as conn:
-        s = conn.execute("SELECT task_key FROM stocktake_sessions WHERE id=?", (sid,)).fetchone()
-        if not s:
-            raise HTTPException(404, "盘点任务不存在")
-        url = f"http://{_lan_ip()}:{PORT}/api/stocktake/co/join?key={s['task_key']}"
-        try:
-            import io
-            import qrcode
-            from qrcode.image.svg import SvgImage
-        except Exception:
-            raise HTTPException(503, "服务端缺少 qrcode 依赖")
-        img = qrcode.make(url, image_factory=SvgImage, box_size=10, border=2)
-        buf = io.BytesIO()
-        img.save(buf)
-        return Response(content=buf.getvalue(), media_type="image/svg+xml")
-
-
-def _session_progress(conn: sqlite3.Connection, s) -> dict:
+def _task_progress(conn: sqlite3.Connection, t) -> dict:
+    """任务完整对象（含设备在线/进度/结果摘要），发起端渲染与轮询共用。"""
     devices = conn.execute(
-        "SELECT device_no,name,last_seen,finished FROM stocktake_devices WHERE session_id=? ORDER BY device_no",
-        (s["id"],)).fetchall()
+        "SELECT device_no,name,source,last_seen,submitted FROM task_devices WHERE task_id=? ORDER BY device_no",
+        (t["id"],)).fetchall()
     scanned = conn.execute(
-        "SELECT COUNT(*) n FROM stocktake_scans WHERE session_id=?", (s["id"],)).fetchone()["n"]
+        "SELECT COUNT(*) n FROM task_scans WHERE task_id=?", (t["id"],)).fetchone()["n"]
+    now = time.time()
+    dev_list = [{**dict(d), "online": _task_device_online(d["last_seen"], now)} for d in devices]
     result = None
-    if s["result_id"]:
-        r = conn.execute("SELECT * FROM stocktakes WHERE id=?", (s["result_id"],)).fetchone()
+    if t["result_id"]:
+        r = conn.execute("SELECT * FROM stocktakes WHERE id=?", (t["result_id"],)).fetchone()
         if r:
             result = {"id": r["id"], "scannedCount": r["scanned_count"], "bookCount": r["book_count"],
                       "matchedCount": r["matched_count"], "surplusCount": r["surplus_count"],
                       "shortageCount": r["shortage_count"], "abnormalCount": r["abnormal_count"]}
     return {
-        "id": s["id"], "task_no": s["task_no"], "status": s["status"],
-        "operator": s["operator"], "started": s["started"], "ended": s["ended"],
-        "scanned_count": scanned,
-        "co_url": f"http://{_lan_ip()}:{PORT}/api/stocktake/co/join?key={s['task_key']}",
-        "devices": [dict(d) for d in devices],
-        "result": result,
+        "id": t["id"], "task_no": t["task_no"], "type": t["type"], "status": t["status"],
+        "operator": t["initiator"], "started": t["created"], "ended": t["ended"],
+        "closed_by": t["closed_by"], "scanned_count": scanned,
+        "stats": _scan_stats(conn, t["id"]),
+        "co_url": f"http://{_lan_ip()}:{PORT}/api/device/claim?key={t['task_key']}",
+        "h5_url": f"http://{_lan_ip()}:{PORT}/stock.html?key={t['task_key']}",
+        "devices": dev_list, "result": result,
     }
 
 
-# ------------------------------------------------- 多终端协同盘点（手持机端，凭 key 免登录）
-
-def _session_by_key(key: str, conn: sqlite3.Connection):
-    s = conn.execute("SELECT * FROM stocktake_sessions WHERE task_key=?", (key,)).fetchone()
-    if not s:
-        raise HTTPException(403, "盘点密钥无效，请重新扫描任务二维码")
-    return s
+def _task_by_id(conn: sqlite3.Connection, tid: int):
+    t = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
+    if not t:
+        raise HTTPException(404, "任务不存在")
+    return t
 
 
-def _session_live(key: str, conn: sqlite3.Connection):
-    """仅进行中/待核对任务允许数据交互；已结束任务的 key 立即失效（403），手持机据此清空任务态。"""
-    s = _session_by_key(key, conn)
-    if s["status"] not in ("进行中", "待核对"):
-        raise HTTPException(403, "盘点任务已结束，请重新扫描任务二维码")
-    return s
+class TaskStartIn(BaseModel):
+    type: str = "stocktake"
+    host: str = ""
+    title: str = ""
 
 
-def _device_heartbeat(conn: sqlite3.Connection, sid: int, device_key: str, name: str):
-    """注册/续期设备并分配临时编号，返回 (device_no, finished)。"""
-    row = conn.execute(
-        "SELECT * FROM stocktake_devices WHERE session_id=? AND device_key=?",
-        (sid, device_key)).fetchone()
-    if row:
-        conn.execute(
-            "UPDATE stocktake_devices SET last_seen=datetime('now','localtime'), name=? WHERE id=?",
-            (name or row["name"], row["id"]))
-        return row["device_no"], row["finished"]
-    no = conn.execute(
-        "SELECT COALESCE(MAX(device_no),0)+1 n FROM stocktake_devices WHERE session_id=?", (sid,)
-    ).fetchone()["n"]
-    conn.execute(
-        "INSERT INTO stocktake_devices(session_id,device_key,device_no,name) VALUES(?,?,?,?)",
-        (sid, device_key, no, name or f"手持机{no}号"))
-    return no, 0
+# 任务类型：stocktake=盘点（冻结库存，全局唯一进行中）；
+# 其余为业务轻量扫码任务（不冻结库存，同店可多个并行，手持机从任务列表自由选择）
+SCAN_TASK_TYPES = {"stocktake", "sale", "transfer_out", "transfer_in", "loan", "generic"}
 
 
-class CoJoinIn(BaseModel):
-    device: str = ""
-    name: str = ""
-
-
-@app.post("/api/stocktake/co/join")
-def co_join(key: str, body: CoJoinIn):
-    device_key = (body.device or "anon").strip()
-    with _db_for_tenant_key(key) as conn:
-        s = _session_by_key(key, conn)
-        no, finished = _device_heartbeat(conn, s["id"], device_key, body.name)
+@app.post("/api/tasks/start")
+def task_start(body: TaskStartIn, request: Request):
+    """发起扫描任务。创建成功即同店广播 task_offer 给在线手持机与业务页面。"""
+    op = _require_auth(request)
+    ttype = (body.type or "stocktake").strip()
+    if ttype not in SCAN_TASK_TYPES:
+        raise HTTPException(400, "不支持的任务类型")
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
+        if ttype == "stocktake" and _active_session(conn):
+            raise HTTPException(409, "已有盘点任务进行中，请先结束当前任务")
+        task_no = _next_task_no(conn)
+        key = secrets.token_urlsafe(18)
+        try:
+            cur = conn.execute(
+                "INSERT INTO tasks(task_no,task_key,type,status,initiator,title,store_id) VALUES(?,?,?,'进行中',?,?,?)",
+                (task_no, key, ttype, op["username"], (body.title or "").strip(), sid))
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "已有盘点任务进行中，请先结束当前任务")
+        tid = cur.lastrowid
+        _task_event(conn, tid, "create", op["username"])
         conn.commit()
-        return {"active": s["status"] == "进行中", "status": s["status"],
-                "task_no": s["task_no"], "device_no": no, "finished": bool(finished),
-                "server_time": int(time.time())}
+        _log(conn, op["username"],
+             "开启盘点任务" if ttype == "stocktake" else "发起扫码任务", task_no)
+        host = (body.host or "").strip().rstrip("/")
+        if not host:
+            host = f"{_lan_ip()}:{PORT}"
+        if not host.startswith("http"):
+            host = "http://" + host
+        row = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
+        _broadcast_task_offer(conn, row)
+        # 返回完整任务对象（含 devices/status/result 等），前端可直接渲染；co_url 供二维码使用
+        return {**_task_progress(conn, row),
+                "key": key,
+                "co_url": f"{host}/api/device/claim?key={key}",
+                "h5_url": f"{host}/stock.html?key={key}"}
 
 
-@app.get("/api/stocktake/co/snapshot")
-def co_snapshot(key: str, device: str = ""):
-    """下发本店在库商品全量快照，手持机据此本地实时比对。"""
-    with _db_for_tenant_key(key) as conn:
-        s = _session_live(key, conn)
+@app.get("/api/tasks")
+def tasks_list(request: Request, scope: str = "active", limit: int = 50):
+    sess = _require_auth(request)
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
+        if scope == "history":
+            rows = conn.execute(
+                "SELECT * FROM tasks WHERE status!='进行中' AND (store_id=? OR store_id=0) "
+                "ORDER BY id DESC LIMIT ?", (sid, limit)).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM tasks WHERE status='进行中' AND (store_id=? OR store_id=0) "
+                "ORDER BY id DESC LIMIT ?", (sid, limit)).fetchall()
+        out = []
+        for r in rows:
+            n = conn.execute(
+                "SELECT COUNT(*) n FROM task_scans WHERE task_id=?", (r["id"],)).fetchone()["n"]
+            out.append({"id": r["id"], "task_no": r["task_no"], "type": r["type"], "status": r["status"],
+                        "operator": r["initiator"], "created": r["created"], "ended": r["ended"],
+                        "closed_by": r["closed_by"], "result_id": r["result_id"], "scanned_count": n})
+        return out
+
+
+@app.get("/api/tasks/{tid}")
+def task_detail(tid: int, request: Request):
+    _require_auth(request)
+    with _db(request) as conn:
+        return _task_progress(conn, _task_by_id(conn, tid))
+
+
+@app.post("/api/tasks/{tid}/cancel")
+def task_cancel(tid: int, request: Request):
+    """发起端撤销任务：作废不生成报告，立即解冻并释放设备占用。"""
+    op = _require_auth(request)
+    with _db(request) as conn:
+        t = _task_by_id(conn, tid)
+        cur = conn.execute(
+            "UPDATE tasks SET status='已撤销', ended=datetime('now','localtime'), closed_by='initiator' "
+            "WHERE id=? AND status='进行中'", (tid,))
+        if cur.rowcount == 0:
+            raise HTTPException(409, f"任务已{t['status']}，无法撤销")
+        _free_task_devices(conn, tid)
+        _task_event(conn, tid, "cancel", op["username"])
+        conn.commit()
+        _log(conn, op["username"], "撤销盘点任务", t["task_no"])
+        _push_task_closed(t, "已撤销")
+        return {"ok": True}
+
+
+@app.post("/api/tasks/{tid}/terminate")
+def task_terminate(tid: int, request: Request):
+    """发起端终止任务：提前关闭；已有扫描数据时生成部分盘点报告。"""
+    op = _require_auth(request)
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
+        t = _task_by_id(conn, tid)
+        if t["store_id"] not in (0, sid):
+            raise HTTPException(403, "该盘点任务不属于当前工作门店")
+        # 先抢占终态（此时不写报告，避免双击/并发产生重复批次与库存流水）
+        cur = conn.execute(
+            "UPDATE tasks SET status='已终止', ended=datetime('now','localtime'), closed_by='initiator' "
+            "WHERE id=? AND status='进行中'", (tid,))
+        if cur.rowcount == 0:
+            now_status = conn.execute("SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()
+            raise HTTPException(409, f"任务已{now_status['status'] if now_status else t['status']}，无法终止")
+        # 抢占成功后再生成部分报告（延迟提交，与终态/回填同一事务落库）
+        epcs = [r["epc"] for r in conn.execute(
+            "SELECT epc FROM task_scans WHERE task_id=? ORDER BY id", (tid,)).fetchall()]
+        result = _run_stocktake(
+            conn, epcs, f"任务{t['task_no']}", op["username"], commit=False,
+            store_id=t["store_id"] or 0) if epcs else None
+        if result:
+            conn.execute("UPDATE tasks SET result_id=? WHERE id=?", (result["id"], tid))
+        _free_task_devices(conn, tid)
+        _task_event(conn, tid, "terminate", op["username"],
+                    f"扫描{len(epcs)}条" + ("，已生成部分报告" if result else ""))
+        conn.commit()
+        _log(conn, op["username"], "终止盘点任务", t["task_no"] + (f" 扫描{len(epcs)}" if epcs else ""))
+        _push_task_closed(t, "已终止")
+        return {"ok": True, "result": {"id": result["id"], "scannedCount": result["scannedCount"],
+                                       "matchedCount": result["matchedCount"],
+                                       "shortageCount": result["shortageCount"],
+                                       "abnormalCount": result["abnormalCount"]} if result else None}
+
+
+@app.get("/api/tasks/{tid}/report")
+def task_report(tid: int, request: Request):
+    """事后复盘：已完成/已终止任务的盘点差异报告（只读）。"""
+    _require_auth(request)
+    with _db(request) as conn:
+        t = _task_by_id(conn, tid)
+        if not t["result_id"]:
+            raise HTTPException(404, "该任务没有盘点报告")
+        r = conn.execute("SELECT * FROM stocktakes WHERE id=?", (t["result_id"],)).fetchone()
+        items = [dict(x) for x in conn.execute(
+            "SELECT result,epc,code,product,book_status,dup_count FROM stocktake_items "
+            "WHERE stocktake_id=? ORDER BY id", (t["result_id"],)).fetchall()]
+        return {"task_no": t["task_no"], "status": t["status"], "ended": t["ended"],
+                "batch_no": r["batch_no"], "scannedCount": r["scanned_count"], "bookCount": r["book_count"],
+                "matchedCount": r["matched_count"], "shortageCount": r["shortage_count"],
+                "abnormalCount": r["abnormal_count"], "operator": r["operator"], "items": items}
+
+
+# ------------------------------------------------- 任务观察流（H5 协同模式 + PC 复用，凭 key）
+
+def _bearer(request: Request) -> str:
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, "设备未激活，请先扫描门店激活码")
+    return auth[7:].strip()
+
+
+def _task_device_touch(conn: sqlite3.Connection, task_id: int, code: str, name: str,
+                       source: str, device_id: int = 0):
+    """登记/续期任务内设备并分配临时编号，返回 (device_no, submitted)。"""
+    row = conn.execute(
+        "SELECT * FROM task_devices WHERE task_id=? AND device_code=?", (task_id, code)).fetchone()
+    if row:
+        if name:
+            conn.execute("UPDATE task_devices SET last_seen=datetime('now','localtime'), name=? WHERE id=?",
+                         (name, row["id"]))
+        else:
+            conn.execute("UPDATE task_devices SET last_seen=datetime('now','localtime') WHERE id=?",
+                         (row["id"],))
+        return row["device_no"], row["submitted"]
+    no = conn.execute(
+        "SELECT COALESCE(MAX(device_no),0)+1 n FROM task_devices WHERE task_id=?", (task_id,)
+    ).fetchone()["n"]
+    # ON CONFLICT 原子兜底：并发首触时即便 SELECT 漏看也不会产生重复行
+    conn.execute(
+        "INSERT INTO task_devices(task_id,device_id,device_code,device_no,name,source) VALUES(?,?,?,?,?,?) "
+        "ON CONFLICT(task_id,device_code) DO NOTHING",
+        (task_id, device_id, code, no, name or f"设备{no}号", source))
+    cur = conn.execute(
+        "SELECT device_no, submitted FROM task_devices WHERE task_id=? AND device_code=?",
+        (task_id, code)).fetchone()
+    return cur["device_no"], cur["submitted"]
+
+
+def _classify_scan(conn: sqlite3.Connection, epc: str, store_id: int = 0) -> str:
+    """盲采服务端分类：本店在库态商品→in_store；他店商品或非在库态→other_store；未登记→unknown。
+    盘点任务按发起门店隔离：扫到他店 EPC 不计为本店账实相符。"""
+    row = conn.execute(
+        "SELECT status,store_id FROM products WHERE rfid_epc=?", (epc,)).fetchone()
+    if row is None:
+        return "unknown"
+    if row["status"] in ("在库", "已定", "借出") and (not store_id or row["store_id"] == store_id):
+        return "in_store"
+    return "other_store"
+
+
+def _scan_stats(conn: sqlite3.Connection, task_id: int) -> dict:
+    stats = {"in_store": 0, "other_store": 0, "unknown": 0, "total": 0}
+    for r in conn.execute(
+            "SELECT verdict,COUNT(*) n FROM task_scans WHERE task_id=? GROUP BY verdict",
+            (task_id,)).fetchall():
+        stats[r["verdict"] or "unknown"] = r["n"]
+    stats["total"] = stats["in_store"] + stats["other_store"] + stats["unknown"]
+    return stats
+
+
+def _do_scan(conn: sqlite3.Connection, t, code: str, name: str, source: str, device_id: int,
+             body: "ScanIn", now: int) -> dict:
+    """扫描原始数据全量入库：服务端排重 + 分类，设备端零业务判定（盲采）。"""
+    if t["status"] != "进行中":
+        raise HTTPException(409, "任务已结束，停止扫描")
+    no, _ = _task_device_touch(conn, t["id"], code, name, source, device_id)
+    src = body.source if body.source in ("rfid", "camera", "manual") else "rfid"
+    accepted, seen = [], set()
+    for tag in body.tags:
+        epc = (tag.epc or "").strip().upper()
+        if not epc or epc in seen:
+            continue
+        seen.add(epc)
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO task_scans(task_id,epc,device_code,device_no,rssi,source,verdict) "
+            "VALUES(?,?,?,?,?,?,?)",
+            (t["id"], epc, code, no, tag.rssi, src,
+             _classify_scan(conn, epc, t["store_id"] or 0)))
+        if cur.rowcount > 0:
+            accepted.append(epc)
+    if device_id:
+        conn.execute("UPDATE devices SET last_seen=? WHERE id=?", (now, device_id))
+    conn.commit()
+    mine = conn.execute(
+        "SELECT COUNT(*) n FROM task_scans WHERE task_id=? AND device_code=?",
+        (t["id"], code)).fetchone()["n"]
+    return {"accepted": accepted, "device_no": no, "mine": mine,
+            "stats": _scan_stats(conn, t["id"]), "status": t["status"], "server_time": now}
+
+
+# ------------------------------------------------- 任务观察流（H5 协同模式，凭 key 增量轮询）
+
+@app.get("/api/task/observe")
+def task_observe(key: str, since_id: int = 0):
+    now = int(time.time())
+    with _db_for_task_key(key) as conn:
+        t = conn.execute("SELECT * FROM tasks WHERE task_key=?", (key,)).fetchone()
+        if not t:
+            raise HTTPException(403, "任务密钥无效，请重新扫描任务二维码")
+        devices = conn.execute(
+            "SELECT device_code,device_no,name,source,last_seen,submitted FROM task_devices "
+            "WHERE task_id=? ORDER BY device_no", (t["id"],)).fetchall()
         rows = conn.execute(
-            "SELECT code,name,rfid_epc epc,status,COALESCE(high_value,0) high_value FROM products "
-            "WHERE rfid_epc!='' AND status IN ('在库','已定','借出')"
-        ).fetchall()
-        items = [dict(r) for r in rows]
-        return {"version": s["started"], "task_no": s["task_no"],
-                "status": s["status"], "count": len(items), "items": items}
+            "SELECT id,epc,device_code,device_no,source,verdict FROM task_scans "
+            "WHERE task_id=? AND id>? ORDER BY id", (t["id"], since_id)).fetchall()
+        return {
+            "task_id": t["id"], "task_no": t["task_no"], "status": t["status"],
+            "devices": [{**dict(d), "online": _task_device_online(d["last_seen"], now)} for d in devices],
+            "stats": _scan_stats(conn, t["id"]),
+            "items": [dict(r) for r in rows],
+            "max_id": rows[-1]["id"] if rows else since_id,
+            "server_time": now,
+        }
 
 
-class CoScanTag(BaseModel):
+# ------------------------------------------------- 扫描助手设备端（激活/摘取/作业/提交）
+
+class ActivateIn(BaseModel):
+    akey: str = ""
+    code: str
+    name: str = ""
+    app_version: str = ""
+
+
+@app.post("/api/device/activate")
+def device_activate(body: ActivateIn, key: str = ""):
+    """新设备凭门店一次性激活码建档绑定，下发长期设备凭证；重复激活=换绑（重发 token）。"""
+    akey = (key or body.akey).strip()
+    code = (body.code or "").strip()
+    if not akey or not code:
+        raise HTTPException(400, "激活码与设备码不能为空")
+    now = int(time.time())
+    with _db_for_activation_key(akey) as (conn, act):
+        if act["used"]:
+            raise HTTPException(403, "激活码已被使用，请重新生成")
+        if now > act["expires"]:
+            raise HTTPException(403, "激活码已过期，请重新生成")
+        store = conn.execute("SELECT id,name FROM stores WHERE id=?", (act["store_id"],)).fetchone()
+        if not store:
+            raise HTTPException(400, "激活码绑定的门店不存在")
+        # 原子消费：仅当未使用且未过期时抢占成功，杜绝并发双激活一码绑两台
+        claim = conn.execute(
+            "UPDATE device_activations SET used=1, used_by=? WHERE id=? AND used=0 AND expires>=?",
+            (code, act["id"], now))
+        if claim.rowcount == 0:
+            raise HTTPException(403, "激活码已被使用或已过期，请重新生成")
+        name = (body.name or act["name"] or "").strip()
+        token = secrets.token_urlsafe(24)
+        if conn.execute("SELECT id FROM devices WHERE code=?", (code,)).fetchone():
+            conn.execute(
+                "UPDATE devices SET name=?,bound_store_id=?,device_token=?,status='active',"
+                "app_version=?,activated_at=datetime('now','localtime'),last_seen=?,current_task_id=0 "
+                "WHERE code=?",
+                (name, store["id"], token, body.app_version, now, code))
+        else:
+            conn.execute(
+                "INSERT INTO devices(code,name,bound_store_id,device_token,status,last_seen,app_version,activated_at) "
+                "VALUES(?,?,?,?,'active',?,?,datetime('now','localtime'))",
+                (code, name, store["id"], token, now, body.app_version))
+        conn.commit()
+        return {"device_token": token, "code": code, "name": name,
+                "store": {"id": store["id"], "name": store["name"]}, "server_time": now}
+
+
+class ClaimIn(BaseModel):
+    task_key: str = ""
+
+
+@app.post("/api/device/claim")
+def device_claim(request: Request, body: ClaimIn, key: str = ""):
+    """扫描助手摘取任务：必须联网；任务独占校验（未完结不可领新任务）；盲采不下发任何库存数据。"""
+    token = _bearer(request)
+    tkey = (key or body.task_key).strip()
+    with _db_for_device_token(token) as (conn, dev):
+        if dev["status"] != "active":
+            raise HTTPException(403, "设备已停用，请联系管理员")
+        t = conn.execute("SELECT * FROM tasks WHERE task_key=?", (tkey,)).fetchone()
+        if not t:
+            raise HTTPException(403, "任务密钥无效，请重新扫描任务二维码")
+        if t["status"] != "进行中":
+            raise HTTPException(403, "任务已结束，请重新扫描任务二维码")
+        if dev["current_task_id"] not in (0, t["id"]):
+            old = conn.execute("SELECT task_no FROM tasks WHERE id=?", (dev["current_task_id"],)).fetchone()
+            raise HTTPException(
+                409, f"设备正在任务 {old['task_no'] if old else ''} 中，请先提交完结后再领取新任务")
+        no, submitted = _task_device_touch(conn, t["id"], dev["code"], dev["name"], "app", dev["id"])
+        conn.execute("UPDATE devices SET current_task_id=?, last_seen=? WHERE id=?",
+                     (t["id"], int(time.time()), dev["id"]))
+        conn.commit()
+        return {"task_id": t["id"], "task_no": t["task_no"], "type": t["type"],
+                "title": t["title"], "device_no": no, "status": t["status"],
+                "submitted": bool(submitted), "server_time": int(time.time())}
+
+
+@app.get("/api/device/current")
+def device_current(request: Request):
+    """断电恢复：设备重启后凭凭证拉取当前归属与未完结任务（指向已关闭任务时自动清占用）。"""
+    token = _bearer(request)
+    with _db_for_device_token(token) as (conn, dev):
+        task = None
+        tid = dev["current_task_id"]
+        if tid:
+            t = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
+            if t and t["status"] == "进行中":
+                td = conn.execute(
+                    "SELECT device_no,submitted FROM task_devices WHERE task_id=? AND device_code=?",
+                    (tid, dev["code"])).fetchone()
+                task = {"id": t["id"], "task_no": t["task_no"], "type": t["type"],
+                        "title": t["title"], "status": t["status"],
+                        "device_no": td["device_no"] if td else 0,
+                        "submitted": bool(td["submitted"]) if td else False}
+            else:
+                conn.execute("UPDATE devices SET current_task_id=0 WHERE id=?", (dev["id"],))
+                conn.commit()
+        store = conn.execute("SELECT id,name FROM stores WHERE id=?", (dev["bound_store_id"],)).fetchone()
+        return {"code": dev["code"], "name": dev["name"], "app_version": dev["app_version"],
+                "store": dict(store) if store else None, "task": task, "server_time": int(time.time())}
+
+
+class ScanTagIn(BaseModel):
     epc: str
     rssi: int = 0
 
 
-class CoScanIn(BaseModel):
+class ScanIn(BaseModel):
     device: str = ""
     name: str = ""
-    tags: list[CoScanTag] = Field(default_factory=list)
+    source: str = "rfid"            # rfid | camera | manual
+    tags: list[ScanTagIn] = Field(default_factory=list)
 
 
-@app.post("/api/stocktake/co/scan")
-def co_scan(key: str, body: CoScanIn):
-    """实时上报本批标签；服务端按 任务+EPC 全局去重，返回本机本次新登记的 EPC。"""
-    device_key = (body.device or "anon").strip()
-    accepted, seen = [], set()
-    with _db_for_tenant_key(key) as conn:
-        s = _session_by_key(key, conn)
-        if s["status"] != "进行中":
-            raise HTTPException(409, "盘点任务已结束，停止扫描")
-        no, _ = _device_heartbeat(conn, s["id"], device_key, body.name)
-        for t in body.tags:
-            epc = (t.epc or "").strip().upper()
-            if not epc or epc in seen:
-                continue
-            seen.add(epc)
-            cur = conn.execute(
-                "INSERT OR IGNORE INTO stocktake_scans(session_id,epc,device_key,device_no,rssi) "
-                "VALUES(?,?,?,?,?)", (s["id"], epc, device_key, no, t.rssi))
-            if cur.rowcount > 0:
-                accepted.append(epc)
-        total = conn.execute(
-            "SELECT COUNT(*) n FROM stocktake_scans WHERE session_id=?", (s["id"],)).fetchone()["n"]
-        conn.commit()
-        return {"accepted": accepted, "device_no": no, "global_count": total}
+@app.post("/api/device/scan")
+def device_scan(request: Request, body: ScanIn, key: str = ""):
+    """扫描上报（分段批量、可重试）：扫描助手走 Bearer 凭证；H5 自主模式凭任务 key 参与。"""
+    now = int(time.time())
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        with _db_for_device_token(auth[7:].strip()) as (conn, dev):
+            if dev["status"] != "active":
+                raise HTTPException(403, "设备已停用，请联系管理员")
+            if not dev["current_task_id"]:
+                raise HTTPException(409, "设备尚未领取任务")
+            t = conn.execute("SELECT * FROM tasks WHERE id=?", (dev["current_task_id"],)).fetchone()
+            return _do_scan(conn, t, dev["code"], dev["name"], "app", dev["id"], body, now)
+    if key:
+        code = (body.device or "h5-anon").strip()
+        with _db_for_task_key(key) as conn:
+            t = conn.execute("SELECT * FROM tasks WHERE task_key=?", (key,)).fetchone()
+            return _do_scan(conn, t, code, body.name, "h5", 0, body, now)
+    raise HTTPException(401, "缺少设备凭证或任务密钥")
 
 
-@app.get("/api/stocktake/co/pull")
-def co_pull(key: str, device: str = "", since_id: int = 0):
-    """增量拉取其他设备新扫到的标签（id 大于 since_id）。"""
-    device_key = (device or "anon").strip()
-    with _db_for_tenant_key(key) as conn:
-        s = _session_live(key, conn)
+@app.post("/api/device/heartbeat")
+def device_heartbeat(request: Request, key: str = "", device: str = ""):
+    """秒级断线感知：last_seen 只信设备上报帧刷新，服务端不自刷。"""
+    now = int(time.time())
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        with _db_for_device_token(auth[7:].strip()) as (conn, dev):
+            if dev["status"] != "active":
+                raise HTTPException(403, "设备已停用，请联系管理员")
+            conn.execute("UPDATE devices SET last_seen=? WHERE id=?", (now, dev["id"]))
+            tid = dev["current_task_id"]
+            t = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone() if tid else None
+            if not t:
+                conn.commit()
+                return {"status": "idle", "submitted": False, "mine": 0, "server_time": now}
+            conn.execute(
+                "UPDATE task_devices SET last_seen=datetime('now','localtime') "
+                "WHERE task_id=? AND device_code=?", (t["id"], dev["code"]))
+            conn.commit()
+            mine = conn.execute(
+                "SELECT COUNT(*) n FROM task_scans WHERE task_id=? AND device_code=?",
+                (t["id"], dev["code"])).fetchone()["n"]
+            td = conn.execute(
+                "SELECT submitted FROM task_devices WHERE task_id=? AND device_code=?",
+                (t["id"], dev["code"])).fetchone()
+            return {"task_id": t["id"], "task_no": t["task_no"], "status": t["status"],
+                    "submitted": bool(td and td["submitted"]), "mine": mine, "server_time": now}
+    if key:
+        code = (device or "h5-anon").strip()
+        with _db_for_task_key(key) as conn:
+            t = conn.execute("SELECT * FROM tasks WHERE task_key=?", (key,)).fetchone()
+            conn.execute(
+                "UPDATE task_devices SET last_seen=datetime('now','localtime') "
+                "WHERE task_id=? AND device_code=?", (t["id"], code))
+            conn.commit()
+            return {"task_no": t["task_no"], "status": t["status"], "server_time": now}
+    raise HTTPException(401, "缺少设备凭证或任务密钥")
+
+
+def _do_submit(conn: sqlite3.Connection, dev) -> dict:
+    """首发抢占提交完结（HTTP/WS 共用）：条件 UPDATE 抢占成功才关闭；败者 409 冲突阻断。
+    盘点任务生成差异报告；轻量扫码任务（开单/调拨/借货等）仅关闭任务，结果由发起端页面处理。"""
+    if dev["status"] != "active":
+        raise HTTPException(403, "设备已停用，请联系管理员")
+    tid = dev["current_task_id"]
+    if not tid:
+        raise HTTPException(409, "设备当前没有进行中的任务")
+    t = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
+    if not t or t["status"] != "进行中":
+        raise HTTPException(409, "任务已结束，请重新领取新任务")
+    epcs = [r["epc"] for r in conn.execute(
+        "SELECT epc FROM task_scans WHERE task_id=? ORDER BY id", (tid,)).fetchall()]
+    if not epcs and t["type"] == "stocktake":
+        raise HTTPException(400, "没有任何扫描数据，无法提交完结。如误领任务，请由发起端撤销任务")
+    actor = f"扫描助手·{dev['code']}"
+    # 先抢占（防并发生成双报告），再生成差异报告
+    cur = conn.execute(
+        "UPDATE tasks SET status='已完成', ended=datetime('now','localtime'), closed_by=? "
+        "WHERE id=? AND status='进行中'", (f"device:{dev['code']}", tid))
+    if cur.rowcount == 0:
+        raise HTTPException(409, "任务已被其他设备抢先提交或已被发起端关闭，本机后续数据无效")
+    result = None
+    if t["type"] == "stocktake" and epcs:
+        result = _run_stocktake(conn, epcs, actor, actor, commit=False,
+                                store_id=t["store_id"] or 0)
+        conn.execute("UPDATE tasks SET result_id=? WHERE id=?", (result["id"], tid))
+    conn.execute(
+        "UPDATE task_devices SET submitted=1, submit_at=datetime('now','localtime') "
+        "WHERE task_id=? AND device_code=?", (tid, dev["code"]))
+    _free_task_devices(conn, tid)
+    _task_event(conn, tid, "submit", f"device:{dev['code']}", f"扫描{len(epcs)}条")
+    conn.commit()
+    _log(conn, actor, "提交完结任务", t["task_no"])
+    _push_task_closed(t, "已完成")
+    out = {"ok": True, "task_no": t["task_no"], "scanned_count": len(epcs),
+           "server_time": int(time.time())}
+    if result:
+        out["result"] = {"id": result["id"], "scannedCount": result["scannedCount"],
+                         "matchedCount": result["matchedCount"],
+                         "shortageCount": result["shortageCount"],
+                         "abnormalCount": result["abnormalCount"]}
+    return out
+
+
+@app.post("/api/device/submit")
+def device_submit(request: Request):
+    """首发抢占提交完结：条件 UPDATE 抢占成功才生成报告并解冻；败者收 409 冲突阻断。"""
+    token = _bearer(request)
+    with _db_for_device_token(token) as (conn, dev):
+        return _do_submit(conn, dev)
+
+
+# ------------------------------------------------- 扫描设备管理（发起端，需登录）
+
+@app.get("/api/devices")
+def devices_list(request: Request, store_id: int = 0):
+    """设备列表；可按门店筛选（门店管理内嵌设备用）。"""
+    _require_auth(request)
+    now = time.time()
+    with _db(request) as conn:
+        sql = ("SELECT d.*, s.name store_name FROM devices d "
+               "LEFT JOIN stores s ON s.id=d.bound_store_id")
+        args = ()
+        if store_id:
+            sql += " WHERE d.bound_store_id=?"
+            args = (store_id,)
+        sql += " ORDER BY d.id DESC"
+        rows = conn.execute(sql, args).fetchall()
+        out = []
+        for r in rows:
+            task_no = ""
+            if r["current_task_id"]:
+                tr = conn.execute("SELECT task_no FROM tasks WHERE id=?", (r["current_task_id"],)).fetchone()
+                task_no = tr["task_no"] if tr else ""
+            # WS 常驻连接即在线；离线后回退到 last_seen 60 秒判定（心跳帧兜底）
+            with _dev_ws_lock:
+                ws_online = r["code"] in _dev_ws.get(r["bound_store_id"], {})
+            out.append({**dict(r), "store_name": r["store_name"], "current_task_no": task_no,
+                        "online": ws_online or (now - (r["last_seen"] or 0)) <= 60})
+        return out
+
+
+class ActivationIn(BaseModel):
+    store_id: int
+    name: str = ""
+
+
+@app.post("/api/devices/activation")
+def create_activation(body: ActivationIn, request: Request):
+    """管理端生成设备激活码：15 分钟有效、一次性。"""
+    op = _require_auth(request)
+    with _db(request) as conn:
+        if not conn.execute("SELECT id FROM stores WHERE id=?", (body.store_id,)).fetchone():
+            raise HTTPException(400, "门店不存在")
+        akey = secrets.token_urlsafe(16)
         conn.execute(
-            "UPDATE stocktake_devices SET last_seen=datetime('now','localtime') "
-            "WHERE session_id=? AND device_key=?", (s["id"], device_key))
+            "INSERT INTO device_activations(akey,store_id,name,created_by,expires) VALUES(?,?,?,?,?)",
+            (akey, body.store_id, (body.name or "").strip(), op["username"], int(time.time()) + 900))
+        conn.commit()
+        return {"akey": akey, "expires_in": 900,
+                "url": f"http://{_lan_ip()}:{PORT}/api/device/activate?key={akey}"}
+
+
+@app.get("/api/devices/activations")
+def activations_list(request: Request, limit: int = 20):
+    _require_auth(request)
+    now = time.time()
+    with _db(request) as conn:
         rows = conn.execute(
-            "SELECT id,epc,device_no FROM stocktake_scans "
-            "WHERE session_id=? AND id>? AND device_key!=? ORDER BY id",
-            (s["id"], since_id, device_key)).fetchall()
+            "SELECT a.*, s.name store_name FROM device_activations a "
+            "LEFT JOIN stores s ON s.id=a.store_id ORDER BY a.id DESC LIMIT ?", (limit,)).fetchall()
+        return [{**dict(r), "expired": (not r["used"]) and now > r["expires"]} for r in rows]
+
+
+@app.post("/api/devices/{did}/unbind")
+def device_unbind(did: int, request: Request):
+    """管理端解绑：旧凭证立即失效，设备需重新扫激活码（跨店借调配合入口）。"""
+    _require_auth(request)
+    with _db(request) as conn:
+        if not conn.execute("SELECT id FROM devices WHERE id=?", (did,)).fetchone():
+            raise HTTPException(404, "设备不存在")
+        conn.execute("UPDATE devices SET bound_store_id=0, device_token='', current_task_id=0 WHERE id=?", (did,))
         conn.commit()
-        max_id = rows[-1]["id"] if rows else since_id
-        return {"status": s["status"], "items": [dict(r) for r in rows], "max_id": max_id}
+        return {"ok": True}
 
 
-class CoFinishIn(BaseModel):
-    device: str = ""
-    name: str = ""
-
-
-@app.post("/api/stocktake/co/finish")
-def co_finish(key: str, body: CoFinishIn):
-    device_key = (body.device or "anon").strip()
-    with _db_for_tenant_key(key) as conn:
-        s = _session_by_key(key, conn)
-        _device_heartbeat(conn, s["id"], device_key, body.name)
-        conn.execute(
-            "UPDATE stocktake_devices SET finished=1, last_seen=datetime('now','localtime') "
-            "WHERE session_id=? AND device_key=?", (s["id"], device_key))
+@app.post("/api/devices/{did}/disable")
+def device_disable(did: int, request: Request):
+    _require_auth(request)
+    with _db(request) as conn:
+        cur = conn.execute("UPDATE devices SET status='disabled' WHERE id=?", (did,))
+        if cur.rowcount == 0:
+            raise HTTPException(404, "设备不存在")
         conn.commit()
-        return {"ok": True, "status": s["status"]}
+        return {"ok": True}
 
 
-@app.get("/api/stocktake/co/task")
-def co_task(key: str, device: str = ""):
-    """手持机轮询任务状态（是否已被主管结束/确认）。"""
-    device_key = (device or "anon").strip()
-    with _db_for_tenant_key(key) as conn:
-        s = _session_by_key(key, conn)
-        row = conn.execute(
-            "SELECT device_no,finished FROM stocktake_devices WHERE session_id=? AND device_key=?",
-            (s["id"], device_key)).fetchone()
-        return {"active": s["status"] == "进行中", "status": s["status"],
-                "device_no": row["device_no"] if row else 0,
-                "finished": bool(row["finished"]) if row else False}
+@app.post("/api/devices/{did}/enable")
+def device_enable(did: int, request: Request):
+    _require_auth(request)
+    with _db(request) as conn:
+        cur = conn.execute("UPDATE devices SET status='active' WHERE id=?", (did,))
+        if cur.rowcount == 0:
+            raise HTTPException(404, "设备不存在")
+        conn.commit()
+        return {"ok": True}
+
+
+def _find_tenant_db(table: str, column: str, value: str) -> Path | None:
+    """扫描全部租户库按内部常量字段定位命中库文件，返回路径（未命中返回 None）。
+
+    只读探测、不跑迁移；表名/列名均为内部常量，value 走参数化绑定。"""
+    base = os.environ.get("TENANT_DB_DIR") or str(ROOT / "dev_data")
+    for path in sorted(Path(base).glob("db_jewelry_*_v*.sqlite")):
+        probe = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, check_same_thread=False)
+        probe.row_factory = sqlite3.Row
+        probe.execute("PRAGMA busy_timeout=3000")
+        try:
+            found = probe.execute(
+                f"SELECT 1 FROM {table} WHERE {column}=?", (value,)).fetchone()
+        except sqlite3.OperationalError:
+            found = None  # 旧版本库可能缺表/缺列
+        finally:
+            probe.close()
+        if found:
+            return path
+    return None
+
+
+def _open_tenant_db(path: Path) -> sqlite3.Connection:
+    """以读写方式打开已定位的租户库（busy_timeout + WAL + 幂等迁移一次）。"""
+    conn = sqlite3.connect(str(path), check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=3000")
+    conn.execute("PRAGMA journal_mode=WAL")
+    db.migrate_schema(conn)
+    return conn
 
 
 @contextmanager
-def _db_for_tenant_key(key: str):
-    """凭任务 key 反查租户并打开其库（手持机免登录接口使用）。"""
-    # key 不直接携带租户；扫描全部租户库定位任务
-    base = os.environ.get("TENANT_DB_DIR") or str(ROOT / "dev_data")
-    db_dir = Path(base)
-    for path in db_dir.glob("db_jewelry_*_v*.sqlite"):
-        conn = sqlite3.connect(str(path), check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        db.migrate_schema(conn)
-        row = conn.execute(
-            "SELECT id FROM stocktake_sessions WHERE task_key=?", (key,)).fetchone()
-        if row:
-            try:
-                yield conn
-            finally:
-                conn.close()
-            return
+def _scan_tenant_db(table: str, column: str, value: str, err: str):
+    """扫描全部租户库按内部常量字段定位命中行，yield (conn, row)。
+    表名/列名均为内部常量，value 走参数化绑定。
+
+    探测阶段用只读连接、不跑迁移，避免每次设备请求对所有租户库做迁移写放大；
+    命中后再以读写连接（busy_timeout + WAL + 迁移一次）重连同库供调用方写。"""
+    hit = _find_tenant_db(table, column, value)
+    if hit is None:
+        raise HTTPException(403, err)
+    conn = _open_tenant_db(hit)
+    row = conn.execute(f"SELECT * FROM {table} WHERE {column}=?", (value,)).fetchone()
+    if not row:
         conn.close()
-    raise HTTPException(403, "盘点密钥无效，请重新扫描任务二维码")
+        raise HTTPException(403, err)
+    try:
+        yield conn, row
+    finally:
+        conn.close()
+
+
+@contextmanager
+def _db_for_task_key(key: str):
+    """凭任务 key 反查租户库（H5 协同/观察流免登录入口）。"""
+    with _scan_tenant_db("tasks", "task_key", key,
+                         "任务密钥无效，请重新扫描任务二维码") as (conn, _row):
+        yield conn
+
+
+# 兼容旧名（模块内其他位置可能引用）
+_db_for_tenant_key = _db_for_task_key
+
+
+@contextmanager
+def _db_for_device_token(token: str):
+    """凭扫描助手长期凭证反查租户库，yield (conn, devices 行)。"""
+    if not token:
+        raise HTTPException(401, "设备未激活，请先扫描门店激活码")
+    with _scan_tenant_db("devices", "device_token", token,
+                         "设备凭证无效，请重新扫描激活码") as (conn, row):
+        yield conn, row
+
+
+@contextmanager
+def _db_for_activation_key(akey: str):
+    """凭一次性激活码反查租户库，yield (conn, device_activations 行)。"""
+    with _scan_tenant_db("device_activations", "akey", akey,
+                         "激活码无效，请重新生成") as (conn, row):
+        yield conn, row
+
+
+# ------------------------------------------------- 扫描协同 WS 中枢（三端全 WS，无轮询）
+# 架构定稿：
+# - 手持机启动即建立 /ws/scan-device 常驻连接（device_token 认证，按绑定门店分组管理）；
+# - 业务端页面（电脑/手机浏览器）经 /ws/scan-page 接入（登录会话 token 认证）；
+# - 业务端需扫码时创建扫描任务（POST /api/tasks/start）→ 服务端同店广播 task_offer；
+# - 手持机从推送的任务列表自由选择（任务间不互斥），扫描结果一律 WS 上报；
+# - 服务端实时回推 scan_progress 给发起端页面；首发抢占提交后 task_closed 广播，
+#   其余设备后续提交被 409 忽略。
+
+class _DevWS:
+    __slots__ = ("ws", "loop", "code", "name", "device_id", "store_id")
+
+    def __init__(self, ws, loop, dev):
+        self.ws = ws
+        self.loop = loop
+        self.code = dev["code"]
+        self.name = dev["name"]
+        self.device_id = dev["id"]
+        self.store_id = dev["bound_store_id"]
+
+
+class _PageWS:
+    __slots__ = ("ws", "loop", "store_id", "username")
+
+    def __init__(self, ws, loop, store_id: int, username: str):
+        self.ws = ws
+        self.loop = loop
+        self.store_id = store_id
+        self.username = username
+
+
+_dev_ws: dict[int, dict[str, _DevWS]] = {}   # store_id -> {设备码: 连接}
+_dev_ws_lock = threading.Lock()
+_page_ws: dict[int, list[_PageWS]] = {}      # store_id -> [页面连接]
+_page_ws_lock = threading.Lock()
+
+
+def _ws_post(ws, loop, payload: dict) -> None:
+    """同步上下文向 WS 连接跨线程投递消息；发送失败静默（由连接侧清理注册表）。"""
+    try:
+        asyncio.run_coroutine_threadsafe(
+            ws.send_text(json.dumps(payload, ensure_ascii=False)), loop)
+    except Exception:
+        pass
+
+
+def _broadcast_devices(store_id: int, payload: dict) -> None:
+    """同店广播：推送给该门店全部在线手持机。"""
+    with _dev_ws_lock:
+        conns = list(_dev_ws.get(store_id, {}).values())
+    for c in conns:
+        _ws_post(c.ws, c.loop, payload)
+
+
+def _broadcast_pages(store_id: int, payload: dict) -> None:
+    """同店广播：推送给该门店全部业务端页面连接。"""
+    with _page_ws_lock:
+        conns = list(_page_ws.get(store_id, []))
+    for c in conns:
+        _ws_post(c.ws, c.loop, payload)
+
+
+def _task_brief(conn: sqlite3.Connection, t) -> dict:
+    """任务简报（任务列表/推送共用载荷）。"""
+    return {"task_id": t["id"], "task_no": t["task_no"], "type": t["type"],
+            "title": t["title"], "status": t["status"], "store_id": t["store_id"],
+            "initiator": t["initiator"], "created": t["created"],
+            "stats": _scan_stats(conn, t["id"])}
+
+
+def _broadcast_task_offer(conn: sqlite3.Connection, t) -> None:
+    """新任务同店广播：手持机任务列表与业务页面同步可见。"""
+    payload = {"type": "task_offer", "task": _task_brief(conn, t)}
+    sid = t["store_id"] or 0
+    _broadcast_devices(sid, payload)
+    _broadcast_pages(sid, payload)
+
+
+def _push_task_closed(t, status: str) -> None:
+    """任务关闭广播：手持机清空本地任务态、停止扫描；业务页面刷新。"""
+    payload = {"type": "task_closed", "task_id": t["id"], "task_no": t["task_no"],
+               "status": status}
+    sid = t["store_id"] or 0
+    _broadcast_devices(sid, payload)
+    _broadcast_pages(sid, payload)
+
+
+def _push_scan_progress(store_id: int, task_id: int, task_no: str,
+                        device_code: str, result: dict) -> None:
+    """扫描进度实时回推发起端业务页面。"""
+    _broadcast_pages(store_id, {
+        "type": "scan_progress", "task_id": task_id, "task_no": task_no,
+        "device": device_code, "accepted": result["accepted"],
+        "mine": result["mine"], "stats": result["stats"]})
+
+
+@app.websocket("/ws/scan-device")
+async def scan_device_ws(websocket: WebSocket, token: str = ""):
+    """扫描助手常驻连接：凭 device_token 认证（跨租户反查一次，记住库路径）。
+    上行：hello/heartbeat/list/claim/scan/submit；下行：ack/task_list/task_offer/task_closed。"""
+    token = (token or "").strip()
+    db_path = _find_tenant_db("devices", "device_token", token) if token else None
+    dev = None
+    if db_path:
+        conn = _open_tenant_db(db_path)
+        try:
+            dev = conn.execute(
+                "SELECT * FROM devices WHERE device_token=? AND status='active'",
+                (token,)).fetchone()
+        finally:
+            conn.close()
+    await websocket.accept()
+    if dev is None:
+        await websocket.close(code=4401)
+        return
+    loop = asyncio.get_running_loop()
+    link = _DevWS(websocket, loop, dev)
+    sid = dev["bound_store_id"]
+
+    def _with_db(fn):
+        """每帧独立开库处理（busy_timeout+WAL），避免常驻连接长期持有库句柄。"""
+        conn2 = _open_tenant_db(db_path)
+        try:
+            return fn(conn2)
+        finally:
+            conn2.close()
+
+    def _touch(conn: sqlite3.Connection, app_version: str = "") -> None:
+        # last_seen 只信设备上报帧刷新，服务端不自刷
+        if app_version:
+            conn.execute("UPDATE devices SET last_seen=?, app_version=? WHERE id=?",
+                         (int(time.time()), app_version[:40], link.device_id))
+        else:
+            conn.execute("UPDATE devices SET last_seen=? WHERE id=?",
+                         (int(time.time()), link.device_id))
+        conn.commit()
+
+    def _handle(conn: sqlite3.Connection, d: dict):
+        mtype = str(d.get("type") or "")
+        if mtype == "hello":
+            _touch(conn, str(d.get("app_version") or ""))
+            return {"type": "ack", "ref": "hello", "ok": True, "code": link.code,
+                    "store_id": sid, "server_time": int(time.time())}
+        if mtype == "heartbeat":
+            _touch(conn)
+            return None  # 心跳免应答，帧本身即在线证明
+        if mtype == "list":
+            rows = conn.execute(
+                "SELECT * FROM tasks WHERE status='进行中' AND store_id=? ORDER BY id DESC",
+                (sid,)).fetchall()
+            return {"type": "task_list", "tasks": [_task_brief(conn, r) for r in rows]}
+        if mtype == "claim":
+            tid = int(d.get("task_id") or 0)
+            dev2 = conn.execute("SELECT * FROM devices WHERE id=?",
+                                (link.device_id,)).fetchone()
+            if not dev2 or dev2["status"] != "active":
+                raise HTTPException(403, "设备已停用，请联系管理员")
+            t = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
+            if not t or t["status"] != "进行中":
+                return {"type": "ack", "ref": "claim", "ok": False, "message": "任务已结束"}
+            if t["store_id"] != sid:
+                return {"type": "ack", "ref": "claim", "ok": False, "message": "任务不属于本店"}
+            if dev2["current_task_id"] not in (0, tid):
+                old = conn.execute("SELECT task_no FROM tasks WHERE id=?",
+                                   (dev2["current_task_id"],)).fetchone()
+                return {"type": "ack", "ref": "claim", "ok": False,
+                        "message": f"当前任务 {old['task_no'] if old else ''} 未完结，不可领取新任务"}
+            no, submitted = _task_device_touch(conn, tid, link.code, link.name,
+                                               "app", link.device_id)
+            conn.execute("UPDATE devices SET current_task_id=?, last_seen=? WHERE id=?",
+                         (tid, int(time.time()), link.device_id))
+            conn.commit()
+            return {"type": "ack", "ref": "claim", "ok": True,
+                    "task": _task_brief(conn, t), "device_no": no,
+                    "submitted": bool(submitted)}
+        if mtype == "scan":
+            dev2 = conn.execute("SELECT * FROM devices WHERE id=?",
+                                (link.device_id,)).fetchone()
+            if not dev2 or dev2["status"] != "active":
+                raise HTTPException(403, "设备已停用，请联系管理员")
+            tid = dev2["current_task_id"]
+            if not tid:
+                return {"type": "ack", "ref": "scan", "ok": False, "message": "尚未领取任务"}
+            t = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
+            if not t or t["status"] != "进行中":
+                return {"type": "ack", "ref": "scan", "ok": False,
+                        "message": "任务已结束，停止扫描", "task_closed": True}
+            body = ScanIn(
+                source=str(d.get("source") or "rfid"),
+                tags=[ScanTagIn(epc=str(x.get("epc") or ""), rssi=int(x.get("rssi") or 0))
+                      for x in (d.get("tags") or []) if isinstance(x, dict)])
+            r = _do_scan(conn, t, link.code, link.name, "app", link.device_id,
+                         body, int(time.time()))
+            _push_scan_progress(sid, tid, t["task_no"], link.code, r)
+            return {"type": "ack", "ref": "scan", "ok": True,
+                    "accepted": r["accepted"], "mine": r["mine"], "stats": r["stats"]}
+        if mtype == "submit":
+            dev2 = conn.execute("SELECT * FROM devices WHERE id=?",
+                                (link.device_id,)).fetchone()
+            if not dev2:
+                raise HTTPException(403, "设备已停用，请联系管理员")
+            r = _do_submit(conn, dev2)
+            return {"type": "ack", "ref": "submit", **r}
+        return {"type": "ack", "ref": mtype, "ok": False, "message": "未知消息类型"}
+
+    with _dev_ws_lock:
+        old = _dev_ws.get(sid, {}).get(link.code)
+        _dev_ws.setdefault(sid, {})[link.code] = link
+    if old is not None:
+        try:
+            await old.ws.close()
+        except Exception:
+            pass
+    try:
+        # 连接建立即推送该店进行中任务列表（免设备主动轮询）
+        first = await asyncio.to_thread(_with_db, lambda c: _handle(c, {"type": "list"}))
+        await websocket.send_text(json.dumps(first, ensure_ascii=False))
+        while True:
+            msg = await websocket.receive_text()
+            try:
+                d = json.loads(msg)
+            except Exception:
+                continue
+            try:
+                resp = await asyncio.to_thread(_with_db, lambda c: _handle(c, d))
+            except HTTPException as e:
+                resp = {"type": "ack", "ref": str(d.get("type") or ""),
+                        "ok": False, "message": e.detail}
+            except Exception:
+                logger.exception("扫描助手 WS 消息处理失败")
+                resp = {"type": "ack", "ref": str(d.get("type") or ""),
+                        "ok": False, "message": "服务端处理失败"}
+            if resp is not None:
+                await websocket.send_text(json.dumps(resp, ensure_ascii=False))
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    except Exception:
+        pass
+    finally:
+        with _dev_ws_lock:
+            conns = _dev_ws.get(sid, {})
+            if conns.get(link.code) is link:
+                conns.pop(link.code, None)
+
+
+@app.websocket("/ws/scan-page")
+async def scan_page_ws(websocket: WebSocket, token: str = ""):
+    """业务端页面连接：登录会话 token 认证；接收本店扫描进度与任务状态推送（上行仅保活）。"""
+    sess = _sessions.get((token or "").strip())
+    await websocket.accept()
+    if not sess:
+        await websocket.close(code=4401)
+        return
+    with _db(websocket) as conn:
+        try:
+            sid, _ = _current_store(websocket, conn, sess)
+        except HTTPException:
+            await websocket.close(code=4403)
+            return
+    link = _PageWS(websocket, asyncio.get_running_loop(), sid,
+                   str(sess.get("username") or ""))
+    with _page_ws_lock:
+        _page_ws.setdefault(sid, []).append(link)
+    try:
+        while True:
+            await websocket.receive_text()  # 上行仅保活，内容忽略
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    except Exception:
+        pass
+    finally:
+        with _page_ws_lock:
+            conns = _page_ws.get(sid, [])
+            if link in conns:
+                conns.remove(link)
 
 
 # ---------------------------------------------------------------- 销售
+
+class SaleItemIn(BaseModel):
+    product_id: int | None = None
+    epc: str = ""          # 扫码加件：RFID EPC
+    code: str = ""         # 扫码加件：条码/货号
+    price: float | None = None  # 可空，默认取商品售价
+
 
 class SaleReq(BaseModel):
     customer: str = ""
     phone: str = ""
     product: str = ""
     product_id: int | None = None
-    amount: float = Field(ge=0)
-    paid: float = Field(ge=0)
+    amount: float = Field(default=0, ge=0)  # 多件时由后端按明细自动汇总，忽略传入
+    paid: float = Field(default=0, ge=0)
     method: str = "现金"
     biz_date: str = ""
+    clerk_type: str = ""   # 经办人类别（存名称快照，缺省取默认类别）
+    clerk_name: str = ""   # 经办人具体人名（可空）
+    items: list[SaleItemIn] = []  # 一单多件；为空时回退旧单件字段（兼容）
+
+
+def _resolve_product(conn: sqlite3.Connection, raw_scan, store_id: int | None = None) -> sqlite3.Row | None:
+    """通用商品定位：支持 product_id / EPC / 条码 / 货号 四种入参。
+
+    匹配顺序：纯数字 → product_id；否则去空白大写化 → rfid_epc；
+    否则 rfid_epc OR barcode OR code LIMIT 1。store_id 传入时做同店校验，
+    返回 None（没找着）但不抛错——由调用方决定错误文案。
+    """
+    if raw_scan is None:
+        return None
+    val = raw_scan if isinstance(raw_scan, str) else str(raw_scan)
+    val = val.strip()
+    if not val:
+        return None
+    row: sqlite3.Row | None = None
+    # 1) 纯数字优先当 product_id
+    if val.isdigit():
+        row = conn.execute("SELECT * FROM products WHERE id=?", (int(val),)).fetchone()
+    # 2) RFID EPC（大写去空白）
+    if not row:
+        row = conn.execute("SELECT * FROM products WHERE rfid_epc=?", (val.upper(),)).fetchone()
+    # 3) 条码 / 货号（EPC 作为回退，防止"看起来像条码其实是 EPC"的情况）
+    if not row:
+        row = conn.execute(
+            "SELECT * FROM products WHERE rfid_epc=? OR barcode=? OR code=? LIMIT 1",
+            (val.upper(), val, val)).fetchone()
+    # 同店约束（调用方显式传 store_id 才校验；None 跳过）
+    if row is not None and store_id is not None and store_id:
+        if (row["store_id"] or 0) != store_id:
+            return None
+    return row
+
+
+def _resolve_sale_product(conn: sqlite3.Connection, it: SaleItemIn):
+    """薄封装（向后兼容）：按 product_id → epc → code 顺序 resolve。"""
+    return _resolve_product(conn, it.product_id or it.epc or it.code or "")
+
+
+def _sale_item_dicts(conn: sqlite3.Connection, sale_ids: list[int]) -> dict[int, list]:
+    if not sale_ids:
+        return {}
+    q = ",".join("?" * len(sale_ids))
+    out: dict[int, list] = {sid: [] for sid in sale_ids}
+    for r in conn.execute(
+            f"SELECT * FROM sale_items WHERE sale_id IN ({q}) ORDER BY sale_id, seq, id",
+            sale_ids).fetchall():
+        out[r["sale_id"]].append(dict(r))
+    return out
 
 
 @app.post("/api/sales")
 def sale_create(body: SaleReq, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         _assert_stock_unfrozen(conn)
-        prod = None
-        if body.product_id:
-            prod = conn.execute("SELECT * FROM products WHERE id=?", (body.product_id,)).fetchone()
-            if not prod:
-                raise HTTPException(400, "商品不存在")
-            if prod["status"] != "在库":
-                raise HTTPException(400, f"商品当前状态为{prod['status']}，无法开单")
+        # 组装明细：多件优先 body.items；为空回退旧单件字段
+        req_items = body.items
+        if not req_items and body.product_id:
+            req_items = [SaleItemIn(product_id=body.product_id, price=body.amount or None)]
+        if not req_items:
+            raise HTTPException(400, "请至少添加一件商品")
+
+        resolved = []
+        seen = set()
+        shop_id = 0
+        store_id = sid  # 开单门店固定为当前工作门店
+        for it in req_items:
+            p = _resolve_sale_product(conn, it)
+            if not p:
+                raise HTTPException(400, "扫描的商品未登记或不存在")
+            if p["id"] in seen:
+                raise HTTPException(400, f"商品 {p['code']} 在本单重复，请只保留一件")
+            if p["status"] != "在库":
+                raise HTTPException(400, f"商品 {p['code']} 当前状态为{p['status']}，无法开单")
+            pstore = p["store_id"] or 0
+            if pstore != sid:
+                raise HTTPException(403, f"商品 {p['code']} 不属于当前工作门店，不能跨店开单")
+            price = float(it.price if it.price is not None else (p["price"] or 0))
+            seen.add(p["id"])
+            resolved.append((p, price))
+
+        # 店铺件数上限（经商品门店→店铺）
+        if store_id:
+            srow = conn.execute("SELECT shop_id FROM stores WHERE id=?", (store_id,)).fetchone()
+            shop_id = srow["shop_id"] if srow else 0
+        limit = 0
+        if shop_id:
+            lp = conn.execute("SELECT sale_item_limit FROM shops WHERE id=?", (shop_id,)).fetchone()
+            if lp:
+                limit = lp["sale_item_limit"] or 0
+        if limit and len(resolved) > limit:
+            raise HTTPException(400, f"本店铺单张开单最多 {limit} 件，当前 {len(resolved)} 件")
+
+        amount = round(sum(price for _p, price in resolved), 2)
+        paid = body.paid if body.paid is not None else 0
         bill = _next_bill_no(conn)
         biz = body.biz_date or date.today().isoformat()
-        status = "已完成" if body.paid >= body.amount else "欠款"
-        name = body.product or (prod["name"] if prod else "")
+        status = "已完成" if paid >= amount else "欠款"
+        names = "、".join(p["name"] for p, _pr in resolved)
+        first = resolved[0][0]
+        # 经办人类别：缺省取默认类别；传值按名称原样落库（历史快照），人名可空
+        clerk_type = (body.clerk_type or "").strip()
+        if not clerk_type:
+            drow = conn.execute("SELECT name FROM clerk_types WHERE is_default=1 AND active=1 ORDER BY id LIMIT 1").fetchone()
+            clerk_type = drow["name"] if drow else "店员"
+        clerk_name = (body.clerk_name or "").strip()[:40]
         cur = conn.execute(
-            """INSERT INTO sales(bill_no,customer,phone,product,product_id,amount,paid,method,biz_date,type,status)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-            (bill, body.customer, body.phone, name, body.product_id, body.amount, body.paid, body.method, biz, "普通", status),
+            """INSERT INTO sales(bill_no,customer,phone,product,product_id,amount,paid,method,biz_date,type,status,
+                                 clerk_type,clerk_name,store_id)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (bill, body.customer, body.phone, names, first["id"], amount, paid,
+             body.method, biz, "普通", status, clerk_type, clerk_name, sid),
         )
-        _touch_customer(conn, body.customer, body.phone, body.amount, body.amount - body.paid)
-        if prod:
-            conn.execute("UPDATE products SET status='已售' WHERE id=?", (prod["id"],))
-            _inv(conn, prod["id"], prod["rfid_epc"], "out", op["username"])
+        sale_id = cur.lastrowid
+        for seq, (p, price) in enumerate(resolved):
+            conn.execute(
+                "INSERT INTO sale_items(sale_id,product_id,epc,code,name,price,seq) VALUES(?,?,?,?,?,?,?)",
+                (sale_id, p["id"], p["rfid_epc"] or "", p["code"] or "", p["name"], price, seq))
+            conn.execute("UPDATE products SET status='已售' WHERE id=?", (p["id"],))
+            _inv(conn, p["id"], p["rfid_epc"], "out", op["username"], store_id=sid)
+        _touch_customer(conn, body.customer, body.phone, amount, amount - paid)
         conn.commit()
-        _log(conn, op["username"], "销售开单", bill)
-        return {"bill_no": bill, "id": cur.lastrowid}
+        _log(conn, op["username"], "销售开单", f"{bill} {len(resolved)}件")
+        return {"bill_no": bill, "id": sale_id, "amount": amount, "count": len(resolved)}
 
 
 @app.get("/api/sales")
-def sale_list(request: Request, q: str = "", page: int = 1, size: int = 50):
-    _require_auth(request)
+def sale_list(request: Request, q: str = "", clerk_type: str = "", clerk_name: str = "",
+              page: int = 1, size: int = 50):
+    sess = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
         where, args = [], []
+        where.append("(s.store_id=? OR s.store_id=0)")
+        args.append(sid)
         if q:
-            where.append("(bill_no LIKE ? OR customer LIKE ? OR phone LIKE ? OR product LIKE ?)")
-            args += [f"%{q}%"] * 4
+            where.append(
+                "(s.bill_no LIKE ? OR s.customer LIKE ? OR s.phone LIKE ? OR s.product LIKE ? "
+                "OR EXISTS (SELECT 1 FROM sale_items si WHERE si.sale_id=s.id AND "
+                "(si.name LIKE ? OR si.code LIKE ? OR si.epc LIKE ?)))")
+            args += [f"%{q}%"] * 4 + [f"%{q}%"] * 3
+        if clerk_type:
+            where.append("s.clerk_type=?")
+            args.append(clerk_type)
+        if clerk_name:
+            where.append("s.clerk_name LIKE ?")
+            args.append(f"%{clerk_name}%")
         cond = ("WHERE " + " AND ".join(where)) if where else ""
-        total = conn.execute(f"SELECT COUNT(*) n FROM sales {cond}", args).fetchone()["n"]
+        total = conn.execute(f"SELECT COUNT(*) n FROM sales s {cond}", args).fetchone()["n"]
         rows = conn.execute(
-            f"SELECT * FROM sales {cond} ORDER BY id DESC LIMIT ? OFFSET ?",
+            f"SELECT s.* FROM sales s {cond} ORDER BY s.id DESC LIMIT ? OFFSET ?",
             args + [size, (page - 1) * size],
         ).fetchall()
-        return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
+        items_map = _sale_item_dicts(conn, [r["id"] for r in rows])
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["items"] = items_map.get(r["id"], [])
+            d["item_count"] = len(d["items"])
+            out.append(d)
+        return {"total": total, "page": page, "size": size, "items": out}
 
 
 @app.post("/api/sales/{sid}/void")
 def sale_void(sid: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        cur_sid, _ = _current_store(request, conn, op)
         _assert_stock_unfrozen(conn)
         row = conn.execute("SELECT * FROM sales WHERE id=?", (sid,)).fetchone()
         if not row:
             raise HTTPException(404, "单据不存在")
+        if row["store_id"] not in (0, cur_sid):
+            raise HTTPException(403, "该单据不属于当前工作门店")
         if row["status"] == "已冲红":
             raise HTTPException(400, "单据已冲红")
         conn.execute("UPDATE sales SET status='已冲红' WHERE id=?", (sid,))
-        if row["product_id"]:
-            conn.execute("UPDATE products SET status='在库' WHERE id=?", (row["product_id"],))
-            _inv(conn, row["product_id"], "", "in", op["username"])
+        # 逐件恢复在库（多件明细）；兼容无明细的历史单件单
+        item_pids = [r["product_id"] for r in conn.execute(
+            "SELECT DISTINCT product_id FROM sale_items WHERE sale_id=? AND product_id IS NOT NULL",
+            (sid,)).fetchall()]
+        if not item_pids and row["product_id"]:
+            item_pids = [row["product_id"]]
+        for pid in item_pids:
+            conn.execute("UPDATE products SET status='在库' WHERE id=? AND status='已售'", (pid,))
+            _inv(conn, pid, "", "in", op["username"], store_id=row["store_id"] or cur_sid)
         if row["phone"]:
             conn.execute(
                 "UPDATE customers SET total_amount=MAX(total_amount-?,0), due_amount=MAX(due_amount-?,0) WHERE phone=?",
@@ -2983,6 +4289,407 @@ def sale_void(sid: int, request: Request):
         conn.commit()
         _log(conn, op["username"], "销售冲红", row["bill_no"])
         return {"ok": True}
+
+
+# ---------------------------------------------------------------- 门店精简列表 / 库位主数据
+
+@app.get("/api/stores")
+def store_list(request: Request, all: int = 0):
+    """门店精简列表（含所属店铺；库位、调拨、商品表单等共用）。
+    默认只返回当前账号被授权的门店；all=1 且为店长时返回全部门店（门店/总部管理页使用）。"""
+    sess = _require_auth(request)
+    with _db(request) as conn:
+        rows = conn.execute(
+            """SELECT s.id,s.name,s.code,s.owner,s.shop_id,
+                      COALESCE(sp.name,'') AS shop_name
+               FROM stores s LEFT JOIN shops sp ON sp.id=s.shop_id
+               ORDER BY s.shop_id, s.id""").fetchall()
+        if all and sess.get("role") != "TENANT_ADMIN":
+            all = 0
+        if not all:
+            allow = {r["id"] for r in _accessible_store_rows(conn, sess)}
+            rows = [r for r in rows if r["id"] in allow]
+        return [dict(r) for r in rows]
+
+
+@app.put("/api/stores/{sid}")
+def store_update(sid: int, body: dict, request: Request):
+    """更新门店基础信息/归属店铺。"""
+    _require_admin(request)
+    name = str(body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "门店名称必填")
+    with _db(request) as conn:
+        row = conn.execute("SELECT id FROM stores WHERE id=?", (sid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "门店不存在")
+        shop_id = int(body.get("shop_id") or 0)
+        if shop_id:
+            if not conn.execute("SELECT 1 FROM shops WHERE id=?", (shop_id,)).fetchone():
+                raise HTTPException(400, "所属店铺不存在")
+        else:
+            shop_id = conn.execute("SELECT id FROM shops ORDER BY id LIMIT 1").fetchone()["id"]
+        try:
+            conn.execute(
+                "UPDATE stores SET name=?, owner=?, shop_id=? WHERE id=?",
+                (name, str(body.get("owner") or ""), shop_id, sid))
+            conn.commit()
+        except sqlite3.IntegrityError:
+            raise HTTPException(400, "门店信息保存失败")
+    return {"ok": True}
+
+
+# ------------------------------------------------- 用户与门店授权（仅店长）
+
+def _require_admin(request: Request) -> dict:
+    sess = _require_auth(request)
+    if sess.get("role") != "TENANT_ADMIN":
+        raise HTTPException(403, "仅店长可操作")
+    return sess
+
+
+@app.get("/api/admin/users")
+def admin_user_list(request: Request):
+    """账号列表 + 各账号被授权的门店（店长自动拥有全部门店，store_ids 返回 -1 标记全店）。"""
+    _require_admin(request)
+    with _db(request) as conn:
+        users = conn.execute("SELECT id,username,display_name,role FROM users ORDER BY id").fetchall()
+        out = []
+        for u in users:
+            d = dict(u)
+            if d["role"] == "TENANT_ADMIN":
+                d["store_ids"] = [-1]
+            else:
+                d["store_ids"] = [r["store_id"] for r in conn.execute(
+                    "SELECT store_id FROM user_stores WHERE user_id=? ORDER BY store_id", (u["id"],))]
+            out.append(d)
+        return {"items": out}
+
+
+class AdminUserIn(BaseModel):
+    username: str = ""
+    display_name: str = ""
+    password: str = ""
+    role: str = "EMPLOYEE"
+
+
+@app.post("/api/admin/users")
+def admin_user_create(body: AdminUserIn, request: Request):
+    op = _require_admin(request)
+    uname = body.username.strip()
+    if not (2 <= len(uname) <= 32) or not all(c.isalnum() or c in "_-" for c in uname):
+        raise HTTPException(400, "登录名需 2-32 位字母、数字或 _-")
+    if not body.password:
+        raise HTTPException(400, "请设置初始密码")
+    role = "TENANT_ADMIN" if body.role == "TENANT_ADMIN" else "EMPLOYEE"
+    with _db(request) as conn:
+        if conn.execute("SELECT 1 FROM users WHERE username=?", (uname,)).fetchone():
+            raise HTTPException(409, "登录名已存在")
+        cur = conn.execute(
+            "INSERT INTO users(username,password,display_name,role) VALUES(?,?,?,?)",
+            (uname, body.password, body.display_name.strip() or uname, role))
+        conn.commit()
+        _log(conn, op["username"], "新增账号", uname)
+        return {"ok": True, "id": cur.lastrowid}
+
+
+@app.put("/api/admin/users/{uid}")
+def admin_user_update(uid: int, body: AdminUserIn, request: Request):
+    op = _require_admin(request)
+    with _db(request) as conn:
+        row = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "账号不存在")
+        if body.display_name.strip():
+            conn.execute("UPDATE users SET display_name=? WHERE id=?", (body.display_name.strip(), uid))
+        if body.password:
+            conn.execute("UPDATE users SET password=? WHERE id=?", (body.password, uid))
+        if body.role in ("TENANT_ADMIN", "EMPLOYEE"):
+            conn.execute("UPDATE users SET role=? WHERE id=?", (body.role, uid))
+            if body.role == "TENANT_ADMIN":
+                conn.execute("DELETE FROM user_stores WHERE user_id=?", (uid,))
+        conn.commit()
+        _log(conn, op["username"], "修改账号", row["username"])
+        return {"ok": True}
+
+
+@app.delete("/api/admin/users/{uid}")
+def admin_user_delete(uid: int, request: Request):
+    op = _require_admin(request)
+    with _db(request) as conn:
+        row = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "账号不存在")
+        if row["username"] == op["username"]:
+            raise HTTPException(400, "不能删除当前登录账号")
+        if row["role"] == "TENANT_ADMIN" and conn.execute(
+                "SELECT COUNT(*) n FROM users WHERE role='TENANT_ADMIN'").fetchone()["n"] <= 1:
+            raise HTTPException(400, "至少保留一个店长账号")
+        conn.execute("DELETE FROM users WHERE id=?", (uid,))
+        conn.execute("DELETE FROM user_stores WHERE user_id=?", (uid,))
+        conn.commit()
+        _log(conn, op["username"], "删除账号", row["username"])
+        return {"ok": True}
+
+
+class GrantStoresIn(BaseModel):
+    store_ids: list[int] = Field(default_factory=list)
+
+
+@app.put("/api/admin/users/{uid}/stores")
+def admin_grant_stores(uid: int, body: GrantStoresIn, request: Request):
+    """设置店员可访问的门店集合（全量覆盖）。店长账号不使用此关系（自动全店）。"""
+    op = _require_admin(request)
+    with _db(request) as conn:
+        row = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "账号不存在")
+        if row["role"] == "TENANT_ADMIN":
+            raise HTTPException(400, "店长自动拥有全部门店，无需单独授权")
+        valid = {r["id"] for r in conn.execute("SELECT id FROM stores").fetchall()}
+        ids = [i for i in dict.fromkeys(body.store_ids) if i in valid]
+        conn.execute("DELETE FROM user_stores WHERE user_id=?", (uid,))
+        conn.executemany(
+            "INSERT INTO user_stores(user_id,store_id,granted_by) VALUES(?,?,?)",
+            [(uid, i, op["username"]) for i in ids])
+        conn.commit()
+        _log(conn, op["username"], "门店授权", f"{row['username']}：{len(ids)} 家门店")
+        return {"ok": True, "store_ids": ids}
+
+
+# ------------------------------------------------- 店铺（上层组织）
+@app.get("/api/shops")
+def shop_list(request: Request):
+    """店铺列表，含各店铺门店数。"""
+    _require_auth(request)
+    with _db(request) as conn:
+        rows = conn.execute(
+            """SELECT sp.*, (SELECT COUNT(*) FROM stores s WHERE s.shop_id=sp.id) AS store_count
+               FROM shops sp ORDER BY sp.sort_order, sp.id""").fetchall()
+        return [dict(r) for r in rows]
+
+
+class ShopIn(BaseModel):
+    name: str
+    code: str = ""
+    sale_item_limit: int = 20
+
+
+@app.post("/api/shops")
+def shop_create(body: ShopIn, request: Request):
+    _require_auth(request)
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "店铺名称必填")
+    limit = body.sale_item_limit if body.sale_item_limit >= 1 else 20
+    with _db(request) as conn:
+        code = body.code.strip()
+        if not code:
+            nid = conn.execute("SELECT COALESCE(MAX(id),0)+1 FROM shops").fetchone()[0]
+            code = f"S{nid:02X}"
+        try:
+            cur = conn.execute(
+                "INSERT INTO shops(name,code,sale_item_limit) VALUES(?,?,?)",
+                (name, code, limit))
+            conn.commit()
+        except sqlite3.IntegrityError:
+            raise HTTPException(400, "店铺编码已存在")
+        return {"ok": True, "id": cur.lastrowid, "code": code}
+
+
+@app.put("/api/shops/{sid}")
+def shop_update(sid: int, body: ShopIn, request: Request):
+    _require_auth(request)
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "店铺名称必填")
+    limit = body.sale_item_limit if body.sale_item_limit >= 1 else 20
+    with _db(request) as conn:
+        if not conn.execute("SELECT 1 FROM shops WHERE id=?", (sid,)).fetchone():
+            raise HTTPException(404, "店铺不存在")
+        try:
+            conn.execute("UPDATE shops SET name=?, code=?, sale_item_limit=? WHERE id=?",
+                         (name, body.code.strip(), limit, sid))
+            conn.commit()
+        except sqlite3.IntegrityError:
+            raise HTTPException(400, "店铺编码已存在")
+    return {"ok": True}
+
+
+@app.delete("/api/shops/{sid}")
+def shop_delete(sid: int, request: Request):
+    """仅允许删除其下无门店的店铺。"""
+    _require_auth(request)
+    with _db(request) as conn:
+        if not conn.execute("SELECT 1 FROM shops WHERE id=?", (sid,)).fetchone():
+            raise HTTPException(404, "店铺不存在")
+        n = conn.execute("SELECT COUNT(*) n FROM stores WHERE shop_id=?", (sid,)).fetchone()["n"]
+        if n:
+            raise HTTPException(400, f"该店铺下仍有 {n} 家门店，请先调整门店归属后再删除")
+        conn.execute("DELETE FROM shops WHERE id=?", (sid,))
+        conn.commit()
+    return {"ok": True}
+
+
+class LocationIn(BaseModel):
+    store_id: int = 0
+    code: str = ""
+    name: str = ""
+    sort_order: int = 0
+    active: int = 1
+
+
+def _location_row(conn: sqlite3.Connection, lid: int):
+    return conn.execute(
+        "SELECT l.*, s.name AS store_name FROM locations l "
+        "LEFT JOIN stores s ON s.id=l.store_id WHERE l.id=?", (lid,)).fetchone()
+
+
+@app.get("/api/locations")
+def location_list(request: Request, store_id: int = 0, active: int = -1):
+    """库位列表：可按门店/启用状态过滤；active=-1 全部、0 已停用、1 启用中。"""
+    _require_auth(request)
+    sql = ("SELECT l.*, s.name AS store_name FROM locations l "
+           "LEFT JOIN stores s ON s.id=l.store_id WHERE 1=1")
+    args: list = []
+    if store_id:
+        sql += " AND l.store_id=?"
+        args.append(store_id)
+    if active in (0, 1):
+        sql += " AND l.active=?"
+        args.append(active)
+    sql += " ORDER BY l.store_id, l.sort_order, l.id"
+    with _db(request) as conn:
+        return [dict(r) for r in conn.execute(sql, args).fetchall()]
+
+
+@app.post("/api/locations")
+def location_create(body: LocationIn, request: Request):
+    op = _require_auth(request)
+    code, name = body.code.strip(), body.name.strip()
+    if not body.store_id:
+        raise HTTPException(400, "请选择门店")
+    if not code or not name:
+        raise HTTPException(400, "库位编号和名称必填")
+    with _db(request) as conn:
+        if not conn.execute("SELECT 1 FROM stores WHERE id=?", (body.store_id,)).fetchone():
+            raise HTTPException(400, "门店不存在")
+        try:
+            cur = conn.execute(
+                "INSERT INTO locations(store_id,code,name,sort_order,active) VALUES(?,?,?,?,?)",
+                (body.store_id, code, name, body.sort_order, 1 if body.active else 0))
+            conn.commit()
+        except sqlite3.IntegrityError:
+            raise HTTPException(400, "该门店下库位编号已存在")
+        _log(conn, op["username"], "库位新增", f"{code} {name}")
+        return dict(_location_row(conn, cur.lastrowid))
+
+
+@app.put("/api/locations/{lid}")
+def location_update(lid: int, body: LocationIn, request: Request):
+    op = _require_auth(request)
+    code, name = body.code.strip(), body.name.strip()
+    if not code or not name:
+        raise HTTPException(400, "库位编号和名称必填")
+    with _db(request) as conn:
+        row = conn.execute("SELECT * FROM locations WHERE id=?", (lid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "库位不存在")
+        try:
+            conn.execute(
+                "UPDATE locations SET code=?,name=?,sort_order=?,active=? WHERE id=?",
+                (code, name, body.sort_order, 1 if body.active else 0, lid))
+            conn.commit()
+        except sqlite3.IntegrityError:
+            raise HTTPException(400, "该门店下库位编号已存在")
+        _log(conn, op["username"], "库位编辑", code)
+        return dict(_location_row(conn, lid))
+
+
+@app.delete("/api/locations/{lid}")
+def location_delete(lid: int, request: Request):
+    op = _require_auth(request)
+    with _db(request) as conn:
+        row = conn.execute("SELECT * FROM locations WHERE id=?", (lid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "库位不存在")
+        used = conn.execute(
+            "SELECT COUNT(*) n FROM products WHERE location_id=? OR cert_location_id=?",
+            (lid, lid)).fetchone()["n"]
+        if used:
+            raise HTTPException(400, f"该库位已被 {used} 件商品引用，请改用停用")
+        conn.execute("DELETE FROM locations WHERE id=?", (lid,))
+        conn.commit()
+        _log(conn, op["username"], "库位删除", row["code"])
+        return {"ok": True}
+
+
+# ---------------------------------------------------------------- 经办人类别
+
+class ClerkTypeIn(BaseModel):
+    name: str = ""
+    sort_order: int = 0
+    active: int = -1  # -1 不变；POST 时默认启用
+
+
+@app.get("/api/clerk-types")
+def clerk_type_list(request: Request, active: int = -1):
+    """经办人类别：默认返回全部（管理页含停用项）；active=1 仅启用（开单下拉用）。"""
+    _require_auth(request)
+    with _db(request) as conn:
+        sql = "SELECT id,name,sort_order,is_default,active FROM clerk_types"
+        args: list = []
+        if active in (0, 1):
+            sql += " WHERE active=?"
+            args.append(active)
+        sql += " ORDER BY sort_order,id"
+        return [dict(r) for r in conn.execute(sql, args).fetchall()]
+
+
+@app.post("/api/clerk-types")
+def clerk_type_create(body: ClerkTypeIn, request: Request):
+    op = _require_auth(request)
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(400, "类别名称必填")
+    with _db(request) as conn:
+        try:
+            cur = conn.execute(
+                "INSERT INTO clerk_types(name,sort_order,is_default,active) VALUES(?,?,0,1)",
+                (name, body.sort_order))
+            conn.commit()
+        except sqlite3.IntegrityError:
+            raise HTTPException(400, "经办人类别名称已存在")
+        _log(conn, op["username"], "经办人类别新增", name)
+        r = conn.execute("SELECT id,name,sort_order,is_default,active FROM clerk_types WHERE id=?",
+                         (cur.lastrowid,)).fetchone()
+        return dict(r)
+
+
+@app.put("/api/clerk-types/{cid}")
+def clerk_type_update(cid: int, body: ClerkTypeIn, request: Request):
+    op = _require_auth(request)
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(400, "类别名称必填")
+    with _db(request) as conn:
+        row = conn.execute("SELECT * FROM clerk_types WHERE id=?", (cid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "经办人类别不存在")
+        new_active = row["active"] if body.active < 0 else (1 if body.active else 0)
+        # 默认类别（店员）不可停用
+        if row["is_default"] and new_active == 0:
+            raise HTTPException(400, "默认经办人类别不可停用")
+        try:
+            conn.execute("UPDATE clerk_types SET name=?,sort_order=?,active=? WHERE id=?",
+                         (name, body.sort_order, new_active, cid))
+            conn.commit()
+        except sqlite3.IntegrityError:
+            raise HTTPException(400, "经办人类别名称已存在")
+        _log(conn, op["username"], "经办人类别编辑", name)
+        r = conn.execute("SELECT id,name,sort_order,is_default,active FROM clerk_types WHERE id=?",
+                         (cid,)).fetchone()
+        return dict(r)
 
 
 # ---------------------------------------------------------------- 定金
@@ -3001,10 +4708,14 @@ class DepositIn(BaseModel):
 
 @app.get("/api/deposits")
 def deposit_list(request: Request, page: int = 1, size: int = 50):
-    _require_auth(request)
+    sess = _require_auth(request)
     with _db(request) as conn:
-        total = conn.execute("SELECT COUNT(*) n FROM deposits").fetchone()["n"]
-        rows = conn.execute("SELECT * FROM deposits ORDER BY id DESC LIMIT ? OFFSET ?", (size, (page - 1) * size)).fetchall()
+        sid, _ = _current_store(request, conn, sess)
+        total = conn.execute(
+            "SELECT COUNT(*) n FROM deposits WHERE store_id=? OR store_id=0", (sid,)).fetchone()["n"]
+        rows = conn.execute(
+            "SELECT * FROM deposits WHERE store_id=? OR store_id=0 ORDER BY id DESC LIMIT ? OFFSET ?",
+            (sid, size, (page - 1) * size)).fetchall()
         return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
 
 
@@ -3012,20 +4723,20 @@ def deposit_list(request: Request, page: int = 1, size: int = 50):
 def deposit_create(body: DepositIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         _assert_stock_unfrozen(conn)
         name = body.product
         if body.product_id:
-            p = conn.execute("SELECT * FROM products WHERE id=?", (body.product_id,)).fetchone()
-            if not p:
-                raise HTTPException(400, "商品不存在")
+            p = _assert_product_in_store(conn, body.product_id, sid)
             if p["status"] != "在库":
                 raise HTTPException(400, "仅可锁定在库商品")
             conn.execute("UPDATE products SET status='已定' WHERE id=?", (p["id"],))
             name = name or p["name"]
         cur = conn.execute(
-            """INSERT INTO deposits(customer,phone,product_id,product,total,deposit,balance,promised_date,reminder_days,status)
-               VALUES(?,?,?,?,?,?,?,?,?,'已定')""",
-            (body.customer, body.phone, body.product_id, name, body.total, body.deposit, body.balance, body.promised_date, body.reminder_days),
+            """INSERT INTO deposits(customer,phone,product_id,product,total,deposit,balance,promised_date,reminder_days,status,store_id)
+               VALUES(?,?,?,?,?,?,?,?,?,'已定',?)""",
+            (body.customer, body.phone, body.product_id, name, body.total, body.deposit, body.balance,
+             body.promised_date, body.reminder_days, sid),
         )
         _touch_customer(conn, body.customer, body.phone, body.deposit, body.balance)
         conn.commit()
@@ -3037,22 +4748,28 @@ def deposit_create(body: DepositIn, request: Request):
 def deposit_pay(did: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         _assert_stock_unfrozen(conn)
         d = conn.execute("SELECT * FROM deposits WHERE id=?", (did,)).fetchone()
         if not d:
             raise HTTPException(404, "定金单不存在")
+        if d["store_id"] not in (0, sid):
+            raise HTTPException(403, "该定金单不属于当前工作门店")
         if d["status"] != "已定":
             raise HTTPException(400, "单据不可收尾款")
         bill = _next_bill_no(conn)
+        bill_store = d["store_id"] or sid
         conn.execute(
-            """INSERT INTO sales(bill_no,customer,phone,product,product_id,amount,paid,method,biz_date,type,status)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-            (bill, d["customer"], d["phone"], d["product"], d["product_id"], d["total"], d["total"], "尾款转单", date.today().isoformat(), "定金转单", "已完成"),
+            """INSERT INTO sales(bill_no,customer,phone,product,product_id,amount,paid,method,biz_date,type,status,store_id)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (bill, d["customer"], d["phone"], d["product"], d["product_id"], d["total"], d["total"],
+             "尾款转单", date.today().isoformat(), "定金转单", "已完成", bill_store),
         )
         if d["product_id"]:
             p = conn.execute("SELECT * FROM products WHERE id=?", (d["product_id"],)).fetchone()
             conn.execute("UPDATE products SET status='已售' WHERE id=?", (d["product_id"],))
-            _inv(conn, d["product_id"], (p["rfid_epc"] if p else ""), "out", op["username"])
+            _inv(conn, d["product_id"], (p["rfid_epc"] if p else ""), "out", op["username"],
+                 store_id=bill_store)
         conn.execute("UPDATE deposits SET status='已完成', balance=0, deposit=? WHERE id=?", (d["total"], did))
         if d["phone"]:
             conn.execute("UPDATE customers SET due_amount=MAX(due_amount-?,0) WHERE phone=?", (d["balance"], d["phone"]))
@@ -3066,10 +4783,13 @@ def deposit_pay(did: int, request: Request):
 def deposit_void(did: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         _assert_stock_unfrozen(conn)
         d = conn.execute("SELECT * FROM deposits WHERE id=?", (did,)).fetchone()
         if not d:
             raise HTTPException(404, "定金单不存在")
+        if d["store_id"] not in (0, sid):
+            raise HTTPException(403, "该定金单不属于当前工作门店")
         if d["status"] != "已定":
             raise HTTPException(400, "单据不可冲红")
         if d["product_id"]:
@@ -3085,7 +4805,8 @@ def deposit_void(did: int, request: Request):
 class LoanIn(BaseModel):
     direction: str = "out"
     product: str = ""
-    code: str = ""
+    code: str = ""              # 单件向后兼容
+    codes: list[str] = Field(default_factory=list)  # 批量扫码（EPC/条码/货号混合）
     party: str = ""
     qty: int = 1
     loan_date: str = ""
@@ -3094,10 +4815,14 @@ class LoanIn(BaseModel):
 
 @app.get("/api/loans")
 def loan_list(request: Request, page: int = 1, size: int = 50):
-    _require_auth(request)
+    sess = _require_auth(request)
     with _db(request) as conn:
-        total = conn.execute("SELECT COUNT(*) n FROM loans").fetchone()["n"]
-        rows = conn.execute("SELECT * FROM loans ORDER BY id DESC LIMIT ? OFFSET ?", (size, (page - 1) * size)).fetchall()
+        sid, _ = _current_store(request, conn, sess)
+        total = conn.execute(
+            "SELECT COUNT(*) n FROM loans WHERE store_id=? OR store_id=0", (sid,)).fetchone()["n"]
+        rows = conn.execute(
+            "SELECT * FROM loans WHERE store_id=? OR store_id=0 ORDER BY id DESC LIMIT ? OFFSET ?",
+            (sid, size, (page - 1) * size)).fetchall()
         return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
 
 
@@ -3105,39 +4830,75 @@ def loan_list(request: Request, page: int = 1, size: int = 50):
 def loan_create(body: LoanIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         _assert_stock_unfrozen(conn)
         st = "借出中" if body.direction == "out" else "借入中"
-        if body.direction == "out" and body.code:
-            p = conn.execute("SELECT * FROM products WHERE code=?", (body.code,)).fetchone()
-            if p:
+        # 解析商品：优先批量 codes，其次单件 code；direction=out 才真正置"借出"。
+        # 借出商品必须属于当前工作门店（借入为外部货品，不查本店库存）。
+        resolved: list[sqlite3.Row] = []
+        if body.codes:
+            seen_raw = set()
+            seen_pid = set()
+            for c in body.codes:
+                c2 = (c or "").strip()
+                if not c2 or c2 in seen_raw:
+                    continue
+                seen_raw.add(c2)
+                p = _resolve_product(conn, c2, sid)
+                if not p:
+                    raise HTTPException(400, f"扫描的码 {c2} 未登记、不存在或不属于当前门店")
+                if p["id"] in seen_pid:
+                    continue
+                seen_pid.add(p["id"])
                 if p["status"] != "在库":
-                    raise HTTPException(400, "仅可借出在库商品")
+                    raise HTTPException(400, f"商品 {p['code']} 当前状态为{p['status']}，无法借出")
+                resolved.append(p)
+        elif body.code and body.direction == "out":
+            p = _resolve_product(conn, body.code, sid)
+            if not p:
+                raise HTTPException(400, "扫描的码未登记、不存在或不属于当前门店")
+            if p["status"] != "在库":
+                raise HTTPException(400, "仅可借出在库商品")
+            resolved.append(p)
+        if body.direction == "out":
+            for p in resolved:
                 conn.execute("UPDATE products SET status='借出' WHERE id=?", (p["id"],))
-                _inv(conn, p["id"], p["rfid_epc"], "out", op["username"])
+                _inv(conn, p["id"], p["rfid_epc"], "out", op["username"], store_id=sid)
+        # 主单字段：批量时自动合成（product 顿号拼名，code 取首件货号，qty=len）
+        names = "、".join(p["name"] for p in resolved)
+        first_code = resolved[0]["code"] if resolved else (body.code or "")
+        qty = len(resolved) if resolved else body.qty
+        product_str = names or body.product
         cur = conn.execute(
-            "INSERT INTO loans(direction,product,code,party,qty,loan_date,due_date,status) VALUES(?,?,?,?,?,?,?,?)",
-            (body.direction, body.product, body.code, body.party, body.qty, body.loan_date or date.today().isoformat(), body.due_date, st),
+            "INSERT INTO loans(direction,product,code,party,qty,loan_date,due_date,status,store_id) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
+            (body.direction, product_str, first_code, body.party, qty,
+             body.loan_date or date.today().isoformat(), body.due_date, st, sid),
         )
         conn.commit()
-        _log(conn, op["username"], "借货", body.product)
-        return {"id": cur.lastrowid}
+        _log(conn, op["username"], "借货", product_str or body.code)
+        return {"id": cur.lastrowid, "count": len(resolved)}
 
 
 @app.post("/api/loans/{lid}/return")
 def loan_return(lid: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         _assert_stock_unfrozen(conn)
         row = conn.execute("SELECT * FROM loans WHERE id=?", (lid,)).fetchone()
         if not row:
             raise HTTPException(404, "记录不存在")
+        if row["store_id"] not in (0, sid):
+            raise HTTPException(403, "该借货记录不属于当前工作门店")
         if row["status"] in ("已归还", "已核销"):
             raise HTTPException(400, "已归还")
         if row["direction"] == "out" and row["code"]:
             p = conn.execute("SELECT * FROM products WHERE code=?", (row["code"],)).fetchone()
             if p:
                 conn.execute("UPDATE products SET status='在库' WHERE id=?", (p["id"],))
-                _inv(conn, p["id"], p["rfid_epc"], "in", op["username"])
+                _inv(conn, p["id"], p["rfid_epc"], "in", op["username"],
+                     store_id=row["store_id"] or sid)
         st = "已归还" if row["direction"] == "out" else "已核销"
         conn.execute("UPDATE loans SET status=? WHERE id=?", (st, lid))
         conn.commit()
@@ -3208,10 +4969,14 @@ class RepairIn(BaseModel):
 
 @app.get("/api/repairs")
 def repair_list(request: Request, page: int = 1, size: int = 50):
-    _require_auth(request)
+    sess = _require_auth(request)
     with _db(request) as conn:
-        total = conn.execute("SELECT COUNT(*) n FROM repairs").fetchone()["n"]
-        rows = conn.execute("SELECT * FROM repairs ORDER BY id DESC LIMIT ? OFFSET ?", (size, (page - 1) * size)).fetchall()
+        sid, _ = _current_store(request, conn, sess)
+        total = conn.execute(
+            "SELECT COUNT(*) n FROM repairs WHERE store_id=? OR store_id=0", (sid,)).fetchone()["n"]
+        rows = conn.execute(
+            "SELECT * FROM repairs WHERE store_id=? OR store_id=0 ORDER BY id DESC LIMIT ? OFFSET ?",
+            (sid, size, (page - 1) * size)).fetchall()
         return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
 
 
@@ -3219,11 +4984,12 @@ def repair_list(request: Request, page: int = 1, size: int = 50):
 def repair_create(body: RepairIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         cur = conn.execute(
-            """INSERT INTO repairs(customer,phone,item,issue,est_fee,actual_fee,receive_date,promised_date,status,technician,remark)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+            """INSERT INTO repairs(customer,phone,item,issue,est_fee,actual_fee,receive_date,promised_date,status,technician,remark,store_id)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
             (body.customer, body.phone, body.item, body.issue, body.est_fee, body.actual_fee,
-             body.receive_date, body.promised_date, body.status, body.technician, body.remark),
+             body.receive_date, body.promised_date, body.status, body.technician, body.remark, sid),
         )
         conn.commit()
         _log(conn, op["username"], "接维修", body.item)
@@ -3234,7 +5000,12 @@ def repair_create(body: RepairIn, request: Request):
 def repair_update(rid: int, body: RepairIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         old = conn.execute("SELECT * FROM repairs WHERE id=?", (rid,)).fetchone()
+        if not old:
+            raise HTTPException(404, "维修单不存在")
+        if old["store_id"] not in (0, sid):
+            raise HTTPException(403, "该维修单不属于当前工作门店")
         done = date.today().isoformat() if body.status == "已完成" else (old["done_date"] if old else "")
         conn.execute(
             """UPDATE repairs SET customer=?,phone=?,item=?,issue=?,est_fee=?,actual_fee=?,
@@ -3263,10 +5034,14 @@ class PurchaseIn(BaseModel):
 
 @app.get("/api/purchases")
 def purchase_list(request: Request, page: int = 1, size: int = 50):
-    _require_auth(request)
+    sess = _require_auth(request)
     with _db(request) as conn:
-        total = conn.execute("SELECT COUNT(*) n FROM purchases").fetchone()["n"]
-        rows = conn.execute("SELECT * FROM purchases ORDER BY id DESC LIMIT ? OFFSET ?", (size, (page - 1) * size)).fetchall()
+        sid, _ = _current_store(request, conn, sess)
+        total = conn.execute(
+            "SELECT COUNT(*) n FROM purchases WHERE store_id=? OR store_id=0", (sid,)).fetchone()["n"]
+        rows = conn.execute(
+            "SELECT * FROM purchases WHERE store_id=? OR store_id=0 ORDER BY id DESC LIMIT ? OFFSET ?",
+            (sid, size, (page - 1) * size)).fetchall()
         return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
 
 
@@ -3274,10 +5049,12 @@ def purchase_list(request: Request, page: int = 1, size: int = 50):
 def purchase_create(body: PurchaseIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         cur = conn.execute(
-            """INSERT INTO purchases(supplier,product,qty,cost,order_date,expected_date,received_date,status,paid)
-               VALUES(?,?,?,?,?,?,?,?,?)""",
-            (body.supplier, body.product, body.qty, body.cost, body.order_date, body.expected_date, body.received_date, body.status, body.paid),
+            """INSERT INTO purchases(supplier,product,qty,cost,order_date,expected_date,received_date,status,paid,store_id)
+               VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (body.supplier, body.product, body.qty, body.cost, body.order_date, body.expected_date,
+             body.received_date, body.status, body.paid, sid),
         )
         conn.commit()
         _log(conn, op["username"], "采购", body.product)
@@ -3288,10 +5065,13 @@ def purchase_create(body: PurchaseIn, request: Request):
 def purchase_receive(pid: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         _assert_stock_unfrozen(conn)
         row = conn.execute("SELECT * FROM purchases WHERE id=?", (pid,)).fetchone()
         if not row:
             raise HTTPException(404, "采购单不存在")
+        if row["store_id"] not in (0, sid):
+            raise HTTPException(403, "该采购单不属于当前工作门店")
         if row["status"] == "已入库":
             raise HTTPException(400, "已入库")
         today = date.today().isoformat()
@@ -3299,10 +5079,10 @@ def purchase_receive(pid: int, request: Request):
         code = _next_code(conn, "CG")
         unit = (row["cost"] / row["qty"]) if row["qty"] else row["cost"]
         cur = conn.execute(
-            """INSERT INTO products(code,name,category,material,weight,cost,price,status,store_id) VALUES(?,?,?,?,?,?,?,'在库',1)""",
-            (code, row["product"], "其他", "", 0, unit, unit, ),
+            """INSERT INTO products(code,name,category,material,weight,cost,price,status,store_id) VALUES(?,?,?,?,?,?,?,'在库',?)""",
+            (code, row["product"], "其他", "", 0, unit, unit, sid),
         )
-        _inv(conn, cur.lastrowid, "", "in", op["username"], row["qty"] or 1)
+        _inv(conn, cur.lastrowid, "", "in", op["username"], row["qty"] or 1, store_id=sid)
         conn.commit()
         _log(conn, op["username"], "采购入库", code)
         return {"ok": True, "code": code}
@@ -3323,10 +5103,14 @@ class OutsourceIn(BaseModel):
 
 @app.get("/api/outsourcings")
 def outsource_list(request: Request, page: int = 1, size: int = 50):
-    _require_auth(request)
+    sess = _require_auth(request)
     with _db(request) as conn:
-        total = conn.execute("SELECT COUNT(*) n FROM outsourcings").fetchone()["n"]
-        rows = conn.execute("SELECT * FROM outsourcings ORDER BY id DESC LIMIT ? OFFSET ?", (size, (page - 1) * size)).fetchall()
+        sid, _ = _current_store(request, conn, sess)
+        total = conn.execute(
+            "SELECT COUNT(*) n FROM outsourcings WHERE store_id=? OR store_id=0", (sid,)).fetchone()["n"]
+        rows = conn.execute(
+            "SELECT * FROM outsourcings WHERE store_id=? OR store_id=0 ORDER BY id DESC LIMIT ? OFFSET ?",
+            (sid, size, (page - 1) * size)).fetchall()
         return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
 
 
@@ -3334,11 +5118,12 @@ def outsource_list(request: Request, page: int = 1, size: int = 50):
 def outsource_create(body: OutsourceIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         cur = conn.execute(
-            """INSERT INTO outsourcings(factory,product,material,weight,gold_price,labor_fee,send_date,expected_date,received_date,status)
-               VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            """INSERT INTO outsourcings(factory,product,material,weight,gold_price,labor_fee,send_date,expected_date,received_date,status,store_id)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
             (body.factory, body.product, body.material, body.weight, body.gold_price, body.labor_fee,
-             body.send_date, body.expected_date, body.received_date, body.status),
+             body.send_date, body.expected_date, body.received_date, body.status, sid),
         )
         conn.commit()
         _log(conn, op["username"], "委外加工", body.product)
@@ -3349,10 +5134,13 @@ def outsource_create(body: OutsourceIn, request: Request):
 def outsource_receive(oid: int, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         _assert_stock_unfrozen(conn)
         row = conn.execute("SELECT * FROM outsourcings WHERE id=?", (oid,)).fetchone()
         if not row:
             raise HTTPException(404, "加工单不存在")
+        if row["store_id"] not in (0, sid):
+            raise HTTPException(403, "该加工单不属于当前工作门店")
         if row["status"] == "已收货":
             raise HTTPException(400, "已收货")
         today = date.today().isoformat()
@@ -3360,10 +5148,10 @@ def outsource_receive(oid: int, request: Request):
         conn.execute("UPDATE outsourcings SET status='已收货', received_date=? WHERE id=?", (today, oid))
         code = _next_code(conn, "WW")
         cur = conn.execute(
-            """INSERT INTO products(code,name,category,material,weight,cost,price,status,store_id) VALUES(?,?,?,?,?,?,?,'在库',1)""",
-            (code, row["product"], "黄金", row["material"], row["weight"], cost, cost * 1.2),
+            """INSERT INTO products(code,name,category,material,weight,cost,price,status,store_id) VALUES(?,?,?,?,?,?,?,'在库',?)""",
+            (code, row["product"], "黄金", row["material"], row["weight"], cost, cost * 1.2, sid),
         )
-        _inv(conn, cur.lastrowid, "", "in", op["username"])
+        _inv(conn, cur.lastrowid, "", "in", op["username"], store_id=sid)
         conn.commit()
         _log(conn, op["username"], "委外收货入库", code)
         return {"ok": True, "code": code, "cost": cost}
@@ -3393,9 +5181,12 @@ def log_export(request: Request):
 
 @app.get("/api/appointments")
 def appointment_list(request: Request):
-    _require_auth(request)
+    sess = _require_auth(request)
     with _db(request) as conn:
-        rows = conn.execute("SELECT * FROM appointments ORDER BY id DESC LIMIT 100").fetchall()
+        sid, _ = _current_store(request, conn, sess)
+        rows = conn.execute(
+            "SELECT * FROM appointments WHERE store_id=? OR store_id=0 ORDER BY id DESC LIMIT 100",
+            (sid,)).fetchall()
         return {"items": [dict(r) for r in rows]}
 
 
@@ -3407,6 +5198,12 @@ class ApptStatus(BaseModel):
 def appointment_update(aid: int, body: ApptStatus, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
+        row = conn.execute("SELECT store_id FROM appointments WHERE id=?", (aid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "预约不存在")
+        if row["store_id"] not in (0, sid):
+            raise HTTPException(403, "该预约不属于当前工作门店")
         conn.execute("UPDATE appointments SET status=? WHERE id=?", (body.status, aid))
         conn.commit()
         _log(conn, op["username"], "预约跟进", f"{aid}:{body.status}")
@@ -3564,12 +5361,30 @@ class SensorIn(BaseModel):
     location: str = ""
     driver_code: str = ""
     enabled: bool = True
+    heartbeat_timeout: int | None = None  # 秒，None=不改/默认15
+    field_map: str = ""  # JSON 字符串：{"原始键":"标准键"}，空=不映射
+
+
+def _valid_field_map(text: str) -> str:
+    """校验字段映射 JSON：必须是 {str: str} 对象；空串合法。返回规范化后的 JSON 文本。"""
+    text = (text or "").strip()
+    if not text:
+        return ""
+    try:
+        obj = json.loads(text)
+    except Exception:
+        raise HTTPException(400, "字段映射必须是合法 JSON")
+    if not isinstance(obj, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in obj.items()):
+        raise HTTPException(400, "字段映射必须是 {\"原始键\":\"标准键\"} 的 JSON 对象")
+    return json.dumps(obj, ensure_ascii=False)
 
 
 def _sensor_view(r) -> dict:
-    """设备视图：密钥永不回显；在线判定只看设备上报刷新的 last_seen。"""
+    """设备视图：密钥永不回显；在线判定只看设备上报刷新的 last_seen（超时按设备配置）。"""
     d = dict(r)
-    d["online"] = bool(r["last_seen"] and time.time() - r["last_seen"] < sensors.ONLINE_TTL)
+    ttl = r["heartbeat_timeout"] or sensors.ONLINE_TTL
+    d["online"] = bool(r["last_seen"] and time.time() - r["last_seen"] < ttl)
     d["has_key"] = bool((r["auth_key"] or "").strip())
     d.pop("auth_key", None)
     drv = sensors.DRIVERS.get(r["driver_code"])
@@ -3585,7 +5400,8 @@ def _lan_base() -> str:
 @app.get("/api/sensors/drivers")
 def sensor_drivers(request: Request):
     _require_auth(request)
-    return {"items": [{"code": d.driver_code, "name": d.name, "reports_epc": d.reports_epc}
+    return {"items": [{"code": d.driver_code, "name": d.name, "reports_epc": d.reports_epc,
+                       "fields": d.fields_doc}
                       for d in sensors.DRIVERS.values()]}
 
 
@@ -3611,9 +5427,12 @@ def sensor_create(body: SensorIn, request: Request):
                 "SELECT id FROM stores WHERE id=?", (body.store_id,)).fetchone():
             raise HTTPException(400, "门店不存在")
         cur = conn.execute(
-            "INSERT INTO sensors(name,store_id,location,driver_code,auth_key,enabled) VALUES(?,?,?,?,?,?)",
+            "INSERT INTO sensors(name,store_id,location,driver_code,auth_key,enabled,"
+            "heartbeat_timeout,field_map) VALUES(?,?,?,?,?,?,?,?)",
             (name, body.store_id or 1, body.location.strip(), body.driver_code,
-             key, 1 if body.enabled else 0))
+             key, 1 if body.enabled else 0,
+             body.heartbeat_timeout or sensors.ONLINE_TTL,
+             _valid_field_map(body.field_map)))
         conn.commit()
         _log(conn, op["username"], "新增安防设备", name)
         sid = cur.lastrowid
@@ -3630,10 +5449,14 @@ def sensor_update(sid: int, body: SensorIn, request: Request):
         row = conn.execute("SELECT * FROM sensors WHERE id=?", (sid,)).fetchone()
         if not row:
             raise HTTPException(404, "设备不存在")
+        fm = _valid_field_map(body.field_map)  # 空串合法=清除映射
         conn.execute(
-            "UPDATE sensors SET name=?,store_id=?,location=?,enabled=? WHERE id=?",
+            "UPDATE sensors SET name=?,store_id=?,location=?,enabled=?,"
+            "heartbeat_timeout=?,field_map=? WHERE id=?",
             (body.name.strip() or row["name"], body.store_id or row["store_id"],
-             body.location.strip(), 1 if body.enabled else 0, sid))
+             body.location.strip(), 1 if body.enabled else 0,
+             body.heartbeat_timeout if body.heartbeat_timeout is not None else row["heartbeat_timeout"],
+             fm, sid))
         conn.commit()
         _log(conn, op["username"], "修改安防设备", body.name or row["name"])
         return {"ok": True}

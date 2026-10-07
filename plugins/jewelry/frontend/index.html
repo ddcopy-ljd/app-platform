@@ -5,11 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>懿臻珠宝云</title>
 <link rel="icon" href="/logo/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./app.css">
+<link rel="stylesheet" href="./app.css?v=20261007d">
 </head>
 <body>
 <div id="app">
   <div v-if="mode==='PRODUCTION_SUPPORT'" class="support-banner">{{ t('support.banner') }}</div>
+  <div v-if="mode==='SANDBOX'" class="sandbox-banner">🧪 {{ t('mode.sandbox') }}<template v-if="version"> · v{{ version }}</template> · {{ t('mode.sandboxTip') }}</div>
 
   <div v-if="!token" class="login-page">
     <div class="login-logo"><img src="/logo/logo.svg" alt=""></div>
@@ -30,7 +31,7 @@
 
   <div v-else class="app-shell" :class="{pc:isPc, mobile:!isPc}">
     <aside v-if="isPc" class="sidebar">
-      <div class="side-brand"><img src="/logo/logo.svg" alt=""><div><b>{{ softName }}</b><small>{{ tenant }}</small></div></div>
+      <div class="side-brand"><img src="/logo/logo.svg" alt=""><div><b>{{ softName }}</b><span v-if="mode==='SANDBOX'" class="mode-badge sandbox">🧪 {{ t('mode.sandbox') }}<template v-if="version">&nbsp;v{{ version }}</template></span><small>{{ tenant }}</small></div></div>
       <nav>
         <button v-for="n in nav" :key="n.id" class="nav-item" :class="{active:tab===n.id}" @click="go(n.id)">{{ n.icon }} {{ t(n.key) }}</button>
       </nav>
@@ -46,6 +47,7 @@
     <div class="app-main">
       <header class="app-bar" v-if="!isPc">
         <div class="brand"><img src="/logo/logo.svg" class="app-logo" alt=""> {{ softName }}</div>
+        <span v-if="mode==='SANDBOX'" class="mode-badge sandbox">🧪 {{ t('mode.sandbox') }}</span>
         <div class="store-tag">{{ tenant }}</div>
         <div class="health-wrap">
           <button class="health-bell" :class="healthBad ? 'bad' : 'ok'" @click.stop="healthOpen=!healthOpen" :title="t('hc.title')">
@@ -61,11 +63,20 @@
             </label>
           </div>
         </div>
+        <select v-if="stores.length>1" :value="curStoreId" @change="switchStore($event.target.value)" class="store-switch" :title="t('store.switch')">
+          <option v-for="s in stores" :key="s.id" :value="s.id">🏬 {{ s.name }}</option>
+        </select>
         <div class="avatar" @click="go('more')">{{ ((user&&user.display_name)||t('misc.role.staff'))[0] }}</div>
       </header>
       <header v-else class="pc-top">
-        <h1>{{ currentTitle }}</h1>
+        <div class="pc-title">
+          <h1>{{ currentTitle }}</h1>
+          <span v-if="mode==='SANDBOX'" class="mode-badge sandbox">🧪 {{ t('mode.sandbox') }}<template v-if="version">&nbsp;v{{ version }}</template></span>
+        </div>
         <div class="pc-top-actions">
+          <select v-if="stores.length>1" :value="curStoreId" @change="switchStore($event.target.value)" class="store-switch" :title="t('store.switch')">
+            <option v-for="s in stores" :key="s.id" :value="s.id">🏬 {{ s.name }}</option>
+          </select>
           <div class="health-wrap">
             <button class="health-bell" :class="healthBad ? 'bad' : 'ok'" @click.stop="healthOpen=!healthOpen" :title="t('hc.title')">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5S10.5 3.17 10.5 4v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
@@ -90,6 +101,16 @@
 
       <!-- 全局盘点冻结横幅：任务进行中/待核对时全页面显示，点击跳转处理 -->
       <div v-if="frozen" class="freeze-banner" @click="go('inventory'); invSub='count'">🔒 {{ t('inv.frozenBanner') }}<b>{{ coTask.task_no }} · {{ coStatusText(coTask.status) }}</b></div>
+
+      <!-- 账号未被授权任何门店：请联系店长开通 -->
+      <div v-if="user && stores.length===0" class="no-store-mask">
+        <div class="no-store-card">
+          <div class="no-store-icon">🏬</div>
+          <div class="no-store-title">{{ t('store.emptyTitle') }}</div>
+          <div class="no-store-desc">{{ t('store.emptyDesc') }}</div>
+          <button class="btn btn-gold" @click="doLogout">{{ t('nav.logout') }}</button>
+        </div>
+      </div>
 
       <div class="main-content" v-if="!subView || isPc">
         <!-- dashboard -->
@@ -163,12 +184,39 @@
               <div class="biz-body">{{ t('biz.products') }}</div>
             </details>
             <div class="biz-actions">
+              <button class="btn btn-sm" :class="transferMode?'btn-primary':'btn-outline'" @click="toggleTransferMode">🚚 {{ t('tr.pick') }}</button>
               <button class="btn btn-sm btn-outline" @click="openRfid">RFID {{ t('inv.scan') }}</button>
               <button class="btn btn-sm btn-outline" :disabled="!printSelCount" @click="openPrintSelected">🏷 {{ t('act.printSel') }}<span v-if="printSelCount"> ({{ printSelCount }})</span></button>
               <button class="btn btn-primary btn-sm" :disabled="frozen" @click="addProduct">+ {{ t('act.add') }}</button>
             </div>
           </div>
           <div class="search-wrap mt-sm"><input class="search-input" v-model="prodQ" :placeholder="t('ph.searchProd')"><button class="btn btn-sm btn-outline" @click="prodQ=''">{{ t('act.clear') }}</button></div>
+          <div class="prod-filter-row mt-sm">
+            <label class="check-inline"><input type="checkbox" v-model="prodHasCert"> {{ t('loc.noCert') }}</label>
+            <select v-model="prodLoc" class="prod-loc-select" :title="t('loc.where')">
+              <option :value="0">{{ t('loc.allLoc') }}</option>
+              <option v-for="o in activeLocations" :key="o.id" :value="o.id">{{ storeNameOf(o.store_id) }} · {{ o.code }} {{ o.name }}</option>
+            </select>
+          </div>
+          <div class="transfer-hint" v-if="transferMode">
+            <span>📌 {{ t('tr.pickHint') }}</span>
+            <button class="btn btn-sm" :class="scanCoop.type==='transfer_out'?'btn-primary':'btn-outline'" @click="setScanMode('coop')">🤝 {{ t('scan.modeCoop') }}</button>
+            <button v-if="scanCoop.type==='transfer_out'" class="btn btn-sm btn-outline" @click="setScanMode('self')">📷 {{ t('scan.modeSelf') }}</button>
+            <button v-if="yzScanReady && scanCoop.type!=='transfer_out'" class="btn btn-sm btn-outline" @click="yzScan('epc')">📷 {{ t('tr.scanAdd') }}</button>
+          </div>
+          <div class="coop-panel" v-if="transferMode && scanCoop.type==='transfer_out'">
+            <div class="coop-head">
+              <span class="coop-pulse"></span>
+              <span class="coop-waiting">{{ t('scan.waiting') }}</span>
+              <span v-if="scanCoop.taskNo" class="mono coop-taskno">{{ scanCoop.taskNo }}</span>
+              <button type="button" class="btn-small btn-danger coop-exit" @click="exitCoopScan()">✕ {{ t('scan.coopExit') }}</button>
+            </div>
+            <div class="coop-count">{{ t('scan.receivedCount') }}：<b>{{ scanCoop.count }}</b></div>
+            <div class="coop-recent" v-if="scanCoop.recent.length">
+              <div class="coop-recent-title">{{ t('scan.recentEpc') }}</div>
+              <div class="coop-epc mono" v-for="(r,i) in scanCoop.recent.slice(0,8)" :key="i">{{ r.epc }}<span v-if="r.device" class="coop-dev">{{ r.device }}</span></div>
+            </div>
+          </div>
           <div class="cat-chips">
             <div class="cat-chip" :class="{active:!prodCat}" @click="prodCat=''">{{ t('cat.all') }}</div>
             <div class="cat-chip" v-for="o in typeList" :key="o.code" :class="{active:prodCat===o.code}" @click="prodCat=o.code">{{ catNameOf(o) }}</div>
@@ -176,7 +224,10 @@
           <div class="table-wrap table-wide" v-if="isPc">
             <table class="data-table table-products">
               <thead><tr>
-                <th class="th-check" :title="t('act.printSel')"><input type="checkbox" :checked="printAllChecked" @change="togglePrintAll"></th>
+                <th class="th-check" :title="transferMode ? t('tr.pick') : t('act.printSel')">
+                  <input v-if="!transferMode" type="checkbox" :checked="printAllChecked" @change="togglePrintAll">
+                  <span v-else>🚚</span>
+                </th>
                 <th class="th-img" title="🖼"></th>
                 <th class="th-code" :class="sortCls('products','code')" @click="sortTbl('products','code')">{{ t('lbl.huohao') }}</th>
                 <th class="th-name" :class="sortCls('products','name')" @click="sortTbl('products','name')">{{ t('lbl.name') }}</th>
@@ -193,10 +244,13 @@
               </tr></thead>
               <tbody>
                 <tr v-for="p in filteredProducts" :key="p.id">
-                  <td class="cell-check"><input type="checkbox" :checked="!!printSel[p.id]" @change="togglePrintSel(p.id)"></td>
+                  <td class="cell-check">
+                    <input v-if="!transferMode" type="checkbox" :checked="!!printSel[p.id]" @change="togglePrintSel(p.id)">
+                    <input v-else type="checkbox" :checked="!!transferSel[p.id]" :disabled="!canTransferPick(p)" :title="canTransferPick(p)?'':t('tr.onlyStock')" @change="toggleTransferPick(p)">
+                  </td>
                   <td class="cell-img"><img v-if="p.image_ts" :src="productImageUrl(p)" class="prod-thumb-img" alt=""><span v-else class="prod-thumb-ph">💎</span></td>
                   <td class="cell-code mono">{{ p.code }}</td>
-                  <td class="cell-name">{{ p.name }}</td>
+                  <td class="cell-name">{{ p.name }}<div class="cell-sub" v-if="p.location_name" :title="t('loc.where')">{{ p.location_name }}</div></td>
                   <td class="cell-type">{{ productTypeName(p) }}</td>
                   <td class="cell-mat mono" :title="p.material ? t('mat.cn.'+materialText(p.material)) : ''">{{ materialText(p.material) || '—' }}</td>
                   <td class="cell-num">{{ p.weight }}g</td>
@@ -217,12 +271,13 @@
           </div>
           <div class="card-list" v-else>
             <div class="card-item" v-for="p in filteredProducts" :key="p.id">
-              <div class="product-card" @click="editProduct(p)">
-                <input type="checkbox" class="card-print-check" :checked="!!printSel[p.id]" @click.stop @change="togglePrintSel(p.id)" :title="t('act.printSel')">
+              <div class="product-card" @click="transferMode ? toggleTransferPick(p) : editProduct(p)">
+                <input v-if="!transferMode" type="checkbox" class="card-print-check" :checked="!!printSel[p.id]" @click.stop @change="togglePrintSel(p.id)" :title="t('act.printSel')">
+                <input v-else type="checkbox" class="card-print-check" :checked="!!transferSel[p.id]" :disabled="!canTransferPick(p)" @click.stop @change="toggleTransferPick(p)" :title="canTransferPick(p)?'':t('tr.onlyStock')">
                 <div class="prod-thumb"><img v-if="p.image_ts" :src="productImageUrl(p)" class="prod-thumb-img" alt=""><template v-else>💎</template></div>
                 <div class="prod-info">
                   <div class="prod-name">{{ p.name }}<span class="tag tag-printed" v-if="p.label_print_count" :title="printedTip(p)">🖨{{ p.label_print_count }}</span><span class="tag tag-hv" v-if="p.high_value">⭐{{ t('lbl.highValue') }}</span><span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span></div>
-                  <div class="prod-meta">{{ t('lbl.huohao') }}：{{ p.code }} · {{ productTypeName(p) }} · {{ materialText(p.material) || '—' }} · {{ p.weight }}g</div>
+                  <div class="prod-meta">{{ t('lbl.huohao') }}：{{ p.code }} · {{ productTypeName(p) }} · {{ materialText(p.material) || '—' }} · {{ p.weight }}g<span v-if="p.location_name"> · {{ p.location_name }}</span></div>
                 </div>
                 <div class="prod-price2"><div class="pp">￥{{ fmt(p.price) }}</div></div>
               </div>
@@ -232,6 +287,49 @@
               </div>
             </div>
             <div class="empty" v-if="!filteredProducts.length"><div class="empty-icon">💎</div>{{ t('empty.prod') }}</div>
+          </div>
+          <div class="transfer-bar" v-if="transferMode">
+            <div class="transfer-bar-info">
+              <b>🚚 {{ t('tr.picked') }} {{ transferSelCount() }} {{ t('tr.itemsUnit') }}</b>
+              <span v-if="transferSelStore" class="dim">· {{ storeNameOf(transferSelStore) }}</span>
+            </div>
+            <div class="transfer-bar-ops">
+              <button class="btn btn-sm btn-outline" @click="clearTransferSel">{{ t('tr.clear') }}</button>
+              <button class="btn btn-sm btn-primary" :disabled="!transferSelCount()" @click="openTransferSend">📤 {{ t('tr.send') }} ({{ transferSelCount() }})</button>
+              <button class="btn btn-sm btn-outline" @click="toggleTransferMode">{{ t('tr.exit') }}</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- transfers 门店调拨 -->
+        <section v-if="tab==='transfers'">
+          <div class="page-head">
+            <details class="biz-guide">
+              <summary>📖 {{ t('biz.title') }}</summary>
+              <div class="biz-body">{{ t('biz.transfers') }}</div>
+            </details>
+            <div class="biz-actions">
+              <button class="btn btn-primary btn-sm" @click="go('products'); toggleTransferMode()">+ {{ t('tr.newTransfer') }}</button>
+            </div>
+          </div>
+          <div class="inv-tabs">
+            <button class="inv-tab" :class="{active:transferTab==='out'}" @click="transferTab='out'">📤 {{ t('tr.tabOut') }}</button>
+            <button class="inv-tab" :class="{active:transferTab==='in'}" @click="transferTab='in'">📥 {{ t('tr.tabIn') }}</button>
+          </div>
+          <div class="card-list">
+            <div class="card-item transfer-card" v-for="x in transferList()" :key="x.id" @click="openTransfer(x)">
+              <div class="tr-head">
+                <span class="tr-no mono">{{ x.transfer_no }}</span>
+                <span class="tag" :class="statusClass(x.status)">{{ statusText(x.status) }}</span>
+              </div>
+              <div class="tr-route">🏬 {{ x.from_store_name }} → {{ x.to_store_name }}</div>
+              <div class="tr-meta dim">
+                <span>{{ t('tr.total') }} {{ x.total_count }}</span>
+                <span v-if="x.status!=='在途'"> · {{ t('tr.matched') }} {{ x.matched_count }}<span v-if="x.diff_count"> · <b class="tr-diff">{{ t('tr.diff') }} {{ x.diff_count }}</b></span></span>
+                <span> · {{ transferTab==='out' ? x.sent_at : (x.received_at || x.sent_at) }}</span>
+              </div>
+            </div>
+            <div class="empty" v-if="!transferList().length"><div class="empty-icon">🚚</div>{{ t('tr.empty') }}</div>
           </div>
         </section>
 
@@ -244,14 +342,14 @@
             </details>
             <div class="biz-actions">
               <button class="btn btn-sm btn-outline" @click="openRfid">RFID {{ t('inv.scan') }}</button>
-              <button class="btn btn-primary btn-sm" :disabled="frozen" @click="openInbound">+ {{ t('inv.in') }}</button>
           </div>
           </div>
-          <div class="stats-grid" v-if="invSum">
+          <div class="stats-grid inv-stats-grid" v-if="invSum">
             <div class="stat-card"><div class="stat-label">{{ t('inv.stock') }}</div><div class="stat-value">{{ invSum.inStock.count }}</div><div class="stat-sub">￥{{ fmt(invSum.inStock.cost) }}</div></div>
             <div class="stat-card gold"><div class="stat-label">{{ t('inv.reservedLocked') }}</div><div class="stat-value">{{ invSum.reserved.count }}</div></div>
             <div class="stat-card blue"><div class="stat-label">{{ t('inv.loaned') }}</div><div class="stat-value">{{ invSum.loaned.count }}</div></div>
             <div class="stat-card orange"><div class="stat-label">{{ t('inv.sold') }}</div><div class="stat-value">{{ invSum.sold.count }}</div></div>
+            <div class="stat-card purple"><div class="stat-label">🚚 {{ t('inv.inTransit') }}</div><div class="stat-value">{{ invSum.inTransit.count }}</div></div>
           </div>
 
           <!-- 子页签：在库商品 / 库存盘点 -->
@@ -264,9 +362,11 @@
           <div v-if="coTask && invSub==='stock'" class="freeze-tip" @click="invSub='count'">{{ t('inv.freezeTip') }}</div>
 
           <div v-if="invSub==='count'">
-          <!-- RFID / 多终端协同盘点任务（全店唯一盘点入口与二维码） -->
+          <!-- 统一工作任务（盘点）：发起/撤销/终止 + 扫描设备接入二维码 -->
           <div class="section rfid-box">
-            <div class="section-title"><span class="dot"></span>{{ t('co.taskTitle') }}</div>
+            <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
+              <span><span class="dot"></span>{{ t('co.taskTitle') }}</span>
+            </div>
             <p class="prod-meta">{{ t('co.desc') }}</p>
 
             <!-- 无任务：开启 -->
@@ -275,48 +375,50 @@
               <button class="btn btn-gold btn-sm" :disabled="coBusy" @click="startCoTask">{{ t('co.start') }}</button>
             </div>
 
-            <!-- 进行中/待核对 -->
+            <!-- 进行中 -->
             <div v-else class="rfid-flow">
               <div class="rfid-left">
                 <div class="url-line" style="margin-bottom:6px">
                   <b>{{ t('co.task') }} {{ coTask.task_no }}</b>
-                  <span :class="coTask.status==='进行中' ? 'stock-ok' : 'stock-surplus'">【{{ coStatusText(coTask.status) }}】</span>
+                  <span class="stock-ok">【{{ coStatusText(coTask.status) }}】</span>
                   <button class="btn btn-sm btn-outline" @click="loadCoTask">{{ t('common.refresh') }}</button>
                 </div>
                 <label>{{ t('co.joinUrl') }}</label>
                 <div class="url-line"><code>{{ coTask.co_url }}</code><button class="btn btn-sm btn-outline" @click="copyCoUrl">{{ t('common.copy') }}</button></div>
+                <label style="margin-top:6px">{{ t('co.h5Url') }}</label>
+                <div class="url-line"><code>{{ coTask.h5_url }}</code><button class="btn btn-sm btn-outline" @click="copyH5Url">{{ t('common.copy') }}</button></div>
+
+                <div v-if="coTask.stats" class="task-stat-row">
+                  <span class="task-stat">{{ t('dev.sInStore') }} <b class="stock-ok">{{ coTask.stats.in_store }}</b></span>
+                  <span class="task-stat">{{ t('dev.sOther') }} <b class="stock-abnormal">{{ coTask.stats.other_store }}</b></span>
+                  <span class="task-stat">{{ t('dev.sUnknown') }} <b class="stock-surplus">{{ coTask.stats.unknown }}</b></span>
+                  <span class="task-stat">{{ t('co.totalScanned') }} <b>{{ coTask.stats.total }}</b></span>
+                </div>
 
                 <table class="data-table" style="margin-top:10px">
-                  <thead><tr><th>{{ t('th.device') }}</th><th>{{ t('th.devName') }}</th><th>{{ t('th.lastSeen') }}</th><th>{{ t('lbl.status') }}</th></tr></thead>
+                  <thead><tr><th>{{ t('th.device') }}</th><th>{{ t('th.devName') }}</th><th>{{ t('dev.source') }}</th><th>{{ t('th.lastSeen') }}</th><th>{{ t('lbl.status') }}</th></tr></thead>
                   <tbody>
                     <tr v-for="d in coTask.devices" :key="d.device_no">
-                      <td class="stock-ok">{{ d.device_no }}{{ t('co.deviceNo') }}</td><td>{{ d.name }}</td>
-                      <td class="small">{{ d.last_seen }}</td>
-                      <td :class="d.finished ? 'stock-ok' : 'stock-surplus'">{{ d.finished ? t('co.submitted') : t('co.scanning') }}</td>
+                      <td class="stock-ok">{{ d.device_no }}{{ t('co.deviceNo') }}</td>
+                      <td>{{ d.name }}</td>
+                      <td class="small">{{ d.source === 'h5' ? t('dev.srcH5') : t('dev.srcApp') }}</td>
+                      <td class="small"><span class="dot-live" :class="{off:!d.online}"></span>{{ d.last_seen }}</td>
+                      <td :class="d.submitted ? 'stock-ok' : 'stock-surplus'">{{ d.submitted ? t('co.submitted') : t('co.scanning') }}</td>
                     </tr>
-                    <tr v-if="!coTask.devices || !coTask.devices.length"><td colspan="4" class="small">{{ t('co.noDevice') }}</td></tr>
+                    <tr v-if="!coTask.devices || !coTask.devices.length"><td colspan="5" class="small">{{ t('co.noDevice') }}</td></tr>
                   </tbody>
                 </table>
 
-                <div v-if="coTask.result" class="stock-batches" style="margin-top:10px">
-                  {{ t('co.scanned') }} <b>{{ coTask.result.scannedCount }}</b> / {{ t('co.book') }} <b>{{ coTask.result.bookCount }}</b> ·
-                  {{ t('th.matched') }} <b class="stock-ok">{{ coTask.result.matchedCount }}</b> ·
-                  {{ t('th.shortage') }} <b class="stock-shortage">{{ coTask.result.shortageCount }}</b> ·
-                  {{ t('th.abnormal') }} <b class="stock-abnormal">{{ coTask.result.abnormalCount }}</b>
-                </div>
-
                 <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-                  <button v-if="coTask.status==='进行中'" class="btn btn-sm" style="background:#c0392b;color:#fff" :disabled="coBusy" @click="endCoTask">{{ t('co.endScan') }}</button>
-                  <button v-if="coTask.status==='待核对'" class="btn btn-gold btn-sm" :disabled="coBusy" @click="confirmCoTask">{{ t('co.confirm') }}</button>
-                  <button class="btn btn-sm btn-outline" style="color:#c0392b;border-color:#c0392b" :disabled="coBusy" @click="abortCoTask">{{ t('co.abort') }}</button>
-                  <span class="small" style="color:#8B7A6B">{{ t('co.abortHint') }}</span>
+                  <button class="btn btn-sm" style="background:#c0392b;color:#fff" :disabled="coBusy" @click="cancelCoTask">{{ t('co.cancel') }}</button>
+                  <button class="btn btn-sm" style="background:#e67e22;color:#fff" :disabled="coBusy" @click="terminateCoTask">{{ t('co.terminate') }}</button>
+                  <span class="small" style="color:#8B7A6B">{{ t('co.endHint') }}</span>
                 </div>
               </div>
               <div class="rfid-right">
                 <img v-if="coQrUrl" class="qr-img" :src="coQrUrl" :alt="t('co.qrAlt')">
                 <div v-else class="qr-img" style="display:flex;align-items:center;justify-content:center;color:#B0A08C;font-size:14px">{{ t('co.qrLoading') }}</div>
                 <div class="qr-cap">{{ t('co.qrCap') }}<br><span style="font-size:14px;color:#8B7A6B">{{ t('co.qrCap2') }}</span></div>
-                <div class="small" style="text-align:center;margin-top:4px">{{ t('co.totalScanned') }} {{ coTask.scanned_count }}</div>
               </div>
             </div>
 
@@ -463,15 +565,23 @@
               <summary>📖 {{ t('biz.title') }}</summary>
               <div class="biz-body">{{ t('biz.sales') }}</div>
             </details>
-            <div class="biz-actions"><button class="btn btn-primary btn-sm" :disabled="frozen" @click="quickSale">+ {{ t('nav.sale') }}</button></div>
+            <div class="biz-actions">
+              <select v-model="saleClerkType" @change="loadSales" class="sale-clerk-filter" :title="t('sale.clerkFilter')">
+                <option value="">{{ t('sale.clerkAll') }}</option>
+                <option v-for="o in clerkTypes" :key="o.id" :value="o.name">{{ o.name }}</option>
+              </select>
+              <button class="btn btn-primary btn-sm" :disabled="frozen" @click="quickSale">+ {{ t('nav.sale') }}</button>
+            </div>
           </div>
           <div class="card-list">
             <div class="card-item sale-card" v-for="s in sales" :key="s.id">
               <div class="sale-line">
                 <span class="sale-no">{{ s.bill_no }}</span>
                 <span class="tag" :class="s.status==='已冲红'?'tag-sold':'tag-stock'">{{ statusText(s.status) }}</span>
-                <span class="sale-info">{{ s.customer }} · {{ s.product }} · {{ methodText(s.method) }} · {{ s.biz_date }}</span>
+                <span class="sale-info">{{ s.customer }} · {{ s.product }}<b v-if="s.item_count>1">（{{ s.item_count }}{{ t('sale.itemsUnit') }}）</b> · {{ methodText(s.method) }} · {{ s.biz_date }}</span>
+                <span class="tag tag-gold sale-clerk-tag">{{ clerkText(s) }}</span>
                 <span class="sale-amount">￥{{ fmt(s.amount) }}</span>
+                <button class="btn btn-sm btn-outline" @click="printReceipt(s)">{{ t('sale.receiptBtn') }}</button>
                 <button v-if="s.status!=='已冲红'" class="btn btn-sm btn-outline" :disabled="frozen" @click="voidSale(s)">{{ t('act.void') }}</button>
               </div>
             </div>
@@ -757,8 +867,300 @@
             </div>
           </div>
         </section>
-        <!-- ================= 安防中心 ================= -->
-        <section v-if="tab==='security'">
+
+        <!-- ================= 店铺管理（上层组织） ================= -->
+        <section v-if="tab==='shops'">
+          <details class="biz-guide"><summary>📖 {{ t('biz.title') }}</summary><div class="biz-body">{{ t('shop.guide') }}</div></details>
+          <div class="card-item">
+            <div class="card-title">{{ t('shop.title') }}</div>
+            <div class="hint" style="margin-bottom:10px">{{ t('shop.hint') }}</div>
+            <table class="data-table">
+              <thead><tr><th>{{ t('shop.name') }}</th><th>{{ t('shop.code') }}</th><th>{{ t('shop.itemLimit') }}</th><th>{{ t('shop.storeCount') }}</th><th>{{ t('common.op') }}</th></tr></thead>
+              <tbody>
+                <tr v-for="p in shops" :key="p.id">
+                  <td><b>{{ p.name }}</b></td>
+                  <td class="mono">{{ p.code }}</td>
+                  <td>
+                    <span v-if="shopEditMode==='edit' && shopEdit.id===p.id">
+                      <input v-model.number="shopEdit.sale_item_limit" type="number" min="1" max="500" style="width:80px">
+                    </span>
+                    <span v-else>{{ p.sale_item_limit }}</span>
+                  </td>
+                  <td>{{ p.store_count }}</td>
+                  <td>
+                    <button class="btn-small" :class="{'btn-gold': shopEditMode==='edit' && shopEdit.id===p.id}" @click="(shopEditMode==='edit' && shopEdit.id===p.id) ? resetShopEdit() : editShop(p)">{{ (shopEditMode==='edit' && shopEdit.id===p.id) ? t('act.cancel') : t('act.edit') }}</button>
+                    <button class="btn-small btn-gold" v-if="shopEditMode==='edit' && shopEdit.id===p.id" @click="saveShop">{{ t('act.save') }}</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- 总部下开分店：新增门店表单 -->
+            <div class="flex-between" style="margin-top:12px">
+              <div class="prod-meta">{{ t('shop.subtitle') }}</div>
+              <button class="btn btn-gold btn-sm" @click="createStore">＋ {{ t('store.add') }}</button>
+            </div>
+            <div v-if="storeEditMode==='new' || storeEdit.id" style="padding:10px;border:1px solid #eee;border-radius:6px;margin-top:10px">
+              <div class="form-row">
+                <div class="form-group"><label>{{ t('store.name') }}</label><input v-model="storeEdit.name" :placeholder="t('store.namePh')"></div>
+                <div class="form-group"><label>{{ t('store.code') }}</label><input v-model="storeEdit.code" maxlength="2" :disabled="storeEditMode==='edit'" :placeholder="t('store.codePh')"></div>
+                <div class="form-group"><label>{{ t('store.owner') }}</label><input v-model="storeEdit.owner"></div>
+                <div class="form-group"><label>{{ t('store.belongShop') }}</label>
+                  <input :value="(shops[0] && shops[0].name) || ''" readonly>
+                </div>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-gold" @click="saveStore">{{ storeEditMode==='edit' ? t('cat.saveEdit') : t('act.confirm') }}</button>
+                <button class="btn btn-outline" @click="resetStoreEdit">{{ t('act.cancel') }}</button>
+              </div>
+            </div>
+
+            <!-- 企业资料（从系统管理搬入总部管理） -->
+            <div class="card-item" v-if="profile">
+              <div class="card-title">{{ t('pf.title') }}</div>
+              <div class="form-group"><label>{{ t('pf.name') }}</label><input v-model="profile.name"></div>
+              <div class="form-group"><label>{{ t('pf.slogan') }}</label><input v-model="profile.slogan"></div>
+              <div class="form-group"><label>{{ t('pf.intro') }}</label><textarea v-model="profile.intro"></textarea></div>
+              <div class="form-row"><div class="form-group"><label>{{ t('pf.phone') }}</label><input v-model="profile.phone"></div><div class="form-group"><label>{{ t('pf.hours') }}</label><input v-model="profile.hours"></div></div>
+              <div class="form-group"><label>{{ t('pf.address') }}</label><input v-model="profile.address"></div>
+              <button class="btn btn-gold" @click="saveProfile">{{ t('act.save') }}</button>
+              <a class="btn btn-outline" href="/site" target="_blank" style="margin-left:12px">{{ t('pf.previewSite') }}</a>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= 门店管理（店铺下门店：入库/扫描设备/库位/打印代理） ================= -->
+        <section v-if="tab==='stores'">
+          <div class="card-item">
+            <div class="flex-between" style="margin-bottom:8px">
+              <div class="card-title" style="margin:0">{{ t('store.title') }}</div>
+              <button class="btn btn-gold" @click="createStore">＋ {{ t('store.add') }}</button>
+            </div>
+
+            <!-- 门店新增/编辑表单 -->
+            <div v-if="storeEditMode==='new' || storeEdit.id" style="padding:10px;border:1px solid #eee;border-radius:6px;margin-bottom:12px">
+              <div class="form-row">
+                <div class="form-group"><label>{{ t('store.name') }}</label><input v-model="storeEdit.name" :placeholder="t('store.namePh')"></div>
+                <div class="form-group"><label>{{ t('store.code') }}</label><input v-model="storeEdit.code" maxlength="2" :disabled="storeEditMode==='edit'" :placeholder="t('store.codePh')"></div>
+                <div class="form-group"><label>{{ t('store.owner') }}</label><input v-model="storeEdit.owner"></div>
+                <div class="form-group"><label>{{ t('store.belongShop') }}</label>
+                  <select v-model.number="storeEdit.shop_id">
+                    <option v-for="p in shops" :key="p.id" :value="p.id">{{ p.name }}</option>
+                  </select>
+                </div>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-gold" @click="saveStore">{{ storeEditMode==='edit' ? t('cat.saveEdit') : t('act.confirm') }}</button>
+                <button class="btn btn-outline" @click="resetStoreEdit">{{ t('act.cancel') }}</button>
+              </div>
+            </div>
+
+            <!-- 按店铺分组的门店列表 -->
+            <div v-for="p in shops" :key="'grp-'+p.id" style="margin-bottom:14px">
+              <div class="biz-grp-title">🏬 {{ p.name }} <span style="color:#999;font-weight:400">#{{ p.code }} · {{ t('shop.itemLimit') }} {{ p.sale_item_limit }}</span></div>
+              <div v-for="s in storesByShop(p.id)" :key="s.id" class="bridge-store" :class="{'store-sel': locStore===s.id}">
+                <div class="flex-between">
+                  <b style="cursor:pointer" @click="selectStore(s.id)">🏪 {{ s.name }} <span class="mono" style="font-size:14px;color:#999">#{{ s.code }}</span></b>
+                  <span>
+                    <button class="btn-small" @click="selectStore(s.id)">{{ t('store.manage') }}</button>
+                    <button class="btn-small" :disabled="frozen" @click="inboundForStore(s)">📥 {{ t('store.inbound') }}</button>
+                    <button class="btn-small" @click="openDevices(s.id)">📷 {{ t('store.devices') }}</button>
+                  </span>
+                </div>
+                <div class="prod-meta" v-if="s.owner">{{ t('store.owner') }}：{{ s.owner }}</div>
+              </div>
+              <div v-if="!storesByShop(p.id).length" class="prod-meta" style="padding:4px 0">{{ t('store.emptyInShop') }}</div>
+            </div>
+          </div>
+
+          <!-- 选中门店的详情：基本信息/打印代理/库位 -->
+          <template v-if="curStore">
+            <!-- 基本信息 -->
+            <div class="card-item">
+              <div class="card-title">{{ curStore.name }} · {{ t('store.baseInfo') }}</div>
+              <div class="form-row">
+                <div class="form-group"><label>{{ t('store.name') }}</label><input :value="curStore.name" disabled></div>
+                <div class="form-group"><label>{{ t('store.code') }}</label><input :value="curStore.code||''" disabled></div>
+                <div class="form-group"><label>{{ t('store.owner') }}</label><input :value="curStore.owner||''" disabled></div>
+                <div class="form-group"><label>{{ t('store.belongShop') }}</label><input :value="curShop ? curShop.name : ''" disabled></div>
+              </div>
+              <button class="btn btn-outline" @click="editStore(curStore)">{{ t('store.editInfo') }}</button>
+            </div>
+
+            <!-- 打印代理 -->
+            <div class="card-item" v-if="curBridge">
+              <div class="card-title">{{ t('sb.title') }}</div>
+              <div v-if="!curBridge.online" class="agent-warn">⚠ {{ t('sb.agentDownMobile') }}</div>
+              <div class="bridge-store">
+                <div class="flex-between">
+                  <b>{{ curBridge.store_name }} <span class="mono" style="font-size:14px;color:#999">#{{ curBridge.code }}</span></b>
+                  <span class="bridge-state" :class="curBridge.online ? 'st-on' : 'st-off'">● {{ curBridge.online ? t('sb.online') : t('sb.offline') }}</span>
+                </div>
+                <div class="prod-meta" v-if="curBridge.online">🖥 {{ curBridge.agent_name }}</div>
+                <div class="bridge-row">
+                  <label>{{ t('pa.key') }}</label>
+                  <span class="prod-meta">{{ curBridge.has_key ? t('sb.keySet') : t('sb.keyNone') }}</span>
+                  <button class="btn-small" @click="rotateStoreKey(curBridge.store_id)">{{ t('sb.genKey') }}</button>
+                </div>
+                <div class="bridge-keybox" v-if="curBridge.newKey">
+                  <code class="mono" style="flex:1;min-width:0;word-break:break-all">{{ curBridge.newKey }}</code>
+                  <button class="btn-small" @click="copyStoreKey(curBridge.store_id)">{{ t('common.copy') }}</button>
+                </div>
+                <details class="bridge-biz">
+                  <summary>{{ t('sb.assignTitle') }}</summary>
+                  <div v-for="g in bizGroups" :key="g.group" class="biz-grp">
+                    <div class="biz-grp-title">{{ t('pbizg.' + g.group) }}</div>
+                    <div class="biz-line" v-for="code in g.items" :key="code">
+                      <span class="biz-line-name">{{ t('pbiz.' + code) }}</span>
+                      <select class="biz-line-sel" :value="bizPrinterOf(curBridge, code)"
+                              @change="bindBizPrinter(curBridge.store_id, code, $event.target.value)">
+                        <option value="">{{ curBridge.online ? t('sb.notAssigned') : t('sb.waitOnline') }}</option>
+                        <option v-if="bizPrinterOf(curBridge,code) && curBridge.printers.indexOf(bizPrinterOf(curBridge,code)) < 0"
+                                disabled :value="bizPrinterOf(curBridge,code)">{{ bizPrinterOf(curBridge,code) }}</option>
+                        <option v-for="n in curBridge.printers" :key="n" :value="n">{{ n }}</option>
+                      </select>
+                      <button class="btn-small biz-test" :disabled="!curBridge.online || !bizPrinterOf(curBridge,code)"
+                              @click="storeControl(curBridge.store_id,'test',code)" :title="t('sb.test')">T</button>
+                    </div>
+                  </div>
+                </details>
+                <div class="bridge-actions">
+                  <button class="btn-small" :disabled="!curBridge.online" @click="storeControl(curBridge.store_id,'test')">{{ t('sb.test') }}</button>
+                  <button class="btn-small" :disabled="!curBridge.online" @click="storeControl(curBridge.store_id,'feed')">{{ t('sb.feed') }}</button>
+                  <button class="btn-small" :disabled="!curBridge.online" @click="storeControl(curBridge.store_id,'backfeed')">{{ t('sb.backfeed') }}</button>
+                  <button class="btn-small" :disabled="!curBridge.online" @click="storeControl(curBridge.store_id,'refresh')">⟳ {{ t('sb.refresh') }}</button>
+                </div>
+                <div class="prod-meta" v-if="curBridge.last_job" style="margin-top:4px">
+                  {{ curBridge.last_job.ok ? '✔' : '✘' }} {{ curBridge.last_job.ts }} · {{ curBridge.last_job.ok ? t('sb.jobQueued') : curBridge.last_job.message }}
+                </div>
+              </div>
+            </div>
+
+            <!-- 库位主数据 -->
+            <div class="card-item">
+              <div class="card-title">{{ t('loc.title') }} · {{ curStore.name }}</div>
+              <div class="hint" style="margin-bottom:10px">{{ t('loc.hint') }}</div>
+              <table class="data-table" style="margin-bottom:12px">
+                <thead><tr><th>{{ t('lbl.code') }}</th><th>{{ t('loc.name') }}</th><th>{{ t('cat.sort') }}</th><th>{{ t('loc.state') }}</th><th>{{ t('common.op') }}</th></tr></thead>
+                <tbody>
+                  <tr v-for="o in curLocations" :key="o.id" :class="{'row-off': !o.active}">
+                    <td class="mono">{{ o.code }}</td>
+                    <td>{{ o.name }}</td>
+                    <td>{{ o.sort_order }}</td>
+                    <td>{{ o.active ? t('loc.active') : t('loc.inactive') }}</td>
+                    <td>
+                      <button class="btn-small" :class="{'btn-gold': locEditMode==='edit' && locEdit.id===o.id}" @click="(locEditMode==='edit' && locEdit.id===o.id) ? resetLocEdit() : editLoc(o)">{{ (locEditMode==='edit' && locEdit.id===o.id) ? t('act.cancel') : t('act.edit') }}</button>
+                      <button class="btn-small" @click="toggleLoc(o)">{{ o.active ? t('loc.disable') : t('loc.enable') }}</button>
+                      <button class="btn-small btn-danger" @click="delLoc(o)">{{ t('act.del') }}</button>
+                    </td>
+                  </tr>
+                  <tr v-if="!curLocations.length"><td colspan="5" class="prod-meta">{{ t('loc.empty') }}</td></tr>
+                </tbody>
+              </table>
+              <div id="loc-edit-form" style="padding:10px;border:1px solid #eee;border-radius:6px">
+                <div class="form-row">
+                  <div class="form-group"><label>{{ t('lbl.code') }}</label><input v-model="locEdit.code" :placeholder="t('loc.codePh')"></div>
+                  <div class="form-group"><label>{{ t('loc.name') }}</label><input v-model="locEdit.name" :placeholder="t('loc.namePh')"></div>
+                  <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="locEdit.sort_order" type="number"></div>
+                </div>
+                <div style="display:flex;gap:8px">
+                  <button class="btn btn-gold" @click="saveLocForCur">{{ (locEditMode==='edit' && locEdit.store_id===curStore.id) ? t('cat.saveEdit') : t('loc.addNew') }}</button>
+                  <button class="btn btn-outline" v-if="locEditMode==='new'" @click="addLocForCur">{{ t('act.reset') }}</button>
+                  <button class="btn btn-outline" v-if="locEditMode==='edit'" @click="resetLocEdit">{{ t('act.cancel') }}</button>
+                </div>
+              </div>
+            </div>
+          </template>
+        </section>
+
+        <!-- ================= 系统管理子导航（始终置顶，先于各子视图内容渲染） ================= -->
+        <section v-if="tab==='system'">
+          <div class="admin-subnav" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+            <button v-for="s in adminSubs" :key="s.key" class="btn btn-sm"
+                    :class="adminSub===s.key ? 'btn-gold' : 'btn-outline'"
+                    @click="switchAdminSub(s.key)">{{ s.icon }} {{ s.label }}</button>
+          </div>
+        </section>
+
+        <!-- ================= 用户与门店权限（系统管理子视图，仅店长） ================= -->
+        <section v-if="tab==='system' && adminSub==='users' && isAdminRole()">
+          <details class="biz-guide"><summary>📖 {{ t('biz.title') }}</summary><div class="biz-body">{{ t('adminUser.guide') }}</div></details>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0 12px">
+            <div style="font-size:14px;color:var(--text-2)">{{ t('adminUser.tip') }}</div>
+            <button class="btn btn-sm btn-gold" @click="openUserCreate">＋ {{ t('adminUser.create') }}</button>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr>
+                <th>{{ t('adminUser.name') }}</th>
+                <th>{{ t('adminUser.login') }}</th>
+                <th>{{ t('adminUser.role') }}</th>
+                <th style="min-width:260px">{{ t('adminUser.stores') }}</th>
+                <th style="width:130px"></th>
+              </tr></thead>
+              <tbody>
+                <tr v-for="u in adminUsers" :key="u.id">
+                  <td><b>{{ u.display_name }}</b></td>
+                  <td class="mono">{{ u.username }}</td>
+                  <td>
+                    <span class="tag" :class="u.role==='TENANT_ADMIN' ? 'tag-gold' : 'tag-blue'">
+                      {{ u.role==='TENANT_ADMIN' ? t('adminUser.roleAdmin') : t('adminUser.roleStaff') }}
+                    </span>
+                  </td>
+                  <td>
+                    <template v-if="u.role==='TENANT_ADMIN'"><span class="tag tag-gold">{{ t('adminUser.allStores') }}</span></template>
+                    <template v-else>
+                      <label v-for="s in stores" :key="s.id" class="store-check">
+                        <input type="checkbox" :checked="u.store_ids.indexOf(s.id)>=0" @change="toggleUserStore(u,s.id)">
+                        <span>🏬 {{ s.name }}</span>
+                      </label>
+                      <span v-if="!u.store_ids.length" style="color:var(--danger);font-size:13px">{{ t('adminUser.none') }}</span>
+                    </template>
+                  </td>
+                  <td style="white-space:nowrap">
+                    <button class="btn btn-sm btn-outline" @click="openUserEdit(u)">{{ t('adminUser.edit') }}</button>
+                    <button class="btn btn-sm btn-outline" style="color:var(--danger);border-color:var(--danger)" @click="delAdminUser(u)">{{ t('adminUser.del') }}</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- 新增/编辑账号弹层 -->
+        <div v-if="adminUserOpen" class="sheet-mask show pc" @click.self="closeUserForm">
+          <div class="sheet" style="max-width:420px" @click.stop>
+            <div class="sheet-head">
+              <span class="sheet-title">{{ adminUserForm.id ? t('adminUser.editTitle') : t('adminUser.createTitle') }}</span>
+              <button class="sheet-close" @click="closeUserForm">×</button>
+            </div>
+            <div class="sheet-body">
+              <div class="form-group"><label>{{ t('adminUser.login') }}</label>
+                <input v-model="adminUserForm.username" :disabled="!!adminUserForm.id" autocomplete="off">
+              </div>
+              <div class="form-group"><label>{{ t('adminUser.name') }}</label>
+                <input v-model="adminUserForm.display_name" autocomplete="off">
+              </div>
+              <div class="form-group"><label>{{ t('adminUser.password') }}</label>
+                <input v-model="adminUserForm.password" type="text" autocomplete="new-password"
+                       :placeholder="adminUserForm.id ? t('adminUser.pwdKeep') : ''">
+              </div>
+              <div class="form-group"><label>{{ t('adminUser.role') }}</label>
+                <select v-model="adminUserForm.role">
+                  <option value="EMPLOYEE">{{ t('adminUser.roleStaff') }}</option>
+                  <option value="TENANT_ADMIN">{{ t('adminUser.roleAdmin') }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="sheet-foot" style="display:flex;gap:10px">
+              <button class="btn btn-outline" style="flex:1" @click="closeUserForm">{{ t('act.cancel') }}</button>
+              <button class="btn btn-gold" style="flex:1" @click="saveAdminUser">{{ t('act.confirm') }}</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ================= 安防中心（系统管理子视图） ================= -->
+        <section v-if="tab==='system' && adminSub==='security'">
           <details class="biz-guide"><summary>📖 {{ t('biz.title') }}</summary><div class="biz-body">{{ t('biz.security') }}</div></details>
 
           <!-- 状态条 -->
@@ -810,6 +1212,7 @@
                 <span class="bridge-state" :class="s.online ? 'st-on' : 'st-off'">● {{ s.online ? t('sb.online') : t('sb.offline') }}</span>
               </div>
               <div class="row-actions" style="margin-top:6px">
+                <button class="btn-small" @click="secEdit(s)">{{ t('act.edit') }}</button>
                 <button class="btn-small" @click="secRotateKey(s)">{{ t('sec.rotateKey') }}</button>
                 <button class="btn-small" v-if="s.driver_code==='simulator'" @click="secSimulate(s,'epc')">{{ t('sec.simEpc') }}</button>
                 <button class="btn-small" v-if="s.driver_code==='simulator'" @click="secSimulate(s,'alarm')">{{ t('sec.simAlarm') }}</button>
@@ -824,7 +1227,7 @@
               <div class="form-row">
                 <div class="form-group"><label>{{ t('sec.devName') }}</label><input v-model="secNew.name"></div>
                 <div class="form-group"><label>{{ t('sec.devType') }}</label>
-                  <select v-model="secNew.driver_code"><option v-for="d in secDrivers" :key="d.code" :value="d.code">{{ d.name }}</option></select>
+                  <select v-model="secNew.driver_code" :disabled="!!secNew.id"><option v-for="d in secDrivers" :key="d.code" :value="d.code">{{ d.name }}</option></select>
                 </div>
               </div>
               <div class="form-row">
@@ -832,6 +1235,10 @@
                   <select v-model.number="secNew.store_id"><option v-for="b in bridges" :key="b.store_id" :value="b.store_id">{{ b.store_name }}</option></select>
                 </div>
                 <div class="form-group"><label>{{ t('sec.devLoc') }}</label><input v-model="secNew.location" :placeholder="t('sec.devLocPh')"></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>{{ t('sec.devHbTimeout') }}</label><input v-model.number="secNew.heartbeat_timeout" type="number" min="5" max="300"></div>
+                <div class="form-group"><label>{{ t('sec.devFieldMap') }}</label><input v-model="secNew.field_map" placeholder='{"tags":"epcs"}' :title="t('sec.devFieldMapPh')"></div>
               </div>
               <button class="btn btn-gold btn-sm" @click="secCreate">{{ t('act.save') }}</button>
               <button class="btn btn-outline btn-sm" @click="secNew=null">{{ t('act.cancel') }}</button>
@@ -863,6 +1270,60 @@
             </div>
           </details>
 
+          <!-- 接入指南 -->
+          <details class="card-item sec-panel">
+            <summary class="card-title">{{ t('sec.guide') }}</summary>
+            <div class="hint">{{ t('sec.guideHint') }}</div>
+            <div v-for="d in secDrivers" :key="d.code" class="sec-guide">
+              <div class="sec-guide-title"><b>{{ d.name }}</b> <code class="mono">{{ d.code }}</code></div>
+              <div class="sec-guide-fields">
+                <div v-for="f in (d.fields||[])" :key="f.field" class="sec-guide-field">
+                  <code class="mono">{{ f.field }}</code>
+                  <span class="sec-guide-req" v-if="f.required">{{ t('sec.required') }}</span>
+                  <span class="sec-guide-desc">{{ f.desc }}</span>
+                </div>
+              </div>
+              <div class="sec-guide-example">
+                <div class="sec-guide-example-title">{{ t('sec.example') }} (HTTP)</div>
+                <pre class="mono">POST {{ guideHttpUrl(d.code) }}
+X-Sensor-Key: &lt;auth_key&gt;
+Content-Type: application/json
+
+{{ guideExample(d.code) }}</pre>
+              </div>
+            </div>
+            <div class="sec-guide-example">
+              <div class="sec-guide-example-title">{{ t('sec.example') }} (WebSocket)</div>
+              <pre class="mono">{{ guideWsUrl() }}
+// {{ t('sec.guideWsNote') }}</pre>
+            </div>
+            <div class="hint" style="margin-top:8px">{{ t('sec.guideFieldMapHint') }}</div>
+          </details>
+
+          <!-- 原始报文调试 -->
+          <details class="card-item sec-panel">
+            <summary class="card-title">{{ t('sec.rawLog') }}</summary>
+            <div class="hint">{{ t('sec.rawLogHint') }}</div>
+            <div class="sec-raw-filter">
+              <select v-model="secRawFilter">
+                <option value="">{{ t('sec.rawAll') }}</option>
+                <option value="alarm">{{ t('sec.evAlarm') }}</option>
+                <option value="pass">{{ t('sec.evPass') }}</option>
+                <option value="parse_error">{{ t('sec.rawParseErr') }}</option>
+              </select>
+              <button class="btn btn-outline btn-sm" @click="loadSecurity">{{ t('act.refresh') }}</button>
+            </div>
+            <div class="sec-raw" v-for="ev in secFilteredEvents" :key="ev.id">
+              <div class="sec-raw-head">
+                <span class="sec-raw-type" :class="'sec-raw-'+ev.event_type">{{ ev.event_type }}</span>
+                <span class="mono">{{ ev.sensor_name || ('#'+ev.sensor_id) }}</span>
+                <span class="sec-raw-time">{{ ev.event_ts }}</span>
+              </div>
+              <pre class="mono sec-raw-body">{{ JSON.stringify(ev.raw || {}, null, 1) }}</pre>
+            </div>
+            <div class="empty" v-if="!secFilteredEvents.length">{{ t('sec.noEvents') }}</div>
+          </details>
+
           <!-- 设置 -->
           <details class="card-item sec-panel" v-if="secSettings">
             <summary class="card-title">{{ t('sec.settings') }}</summary>
@@ -878,7 +1339,7 @@
           </details>
         </section>
 
-        <section v-if="isPc && tab==='logs'">
+        <section v-if="tab==='system' && adminSub==='logs'">
           <div class="page-head">
             <details class="biz-guide">
               <summary>📖 {{ t('biz.title') }}</summary>
@@ -914,87 +1375,57 @@
             <div class="empty" v-if="!appointments.length">{{ t('empty.appt') }}</div>
           </div>
         </section>
-        <section v-if="isPc && tab==='profile'">
-          <details class="biz-guide"><summary>📖 {{ t('biz.title') }}</summary><div class="biz-body">{{ t('biz.profile') }}</div></details>
-          <div class="card-item" v-if="profile">
-            <div class="form-group"><label>{{ t('pf.name') }}</label><input v-model="profile.name"></div>
-            <div class="form-group"><label>{{ t('pf.slogan') }}</label><input v-model="profile.slogan"></div>
-            <div class="form-group"><label>{{ t('pf.intro') }}</label><textarea v-model="profile.intro"></textarea></div>
-            <div class="form-row"><div class="form-group"><label>{{ t('pf.phone') }}</label><input v-model="profile.phone"></div><div class="form-group"><label>{{ t('pf.hours') }}</label><input v-model="profile.hours"></div></div>
-            <div class="form-group"><label>{{ t('pf.address') }}</label><input v-model="profile.address"></div>
-            <button class="btn btn-gold" @click="saveProfile">{{ t('act.save') }}</button>
-            <a class="btn btn-outline" href="/site" target="_blank" style="margin-left:12px">{{ t('pf.previewSite') }}</a>
-          </div>
-
+        <!-- ================= 系统管理（全局策略与底座配置） ================= -->
+        <section v-if="tab==='system'">
           <!-- EPC 编码规则 -->
+          <div v-if="adminSub==='epc'">
           <div class="card-item">
             <div class="card-title">{{ t('epc.title') }}</div>
-            <div class="form-row">
-              <div class="form-group"><label>{{ t('epc.prefix') }}</label><input v-model="bizConfig.epc_prefix" placeholder="YZZ"></div>
-              <div class="form-group"><label>{{ t('epc.seqBits') }}</label><input v-model.number="bizConfig.seq_bits" type="number" min="4" max="6"></div>
+            <div class="form-row epc-rule-fields">
+              <div class="form-group inline"><label>{{ t('epc.prefix') }}</label><input v-model="bizConfig.epc_prefix" placeholder="YZZ" maxlength="6" class="epc-in-prefix"></div>
+              <div class="form-group inline"><label>{{ t('epc.seqBits') }}</label><input v-model.number="bizConfig.seq_bits" type="number" min="4" max="6" class="epc-in-bits"></div>
+              <button class="btn btn-gold epc-save-btn" @click="saveBizConfig">{{ t('epc.save') }}</button>
             </div>
             <div class="hint">{{ t('epc.hint') }}</div>
-            <button class="btn btn-gold" @click="saveBizConfig">{{ t('epc.save') }}</button>
+          </div>
           </div>
 
-          <!-- 门店与打印代理（多门店：每店一把密钥、一条代理连接） -->
+          <!-- 经办人类别（销售开单必选，默认店员；单据保存名称快照） -->
+          <div v-if="adminSub==='clerk'">
           <div class="card-item">
-            <div class="card-title">{{ t('sb.title') }}</div>
-            <div class="hint">{{ t('sb.hint') }}</div>
-            <div v-if="!anyAgentOnline" class="agent-warn">⚠ {{ t('sb.agentDownMobile') }}</div>
-
-            <div class="bridge-store" v-for="b in bridges" :key="b.store_id">
-              <div class="flex-between">
-                <b>{{ b.store_name }} <span class="mono" style="font-size:14px;color:#999">#{{ b.code }}</span></b>
-                <span class="bridge-state" :class="b.online ? 'st-on' : 'st-off'">● {{ b.online ? t('sb.online') : t('sb.offline') }}</span>
+            <div class="card-title">{{ t('clerk.title') }}</div>
+            <div class="hint" style="margin-bottom:10px">{{ t('clerk.hint') }}</div>
+            <table class="data-table" style="margin-bottom:12px">
+              <thead><tr><th>{{ t('clerk.name') }}</th><th>{{ t('cat.sort') }}</th><th>{{ t('clerk.default') }}</th><th>{{ t('loc.state') }}</th><th>{{ t('common.op') }}</th></tr></thead>
+              <tbody>
+                <tr v-for="o in clerkTypes" :key="o.id" :class="{'row-off': !o.active}">
+                  <td>{{ o.name }}</td>
+                  <td>{{ o.sort_order }}</td>
+                  <td>{{ o.is_default ? t('common.yes') : '' }}</td>
+                  <td>{{ o.active ? t('loc.active') : t('loc.inactive') }}</td>
+                  <td>
+                    <button class="btn-small" :class="{'btn-gold': clerkEditMode==='edit' && clerkEdit.id===o.id}" @click="(clerkEditMode==='edit' && clerkEdit.id===o.id) ? resetClerkEdit() : editClerk(o)">{{ (clerkEditMode==='edit' && clerkEdit.id===o.id) ? t('act.cancel') : t('act.edit') }}</button>
+                    <button class="btn-small" v-if="!o.is_default" @click="toggleClerk(o)">{{ o.active ? t('loc.disable') : t('loc.enable') }}</button>
+                    <span class="prod-meta" v-else>{{ t('clerk.defaultLocked') }}</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div id="clerk-edit-form" style="padding:10px;border:1px solid #eee;border-radius:6px">
+              <div class="form-row">
+                <div class="form-group"><label>{{ t('clerk.name') }}</label><input v-model="clerkEdit.name" :placeholder="t('clerk.namePh')"></div>
+                <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="clerkEdit.sort_order" type="number"></div>
               </div>
-              <div class="prod-meta" v-if="b.online">🖥 {{ b.agent_name }}</div>
-
-              <div class="bridge-row">
-                <label>{{ t('pa.key') }}</label>
-                <span class="prod-meta">{{ b.has_key ? t('sb.keySet') : t('sb.keyNone') }}</span>
-                <button class="btn-small" @click="rotateStoreKey(b.store_id)">{{ t('sb.genKey') }}</button>
-              </div>
-              <div class="bridge-keybox" v-if="b.newKey">
-                <code class="mono" style="flex:1;min-width:0;word-break:break-all">{{ b.newKey }}</code>
-                <button class="btn-small" @click="copyStoreKey(b.store_id)">{{ t('common.copy') }}</button>
-              </div>
-
-              <!-- 按打印业务指派打印机（多个业务可指向同一台；离线也不丢，重连补推） -->
-              <details class="bridge-biz">
-                <summary>{{ t('sb.assignTitle') }}</summary>
-                <div v-for="g in bizGroups" :key="g.group" class="biz-grp">
-                  <div class="biz-grp-title">{{ t('pbizg.' + g.group) }}</div>
-                  <div class="biz-line" v-for="code in g.items" :key="code">
-                    <span class="biz-line-name">{{ t('pbiz.' + code) }}</span>
-                    <select class="biz-line-sel" :value="bizPrinterOf(b, code)"
-                            @change="bindBizPrinter(b.store_id, code, $event.target.value)">
-                      <option value="">{{ b.online ? t('sb.notAssigned') : t('sb.waitOnline') }}</option>
-                      <option v-if="bizPrinterOf(b,code) && b.printers.indexOf(bizPrinterOf(b,code)) < 0"
-                              disabled :value="bizPrinterOf(b,code)">{{ bizPrinterOf(b,code) }}</option>
-                      <option v-for="n in b.printers" :key="n" :value="n">{{ n }}</option>
-                    </select>
-                    <button class="btn-small biz-test" :disabled="!b.online || !bizPrinterOf(b,code)"
-                            @click="storeControl(b.store_id,'test',code)" :title="t('sb.test')">T</button>
-                  </div>
-                </div>
-              </details>
-
-              <div class="bridge-actions">
-                <button class="btn-small" :disabled="!b.online" @click="storeControl(b.store_id,'test')">{{ t('sb.test') }}</button>
-                <button class="btn-small" :disabled="!b.online" @click="storeControl(b.store_id,'feed')">{{ t('sb.feed') }}</button>
-                <button class="btn-small" :disabled="!b.online" @click="storeControl(b.store_id,'backfeed')">{{ t('sb.backfeed') }}</button>
-                <button class="btn-small" :disabled="!b.online" @click="storeControl(b.store_id,'refresh')">⟳ {{ t('sb.refresh') }}</button>
-              </div>
-              <div class="prod-meta" v-if="b.last_job" style="margin-top:4px">
-                {{ b.last_job.ok ? '✔' : '✘' }} {{ b.last_job.ts }} · {{ b.last_job.ok ? t('sb.jobQueued') : b.last_job.message }}
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-gold" @click="saveClerk">{{ clerkEditMode==='edit' ? t('cat.saveEdit') : t('clerk.addNew') }}</button>
+                <button class="btn btn-outline" v-if="clerkEditMode==='edit'" @click="resetClerkEdit">{{ t('act.cancel') }}</button>
               </div>
             </div>
-
-            <button class="btn btn-outline" style="margin-top:10px" @click="createStore">＋ {{ t('sb.addStore') }}</button>
+          </div>
           </div>
 
           <!-- 商品品类管理（戒指/项链…，标签模板按品类绑定） -->
+          <div v-if="adminSub==='categories'">
           <div class="card-item">
             <div class="card-title">{{ t('type.mgrTitle') }}</div>
             <table class="data-table" style="margin-bottom:12px">
@@ -1040,6 +1471,7 @@
             </table>
             <div v-else class="prod-meta" style="margin-bottom:12px">{{ t('tpl.empty') }}</div>
           </div>
+          </div>
         </section>
 
         <!-- more (mobile) -->
@@ -1058,6 +1490,7 @@
             <div class="menu-item" @click="openSubView('purchases')"><div class="menu-text">{{ t('nav.purchases') }}</div></div>
             <div class="menu-item" @click="openSubView('outsourcings')"><div class="menu-text">{{ t('nav.outsourcings') }}</div></div>
             <div class="menu-item" @click="openSubView('logs')"><div class="menu-text">{{ t('nav.logs') }}</div></div>
+            <div class="menu-item" @click="go('security')"><div class="menu-text">🛡️ {{ t('nav.security') }}</div></div>
             <div class="menu-item" @click="go('appointments');loadAppt()"><div class="menu-text">{{ t('nav.appointments') }}</div></div>
             <div class="menu-item" @click="go('profile');loadProfile()"><div class="menu-text">{{ t('nav.profile') }}</div></div>
             <div class="menu-item"><a href="/site" target="_blank" class="menu-text">{{ t('nav.site') }}</a></div>
@@ -1191,29 +1624,101 @@
       <div class="sheet-head"><span class="sheet-title">{{ sheetTitle }}</span><button class="sheet-close" @click="closeSheet">×</button></div>
       <div class="sheet-body">
         <template v-if="sheetMode==='sale'">
-          <div class="form-group"><label>{{ t('lbl.customer') }}</label><input v-model="sheetData.customer"></div>
-          <div class="form-group"><label>{{ t('lbl.mobile') }}</label><input v-model="sheetData.phone"></div>
-          <div class="form-group"><label>{{ t('sale.stockItem') }}</label>
-            <select v-model="sheetData.product_id" @change="onPickProduct">
-              <option :value="null">{{ t('sale.customName') }}</option>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.customer') }}</label><input v-model="sheetData.customer"></div>
+            <div class="form-group"><label>{{ t('lbl.mobile') }}</label><input v-model="sheetData.phone"></div></div>
+
+          <!-- 输入模式：协同（等待手持机批量上报）/ 自主（本机摄像头扫码） -->
+          <div class="scan-mode-row">
+            <label>{{ t('scan.mode') }}</label>
+            <div class="scan-mode-btns">
+              <button type="button" class="btn-small" :class="{active:scanCoop.type==='sale'}" @click="setScanMode('coop')">🤝 {{ t('scan.modeCoop') }}</button>
+              <button type="button" class="btn-small" :class="{active:scanCoop.type!=='sale'}" @click="setScanMode('self')">📷 {{ t('scan.modeSelf') }}</button>
+            </div>
+          </div>
+
+          <!-- 添加商品：手工下拉 / App 扫码 / 摄像头扫码 -->
+          <div class="form-group"><label>{{ t('sale.pickItem') }}</label>
+            <select v-model="sheetData._pickId" @change="onPickSaleProduct">
+              <option :value="null">{{ t('sale.pickPh') }}</option>
               <option v-for="p in stockOptions" :key="p.id" :value="p.id">{{ p.code }} {{ p.name }} ￥{{ p.price }}</option>
             </select>
           </div>
-          <div class="scan-row" v-if="yzScanReady">
+          <div class="scan-row" v-if="scanCoop.type!=='sale'">
             <label>{{ t('scan.label') }}</label>
             <div class="scan-btns">
-              <button type="button" class="btn-small" @click="yzScan('barcode')">{{ t('scan.barcode') }}</button>
-              <button type="button" class="btn-small" @click="yzScan('qrcode')">{{ t('scan.qrcode') }}</button>
-              <button type="button" class="btn-small" @click="yzScan('epc')">{{ t('scan.epc') }}</button>
+              <button type="button" class="btn-small" @click="openSaleCam">📷 {{ t('scan.camera') }}</button>
+              <template v-if="yzScanReady">
+                <button type="button" class="btn-small" @click="yzScan('barcode')">{{ t('scan.barcode') }}</button>
+                <button type="button" class="btn-small" @click="yzScan('qrcode')">{{ t('scan.qrcode') }}</button>
+                <button type="button" class="btn-small" @click="yzScan('epc')">{{ t('scan.epc') }}</button>
+              </template>
             </div>
             <div v-if="sheetData._scanning" class="scan-hint">{{ t('scan.epcBusy') }}</div>
           </div>
-          <div class="form-group"><label>{{ t('sale.productName') }}</label><input v-model="sheetData.product"></div>
-          <div class="form-row"><div class="form-group"><label>{{ t('lbl.amount') }}</label><input v-model.number="sheetData.amount" type="number"></div><div class="form-group"><label>{{ t('lbl.paid') }}</label><input v-model.number="sheetData.paid" type="number"></div></div>
-          <div class="form-row"><div class="form-group"><label>{{ t('sale.pay') }}</label><select v-model="sheetData.method"><option value="现金">{{ t('pay.cash') }}</option><option value="微信">{{ t('pay.wechat') }}</option><option value="刷卡">{{ t('pay.card') }}</option><option value="转账">{{ t('pay.transfer') }}</option></select></div>
-            <div class="form-group"><label>{{ t('lbl.date') }}</label><input v-model="sheetData.biz_date" type="date"></div></div>
+
+          <!-- 摄像头取景（自主模式） -->
+          <div v-if="camOpen && scanCoop.type!=='sale'" class="sale-cam">
+            <video id="saleCamVideo" playsinline muted autoplay></video>
+            <div class="prod-meta" v-if="camBusy">{{ t('scan.camStarting') }}</div>
+            <div class="scan-hint" v-if="camErr" style="color:#c0392b">{{ camErr }}</div>
+            <button type="button" class="btn-small btn-danger" @click="closeSaleCam">{{ t('scan.camStop') }}</button>
+          </div>
+
+          <!-- 协同模式：等待手持机推送（盲采，不展示库存清单） -->
+          <div v-if="scanCoop.type==='sale'" class="coop-panel">
+            <div class="coop-head">
+              <span class="coop-pulse"></span>
+              <span class="coop-waiting">{{ t('scan.waiting') }}</span>
+              <span v-if="scanCoop.taskNo" class="mono coop-taskno">{{ scanCoop.taskNo }}</span>
+              <button type="button" class="btn-small btn-danger coop-exit" @click="exitCoopScan()">✕ {{ t('scan.coopExit') }}</button>
+            </div>
+            <div v-if="scanCoop.offer" class="coop-offer">🔔 {{ t('scan.newTaskTip') }}</div>
+            <div class="coop-count">{{ t('scan.receivedCount') }}：<b>{{ scanCoop.count }}</b></div>
+            <div class="coop-recent" v-if="scanCoop.recent.length">
+              <div class="coop-recent-title">{{ t('scan.recentEpc') }}</div>
+              <div class="coop-epc mono" v-for="(r,i) in scanCoop.recent.slice(0,8)" :key="i">{{ r.epc }}<span v-if="r.device" class="coop-dev">{{ r.device }}</span></div>
+            </div>
+          </div>
+
+          <!-- 已扫商品清单 -->
+          <table class="data-table sale-items">
+            <thead><tr><th>#</th><th>{{ t('sale.colName') }}</th><th>{{ t('sale.colCode') }}</th><th>EPC</th><th>{{ t('sale.colPrice') }}</th><th></th></tr></thead>
+            <tbody>
+              <tr v-for="(it,i) in sheetData.items" :key="it.product_id">
+                <td>{{ i+1 }}</td>
+                <td>{{ it.name }}</td>
+                <td class="mono">{{ it.code }}</td>
+                <td class="mono" style="font-size:12px">{{ it.epc }}</td>
+                <td><input class="price-input" v-model.number="it.price" type="number" min="0"></td>
+                <td><button type="button" class="btn-small btn-danger" @click="removeSaleItem(i)">×</button></td>
+              </tr>
+              <tr v-if="!sheetData.items || !sheetData.items.length"><td colspan="6" class="prod-meta">{{ t('sale.emptyItems') }}</td></tr>
+            </tbody>
+          </table>
+          <div class="sale-summary">
+            <span>{{ t('sale.itemCount') }}：<b>{{ (sheetData.items||[]).length }}</b><span v-if="sItemLimit"> / {{ sItemLimit }}</span></span>
+            <span class="sale-total">{{ t('lbl.amount') }}：<b>￥{{ sTotal }}</b></span>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group"><label>{{ t('lbl.paid') }}</label><input v-model.number="sheetData.paid" type="number"></div>
+            <div class="form-group"><label>{{ t('sale.pay') }}</label><select v-model="sheetData.method"><option value="现金">{{ t('pay.cash') }}</option><option value="微信">{{ t('pay.wechat') }}</option><option value="刷卡">{{ t('pay.card') }}</option><option value="转账">{{ t('pay.transfer') }}</option></select></div>
+            <div class="form-group"><label>{{ t('lbl.date') }}</label><input v-model="sheetData.biz_date" type="date"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>{{ t('sale.clerkType') }}</label>
+              <select v-model="sheetData.clerk_type">
+                <option v-for="o in activeClerkTypes()" :key="o.id" :value="o.name">{{ o.name }}</option>
+              </select>
+            </div>
+            <div class="form-group"><label>{{ t('sale.clerkName') }}</label><input v-model="sheetData.clerk_name" :placeholder="t('sale.clerkNamePh')"></div>
+          </div>
         </template>
         <template v-if="sheetMode==='product'||sheetMode==='inbound'">
+          <div class="form-group">
+            <label>{{ t('store.inboundStore') }}</label>
+            <input :value="curStoreName() || (stores.find(function(x){return x.id===sheetData.store_id})||{}).name || ('#'+sheetData.store_id)" readonly>
+          </div>
           <div class="form-row">
             <div class="form-group"><label>{{ t('lbl.huohao') }}</label><input v-model="sheetData.code"></div>
             <div class="form-group" v-if="sheetMode==='product'">
@@ -1240,6 +1745,18 @@
           <div class="form-row"><div class="form-group"><label>{{ t('lbl.weight') }}</label><input v-model.number="sheetData.weight" type="number"></div><div class="form-group"><label>{{ t('lbl.size') }}</label><input v-model="sheetData.size"></div></div>
           <div class="form-row"><div class="form-group"><label>{{ t('lbl.cost') }}</label><input v-model.number="sheetData.cost" type="number"></div><div class="form-group"><label>{{ t('lbl.price') }}</label><input v-model.number="sheetData.price" type="number"></div></div>
           <div class="form-row"><div class="form-group"><label>{{ t('lbl.cert') }}</label><input v-model="sheetData.cert"></div><div class="form-group"><label>{{ t('lbl.origin') }}</label><input v-model="sheetData.origin"></div></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('loc.where') }}</label>
+            <select v-model="sheetData.location_id"><option :value="0">—</option>
+              <option v-for="o in activeLocationsOf(sheetData.store_id || 1)" :key="'l'+o.id" :value="o.id">{{ o.code }} {{ o.name }}</option>
+            </select></div>
+            <div class="form-group"><label>{{ t('loc.certWhere') }}</label>
+            <select v-model="sheetData.cert_location_id"><option :value="0">—</option>
+              <option v-for="o in activeLocationsOf(sheetData.store_id || 1)" :key="'c'+o.id" :value="o.id">{{ o.code }} {{ o.name }}</option>
+            </select></div></div>
+          <div class="form-row" v-if="sheetMode==='inbound'">
+            <div class="form-group"><label>RFID EPC</label><input v-model="sheetData.rfid_epc" placeholder="YZZ..."></div>
+            <div class="form-group"><label>{{ t('lbl.date') }}</label><input v-model="sheetData.biz_date" type="date"></div>
+          </div>
           <div class="form-row" v-if="sheetMode==='product'"><div class="form-group"><label>{{ t('lbl.status') }}</label><select v-model="sheetData.status"><option value="在库">{{ t('st.inStock') }}</option><option value="已定">{{ t('st.reserved') }}</option><option value="已售">{{ t('st.sold') }}</option><option value="借出">{{ t('st.loaned') }}</option></select></div>
             <div class="form-group"><label>RFID EPC</label><div style="display:flex;gap:6px"><input v-model="sheetData.rfid_epc" style="flex:1"><button type="button" class="btn-small" @click="generateEpc" :disabled="!sheetData.id">{{ t('act.genEpc') }}</button></div></div></div>
           <div class="img-edit" v-if="sheetMode==='product'">
@@ -1269,8 +1786,67 @@
         </template>
         <template v-if="sheetMode==='loan'">
           <div class="form-group"><label>{{ t('lbl.direction') }}</label><select v-model="sheetData.direction"><option value="out">{{ t('lbl.out') }}</option><option value="in">{{ t('lbl.in') }}</option></select></div>
-          <div class="form-row"><div class="form-group"><label>{{ t('lbl.product') }}</label><input v-model="sheetData.product"></div><div class="form-group"><label>{{ t('lbl.huohao') }}</label><input v-model="sheetData.code" :placeholder="t('loan.codePh')"></div></div>
-          <div class="form-row"><div class="form-group"><label>{{ t('lbl.party') }}</label><input v-model="sheetData.party"></div><div class="form-group"><label>{{ t('lbl.qty') }}</label><input v-model.number="sheetData.qty" type="number"></div></div>
+
+          <!-- 输入模式：协同（手持机推送）/ 自主（摄像头+手工） -->
+          <div class="scan-mode-row">
+            <label>{{ t('scan.mode') }}</label>
+            <div class="scan-mode-btns">
+              <button type="button" class="btn-small" :class="{active:scanCoop.type==='loan'}" @click="setScanMode('coop')">🤝 {{ t('scan.modeCoop') }}</button>
+              <button type="button" class="btn-small" :class="{active:scanCoop.type!=='loan'}" @click="setScanMode('self')">📷 {{ t('scan.modeSelf') }}</button>
+            </div>
+          </div>
+
+          <!-- 协同模式：等待手持机推送 -->
+          <div v-if="scanCoop.type==='loan'" class="coop-panel">
+            <div class="coop-head">
+              <span class="coop-pulse"></span>
+              <span class="coop-waiting">{{ t('scan.waiting') }}</span>
+              <span v-if="scanCoop.taskNo" class="mono coop-taskno">{{ scanCoop.taskNo }}</span>
+              <button type="button" class="btn-small btn-danger coop-exit" @click="exitCoopScan()">✕ {{ t('scan.coopExit') }}</button>
+            </div>
+            <div class="coop-count">{{ t('scan.receivedCount') }}：<b>{{ scanCoop.count }}</b></div>
+            <div class="coop-recent" v-if="scanCoop.recent.length">
+              <div class="coop-recent-title">{{ t('scan.recentEpc') }}</div>
+              <div class="coop-epc mono" v-for="(r,i) in scanCoop.recent.slice(0,8)" :key="i">{{ r.epc }}<span v-if="r.device" class="coop-dev">{{ r.device }}</span></div>
+            </div>
+          </div>
+
+          <!-- 自主模式：扫码加件 -->
+          <div class="scan-row" v-if="scanCoop.type!=='loan'">
+            <label>{{ t('scan.label') }}</label>
+            <div class="scan-btns">
+              <button type="button" class="btn-small" @click="openLoanCam">📷 {{ t('scan.camera') }}</button>
+            </div>
+          </div>
+          <div class="form-row" v-if="scanCoop.type!=='loan'">
+            <div class="form-group" style="flex:1"><label>{{ t('loan.scanLabel') }}</label><input v-model="sheetData._rawInput" @keyup.enter="addLoanRawCode(sheetData._rawInput)" :placeholder="t('loan.enterAdd')"></div>
+            <div class="form-group" style="flex:0 0 auto"><label>&nbsp;</label><button type="button" class="btn btn-outline" @click="addLoanRawCode(sheetData._rawInput)">{{ t('loan.add') }}</button></div>
+          </div>
+
+          <!-- 摄像头取景 -->
+          <div v-if="camOpen && scanCoop.type!=='loan'" class="sale-cam">
+            <video id="loanCamVideo" playsinline muted autoplay></video>
+            <div class="prod-meta" v-if="camBusy">{{ t('scan.camStarting') }}</div>
+            <div class="scan-hint" v-if="camErr" style="color:#c0392b">{{ camErr }}</div>
+            <button type="button" class="btn-small btn-danger" @click="closeLoanCam">{{ t('scan.camStop') }}</button>
+          </div>
+
+          <!-- 已扫商品清单 -->
+          <table class="data-table sale-items" v-if="loanCodes().length">
+            <thead><tr><th>#</th><th>{{ t('sale.colName') }}</th><th>{{ t('sale.colCode') }}</th><th>EPC</th><th></th></tr></thead>
+            <tbody>
+              <tr v-for="(it,i) in sheetData.codes" :key="it.pid">
+                <td>{{ i+1 }}</td>
+                <td>{{ it.name }}</td>
+                <td class="mono">{{ it.code }}</td>
+                <td class="mono small">{{ it.epc }}</td>
+                <td><button class="btn-small btn-danger" @click="removeLoanCode(i)">✕</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-if="!loanCodes().length" class="prod-meta">{{ t('loan.empty') }}</p>
+
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.party') }}</label><input v-model="sheetData.party" :placeholder="t('loan.partyPh')"></div></div>
           <div class="form-row"><div class="form-group"><label>{{ t('lbl.date') }}</label><input v-model="sheetData.loan_date" type="date"></div><div class="form-group"><label>{{ t('lbl.dueDate') }}</label><input v-model="sheetData.due_date" type="date"></div></div>
         </template>
         <template v-if="sheetMode==='repair'">
@@ -1551,7 +2127,172 @@
     </div>
   </div>
 
+  <!-- 门店调拨：发起弹窗（选调入门店/备注/清单确认） -->
+  <div class="modal-mask" v-if="transferSendOpen" @click.self="closeTransferSend">
+    <div class="modal-box tr-send-box">
+      <div class="sheet-head"><h3>📤 {{ t('tr.sendTitle') }}</h3><span class="sheet-close" @click="closeTransferSend">✕</span></div>
+      <div class="sheet-body">
+        <div class="form-row">
+          <div class="form-group"><label>{{ t('tr.fromStore') }}</label><div class="tr-field-val">🏬 {{ storeNameOf(transferSelStore) }}（{{ transferSelCount() }} {{ t('tr.itemsUnit') }}）</div></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>* {{ t('tr.toStore') }}</label>
+            <select v-model.number="transferToStore">
+              <option v-for="s in transferStoreOptions()" :key="s.id" :value="s.id">🏬 {{ s.name }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>{{ t('tr.remark') }}</label>
+            <textarea v-model="transferRemark" rows="2" :placeholder="t('tr.remarkPh')" maxlength="200"></textarea>
+          </div>
+        </div>
+        <div class="tr-send-list">
+          <div v-for="p in transferSelList()" :key="p.id" class="tr-send-item">
+            <span class="mono">{{ p.code }}</span><span class="tr-send-name">{{ p.name }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="sheet-foot tr-foot-right">
+        <button class="btn btn-outline" @click="closeTransferSend">{{ t('tr.cancel') }}</button>
+        <button class="btn btn-primary" :disabled="transferBusy" @click="submitTransfer">✓ {{ t('tr.confirmSend') }}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 门店调拨：详情 / 到店验货 -->
+  <div class="modal-mask" v-if="transferDetailOpen" @click.self="closeTransferDetail">
+    <div class="modal-box modal-lg tr-detail-box">
+      <div class="sheet-head">
+        <h3>🚚 {{ transferDetail.transfer_no }}
+          <span class="tag" :class="statusClass(transferDetail.status)">{{ statusText(transferDetail.status) }}</span>
+        </h3>
+        <span class="sheet-close" @click="closeTransferDetail">✕</span>
+      </div>
+      <div class="sheet-body">
+        <div class="tr-info-grid">
+          <div><span class="dim">{{ t('tr.fromStore') }}</span><b>🏬 {{ transferDetail.from_store_name }}</b></div>
+          <div><span class="dim">{{ t('tr.toStore') }}</span><b>🏬 {{ transferDetail.to_store_name }}</b></div>
+          <div><span class="dim">{{ t('tr.sentBy') }}</span>{{ transferDetail.created_by }} · {{ transferDetail.sent_at }}</div>
+          <div v-if="transferDetail.received_by"><span class="dim">{{ t('tr.receivedBy') }}</span>{{ transferDetail.received_by }} · {{ transferDetail.received_at }}</div>
+          <div><span class="dim">{{ t('tr.counts') }}</span>{{ t('tr.matched') }} {{ transferDetail.matched_count }} / {{ t('tr.diff') }} {{ transferDetail.diff_count }} / {{ t('tr.total') }} {{ transferDetail.total_count }}</div>
+          <div v-if="transferDetail.remark"><span class="dim">{{ t('tr.remark') }}</span>{{ transferDetail.remark }}</div>
+        </div>
+        <div class="tr-recv-bar" v-if="transferReceiving">
+          <button class="btn btn-sm" :class="scanCoop.type==='transfer_in'?'btn-primary':'btn-outline'" @click="setScanMode('coop')">🤝 {{ t('scan.modeCoop') }}</button>
+          <button v-if="scanCoop.type==='transfer_in'" class="btn btn-sm btn-outline" @click="setScanMode('self')">📷 {{ t('scan.modeSelf') }}</button>
+          <button v-if="scanCoop.type!=='transfer_in'" class="btn btn-sm btn-primary" @click="yzScan('epc')">📷 {{ t('tr.scanMatch') }}</button>
+          <span class="dim">{{ t('tr.recvHint') }}</span>
+        </div>
+        <div class="coop-panel" v-if="transferReceiving && scanCoop.type==='transfer_in'">
+          <div class="coop-head">
+            <span class="coop-pulse"></span>
+            <span class="coop-waiting">{{ t('scan.waiting') }}</span>
+            <span v-if="scanCoop.taskNo" class="mono coop-taskno">{{ scanCoop.taskNo }}</span>
+            <button type="button" class="btn-small btn-danger coop-exit" @click="exitCoopScan()">✕ {{ t('scan.coopExit') }}</button>
+          </div>
+          <div class="coop-count">{{ t('scan.receivedCount') }}：<b>{{ scanCoop.count }}</b></div>
+          <div class="coop-recent" v-if="scanCoop.recent.length">
+            <div class="coop-recent-title">{{ t('scan.recentEpc') }}</div>
+            <div class="coop-epc mono" v-for="(r,i) in scanCoop.recent.slice(0,8)" :key="i">{{ r.epc }}<span v-if="r.device" class="coop-dev">{{ r.device }}</span></div>
+          </div>
+        </div>
+        <table class="data-table mt-sm">
+          <thead><tr>
+            <th>{{ t('lbl.huohao') }}</th><th>{{ t('lbl.name') }}</th><th>EPC</th>
+            <th v-if="!transferReceiving">{{ t('tr.resultCol') }}</th>
+            <th v-else>{{ t('tr.decide') }}</th>
+          </tr></thead>
+          <tbody>
+            <tr v-for="i in transferDetail.items" :key="i.id" :class="{'tr-row-hit':transferScanHit===i.product_id}">
+              <td class="mono">{{ i.product_code }}</td>
+              <td>{{ i.product_name }}</td>
+              <td class="mono small">{{ i.epc }}</td>
+              <td v-if="!transferReceiving">
+                <template v-if="i.result">
+                  <span class="tag" :class="i.result==='相符'?'tag-green':'tag-wine'">{{ i.result==='相符' ? t('tr.markOk') : t('tr.markDiff') }}</span>
+                  <span v-if="i.diff_reason" class="tr-reason">{{ i.diff_reason }}</span>
+                </template>
+                <span v-else class="dim">—</span>
+              </td>
+              <td v-else>
+                <div class="tr-decide">
+                  <button class="btn btn-sm" :class="transferRecv[i.product_id].ok===true?'btn-primary':'btn-outline'" @click="setRecvOk(i.product_id,true)">✓ {{ t('tr.markOk') }}</button>
+                  <button class="btn btn-sm btn-outline" :style="transferRecv[i.product_id].ok===false?'color:var(--danger);border-color:var(--danger)':''" @click="setRecvOk(i.product_id,false)">✗ {{ t('tr.markDiff') }}</button>
+                  <template v-if="transferRecv[i.product_id].ok===false">
+                    <input class="tr-reason-input" v-model="transferRecv[i.product_id].reason" :placeholder="t('tr.reasonPh')" maxlength="100">
+                    <span class="tr-qchip" @click="quickReason(i.product_id,t('tr.qNoArrive'))">{{ t('tr.qNoArrive') }}</span>
+                    <span class="tr-qchip" @click="quickReason(i.product_id,t('tr.qBroken'))">{{ t('tr.qBroken') }}</span>
+                    <span class="tr-qchip" @click="quickReason(i.product_id,t('tr.qMismatch'))">{{ t('tr.qMismatch') }}</span>
+                  </template>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="sheet-foot tr-foot-right">
+        <template v-if="transferReceiving">
+          <button class="btn btn-outline" @click="cancelReceive">{{ t('tr.cancel') }}</button>
+          <button class="btn btn-primary" :disabled="transferBusy" @click="submitReceive">✓ {{ t('tr.confirmReceive') }}</button>
+        </template>
+        <template v-else>
+          <button class="btn btn-outline" @click="closeTransferDetail">{{ t('tr.close') }}</button>
+          <button v-if="transferTab==='in' && transferDetail.status==='在途'" class="btn btn-primary" @click="startReceive">📥 {{ t('tr.startReceive') }}</button>
+        </template>
+      </div>
+    </div>
+  </div>
+
   <!-- 盘点批次明细弹窗 -->
+  <!-- 扫描设备（扫描助手）管理：激活码生成 / 设备列表 / 解绑停用 -->
+  <div class="modal-mask" v-if="devModal" @click.self="closeDevices">
+    <div class="modal-box modal-lg">
+      <div class="sheet-head"><h3>📱 {{ t('dev.manage') }}<span v-if="devStoreScope"> · {{ (stores.find(function(x){return x.id===devStoreScope})||{}).name || ('#'+devStoreScope) }}</span></h3><span class="sheet-close" @click="closeDevices">✕</span></div>
+      <div class="sheet-body">
+        <!-- 生成激活码 -->
+        <div class="dev-act-box">
+          <div class="section-title" style="font-size:15px;margin:0 0 8px"><span class="dot"></span>{{ t('dev.genAct') }}</div>
+          <div class="dev-act-form">
+            <select class="search-input" v-model="actStoreId" :disabled="!!devStoreScope" style="max-width:200px">
+              <option v-for="s in stores" :key="s.id" :value="s.id">{{ s.name }}</option>
+            </select>
+            <input class="search-input" v-model="actName" :placeholder="t('dev.devNamePh')" style="max-width:220px">
+            <button class="btn btn-gold btn-sm" @click="genActivation">{{ t('dev.genBtn') }}</button>
+          </div>
+          <div v-if="actQrUrl" class="dev-act-qr">
+            <img class="qr-img" :src="actQrUrl" alt="activation qr">
+            <div>
+              <div class="small" style="margin-bottom:6px">{{ t('dev.actQrHint') }}</div>
+              <div class="url-line"><code class="small">{{ actUrl }}</code><button class="btn btn-sm btn-outline" @click="copyActUrl">{{ t('common.copy') }}</button></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 设备列表 -->
+        <div class="section-title" style="font-size:15px;margin:16px 0 8px"><span class="dot"></span>{{ t('dev.listTitle') }}</div>
+        <table class="data-table">
+          <thead><tr><th>{{ t('dev.code') }}</th><th>{{ t('th.devName') }}</th><th>{{ t('dev.store') }}</th><th>{{ t('th.lastSeen') }}</th><th>{{ t('dev.currentTask') }}</th><th>{{ t('lbl.status') }}</th><th>{{ t('common.op') }}</th></tr></thead>
+          <tbody>
+            <tr v-for="d in devices" :key="d.id">
+              <td class="mono small">{{ d.code }}</td>
+              <td>{{ d.name || '—' }}</td>
+              <td>{{ d.store_name || '—' }}</td>
+              <td class="small"><span class="dot-live" :class="{off:!d.online}"></span>{{ devOnlineText(d) }}</td>
+              <td class="small">{{ d.current_task_no || '—' }}</td>
+              <td :class="d.status==='active' ? 'stock-ok' : 'stock-shortage'">{{ d.status==='active' ? t('dev.active') : t('dev.disabled') }}</td>
+              <td class="nowrap">
+                <button class="link" @click="toggleDeviceStatus(d)">{{ d.status==='active' ? t('dev.disable') : t('dev.enable') }}</button>
+                <button class="link" style="color:#c0392b" @click="unbindDevice(d.id)">{{ t('dev.unbind') }}</button>
+              </td>
+            </tr>
+            <tr v-if="!devices.length"><td colspan="7" class="small">{{ t('dev.empty') }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-mask" v-if="stockDetail" @click.self="stockDetail=null">
     <div class="modal-box modal-lg">
       <div class="sheet-head"><h3>{{ t('co.batchTitle') }} {{ stockDetail.head.batch_no }}</h3><span class="sheet-close" @click="stockDetail=null">✕</span></div>
@@ -1605,6 +2346,24 @@
     </div>
   </div>
 
+  <!-- 防盗告警弹窗（全局，任何页面收到 WS 告警即弹出） -->
+  <div class="modal-mask sec-alarm-mask" v-if="secAlarm">
+    <div class="modal-box sec-alarm-box">
+      <div class="sec-alarm-head">🚨 {{ t('sec.alarmTitle') }}</div>
+      <div class="sec-alarm-body">
+        <div><b>{{ secAlarm.sensor_name }}</b><template v-if="secAlarm.location"> · {{ secAlarm.location }}</template> · {{ secAlarm.ts }}</div>
+        <div v-for="a in (secAlarm.alarms || [])" :key="a.id" class="sec-alarm-item">
+          <template v-for="e in (a.epcs || [])" :key="e"><code class="mono">{{ e }}</code> </template>
+          <div v-for="p in ((a.raw && a.raw.products) || [])" :key="p.epc" class="sec-ev-prod">💎 {{ p.code }} {{ p.name }}（{{ p.status }}）<template v-if="p.price"> · ¥{{ fmt(p.price) }}</template></div>
+        </div>
+      </div>
+      <div class="sec-alarm-foot">
+        <button class="btn btn-outline btn-sm" @click="secMuted=!secMuted">{{ secMuted ? '🔇' : '🔊' }} {{ t('sec.alarmMute') }}</button>
+        <button class="btn btn-primary" @click="secAckAlarm()">{{ t('sec.alarmAck') }}</button>
+      </div>
+    </div>
+  </div>
+
   <div id="printArea" class="print-area" v-if="printItem">
     <div class="label-card">
       <div class="l-name">{{ printItem.name }}</div>
@@ -1619,7 +2378,8 @@
 </div>
 <script src="./vendor/vue.global.prod.js"></script>
 <script src="./vendor/qrcode.min.js"></script>
-<script src="./i18n.js"></script>
-<script src="./app.js"></script>
+<script src="./vendor/zxing.min.js"></script>
+<script src="./i18n.js?v=20261007b"></script>
+<script src="./app.js?v=20261007b"></script>
 </body>
 </html>

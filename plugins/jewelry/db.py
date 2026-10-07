@@ -35,7 +35,7 @@ PRINT_BIZ = [
 ]
 PRINT_BIZ_CODES = [c for c, _g in PRINT_BIZ]
 
-# 数据库结构（dataVersion 1.0.0）
+# 数据库结构（随版本幂等演进：建表 IF NOT EXISTS，新增列见 migrate_schema 的 alters）
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS stores (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,7 +44,18 @@ CREATE TABLE IF NOT EXISTS stores (
   code TEXT UNIQUE,
   owner TEXT,
   bridge_key TEXT DEFAULT '',
-  printer_name TEXT DEFAULT ''
+  printer_name TEXT DEFAULT '',
+  shop_id INTEGER DEFAULT 0
+);
+
+-- 店铺（上层组织）：一个店铺含多个门店；sale_item_limit=快速开单单件数上限
+CREATE TABLE IF NOT EXISTS shops (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  code TEXT UNIQUE,
+  sale_item_limit INTEGER DEFAULT 20,
+  sort_order INTEGER DEFAULT 0,
+  created TEXT DEFAULT (datetime('now','localtime'))
 );
 
 -- 门店按打印业务指派打印机（store_id × biz_code 唯一；多个业务可指向同一台打印机）
@@ -108,6 +119,8 @@ CREATE TABLE IF NOT EXISTS products (
   showcase_desc TEXT DEFAULT '',
   showcase_desc_i18n TEXT DEFAULT '{}',
   origin TEXT DEFAULT '',
+  location_id INTEGER DEFAULT 0,
+  cert_location_id INTEGER DEFAULT 0,
   created TEXT DEFAULT (datetime('now','localtime'))
 );
 
@@ -135,8 +148,23 @@ CREATE TABLE IF NOT EXISTS sales (
   biz_date TEXT DEFAULT (date('now','localtime')),
   type TEXT DEFAULT '普通',
   status TEXT DEFAULT '已完成',
+  clerk_type TEXT DEFAULT '店员',
+  clerk_name TEXT DEFAULT '',
   created TEXT DEFAULT (datetime('now','localtime'))
 );
+
+-- 销售明细：一单多件，每件一行（成交单价快照）
+CREATE TABLE IF NOT EXISTS sale_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sale_id INTEGER NOT NULL,
+  product_id INTEGER,
+  epc TEXT DEFAULT '',
+  code TEXT DEFAULT '',
+  name TEXT DEFAULT '',
+  price REAL DEFAULT 0,
+  seq INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
 
 CREATE TABLE IF NOT EXISTS tenant_profiles (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -284,6 +312,15 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT DEFAULT 'EMPLOYEE'
 );
 
+-- 用户-门店授权：EMPLOYEE 仅可访问被授予的门店；TENANT_ADMIN 自动拥有全部门店（不落记录）
+CREATE TABLE IF NOT EXISTS user_stores (
+  user_id INTEGER NOT NULL,
+  store_id INTEGER NOT NULL,
+  granted_by TEXT DEFAULT '',
+  granted TEXT DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (user_id, store_id)
+);
+
 CREATE TABLE IF NOT EXISTS stocktakes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   batch_no TEXT UNIQUE,
@@ -349,6 +386,87 @@ CREATE TABLE IF NOT EXISTS stocktake_scans (
   UNIQUE(session_id, epc)
 );
 
+-- ============ 统一任务引擎（盘点/调拨/开单统一为工作任务） ============
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_no TEXT UNIQUE,
+  task_key TEXT UNIQUE,
+  type TEXT DEFAULT 'stocktake',      -- 本期仅 stocktake；预留 transfer/sale
+  type_ref INTEGER DEFAULT 0,         -- 关联业务单据 id
+  status TEXT DEFAULT '进行中',        -- 进行中 | 已完成 | 已撤销 | 已终止
+  initiator TEXT DEFAULT '',          -- 发起人 username
+  store_id INTEGER DEFAULT 0,         -- 作用域门店，0=全租户
+  title TEXT DEFAULT '',
+  config TEXT DEFAULT '{}',
+  result_id INTEGER DEFAULT 0,        -- 已完成/已终止生成的报告 → stocktakes.id
+  created TEXT DEFAULT (datetime('now','localtime')),
+  ended TEXT DEFAULT '',
+  closed_by TEXT DEFAULT ''           -- 关闭来源: device:{code} | initiator
+);
+
+CREATE TABLE IF NOT EXISTS task_devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER,
+  device_id INTEGER DEFAULT 0,        -- devices.id（H5 自主模式=0）
+  device_code TEXT DEFAULT '',        -- 激活设备=devices.code；H5=浏览器 uuid
+  device_no INTEGER DEFAULT 0,        -- 任务内临时编号
+  name TEXT DEFAULT '',
+  source TEXT DEFAULT 'app',          -- app | h5
+  last_seen TEXT DEFAULT (datetime('now','localtime')),
+  submitted INTEGER DEFAULT 0,
+  submit_at TEXT DEFAULT '',
+  UNIQUE(task_id, device_code)
+);
+
+CREATE TABLE IF NOT EXISTS task_scans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER,
+  epc TEXT DEFAULT '',
+  device_code TEXT DEFAULT '',
+  device_no INTEGER DEFAULT 0,
+  rssi INTEGER DEFAULT 0,
+  source TEXT DEFAULT 'rfid',         -- rfid | camera | manual
+  verdict TEXT DEFAULT '',            -- 插入时服务端判定: in_store|other_store|unknown
+  scanned_at TEXT DEFAULT (datetime('now','localtime')),
+  UNIQUE(task_id, epc)                -- 同任务内 EPC 自动排重
+);
+
+CREATE TABLE IF NOT EXISTS task_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER,
+  event TEXT DEFAULT '',
+  actor TEXT DEFAULT '',
+  detail TEXT DEFAULT '',
+  created TEXT DEFAULT (datetime('now','localtime'))
+);
+
+-- ============ 设备档案与激活（设备绑门店不绑人） ============
+CREATE TABLE IF NOT EXISTS devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT UNIQUE,                   -- App 设备码（C27-XXXXXX）
+  name TEXT DEFAULT '',
+  bound_store_id INTEGER DEFAULT 0,   -- 绑定门店（stores.id），0=未绑定
+  device_token TEXT DEFAULT '',       -- 长期凭证，换绑即重发
+  status TEXT DEFAULT 'active',       -- active | disabled
+  last_seen REAL DEFAULT 0,           -- unix 秒，仅设备上报帧刷新
+  current_task_id INTEGER DEFAULT 0,  -- 任务独占占用（0=空闲）
+  app_version TEXT DEFAULT '',
+  created TEXT DEFAULT (datetime('now','localtime')),
+  activated_at TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS device_activations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  akey TEXT UNIQUE,                   -- 一次性激活密钥
+  store_id INTEGER,
+  name TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created TEXT DEFAULT (datetime('now','localtime')),
+  expires REAL DEFAULT 0,             -- unix 秒
+  used INTEGER DEFAULT 0,
+  used_by TEXT DEFAULT ''
+);
+
 -- 智能安防：防盗传感器设备（UHF通道门/EAS门禁/开关量等，driver_code 区分类型）
 CREATE TABLE IF NOT EXISTS sensors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -359,6 +477,8 @@ CREATE TABLE IF NOT EXISTS sensors (
   auth_key TEXT DEFAULT '',
   enabled INTEGER DEFAULT 1,
   last_seen REAL DEFAULT 0,
+  heartbeat_timeout INTEGER DEFAULT 15,
+  field_map TEXT DEFAULT '',
   created TEXT DEFAULT (datetime('now','localtime'))
 );
 
@@ -393,6 +513,63 @@ CREATE TABLE IF NOT EXISTS sensor_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   data TEXT DEFAULT '{}'
 );
+
+-- 门店库位（扁平主数据：门店内编号唯一；停用后历史商品保留显示）
+CREATE TABLE IF NOT EXISTS locations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id INTEGER NOT NULL,
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  sort_order INTEGER DEFAULT 0,
+  active INTEGER DEFAULT 1,
+  created TEXT DEFAULT (datetime('now','localtime')),
+  UNIQUE(store_id, code)
+);
+
+-- 销售经办人类别（店员/主播/代理/代销…，可增改停用；一个默认类别不可停用）
+CREATE TABLE IF NOT EXISTS clerk_types (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE NOT NULL,
+  sort_order INTEGER DEFAULT 0,
+  is_default INTEGER DEFAULT 0,
+  active INTEGER DEFAULT 1
+);
+
+-- 门店调拨单（两步制：发出后在途冻结；验货后 已完成/部分完成）
+CREATE TABLE IF NOT EXISTS transfers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  transfer_no TEXT UNIQUE,
+  from_store_id INTEGER NOT NULL,
+  to_store_id INTEGER NOT NULL,
+  status TEXT DEFAULT '在途',
+  total_count INTEGER DEFAULT 0,
+  matched_count INTEGER DEFAULT 0,
+  diff_count INTEGER DEFAULT 0,
+  remark TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  sent_at TEXT DEFAULT (datetime('now','localtime')),
+  received_by TEXT DEFAULT '',
+  received_at TEXT DEFAULT '',
+  created TEXT DEFAULT (datetime('now','localtime'))
+);
+
+-- 调拨明细（result：''待验收/相符/不符；不符必须有 diff_reason）
+CREATE TABLE IF NOT EXISTS transfer_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  transfer_id INTEGER NOT NULL,
+  product_id INTEGER NOT NULL,
+  epc TEXT DEFAULT '',
+  product_name TEXT DEFAULT '',
+  result TEXT DEFAULT '',
+  diff_reason TEXT DEFAULT '',
+  received_at TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_transfer_items_tid ON transfer_items(transfer_id);
+CREATE INDEX IF NOT EXISTS idx_devices_token ON devices(device_token);
+CREATE INDEX IF NOT EXISTS idx_task_scans_dev ON task_scans(task_id, device_code);
+CREATE INDEX IF NOT EXISTS idx_products_epc ON products(rfid_epc);
+-- 进行中任务唯一性仅约束盘点（库存冻结全局唯一）；轻量扫码任务（开单/调拨/借货）允许多个并行
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_one_active ON tasks(status) WHERE status='进行中' AND type='stocktake';
 """
 
 
@@ -417,8 +594,10 @@ def connect(tenant_id: str, read_only: bool = False) -> sqlite3.Connection:
     else:
         conn = sqlite3.connect(str(path), check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=3000")
     conn.execute("PRAGMA foreign_keys=ON")
     if not read_only:
+        conn.execute("PRAGMA journal_mode=WAL")
         migrate_schema(conn)
     return conn
 
@@ -528,19 +707,149 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("stores", "printer_name", "TEXT DEFAULT ''"),
         ("products", "barcode", "TEXT DEFAULT ''"),
         ("biz_config", "epc_cleaned", "INTEGER DEFAULT 0"),
+        ("sensors", "heartbeat_timeout", "INTEGER DEFAULT 15"),
+        ("sensors", "field_map", "TEXT DEFAULT ''"),
+        ("products", "location_id", "INTEGER DEFAULT 0"),
+        ("products", "cert_location_id", "INTEGER DEFAULT 0"),
+        ("sales", "clerk_type", "TEXT DEFAULT '店员'"),
+        ("sales", "clerk_name", "TEXT DEFAULT ''"),
+        ("stores", "shop_id", "INTEGER DEFAULT 0"),
+        # 门店数据隔离：业务单据补 store_id（历史数据迁移时按商品关联回填，无法关联的置 0）
+        ("sales", "store_id", "INTEGER DEFAULT 0"),
+        ("loans", "store_id", "INTEGER DEFAULT 0"),
+        ("deposits", "store_id", "INTEGER DEFAULT 0"),
+        ("repairs", "store_id", "INTEGER DEFAULT 0"),
+        ("purchases", "store_id", "INTEGER DEFAULT 0"),
+        ("outsourcings", "store_id", "INTEGER DEFAULT 0"),
+        ("appointments", "store_id", "INTEGER DEFAULT 0"),
+        ("inventory_logs", "store_id", "INTEGER DEFAULT 0"),
+        ("stocktakes", "store_id", "INTEGER DEFAULT 0"),
     ]
     for table, col, decl in alters:
         if not _has_column(conn, table, col):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
     _relax_products_code_unique(conn)
+    # 进行中任务唯一性仅约束盘点（库存冻结全局唯一）；开单/调拨/借货等轻量扫码任务允许多个并行。
+    # 旧库存在全类型唯一索引时先 DROP 再按新口径重建（幂等）。
+    idx = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_tasks_one_active'").fetchone()
+    if idx and idx[0] and "type" not in (idx[0] or ""):
+        conn.execute("DROP INDEX IF EXISTS idx_tasks_one_active")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_one_active ON tasks(status) "
+        "WHERE status='进行中' AND type='stocktake'")
     conn.commit()
     seed_store_printers(conn)
     _seed_base_dicts(conn)
+    _seed_clerk_types(conn)
     _backfill_category_code(conn)
     _migrate_material_and_type(conn)
     conn.commit()
     _migrate_clean_dirty_epc(conn)
     conn.commit()
+    _migrate_legacy_stocktake_tasks(conn)
+    conn.commit()
+    _migrate_shops_and_sale_items(conn)
+    conn.commit()
+    _migrate_store_scope(conn)
+    conn.commit()
+
+
+def _migrate_store_scope(conn: sqlite3.Connection) -> None:
+    """门店数据隔离一次性回填（幂等，只处理 store_id=0 的历史行）：
+    能经商品关联出门店的单据回填门店；纯文本无法关联的维修/采购/委外保留 0（历史数据全店可见）。
+    同时为尚无任何授权记录的 EMPLOYEE 账号授予当前全部门店，保证升级后不被锁死。"""
+    conn.execute(
+        """UPDATE sales SET store_id=(
+               SELECT p.store_id FROM sale_items si
+               JOIN products p ON p.id=si.product_id
+               WHERE si.sale_id=sales.id AND p.store_id IS NOT NULL LIMIT 1)
+           WHERE COALESCE(store_id,0)=0
+             AND EXISTS (SELECT 1 FROM sale_items si JOIN products p ON p.id=si.product_id
+                         WHERE si.sale_id=sales.id AND p.store_id IS NOT NULL)"""
+    )
+    conn.execute(
+        """UPDATE loans SET store_id=(
+               SELECT store_id FROM products
+               WHERE code=loans.code AND store_id IS NOT NULL LIMIT 1)
+           WHERE COALESCE(store_id,0)=0 AND COALESCE(code,'')<>''
+             AND EXISTS (SELECT 1 FROM products WHERE code=loans.code AND store_id IS NOT NULL)"""
+    )
+    for tbl in ("deposits", "appointments", "inventory_logs"):
+        conn.execute(
+            f"""UPDATE {tbl} SET store_id=(
+                    SELECT store_id FROM products
+                    WHERE id={tbl}.product_id AND store_id IS NOT NULL LIMIT 1)
+                WHERE COALESCE(store_id,0)=0 AND COALESCE(product_id,0)<>0
+                  AND EXISTS (SELECT 1 FROM products WHERE id={tbl}.product_id AND store_id IS NOT NULL)"""
+        )
+    conn.execute(
+        """UPDATE stocktakes SET store_id=(
+               SELECT p.store_id FROM stocktake_items si
+               JOIN products p ON p.id=si.product_id
+               WHERE si.stocktake_id=stocktakes.id AND p.store_id IS NOT NULL LIMIT 1)
+           WHERE COALESCE(store_id,0)=0
+             AND EXISTS (SELECT 1 FROM stocktake_items si JOIN products p ON p.id=si.product_id
+                         WHERE si.stocktake_id=stocktakes.id AND p.store_id IS NOT NULL)"""
+    )
+    # 员工首授全部门店：一次性迁移（PRAGMA user_version=1 标记）。
+    # 绝不能每次 migrate 都补授——否则店长收权后，下一次请求又会把全店授回去。
+    if conn.execute("PRAGMA user_version").fetchone()[0] < 1:
+        conn.execute(
+            """INSERT INTO user_stores(user_id, store_id, granted_by)
+               SELECT u.id, s.id, 'system'
+               FROM users u CROSS JOIN stores s
+               WHERE u.role='EMPLOYEE'
+                 AND NOT EXISTS (SELECT 1 FROM user_stores us WHERE us.user_id=u.id)"""
+        )
+        conn.execute("PRAGMA user_version=1")
+
+
+def _migrate_shops_and_sale_items(conn: sqlite3.Connection) -> None:
+    """总部/门店两级 + 一单多件 的一次性、幂等数据回填：
+    1) 无总部则建默认总部，把 shop_id=0 的门店全部挂到首个总部；
+    2) 历史单件 sales（product_id 非空且无明细）回填 1 条 sale_items。"""
+    # 把历史遗留的「默认店铺」统一改名为「默认总部」
+    conn.execute("UPDATE shops SET name='默认总部' WHERE code='DEFAULT' AND name IN ('默认店铺','默认总部')")
+    shop_count = conn.execute("SELECT COUNT(*) n FROM shops").fetchone()["n"]
+    if shop_count == 0:
+        cur = conn.execute(
+            "INSERT INTO shops(name,code,sale_item_limit,sort_order) VALUES(?,?,20,0)",
+            ("默认总部", "DEFAULT"))
+        default_shop = cur.lastrowid
+    else:
+        default_shop = conn.execute("SELECT id FROM shops ORDER BY id LIMIT 1").fetchone()["id"]
+    # 归属所有未挂店铺的存量门店
+    conn.execute("UPDATE stores SET shop_id=? WHERE COALESCE(shop_id,0)=0", (default_shop,))
+    # 清理 store_printers 孤儿（stores 被硬删除后残留，新 AUTOINCREMENT 分配 id 会撞 UNIQUE）
+    conn.execute("DELETE FROM store_printers WHERE store_id NOT IN (SELECT id FROM stores)")
+    # 历史单件销售单回填明细（仅回填还没有任何明细行的单）
+    rows = conn.execute(
+        """SELECT s.id, s.product_id, s.product, s.amount
+           FROM sales s
+           WHERE COALESCE(s.product_id,0)<>0
+             AND NOT EXISTS (SELECT 1 FROM sale_items si WHERE si.sale_id=s.id)"""
+    ).fetchall()
+    for r in rows:
+        epc = ""
+        code = ""
+        p = conn.execute("SELECT rfid_epc, code FROM products WHERE id=?", (r["product_id"],)).fetchone()
+        if p:
+            epc = p["rfid_epc"] or ""
+            code = p["code"] or ""
+        conn.execute(
+            "INSERT INTO sale_items(sale_id,product_id,epc,code,name,price,seq) VALUES(?,?,?,?,?,?,0)",
+            (r["id"], r["product_id"], epc, code, r["product"] or "", r["amount"] or 0))
+
+
+def _migrate_legacy_stocktake_tasks(conn: sqlite3.Connection) -> None:
+    """统一任务引擎升级：旧协同盘点会话表只读保留，遗留活跃会话一次性关闭，
+    防止新冻结逻辑（查 tasks 表）下旧任务永久冻结业务。"""
+    cur = conn.execute(
+        "UPDATE stocktake_sessions SET status='已完成', ended=datetime('now','localtime') "
+        "WHERE status IN ('进行中','待核对')")
+    if cur.rowcount:
+        conn.commit()
 
 
 # 基础字典：语言 / EPC 业务配置 / 商品分类（多语言名称）
@@ -584,6 +893,26 @@ def _seed_base_dicts(conn: sqlite3.Connection) -> None:
     conn.executemany(
         "INSERT OR IGNORE INTO product_types(code,names,sort_order) VALUES(?,?,?)", product_types
     )
+
+
+# 销售经办人类别默认值（可在设置中增改停用）；(名称, 排序, 是否默认)
+DEFAULT_CLERK_TYPES = [("店员", 1, 1), ("主播", 2, 0), ("代理", 3, 0), ("代销", 4, 0)]
+
+
+def _seed_clerk_types(conn: sqlite3.Connection) -> None:
+    """幂等补齐经办人类别；保证恰有一个默认类别；存量空类别销售单回填「店员」。"""
+    conn.executemany(
+        "INSERT OR IGNORE INTO clerk_types(name,sort_order,is_default,active) VALUES(?,?,?,1)",
+        DEFAULT_CLERK_TYPES,
+    )
+    # 若无任何默认类别（老数据被手工改过），把「店员」提为默认
+    if conn.execute("SELECT COUNT(*) FROM clerk_types WHERE is_default=1").fetchone()[0] == 0:
+        conn.execute("UPDATE clerk_types SET is_default=1 WHERE name='店员'")
+    # 存量销售单兜底（ALTER 带 DEFAULT 通常已填，防御显式 NULL/空串）
+    conn.execute(
+        "UPDATE sales SET clerk_type='店员' WHERE clerk_type IS NULL OR TRIM(clerk_type)=''"
+    )
+    conn.commit()
 
 
 # 旧「分类」(黄金/钻石…) 语义上是材质，统一迁移为业界标准英文简写；
@@ -699,16 +1028,16 @@ def _migrate_material_and_type(conn: sqlite3.Connection) -> None:
 
 
 def store_segment(code: str, store_id: int = 0) -> str:
-    """门店码归一化为 2 位十六进制段：本身恰为 2 位 0-9A-F 则原样保留；
-    否则回退为门店序号的 2 位 hex（与 main.py 的 _hex_store_code 保持一致）。"""
+    """门店码归一化为 2 位字符段：本身恰为 2 位字母/数字则大写原样保留
+    （如 HQ、A1、06）；否则回退为门店序号的 2 位 hex（与 main.py 的 _store_seg 保持一致）。"""
     code = (code or "").strip().upper()
-    if len(code) == 2 and all(c in "0123456789ABCDEF" for c in code):
+    if len(code) == 2 and all(c in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ" for c in code):
         return code
     return f"{(store_id or 0) % 256:02X}"
 
 
 def _epc_rule(conn: sqlite3.Connection):
-    """返回 (prefix, seq_bits, 合规正则)。序号固定 4-6 位 hex。"""
+    """返回 (prefix, seq_bits, 合规正则)。门店段 2 位字母/数字，品类码 2 位数字，序号 4-6 位 hex。"""
     cfg = conn.execute("SELECT epc_prefix,seq_bits FROM biz_config WHERE id=1").fetchone()
     if cfg:
         prefix = (cfg[0] or "E28").strip() or "E28"
@@ -716,18 +1045,19 @@ def _epc_rule(conn: sqlite3.Connection):
     else:
         prefix, bits = "E28", 6
     pat = re.compile(
-        r"^" + re.escape(prefix) + r"([0-9A-F]{2})(\d{2})([0-9A-F]{%d})$" % bits
+        r"^" + re.escape(prefix) + r"([0-9A-Z]{2})(\d{2})([0-9A-F]{%d})$" % bits
     )
     return prefix, bits, pat
 
 
 def assign_rule_epcs(conn: sqlite3.Connection) -> dict[str, str]:
-    """把全部商品的 EPC 校正为现行规则：前缀 + 门店码(2位hex) + 品类码(2位) + 序号。
+    """把全部商品的 EPC 校正为现行规则：前缀 + 门店码(2位字母/数字) + 品类码(2位) + 序号。
 
-    - 已合规、品类一致且不重复的 EPC 原样保留；
-    - 空值、旧格式（无门店码）、随机芯片 TID、尾部混货号、品类错位、重复 EPC
-      一律按「门店 + 品类」分组，从该组已占用序号之后续号重新分配；
-    - 幂等：对已合规库重复执行不产生任何改动。
+    - 【EPC 终身码】只要 EPC 符合规则格式且全库唯一，一律原样保留——门店段是
+      「首次配发门店」、品类段是首次配发品类，后续改品类、跨店调拨都绝不重排；
+    - 仅空值、旧格式（无门店码）、随机芯片 TID、尾部混货号、重复 EPC 才按
+      「当前门店 + 当前品类」分组续号重新分配；
+    - 幂等：对合规库重复执行不产生任何改动。
     返回 {旧EPC大写: 新EPC}（空 EPC 新建的不计入映射），供同步日志/盘点引用表。
     """
     prefix, bits, pat = _epc_rule(conn)
@@ -750,7 +1080,8 @@ def assign_rule_epcs(conn: sqlite3.Connection) -> dict[str, str]:
         code = (tc or "99").strip().upper()[:2].ljust(2, "0") or "99"
         up = (epc or "").strip().upper()
         m = pat.match(up) if up else None
-        keep = bool(m) and m.group(2) == code and up not in seen
+        # 终身码：格式合规且全库唯一即保留，不校验品类段/门店段是否与当前一致
+        keep = bool(m) and up not in seen
         if keep:
             seen.add(up)
             used.setdefault((m.group(1), m.group(2)), set()).add(int(m.group(3), 16))
@@ -777,13 +1108,10 @@ def assign_rule_epcs(conn: sqlite3.Connection) -> dict[str, str]:
 
 
 def _migrate_clean_dirty_epc(conn: sqlite3.Connection) -> None:
-    """把历史脏 EPC（随机十六进制串、尾部混入货号、品类码错位/空值）校正为现行规则。
+    """校正历史脏 EPC（随机十六进制串、尾部混入货号、重复/空值），遵循 EPC 终身码：
 
-    校正逻辑统一由 assign_rule_epcs 实现且天然幂等（合规且品类一致、不冲突的
-    EPC 原样保留，第二次执行零改动），因此不再使用 biz_config.epc_cleaned
-    一次性闸门：旧版本曾在脏数据仍存在时提前把闸门置 1，导致之后的升级永久
-    跳过清理。products.rfid_epc 的全部写入入口均为系统规则生成，每次迁移
-    幂等重跑不会误伤真实标签。
+    格式合规且唯一的 EPC 永不重写（含跨店调拨、品类变更后段码与当前不一致的情况，
+    段码保留首次配发语义）。assign_rule_epcs 幂等，每次迁移重跑不会误伤真实标签。
     """
     assign_rule_epcs(conn)
     conn.execute("UPDATE biz_config SET epc_cleaned=1 WHERE id=1")

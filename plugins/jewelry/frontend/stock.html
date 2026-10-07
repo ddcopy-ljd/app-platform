@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>库存盘点 · 手持机</title>
+<title>扫描助手 · 盘点</title>
 <style>
   :root{
-    --wine:#8b1e3f; --green:#1a7f37; --red:#c0392b; --blue:#2563eb;
+    --wine:#8b1e3f; --green:#1a7f37; --red:#c0392b; --blue:#2563eb; --orange:#d97706;
     --bg:#f2f0ec; --card:#fff; --line:#e2ddd4; --tx:#2b2622; --tx2:#8a8177;
   }
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
@@ -21,18 +21,25 @@
     display:flex; align-items:center; gap:8px; flex-wrap:wrap;
   }
   .top .t{font-size:17px; font-weight:700; flex:1;}
-  .top button{background:rgba(255,255,255,.15); border:none; color:#fff; font-size:13px; padding:6px 12px; border-radius:8px;}
+  .top button{background:rgba(255,255,255,.15); border:none; color:#fff; font-size:14px; padding:7px 12px; border-radius:8px;}
   /* 状态条 */
   .chips{display:flex; gap:6px; flex-wrap:wrap; padding:8px 12px 0; flex:none;}
-  .chip{font-size:12px; padding:4px 10px; border-radius:99px; background:#fff; border:1px solid var(--line); color:var(--tx2);}
+  .chip{font-size:14px; padding:4px 10px; border-radius:99px; background:#fff; border:1px solid var(--line); color:var(--tx2);}
   .chip.ok{color:var(--green); border-color:#bfe3c8; background:#f0faf3;}
   .chip.warn{color:var(--red); border-color:#f2c4bd; background:#fdf1ef;}
   .chip.pwr{color:var(--blue); border-color:#c7d7f7; background:#f2f7ff;}
   main{flex:1; overflow-y:auto; padding:10px 12px; display:flex; flex-direction:column; gap:10px;}
   .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px;}
-  /* 高价值提醒 */
-  .hv{display:none; background:#fff7e6; border:1px solid #f0d9a8; color:#9a6b00; border-radius:12px; padding:10px 12px; font-size:14px; flex:none;}
-  .hv.on{display:block;}
+  /* 统计 */
+  .stats{display:flex; gap:8px; flex:none;}
+  .stat{flex:1; background:#fff; border:1px solid var(--line); border-radius:12px; padding:10px 6px; text-align:center;}
+  .stat .n{font-size:24px; font-weight:800; line-height:1.1;}
+  .stat .l{font-size:14px; color:var(--tx2); margin-top:3px;}
+  .stat.mine .n{color:var(--green);} .stat.pend .n{color:var(--orange);} .stat.total .n{color:var(--blue);}
+  .verdict-row{display:flex; gap:8px; flex:none;}
+  .verdict{flex:1; border-radius:10px; padding:8px 6px; text-align:center; font-size:14px; border:1px solid var(--line); background:#fff;}
+  .verdict b{display:block; font-size:18px; margin-top:2px;}
+  .verdict.in b{color:var(--green);} .verdict.ot b{color:var(--red);} .verdict.uk b{color:var(--orange);}
   /* 扳机大按钮 */
   .trigger{
     width:100%; border:none; border-radius:14px; padding:18px; font-size:18px; font-weight:700;
@@ -40,23 +47,25 @@
   }
   .trigger.scan{background:var(--red); animation:pulse 1s infinite;}
   .trigger.ready{background:var(--green);}
+  .trigger:disabled{opacity:.55;}
   .trigger:active{transform:scale(.99);}
   @keyframes pulse{50%{opacity:.7;}}
-  /* 页签 */
-  .tabs{display:flex; gap:8px; flex:none;}
-  .tab{flex:1; text-align:center; padding:10px; border-radius:10px; background:#fff; border:1px solid var(--line); color:var(--tx2); font-size:15px;}
-  .tab.on{color:var(--green); border-color:var(--green); font-weight:700; background:#f0faf3;}
-  .tab.on2{color:var(--red); border-color:var(--red); font-weight:700; background:#fdf1ef;}
+  /* 摄像头取景 */
+  .camwrap{display:none; position:relative; width:100%; border-radius:12px; overflow:hidden; background:#000; flex:none;}
+  .camwrap.on{display:block;}
+  .camwrap video{width:100%; display:block;}
+  .camwrap .cam-tip{position:absolute; left:0; right:0; bottom:0; padding:6px 10px; font-size:14px; color:#fff;
+    background:linear-gradient(transparent,rgba(0,0,0,.7));}
   /* 列表 */
   .list{display:flex; flex-direction:column; gap:6px;}
   .item{background:#fff; border:1px solid var(--line); border-radius:10px; padding:8px 10px; display:flex; align-items:center; gap:8px;}
-  .item .bdg{font-size:11px; padding:2px 8px; border-radius:99px; flex:none; color:#fff;}
+  .item .bdg{font-size:14px; padding:2px 8px; border-radius:99px; flex:none; color:#fff;}
   .item .info{flex:1; min-width:0;}
   .item .nm{font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .item .sub{font-size:11px; color:var(--tx2);}
-  .item.ab{border-color:#f2c4bd; background:#fdf5f4;}
-  .empty{color:var(--tx2); text-align:center; padding:24px 0; font-size:13px;}
-  .more{color:var(--tx2); text-align:center; font-size:12px; padding:6px 0;}
+  .item .sub{font-size:14px; color:var(--tx2);}
+  .item.pending{border-color:#f0d9a8; background:#fffaef;}
+  .empty{color:var(--tx2); text-align:center; padding:24px 0; font-size:14px;}
+  .more{color:var(--tx2); text-align:center; font-size:14px; padding:6px 0;}
   /* 设置面板 */
   .mask{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:20; display:none;}
   .mask.on{display:block;}
@@ -94,482 +103,529 @@
 <body>
 
 <div class="top">
-  <span class="t">库存盘点</span>
-  <button onclick="scanJoin()">扫码加入任务</button>
+  <span class="t">扫描助手 · 盘点</span>
+  <button onclick="scanJoin()">扫码加入</button>
   <button onclick="openPanel()">⚙ 设置</button>
 </div>
 
 <div class="chips">
   <span class="chip" id="chNet">连接中…</span>
   <span class="chip" id="chTask">未加入任务</span>
-  <span class="chip" id="chSnap">未下载快照</span>
-  <span class="chip" id="chUhf">UHF…</span>
-  <span class="chip pwr" id="chPwr">—</span>
+  <span class="chip" id="chMode">网页</span>
+  <span class="chip" id="chDevs">设备 0/0</span>
+  <span class="chip pwr" id="chPwr" style="display:none">—</span>
   <span class="chip" id="chDev">本机</span>
 </div>
 
 <main>
-  <div class="hv" id="hvBanner"></div>
-  <button class="trigger" id="btnTrigger" onclick="YzTrigger.onTrigger()">扫码加入盘点任务</button>
-  <div class="tabs">
-    <div class="tab on" id="tabStore" onclick="setTab(false)">在库 (0)</div>
-    <div class="tab" id="tabAbnormal" onclick="setTab(true)">异常 (0)</div>
+  <div class="stats">
+    <div class="stat mine"><div class="n" id="nMine">0</div><div class="l">本机已上报</div></div>
+    <div class="stat pend"><div class="n" id="nPend">0</div><div class="l">本地待上传</div></div>
+    <div class="stat total"><div class="n" id="nTotal">0</div><div class="l">全局已扫</div></div>
   </div>
+  <div class="verdict-row">
+    <div class="verdict in">在库<b id="nIn">0</b></div>
+    <div class="verdict ot">非在库<b id="nOt">0</b></div>
+    <div class="verdict uk">未登记<b id="nUk">0</b></div>
+  </div>
+
+  <button class="trigger" id="btnTrigger" onclick="YzTrigger.onTrigger()">扫码加入盘点任务</button>
+
+  <div class="camwrap" id="camwrap">
+    <video id="camVideo" playsinline muted></video>
+    <div class="cam-tip" id="camTip">摄像头扫码中…</div>
+  </div>
+
   <div class="list" id="list"></div>
-  <div class="empty" id="empty">扫描到的商品会实时显示在这里</div>
+  <div class="empty" id="empty">扫描到的标签会实时显示在这里（分类由服务端判定）</div>
 </main>
 
 <!-- 设置面板 -->
 <div class="mask" id="mask" onclick="closePanel()"></div>
 <div class="panel" id="panel">
-  <h3>盘点参数</h3>
-  <div class="prow"><span>上报/拉取间隔（秒）</span><input type="number" id="sPull" min="5" max="120"></div>
-  <div class="prow"><span>信号过滤（RSSI）</span><div class="sw" id="sRssiOn" onclick="toggleSw(this)"></div></div>
-  <div class="prow"><span>RSSI 阈值</span><select id="sRssiTh">
+  <h3>扫描参数</h3>
+  <div class="prow"><span>状态刷新间隔（秒）</span><input type="number" id="sPull" min="3" max="60"></div>
+  <div class="prow" id="rowRssiOn"><span>信号过滤（RSSI）</span><div class="sw" id="sRssiOn" onclick="toggleSw(this)"></div></div>
+  <div class="prow" id="rowRssiTh"><span>RSSI 阈值</span><select id="sRssiTh">
     <option value="-60">-60（近）</option><option value="-65">-65</option><option value="-70">-70</option>
-    <option value="-75">-75（默认）</option><option value="-80">-80</option><option value="-85">-85（远）</option>
+    <option value="-75" class="def">-75（默认）</option><option value="-80">-80</option><option value="-85">-85（远）</option>
   </select></div>
-  <div class="prow"><span>同标签去重提示</span><div class="sw" id="sDedup" onclick="toggleSw(this)"></div></div>
-  <div class="prow"><span>高价值未扫提醒</span><div class="sw" id="sHv" onclick="toggleSw(this)"></div></div>
-  <div class="prow"><span>异常标签震动</span><div class="sw" id="sVib" onclick="toggleSw(this)"></div></div>
+  <div class="prow"><span>重复标签提示音</span><div class="sw" id="sDedup" onclick="toggleSw(this)"></div></div>
+  <div class="prow"><span>异常震动</span><div class="sw" id="sVib" onclick="toggleSw(this)"></div></div>
   <div class="pbtns">
-    <button class="pbtn" onclick="downloadSnapshot(true)">重新下载快照</button>
     <button class="pbtn gray" onclick="leaveTask(true)">退出任务</button>
+    <button class="pbtn gray" onclick="closePanel()">关闭</button>
   </div>
-  <div class="pbtns"><button class="pbtn gray" onclick="closePanel()">关闭</button></div>
 </div>
 
 <div class="toast" id="toast"></div>
 <div class="overlay" id="overlay"></div>
 
+<script src="vendor/zxing.min.js"></script>
 <script>
 'use strict';
-// ================= 登录态（App 传入 token；盘点接口本身用任务密钥）=================
-var TOKEN = new URLSearchParams(location.search).get('token') || localStorage.getItem('yz_sale_token') || '';
-if (TOKEN) {
-  localStorage.setItem('yz_sale_token', TOKEN);
-  try { history.replaceState(null, '', location.pathname); } catch (e) {}
-}
-window.__yzLoginOk = false;
+// ============================================================================
+// 扫描助手 H5（统一任务引擎 · 严格盲采）
+//  - 免登录：凭任务 key 参与（?key= 或扫码），设备首次上报自动登记为 h5 设备
+//  - 双模式：手持机 App WebView 内走 YzApp UHF 桥（source=rfid）；
+//            普通浏览器用本地 zxing 摄像头连续扫条码（source=camera）
+//  - 设备不保存任何账面库存，在库/非在库/未登记一律由服务端判定后回显
+// ============================================================================
 
-// ================= 设置 =================
-var SET = load('yz_stock_set', { pull: 15, rssiOn: true, rssiTh: -75, dedup: true, hv: true, vib: true });
-function load(k, d) { try { var v = JSON.parse(localStorage.getItem(k)); return v || d; } catch (e) { return d; } }
+// ---------------- 工具 / 持久化 ----------------
+function load(k, d) { try { var v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } }
 function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (m) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+  });
+}
+function pad(n) { return (n < 10 ? '0' : '') + n; }
+function uuid() {
+  var k = localStorage.getItem('yz_h5_uuid');
+  if (!k) { k = 'H5-' + (Math.random().toString(16) + '0000000').slice(2, 8).toUpperCase(); localStorage.setItem('yz_h5_uuid', k); }
+  return k;
+}
+var _tt;
+function toast(msg, err) {
+  var t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast show' + (err ? ' err' : '');
+  clearTimeout(_tt);
+  _tt = setTimeout(function () { t.className = 'toast' + (err ? ' err' : ''); }, 2600);
+}
+function beep() { try { if (window.YzApp && YzApp.beep) YzApp.beep(); else if (navigator.vibrate) navigator.vibrate(30); } catch (e) {} }
+function vibrate(ms) { try { if (window.YzApp && YzApp.vibrate) YzApp.vibrate(ms); else if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+
+// ---------------- 设置 ----------------
+var SET = load('yz_stock_set', { pull: 4, rssiOn: true, rssiTh: -75, dedup: true, vib: true });
 function saveSet() { save('yz_stock_set', SET); }
 
-// ================= 状态 =================
-var CFG = load('yz_stock_cfg', { server: '', taskNo: '', deviceNo: 0, sinceId: 0, snapshot: '' });
-var SNAPSHOT = {};   // epc -> {code,name,hv}
-var RECORDS = {};    // epc -> {type,self,dev,rssi,time,name,seq}
-var WEIGHT = { ABNORMAL: 0, HV_UN: 1, HV_SC: 2, NORMAL: 3, OTHER: 4 };
-var seq = 0;
-var PENDING = {};    // 待上报 epc -> rssi
-var joined = false, active = false, snapshotReady = false, scanning = false;
-var netOk = true, globalCount = 0;
-var abnormalTab = false;
+// ---------------- 身份（App 桥 / 浏览器）----------------
+var DEV = { key: uuid(), name: localStorage.getItem('yz_h5_name') || '网页', stock: 30, ready: false };
+var APP = !!(window.YzApp && window.YzApp.stockStart);
+(function devInfo() {
+  if (!APP) return;
+  try { var d = JSON.parse(window.YzApp.device()); DEV = { key: d.key || DEV.key, name: d.name || DEV.name, stock: d.stock || 30, ready: !!d.ready }; APP = true; }
+  catch (e) { APP = false; }
+})();
+// UHF 就绪用 UHF 桥；否则一律摄像头自主
+function mode() { return (APP && DEV.ready) ? 'uhf' : 'camera'; }
 
-// ================= API（协同盘点，密钥鉴权）=================
-var ORIGIN = '', KEY = '';
-function parseServer() {
-  var s = (CFG.server || '').trim();
-  if (!s || s.toLowerCase().indexOf('/co/join') < 0) return false;
-  var m = s.match(/[?&]key=([^&]+)/); if (!m) return false;
-  KEY = m[1];
-  var o = s.match(/^(https?:\/\/[^\/]+)/i); if (!o) return false;
-  ORIGIN = o[1];
-  return true;
+// ---------------- 任务态 ----------------
+var CFG = load('yz_stock_cfg', { origin: '', key: '', taskNo: '', deviceNo: 0, sinceId: 0 });
+var joined = false, active = false, scanning = false, netOk = false;
+var PENDING = load('yz_stock_pending', {});   // epc -> {rssi, source}
+var SCANNED = {};                              // epc -> true（本机去重）
+var ITEMS = {};                                // id -> {id,epc,device_no,source,verdict}
+var STATS = { in_store: 0, other_store: 0, unknown: 0, total: 0 };
+var mine = 0, onlineDevs = 0, totalDevs = 0;
+var flushBusy = false, observeBusy = false;
+
+function origin() {
+  var o = (CFG.origin || '').replace(/\/+$/, '');
+  if (!o) o = location.origin;
+  return o;
 }
 function enc(s) { return encodeURIComponent(s || ''); }
-function stReq(method, path, body) {
-  var dev = DEV.key;
-  var url = ORIGIN + path + '?key=' + KEY + '&device=' + enc(dev);
-  var opt = { method: method };
+
+// ---------------- 网络（key 通道，免登录）----------------
+function api(path, method, body) {
+  var sep = path.indexOf('?') >= 0 ? '&' : '?';
+  var url = origin() + path + sep + 'key=' + enc(CFG.key) + '&device=' + enc(DEV.key);
+  var opt = { method: method || 'GET' };
   if (body) { opt.headers = { 'Content-Type': 'application/json' }; opt.body = JSON.stringify(body); }
   return fetch(url, opt).then(function (r) {
-    return r.json().then(function (j) {
+    return r.json().catch(function () { return {}; }).then(function (j) {
       if (!r.ok) { var e = new Error(j.detail || ('HTTP ' + r.status)); e.code = r.status; throw e; }
       return j;
     });
   });
 }
 
-// ================= 桥 =================
-var DEV = { key: '', name: '', stock: 30, sale: 10, ready: false };
-var APP = !!(window.YzApp && window.YzApp.stockStart);
-function devInfo() {
-  if (!APP) return;
-  try {
-    var d = JSON.parse(window.YzApp.device());
-    DEV = d; APP = true;
-  } catch (e) { APP = false; }
-}
-
+// ---------------- 二维码 / 加入 ----------------
 window.YzScanner = {
   onResult: function (code, type) { if (type === 'qrcode') handleQr(code); },
   onState: function (on) { setScanning(!!on); },
   onTags: function (tags) { onTags(tags || []); }
 };
-// 机身扳机接管：可扫则开/停连续扫描；未加入任务则扫码加入
 window.YzTrigger = {
   onTrigger: function () {
     if (canScan()) {
-      if (!DEV.ready) { toast('本机无 UHF 模块，请在手机浏览器使用网页版盘点', true); return; }
-      if (scanning) window.YzApp.stockStop(); else window.YzApp.stockStart();
-    } else if (CFG.server) {
-      join(false);   // 已加入过任务：用原密钥重新加入刷新状态，无需重新扫码
+      if (mode() === 'uhf') { if (scanning) YzApp.stockStop(); else YzApp.stockStart(); }
+      else { if (scanning) stopCamera(); else startCamera(); }
+    } else if (CFG.key) {
+      join();
     } else {
       scanJoin();
     }
   }
 };
 
+// 从未加入：App 用桥扫二维码；浏览器可选摄像头扫二维码或粘贴
 function scanJoin() {
-  if (window.YzApp && window.YzApp.scan) { window.YzApp.scan('qrcode'); return; }
-  var u = prompt('粘贴盘点任务二维码内容（含 /co/join?key=）：');
+  if (window.YzApp && YzApp.scan) { YzApp.scan('qrcode'); return; }
+  if (!window.ZXing) { manualJoin(); return; }
+  if (!confirm('用摄像头扫描任务二维码？\n（点“取消”可手动粘贴任务链接）')) { manualJoin(); return; }
+  startQrCamera();
+}
+function manualJoin() {
+  var u = prompt('粘贴任务二维码内容（含 /api/device/claim?key= 或 /stock.html?key=）：');
   if (u) handleQr(u);
 }
 
+// 支持：claim URL、stock.html URL、裸 key
 function handleQr(raw) {
   var s = String(raw || '').trim();
   if (!s) return;
-  if (s.toLowerCase().indexOf('/co/join') >= 0) {
-    CFG.server = s; save('yz_stock_cfg', CFG);
-    join(true);
-  } else if (s.toLowerCase().indexOf('/stocktake/upload') >= 0) {
-    toast('这是旧版单人盘点码，请在网页端「协同盘点任务」创建任务后扫码', true);
-  } else {
-    toast('无法识别的二维码，请扫协同盘点任务码', true);
+  var low = s.toLowerCase();
+  if (low.indexOf('/api/stocktake/co/') >= 0 || low.indexOf('/co/join') >= 0) {
+    toast('这是旧版协同盘点码，请在网页端重新开启任务后扫描新任务码', true); return;
   }
-}
-
-// ================= 盘点引擎（与原 App StockEngine 同规则）=================
-function loadSnapshot(items) {
-  SNAPSHOT = {}; RECORDS = {}; seq = 0;
-  (items || []).forEach(function (o) {
-    var epc = String(o.epc || '').toUpperCase();
-    if (!epc) return;
-    SNAPSHOT[epc] = { code: o.code || '', name: o.name || '', hv: !!o.high_value };
-  });
-  if (SET.hv) {
-    for (var epc in SNAPSHOT) {
-      if (!RECORDS[epc]) RECORDS[epc] = { type: 'HV_UN', self: false, dev: 0, name: SNAPSHOT[epc].name, seq: --seq };
-    }
+  if (low.indexOf('/stocktake/upload') >= 0) {
+    toast('这是旧版单人盘点码，请在网页端开启盘点任务后扫描', true); return;
   }
-  snapshotReady = Object.keys(SNAPSHOT).length > 0;
+  var oM = s.match(/^(https?:\/\/[^\/]+)/i);
+  var kM = s.match(/[?&]key=([^&]+)/);
+  if (oM && kM) { CFG.origin = oM[1]; CFG.key = decodeURIComponent(kM[1]); }
+  else if (!/^https?:\/\//i.test(s) && s.indexOf(' ') < 0 && s.length >= 8) { CFG.key = s; if (!CFG.origin) CFG.origin = location.origin; }
+  else { toast('无法识别的任务二维码', true); return; }
   save('yz_stock_cfg', CFG);
-  saveRecords();
-}
-/** @return 1=本店新 2=异常新 0=重复 */
-function onSelfScan(epc, rssi, time) {
-  var cur = RECORDS[epc];
-  if (cur && cur.self) return 0;
-  var info = SNAPSHOT[epc];
-  if (info) {
-    RECORDS[epc] = { type: info.hv ? 'HV_SC' : 'NORMAL', self: true, dev: CFG.deviceNo, rssi: rssi, time: time, name: info.name, seq: ++seq };
-    return 1;
-  }
-  RECORDS[epc] = { type: 'ABNORMAL', self: true, dev: CFG.deviceNo, rssi: rssi, time: time, name: '', seq: ++seq };
-  return 2;
-}
-function mergeOther(epc, dev) {
-  var cur = RECORDS[epc];
-  if (cur && cur.self) return;
-  var info = SNAPSHOT[epc]; if (!info) return;
-  RECORDS[epc] = { type: 'OTHER', self: false, dev: dev, name: info.name, seq: 1e6 + Object.keys(RECORDS).length };
-}
-function listFor(abn) {
-  var arr = [];
-  for (var epc in RECORDS) {
-    var r = RECORDS[epc];
-    if (abn ? r.type === 'ABNORMAL' : r.type !== 'ABNORMAL') arr.push([epc, r]);
-  }
-  arr.sort(function (a, b) { return (WEIGHT[a[1].type] - WEIGHT[b[1].type]) || (b[1].seq - a[1].seq); });
-  return arr;
-}
-function saveRecords() { save('yz_stock_records', { seq: seq, r: RECORDS }); }
-function restoreRecords() {
-  var d = load('yz_stock_records', null);
-  if (d && d.r) { RECORDS = d.r; seq = d.seq || 0; }
+  join();
 }
 
-// ================= 扫描 =================
-function canScan() { return joined && active && snapshotReady; }
-function setScanning(on) {
-  scanning = !!on;
-  refreshUi();
-}
-function onTags(tags) {
-  if (!scanning) return;
-  var now = new Date();
-  var time = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
-  var dirty = false;
-  tags.forEach(function (t) {
-    var epc = String(t.epc || '').toUpperCase();
-    if (!epc) return;
-    var rssi = t.rssi || 0;
-    if (SET.rssiOn && rssi !== 0 && rssi < SET.rssiTh) return; // 信号过滤
-    var r = onSelfScan(epc, rssi, time);
-    if (r === 1) { window.YzApp && window.YzApp.beep(); PENDING[epc] = rssi; dirty = true; }
-    else if (r === 2) {
-      window.YzApp && window.YzApp.beep();
-      if (SET.vib) window.YzApp && window.YzApp.vibrate(300);
-      PENDING[epc] = rssi; dirty = true;
-    } else {
-      if (!SET.dedup) window.YzApp && window.YzApp.beep();
-      PENDING[epc] = rssi; dirty = true; // 重复也上传，服务端去重
-    }
-  });
-  if (dirty) { save('yz_stock_pending', PENDING); refreshUi(); }
-}
-function pad(n) { return (n < 10 ? '0' : '') + n; }
-
-// ================= 任务连接 =================
-function join(autoSnapshot) {
-  if (!parseServer()) { toast('请先扫码加入任务', true); return; }
-  stReq('POST', '/api/stocktake/co/join', { device: DEV.key, name: DEV.name }).then(function (j) {
-    if (j.status === '已完成') { leaveTask(true); return; }
-    var isNew = j.task_no && j.task_no !== CFG.taskNo;
-    if (isNew) {
-      CFG.sinceId = 0; CFG.snapshot = ''; PENDING = {}; save('yz_stock_pending', PENDING);
-      SNAPSHOT = {}; RECORDS = {}; seq = 0; snapshotReady = false;
-      saveRecords();
-    }
-    CFG.deviceNo = j.device_no || 0;
-    CFG.taskNo = j.task_no || CFG.taskNo;
-    save('yz_stock_cfg', CFG);
-    joined = true; active = !!j.active; netOk = true;
-    toast('已加入任务，本机编号 ' + CFG.deviceNo);
+function join() {
+  if (!CFG.key) { toast('请先扫码加入任务', true); return; }
+  // observe 即对 key 的有效性与任务状态做校验
+  CFG.sinceId = 0;
+  clearTaskData();   // 先清旧任务残留，再拉新任务增量，杜绝跨任务串数据
+  observe(true).then(function () {
+    joined = true; netOk = true;
+    toast('已加入任务 ' + CFG.taskNo + '，本机编号 ' + (CFG.deviceNo || '-'));
     refreshUi();
-    if (isNew || autoSnapshot) downloadSnapshot();
   }).catch(function (e) {
-    netOk = false; joined = false; refreshUi();
-    if (e.code === 403 || e.code === 404) { leaveTask(false); toast('任务密钥无效，请重新扫码', true); }
+    joined = false; netOk = false;
+    if (e.code === 403 || e.code === 404) { resetTask(false); toast('任务密钥无效，请重新扫码', true); }
     else toast('加入失败：' + e.message, true);
-  });
-}
-
-function downloadSnapshot(manual) {
-  if (!parseServer()) { toast('请先扫码加入任务', true); return; }
-  stReq('GET', '/api/stocktake/co/snapshot').then(function (s) {
-    if (s.status === '已完成') { leaveTask(true); return; }
-    CFG.snapshot = JSON.stringify(s.items || []);
-    loadSnapshot(s.items || []);
-    joined = true; active = s.status === '进行中'; netOk = true;
-    toast('快照已下载：' + Object.keys(SNAPSHOT).length + ' 件');
     refreshUi();
-  }).catch(function (e) {
-    if (e.code === 403 || e.code === 404) { leaveTask(false); }
-    else { netOk = false; if (manual) toast('下载失败：' + e.message, true); refreshUi(); }
   });
 }
 
 function leaveTask(hint) {
-  if (scanning && APP) window.YzApp.stockStop();
-  joined = false; active = false; snapshotReady = false;
-  PENDING = {}; SNAPSHOT = {}; RECORDS = {}; seq = 0;
-  CFG.server = ''; CFG.taskNo = ''; CFG.deviceNo = 0; CFG.sinceId = 0; CFG.snapshot = '';
-  save('yz_stock_cfg', CFG); save('yz_stock_pending', PENDING); saveRecords();
-  netOk = true;
+  stopAllScan();
+  resetTask(true);
+  if (hint) toast('已退出任务，请扫码加入新任务');
+}
+// 清空任务数据态（不动 CFG 身份/密钥），防止跨任务把旧待上报标签带到新任务
+function clearTaskData() {
+  PENDING = {}; SCANNED = {}; ITEMS = {}; mine = 0;
+  STATS = { in_store: 0, other_store: 0, unknown: 0, total: 0 };
+  onlineDevs = totalDevs = 0;
+  save('yz_stock_pending', PENDING);
+}
+function resetTask(keepOrigin) {
+  joined = false; active = false;
+  clearTaskData();
+  CFG.key = ''; CFG.taskNo = ''; CFG.deviceNo = 0; CFG.sinceId = 0;
+  if (!keepOrigin) CFG.origin = '';
+  save('yz_stock_cfg', CFG);
   refreshUi();
-  if (hint) toast('任务已结束，请扫码加入新任务', true);
 }
 
-// ================= 上报 / 拉取 / 任务轮询 =================
+// ---------------- 扫描输入 ----------------
+function canScan() { return joined && active; }
+function setScanning(on) { scanning = !!on; refreshUi(); }
+
+function ingest(epcRaw, rssi, source) {
+  var epc = String(epcRaw || '').trim().toUpperCase();
+  if (!epc) return;
+  if (SET.rssiOn && mode() === 'uhf' && rssi && rssi < SET.rssiTh) return;
+  if (SCANNED[epc] || PENDING[epc]) { if (!SET.dedup) beep(); return; }
+  SCANNED[epc] = true;
+  PENDING[epc] = { rssi: rssi || 0, source: source };
+  beep();
+  save('yz_stock_pending', PENDING);
+  renderStats(); renderList();
+}
+// UHF 批量标签（App 桥）
+function onTags(tags) {
+  if (!scanning || mode() !== 'uhf') return;
+  tags.forEach(function (t) { ingest(t.epc, t.rssi || 0, 'rfid'); });
+}
+
+// ---------------- 摄像头（本地 zxing，无 CDN）----------------
+var zxReader = null, zxControls = null, zxMode = null; // 'code' | 'qr'
+function camEl() { return document.getElementById('camwrap'); }
+function startCamera() { startDecode('code', '摄像头扫码中，对准条码/二维码标签'); }
+function startQrCamera() { startDecode('qr', '请扫描任务二维码'); }
+function startDecode(use, tip) {
+  if (!window.ZXing) { toast('扫码库未加载，请改用手动粘贴', true); return; }
+  stopCamera(false);
+  zxMode = use;
+  document.getElementById('camTip').textContent = tip;
+  camEl().className = 'camwrap on';
+  try {
+    zxReader = new ZXing.BrowserMultiFormatReader();
+    var p = zxReader.decodeFromVideoDevice(undefined, document.getElementById('camVideo'), function (result) {
+      if (!result || !result.getText) return;
+      var text = result.getText();
+      if (zxMode === 'qr') { stopCamera(); handleQr(text); }
+      else { ingest(text, 0, 'camera'); }
+    });
+    if (p && p.then) p.then(function (controls) { zxControls = controls; }, function (err) {
+      camEl().className = 'camwrap'; scanning = false; refreshUi();
+      toast('无法打开摄像头：' + ((err && err.message) || '权限被拒或被占用'), true);
+    });
+    scanning = true; refreshUi();
+  } catch (e) {
+    camEl().className = 'camwrap'; scanning = false; refreshUi();
+    toast('无法打开摄像头：' + (e && e.message ? e.message : '权限被拒'), true);
+  }
+}
+function stopCamera(doRefresh) {
+  zxMode = null;
+  try { if (zxControls && zxControls.stop) zxControls.stop(); } catch (e) {}
+  try { if (zxReader) zxReader.reset(); } catch (e) {}
+  zxReader = null; zxControls = null;
+  var v = document.getElementById('camVideo');
+  if (v && v.srcObject) { try { v.srcObject.getTracks().forEach(function (tk) { tk.stop(); }); } catch (e) {} v.srcObject = null; }
+  camEl().className = 'camwrap';
+  scanning = false;
+  if (doRefresh !== false) refreshUi();
+}
+function stopAllScan() {
+  try { if (mode() === 'uhf' && APP && scanning && YzApp.stockStop) YzApp.stockStop(); } catch (e) {}
+  stopCamera(false);
+}
+
+// ---------------- 上报（盲采，服务端排重+分类）----------------
 function flush() {
-  if (!joined && !Object.keys(PENDING).length) return;
+  if (!joined || flushBusy) return;
   var keys = Object.keys(PENDING);
   if (!keys.length) return;
-  if (!parseServer()) return;
-  var body = { device: DEV.key, name: DEV.name, tags: keys.map(function (k) { return { epc: k, rssi: PENDING[k] }; }) };
-  stReq('POST', '/api/stocktake/co/scan', body).then(function (resp) {
-    keys.forEach(function (k) { delete PENDING[k]; });
-    globalCount = resp.global_count || globalCount;
-    netOk = true;
-    save('yz_stock_pending', PENDING);
-    refreshUi();
-  }).catch(function (e) {
-    if (e.code === 403 || e.code === 404) { leaveTask(false); }
-    else if (e.code === 409) {
-      // 任务处于待核对/已暂停等非进行中状态：停扫丢批次，但保留密钥，按一下可自动重新加入
-      active = false; PENDING = {}; save('yz_stock_pending', PENDING);
-      if (scanning && APP) window.YzApp.stockStop();
-      toast('任务当前不是【进行中】状态，请在网页端开始盘点后再按扫描', true);
-      refreshUi();
-    } else { netOk = false; save('yz_stock_pending', PENDING); refreshUi(); }
-  });
-}
-
-function pull() {
-  if (!joined || !parseServer()) return;
-  stReq('GET', '/api/stocktake/co/pull' + '&since_id=' + (CFG.sinceId || 0))
-    .then(function (resp) {
-      if (resp.status === '已完成') { leaveTask(true); return; }
-      var items = resp.items || [];
-      items.forEach(function (o) { mergeOther(String(o.epc || '').toUpperCase(), o.device_no || 0); });
-      if ((resp.max_id || 0) > (CFG.sinceId || 0)) CFG.sinceId = resp.max_id;
-      save('yz_stock_cfg', CFG);
-      netOk = true;
-      active = resp.status === '进行中';
-      if (!active && scanning && APP) window.YzApp.stockStop();
-      if (items.length) saveRecords();
-      refreshUi();
-    }).catch(function (e) {
-      if (e.code === 403 || e.code === 404) { leaveTask(false); }
-      else { netOk = false; refreshUi(); }
+  flushBusy = true;
+  // 按来源分组
+  var groups = {};
+  keys.forEach(function (k) { var s = PENDING[k].source || 'camera'; (groups[s] = groups[s] || []).push(k); });
+  var chain = Promise.resolve();
+  Object.keys(groups).forEach(function (src) {
+    var ks = groups[src];
+    chain = chain.then(function () {
+      return api('/api/device/scan', 'POST', {
+        device: DEV.key, name: DEV.name, source: src,
+        tags: ks.map(function (k) { return { epc: k, rssi: PENDING[k].rssi || 0 }; })
+      }).then(function (resp) {
+        ks.forEach(function (k) { delete PENDING[k]; });
+        if (resp.device_no) CFG.deviceNo = resp.device_no;
+        if (typeof resp.mine === 'number') mine = resp.mine;
+        if (resp.stats) STATS = resp.stats;
+        netOk = true;
+        save('yz_stock_pending', PENDING);
+      });
     });
+  });
+  chain.then(function () {
+    if (!active) return;
+    renderStats(); renderList();
+  }).catch(function (e) {
+    if (e.code === 403 || e.code === 404) { resetTask(false); toast('任务密钥无效，请重新扫码', true); }
+    else if (e.code === 409) { handleClosed('任务已结束，停止扫描'); }
+    else { netOk = false; renderChips(); }
+  }).then(function () { flushBusy = false; });
 }
 
-function pollTask() {
-  if (!joined || !parseServer()) return;
-  stReq('GET', '/api/stocktake/co/task').then(function (t) {
+// ---------------- 观察（状态/设备/统计/流水）----------------
+function observe(initial) {
+  if (observeBusy && !initial) return Promise.resolve();
+  observeBusy = true;
+  var since = initial ? 0 : (CFG.sinceId || 0);
+  return api('/api/task/observe' + '?since_id=' + since, 'GET').then(function (resp) {
     netOk = true;
-    if (t.status === '已完成') { leaveTask(true); return; }
-    if (joined && !t.active && active) {
-      if (scanning && APP) window.YzApp.stockStop();
-      toast(t.status === '待核对' ? '任务已提交，等待主管核对' : '任务已结束');
-    }
-    active = !!t.active;
-    refreshUi();
-  }).catch(function () {});
+    CFG.taskNo = resp.task_no || CFG.taskNo;
+    // 设备在线统计每次全量重算；同时按 device_code 精确识别本机编号
+    onlineDevs = 0; totalDevs = 0;
+    (resp.devices || []).forEach(function (d) {
+      totalDevs++;
+      if (d.online) onlineDevs++;
+      if (d.device_code === DEV.key && d.device_no) CFG.deviceNo = d.device_no;
+    });
+    (resp.items || []).forEach(function (o) {
+      ITEMS[o.id] = o;
+      if (o.id > (CFG.sinceId || 0)) CFG.sinceId = o.id;
+      if (o.device_code === DEV.key) SCANNED[o.epc] = true;
+    });
+    if (resp.stats) STATS = resp.stats;
+    mine = 0;
+    Object.keys(ITEMS).forEach(function (id) { if (ITEMS[id].device_code === DEV.key) mine++; });
+    applyStatus(resp.status, initial);
+    save('yz_stock_cfg', CFG);
+    renderChips(); renderStats(); renderList();
+  }).catch(function (e) {
+    if (e.code === 403 || e.code === 404) { if (joined) { resetTask(false); toast('任务密钥无效或已删除，请重新扫码', true); } }
+    else { netOk = false; renderChips(); }
+    throw e;
+  }).then(function () { observeBusy = false; }, function (e) { observeBusy = false; return Promise.reject(e); });
 }
 
-setInterval(function () { if (scanning || Object.keys(PENDING).length) flush(); }, 1200);
-setInterval(function () { if (joined) pull(); }, Math.max(5, SET.pull) * 1000);
-setInterval(function () { if (joined) pollTask(); }, 20000);
+function applyStatus(status, initial) {
+  if (status === '进行中') {
+    if (!active) { active = true; if (!initial) toast('任务进行中'); }
+  } else {
+    if (active || initial) {
+      active = false;
+      stopAllScan();
+      var map = { '已完成': '任务已完结，差异报告已生成', '已撤销': '任务已被发起端撤销', '已终止': '任务已被发起端终止' };
+      handleClosed(map[status] || ('任务状态：' + status));
+    }
+  }
+}
+function handleClosed(msg) {
+  active = false; joined = false;
+  stopAllScan();
+  clearTaskData();
+  CFG.key = ''; CFG.taskNo = ''; CFG.deviceNo = 0; CFG.sinceId = 0;
+  save('yz_stock_cfg', CFG);
+  toast(msg, true);
+  refreshUi();
+}
 
-// ================= UI =================
-function setTab(abn) {
-  abnormalTab = abn;
-  document.getElementById('tabStore').className = 'tab' + (abn ? '' : ' on');
-  document.getElementById('tabAbnormal').className = 'tab' + (abn ? ' on2' : '');
-  renderList();
+// ---------------- 心跳（在线灯保活）----------------
+function heartbeat() {
+  if (!joined || !CFG.key) return;
+  api('/api/device/heartbeat', 'POST').then(function (r) {
+    netOk = true;
+    if (typeof r.mine === 'number') mine = r.mine;
+    renderChips(); renderStats();
+  }).catch(function () { netOk = false; renderChips(); });
+}
+
+// ---------------- 定时器 ----------------
+setInterval(function () { if (joined && (scanning || Object.keys(PENDING).length)) flush(); }, 1200);
+// observe 节拍由 SET.pull 控制（秒，下限3）
+var _lastObserve = 0;
+(function observeBeat() {
+  setTimeout(function () {
+    var now = Date.now();
+    if (joined && now - _lastObserve >= Math.max(3, SET.pull) * 1000) { _lastObserve = now; observe(false); }
+    observeBeat();
+  }, 500);
+})();
+setInterval(function () { if (joined) heartbeat(); }, 12000);
+
+// ---------------- 渲染 ----------------
+function verdictBadge(v) {
+  if (v === 'in_store') return '<span class="bdg" style="background:var(--green)">在库</span>';
+  if (v === 'other_store') return '<span class="bdg" style="background:var(--red)">非在库</span>';
+  return '<span class="bdg" style="background:var(--orange)">未登记</span>';
+}
+function sourceBadge(s) {
+  if (s === 'camera') return '<span class="bdg" style="background:#64748b">摄像</span>';
+  return '<span class="bdg" style="background:#2563eb">UHF</span>';
+}
+function renderStats() {
+  document.getElementById('nMine').textContent = mine;
+  document.getElementById('nPend').textContent = Object.keys(PENDING).length;
+  document.getElementById('nTotal').textContent = STATS.total || 0;
+  document.getElementById('nIn').textContent = STATS.in_store || 0;
+  document.getElementById('nOt').textContent = STATS.other_store || 0;
+  document.getElementById('nUk').textContent = STATS.unknown || 0;
+}
+function renderChips() {
+  var chNet = document.getElementById('chNet');
+  chNet.textContent = netOk ? '在线' : '离线'; chNet.className = 'chip ' + (netOk ? 'ok' : 'warn');
+  var chTask = document.getElementById('chTask');
+  chTask.textContent = !joined ? '未加入任务' : (active ? (CFG.taskNo || '盘点中') : '任务已结束');
+  chTask.className = 'chip ' + (joined && active ? 'ok' : (joined ? 'warn' : ''));
+  var md = mode();
+  var chMode = document.getElementById('chMode');
+  chMode.textContent = md === 'uhf' ? 'UHF 手持机' : '摄像头';
+  chMode.className = 'chip ' + (md === 'uhf' ? 'pwr' : '');
+  var od = 0, td = 0;
+  // 设备在线统计在 observe 内更新；此处从最近一次数据读取
+  document.getElementById('chDevs').textContent = '设备 ' + onlineDevs + '/' + totalDevs;
+  var chPwr = document.getElementById('chPwr');
+  if (md === 'uhf') { chPwr.style.display = ''; chPwr.textContent = DEV.stock + 'dBm'; }
+  else chPwr.style.display = 'none';
+  document.getElementById('chDev').textContent = CFG.deviceNo ? ('本机 ' + CFG.deviceNo + ' 号') : '本机';
 }
 function renderList() {
-  var arr = listFor(abnormalTab);
-  var list = document.getElementById('list');
-  var MAX = 300;
-  var html = '';
-  arr.slice(0, MAX).forEach(function (p) {
-    var epc = p[0], r = p[1];
-    var bdg, cls = 'item';
-    if (r.type === 'ABNORMAL') { bdg = '<span class="bdg" style="background:var(--red)">异常</span>'; cls += ' ab'; }
-    else if (r.type === 'HV_UN') bdg = '<span class="bdg" style="background:#d97706">高值未扫</span>';
-    else if (r.type === 'HV_SC') bdg = '<span class="bdg" style="background:#d97706">高值已扫</span>';
-    else if (r.type === 'OTHER') bdg = '<span class="bdg" style="background:#64748b">' + esc('设备' + r.dev) + '</span>';
-    else bdg = '<span class="bdg" style="background:var(--green)">已扫</span>';
-    var sub = esc(epc) + (r.rssi ? ' · ' + r.rssi + 'dBm' : '') + (r.time ? ' · ' + r.time : '');
-    html += '<div class="' + cls + '">' + bdg + '<div class="info"><div class="nm">' + (esc(r.name) || '未登记商品') + '</div><div class="sub">' + sub + '</div></div></div>';
+  var rows = [];
+  // 待上传（本机）
+  Object.keys(PENDING).forEach(function (epc) {
+    rows.push({ id: 'p-' + epc, epc: epc, pending: true, source: PENDING[epc].source, rssi: PENDING[epc].rssi, v: null, no: CFG.deviceNo });
   });
-  list.innerHTML = html;
+  // 服务端流水（最近在前）
+  Object.keys(ITEMS).forEach(function (id) {
+    var o = ITEMS[id];
+    rows.push({ id: 's-' + o.id, epc: o.epc, pending: false, source: o.source, rssi: 0, v: o.verdict, no: o.device_no });
+  });
+  rows.sort(function (a, b) {
+    if (a.pending !== b.pending) return a.pending ? -1 : 1;
+    var ai = parseInt(String(a.id).replace(/\D/g, ''), 10) || 0, bi = parseInt(String(b.id).replace(/\D/g, ''), 10) || 0;
+    return bi - ai;
+  });
+  var MAX = 200, html = '';
+  rows.slice(0, MAX).forEach(function (r) {
+    var cls = 'item' + (r.pending ? ' pending' : '');
+    var bdg = r.pending
+      ? '<span class="bdg" style="background:var(--orange)">待上传</span>'
+      : verdictBadge(r.v);
+    var sub = esc(r.epc) + ' · ' + (r.no ? (r.no + '号机 · ') : '') + (r.rssi ? (r.rssi + 'dBm') : '');
+    html += '<div class="' + cls + '">' + bdg + sourceBadge(r.source) +
+      '<div class="info"><div class="nm">' + esc(r.epc) + '</div><div class="sub">' + sub + '</div></div></div>';
+  });
+  document.getElementById('list').innerHTML = html;
   var empty = document.getElementById('empty');
-  empty.style.display = arr.length ? 'none' : 'block';
-  empty.textContent = arr.length ? '' : (abnormalTab ? '没有异常标签' : '扫描到的商品会实时显示在这里');
-  if (arr.length > MAX) list.innerHTML += '<div class="more">仅显示最近 ' + MAX + ' 条，共 ' + arr.length + ' 条</div>';
-  document.getElementById('tabStore').textContent = '在库 (' + listFor(false).length + ')';
-  document.getElementById('tabAbnormal').textContent = '异常 (' + listFor(true).length + ')';
-  // 高价值提醒
-  var hv = 0;
-  for (var epc in RECORDS) if (RECORDS[epc].type === 'HV_UN') hv++;
-  var b = document.getElementById('hvBanner');
-  if (hv > 0 && SET.hv) { b.textContent = '⚠ 还有 ' + hv + ' 件高价值商品未扫到'; b.className = 'hv on'; }
-  else b.className = 'hv';
+  empty.style.display = rows.length ? 'none' : 'block';
+  empty.textContent = joined ? '扫描到的标签会实时显示在这里' : '扫码加入盘点任务后开始扫描';
 }
-function refreshUi() {
-  var chNet = document.getElementById('chNet');
-  chNet.textContent = netOk ? '在线' : '离线';
-  chNet.className = 'chip ' + (netOk ? 'ok' : 'warn');
-  var chTask = document.getElementById('chTask');
-  chTask.textContent = !joined ? '未加入任务' : (active ? '盘点中' : '待核对');
-  chTask.className = 'chip ' + (joined && active ? 'ok' : (joined ? 'warn' : ''));
-  var n = Object.keys(SNAPSHOT).length;
-  var chSnap = document.getElementById('chSnap');
-  chSnap.textContent = snapshotReady ? '快照 ' + n + ' 件' : '未下载快照';
-  chSnap.className = 'chip ' + (snapshotReady ? 'ok' : 'warn');
-  var chUhf = document.getElementById('chUhf');
-  chUhf.textContent = APP ? (DEV.ready ? 'UHF 就绪' : '无 UHF') : '网页模式';
-  chUhf.className = 'chip ' + (APP && DEV.ready ? 'ok' : '');
-  document.getElementById('chDev').textContent = CFG.deviceNo ? '本机 ' + CFG.deviceNo : '本机';
+function refreshUi() { renderChips(); renderStats(); renderList();
   var btn = document.getElementById('btnTrigger');
   if (canScan()) {
     if (scanning) { btn.className = 'trigger scan'; btn.textContent = '停止扫描'; }
-    else { btn.className = 'trigger ready'; btn.textContent = '开始扫描'; }
+    else { btn.className = 'trigger ready'; btn.textContent = (mode() === 'uhf' ? '开始 UHF 扫描' : '开始摄像头扫描'); }
   } else {
-    btn.className = 'trigger'; btn.textContent = '扫码加入盘点任务';
+    btn.className = 'trigger'; btn.textContent = CFG.key ? '重新连接任务…' : '扫码加入盘点任务';
   }
-  renderList();
 }
 
-// ---- 设置面板 ----
+// ---------------- 设置面板 ----------------
 function openPanel() {
   document.getElementById('sPull').value = SET.pull;
   swSet('sRssiOn', SET.rssiOn); document.getElementById('sRssiTh').value = String(SET.rssiTh);
-  swSet('sDedup', SET.dedup); swSet('sHv', SET.hv); swSet('sVib', SET.vib);
+  swSet('sDedup', SET.dedup); swSet('sVib', SET.vib);
+  var uhf = mode() === 'uhf';
+  document.getElementById('rowRssiOn').style.display = uhf ? '' : 'none';
+  document.getElementById('rowRssiTh').style.display = uhf ? '' : 'none';
   document.getElementById('mask').className = 'mask on';
   document.getElementById('panel').className = 'panel on';
 }
 function closePanel() {
-  var v = parseInt(document.getElementById('sPull').value) || 15;
-  SET.pull = v < 5 ? 5 : (v > 120 ? 120 : v);
-  SET.rssiTh = parseInt(document.getElementById('sRssiTh').value) || -75;
+  var v = parseInt(document.getElementById('sPull').value, 10) || 4;
+  SET.pull = v < 3 ? 3 : (v > 60 ? 60 : v);
+  SET.rssiTh = parseInt(document.getElementById('sRssiTh').value, 10) || -75;
+  SET.rssiOn = document.getElementById('sRssiOn').className.indexOf('on') >= 0;
+  SET.dedup = document.getElementById('sDedup').className.indexOf('on') >= 0;
+  SET.vib = document.getElementById('sVib').className.indexOf('on') >= 0;
   saveSet();
   document.getElementById('mask').className = 'mask';
   document.getElementById('panel').className = 'panel';
 }
 function swSet(id, on) { document.getElementById(id).className = 'sw' + (on ? ' on' : ''); }
 function toggleSw(el) { el.className = 'sw' + (el.className.indexOf('on') >= 0 ? '' : ' on'); }
-function applyPanelSw(id, key) {
-  var on = document.getElementById(id).className.indexOf('on') >= 0;
-  if (SET[key] !== on) { SET[key] = on; }
-}
-// 关面板时同步开关
-document.getElementById('panel').addEventListener('transitionend', function () {});
-var _closePanel = closePanel;
-closePanel = function () {
-  applyPanelSw('sRssiOn', 'rssiOn'); applyPanelSw('sDedup', 'dedup');
-  applyPanelSw('sHv', 'hv'); applyPanelSw('sVib', 'vib');
-  _closePanel();
-};
 
-// ---- 杂项 ----
-function esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, function (m) {
-    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
-  });
-}
-var _tt;
-function toast(msg, err) {
-  var t = document.getElementById('toast');
-  t.textContent = msg;
-  t.className = 'toast show' + (err ? ' err' : '');
-  clearTimeout(_tt);
-  _tt = setTimeout(function () { t.className = 'toast' + (err ? ' err' : ''); }, 2400);
-}
-function showOverlay(title, sub) {
-  var o = document.getElementById('overlay');
-  o.innerHTML = '<div style="font-size:22px;font-weight:700">' + esc(title) + '</div><div>' + esc(sub) + '</div>';
-  o.style.display = 'flex';
-}
-
-// ================= 启动 =================
+// ---------------- 启动 ----------------
 (function init() {
-  if (!TOKEN) { showOverlay('未登录', '请从手持机 App 扫码登录后进入盘点'); return; }
-  fetch((window.__APP_BASE__ || '') + '/api/auth/me', { headers: { 'Authorization': 'Bearer ' + TOKEN } }).then(function (r) {
-    if (!r.ok) throw new Error('unauthorized');
-    window.__yzLoginOk = true;
-    devInfo();
-    // 恢复盘点功率（出单页可能留在了小功率）
-    if (APP && DEV.ready) {
-      try { window.YzApp.setPower(DEV.stock); } catch (e) {}
-      document.getElementById('chPwr').textContent = DEV.stock + 'dBm';
-    }
-    // 恢复任务态
-    restoreRecords();
-    var saved = load('yz_stock_pending', null); if (saved) PENDING = saved;
-    if (CFG.snapshot) { try { loadSnapshot(JSON.parse(CFG.snapshot)); } catch (e) {} }
-    if (CFG.server) { joined = true; parseServer(); join(false); }
-    refreshUi();
-  }).catch(function () { showOverlay('登录已过期', '请在手持机 App 重新扫码登录'); });
+  // UHF 功率恢复（App 内）
+  if (mode() === 'uhf') {
+    try { YzApp.setPower(DEV.stock); } catch (e) {}
+  }
+  // URL ?key= 直接进入
+  var qp = new URLSearchParams(location.search);
+  var qk = qp.get('key');
+  var qs = qp.get('server') || qp.get('origin');
+  if (qk) { CFG.key = qk; if (qs) CFG.origin = qs; else if (!CFG.origin) CFG.origin = location.origin; save('yz_stock_cfg', CFG); }
+  refreshUi();
+  if (CFG.key) { join(); }
 })();
 </script>
 </body>
