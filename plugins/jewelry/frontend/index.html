@@ -771,7 +771,7 @@
             <button class="btn btn-gold btn-block" @click="saveBizConfig">{{ t('epc.save') }}</button>
           </div>
 
-          <!-- 门店与打印代理（多门店：每店一把密钥、一条代理连接） -->
+          <!-- 门店管理：按门店分组展示打印机 / 手持机 / 安防设备 -->
           <div class="card-item">
             <div class="card-title">{{ t('sb.title') }}</div>
             <div class="hint">{{ t('sb.hint') }}</div>
@@ -787,52 +787,72 @@
             </div>
             <div class="hint" style="margin-bottom:8px">{{ t('sb.dlHint') }}</div>
 
-            <div class="bridge-store" v-for="b in bridges" :key="b.store_id">
+            <div class="bridge-store" v-for="s in stores" :key="s.id">
+              <!-- === 门店基础信息 === -->
               <div class="flex-between">
-                <b>{{ b.store_name }} <span class="mono" style="font-size:14px;color:#999">#{{ b.code }}</span></b>
-                <span class="bridge-state" :class="b.online ? 'st-on' : 'st-off'">● {{ b.online ? t('sb.online') : t('sb.offline') }}</span>
+                <b>{{ s.name }} <span class="mono" style="font-size:14px;color:#999">#{{ s.code }}</span></b>
+                <span class="bridge-state" v-if="bridgeOfStore(s.id)"
+                      :class="bridgeOfStore(s.id).online ? 'st-on' : 'st-off'">
+                  ● {{ bridgeOfStore(s.id).online ? t('sb.online') : t('sb.offline') }}
+                </span>
+                <span class="bridge-state st-idle" v-else>○ {{ (s.bridge_key || '').trim() ? t('sb.notConnected') : t('sb.noKey') }}</span>
               </div>
-              <div class="prod-meta" v-if="b.online">🖥 {{ b.agent_name }}</div>
+              <div class="prod-meta" v-if="bridgeOfStore(s.id) && bridgeOfStore(s.id).online">🖥 {{ bridgeOfStore(s.id).agent_name }}</div>
 
+              <!-- === 打印代理：密钥 / 业务指派 / 控制 === -->
               <div class="bridge-row">
                 <label>{{ t('pa.key') }}</label>
-                <span class="prod-meta">{{ b.has_key ? t('sb.keySet') : t('sb.keyNone') }}</span>
-                <button class="btn-small" @click="rotateStoreKey(b.store_id)">{{ t('sb.genKey') }}</button>
+                <span class="prod-meta">{{ (s.bridge_key || '').trim() ? t('sb.keySet') : t('sb.keyNone') }}</span>
+                <button class="btn-small" @click="rotateStoreKey(s.id)">{{ t('sb.genKey') }}</button>
               </div>
-              <div class="bridge-keybox" v-if="b.newKey">
-                <code class="mono" style="flex:1;min-width:0;word-break:break-all">{{ b.newKey }}</code>
-                <button class="btn-small" @click="copyStoreKey(b.store_id)">{{ t('common.copy') }}</button>
+              <div class="bridge-keybox" v-if="bridgeOfStore(s.id) && bridgeOfStore(s.id).newKey">
+                <code class="mono" style="flex:1;min-width:0;word-break:break-all">{{ bridgeOfStore(s.id).newKey }}</code>
+                <button class="btn-small" @click="copyStoreKey(s.id)">{{ t('common.copy') }}</button>
               </div>
 
-              <!-- 按打印业务指派打印机（多个业务可指向同一台；离线也不丢，重连补推） -->
-              <details class="bridge-biz">
+              <details class="bridge-biz" v-if="(s.bridge_key || '').trim()">
                 <summary>{{ t('sb.assignTitle') }}</summary>
                 <div v-for="g in bizGroups" :key="g.group" class="biz-grp">
                   <div class="biz-grp-title">{{ t('pbizg.' + g.group) }}</div>
                   <div class="biz-line" v-for="code in g.items" :key="code">
                     <span class="biz-line-name">{{ t('pbiz.' + code) }}</span>
-                    <select class="biz-line-sel" :value="bizPrinterOf(b, code)"
-                            @change="bindBizPrinter(b.store_id, code, $event.target.value)">
-                      <option value="">{{ b.online ? t('sb.notAssigned') : t('sb.waitOnline') }}</option>
-                      <option v-if="bizPrinterOf(b,code) && b.printers.indexOf(bizPrinterOf(b,code)) < 0"
-                              disabled :value="bizPrinterOf(b,code)">{{ bizPrinterOf(b,code) }}</option>
-                      <option v-for="n in b.printers" :key="n" :value="n">{{ n }}</option>
+                    <select class="biz-line-sel" :value="bizPrinterOf(bridgeOfStore(s.id), code)"
+                            @change="bindBizPrinter(s.id, code, $event.target.value)">
+                      <option value="">{{ bridgeOfStore(s.id) && bridgeOfStore(s.id).online ? t('sb.notAssigned') : t('sb.waitOnline') }}</option>
+                      <option v-if="bizPrinterOf(bridgeOfStore(s.id),code) && bridgeOfStore(s.id) && bridgeOfStore(s.id).printers.indexOf(bizPrinterOf(bridgeOfStore(s.id),code)) < 0"
+                              disabled :value="bizPrinterOf(bridgeOfStore(s.id),code)">{{ bizPrinterOf(bridgeOfStore(s.id),code) }}</option>
+                      <option v-for="n in (bridgeOfStore(s.id) ? bridgeOfStore(s.id).printers : [])" :key="n" :value="n">{{ n }}</option>
                     </select>
-                    <button class="btn-small biz-test" :disabled="!b.online || !bizPrinterOf(b,code)"
-                            @click="storeControl(b.store_id,'test',code)" :title="t('sb.test')">T</button>
+                    <button class="btn-small biz-test" :disabled="!bridgeOfStore(s.id) || !bridgeOfStore(s.id).online || !bizPrinterOf(bridgeOfStore(s.id),code)"
+                            @click="storeControl(s.id,'test',code)" :title="t('sb.test')">T</button>
                   </div>
                 </div>
               </details>
 
-              <div class="bridge-actions">
-                <button class="btn-small" :disabled="!b.online" @click="storeControl(b.store_id,'test')">{{ t('sb.test') }}</button>
-                <button class="btn-small" :disabled="!b.online" @click="storeControl(b.store_id,'feed')">{{ t('sb.feed') }}</button>
-                <button class="btn-small" :disabled="!b.online" @click="storeControl(b.store_id,'backfeed')">{{ t('sb.backfeed') }}</button>
-                <button class="btn-small" :disabled="!b.online" @click="storeControl(b.store_id,'refresh')">⟳ {{ t('sb.refresh') }}</button>
+              <div class="bridge-actions" v-if="bridgeOfStore(s.id)">
+                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online" @click="storeControl(s.id,'test')">{{ t('sb.test') }}</button>
+                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online" @click="storeControl(s.id,'feed')">{{ t('sb.feed') }}</button>
+                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online" @click="storeControl(s.id,'backfeed')">{{ t('sb.backfeed') }}</button>
+                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online" @click="storeControl(s.id,'refresh')">⟳ {{ t('sb.refresh') }}</button>
               </div>
-              <div class="prod-meta" v-if="b.last_job" style="margin-top:4px">
-                {{ b.last_job.ok ? '✔' : '✘' }} {{ b.last_job.ts }} · {{ b.last_job.ok ? t('sb.jobQueued') : b.last_job.message }}
+              <div class="prod-meta" v-if="bridgeOfStore(s.id) && bridgeOfStore(s.id).last_job" style="margin-top:4px">
+                {{ bridgeOfStore(s.id).last_job.ok ? '✔' : '✘' }} {{ bridgeOfStore(s.id).last_job.ts }} · {{ bridgeOfStore(s.id).last_job.ok ? t('sb.jobQueued') : bridgeOfStore(s.id).last_job.message }}
               </div>
+
+              <!-- === 安防设备 === -->
+              <details class="bridge-biz">
+                <summary>{{ t('sb.secPanel') }} <span class="prod-meta" v-if="storeSecStore(s.id).length">({{ storeSecStore(s.id).length }})</span></summary>
+                <div v-if="storeSecStore(s.id).length" style="margin-top:6px">
+                  <div class="sec-dev" v-for="dv in storeSecStore(s.id)" :key="dv.id" style="padding:4px 0;border-bottom:1px dashed #eee">
+                    <div class="flex-between" style="font-size:14px">
+                      <span><b>{{ dv.name }}</b> <span class="prod-meta">{{ dv.driver_name }}<template v-if="dv.location"> · {{ dv.location }}</template></span></span>
+                      <span class="bridge-state" :class="dv.online ? 'st-on' : 'st-off'" style="font-size:12px">●</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="hint" v-else style="margin:4px 0">{{ t('sb.noSecDev') }}</div>
+                <button class="btn-small" @click="go('security')">{{ t('sb.gotoSec') }}</button>
+              </details>
             </div>
 
             <button class="btn btn-outline btn-block" style="margin-top:10px" @click="createStore">＋ {{ t('sb.addStore') }}</button>
@@ -1034,6 +1054,25 @@
                   {{ curBridge.last_job.ok ? '✔' : '✘' }} {{ curBridge.last_job.ts }} · {{ curBridge.last_job.ok ? t('sb.jobQueued') : curBridge.last_job.message }}
                 </div>
               </div>
+            </div>
+
+            <!-- 安防设备 -->
+            <div class="card-item" v-if="curStore">
+              <div class="flex-between" style="margin-bottom:8px">
+                <div class="card-title" style="margin:0">{{ t('sb.secPanel') }}</div>
+                <button class="btn-small" @click="go('security')">{{ t('sb.gotoSec') }}</button>
+              </div>
+              <div v-if="storeSecStore(curStore.id).length">
+                <div class="sec-dev" v-for="dv in storeSecStore(curStore.id)" :key="dv.id">
+                  <div class="flex-between">
+                    <b>{{ dv.name }}</b>
+                    <span class="bridge-state" :class="dv.online ? 'st-on' : 'st-off'">● {{ dv.online ? t('sb.online') : t('sb.offline') }}</span>
+                  </div>
+                  <div class="prod-meta">{{ dv.driver_name }}<template v-if="dv.location"> · {{ dv.location }}</template></div>
+                  <div class="prod-meta" v-if="!dv.enabled" style="color:#c0392b">⚠ {{ t('sec.disabled') || '已禁用' }}</div>
+                </div>
+              </div>
+              <div class="empty" v-else>{{ t('sb.noSecDev') }}</div>
             </div>
 
             <!-- 库位主数据 -->

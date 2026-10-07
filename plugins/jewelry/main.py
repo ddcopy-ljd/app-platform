@@ -4301,7 +4301,9 @@ def store_list(request: Request, all: int = 0):
     with _db(request) as conn:
         rows = conn.execute(
             """SELECT s.id,s.name,s.code,s.owner,s.shop_id,
-                      COALESCE(sp.name,'') AS shop_name
+                      COALESCE(sp.name,'') AS shop_name,
+                      IFNULL(s.bridge_key,'') AS bridge_key,
+                      IFNULL(s.printer_name,'') AS printer_name
                FROM stores s LEFT JOIN shops sp ON sp.id=s.shop_id
                ORDER BY s.shop_id, s.id""").fetchall()
         if all and sess.get("role") != "TENANT_ADMIN":

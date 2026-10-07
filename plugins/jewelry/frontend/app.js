@@ -3066,7 +3066,7 @@ function bizGroups() {
 
 // 某门店某打印业务当前指派的打印机名
 function bizPrinterOf(b, code) {
-  var row = (b.biz || []).find(function (x) { return x.code === code; });
+  var row = ((b && b.biz) || []).find(function (x) { return x.code === code; });
   return row ? (row.printer || '') : '';
 }
 
@@ -3208,6 +3208,7 @@ function storesByShop(shopId) { return ST.stores.filter(function (s) { return (s
 // 门店管理：当前选中门店（复用 locStore 作为选中态）及其桥状态/库位/所属店铺
 function selectStore(id) { ST.locStore = id || 0; }
 function bridgeOfStore(sid) { return ST.bridges.find(function (b) { return b.store_id === sid; }) || null; }
+function storeSecStore(sid) { return ST.secSensors.filter(function (x) { return (x.store_id || 1) === sid; }); }
 function shopOfStore(s) { return ST.shops.find(function (p) { return p.id === (s && s.shop_id); }) || null; }
 // 门店内入库：固定门店打开入库面板
 function inboundForStore(s) { openInbound(s); }
@@ -3501,7 +3502,11 @@ var app = Vue.createApp({
     LABEL_FIELDS: function () { return LABEL_FIELDS; },
     labelFieldGroups: function () { return LABEL_FIELD_GROUPS; },
     // 已生成密钥的门店（代理下载下拉框数据源）
-    keyedStores: function () { return ST.bridges.filter(function (b) { return b.has_key; }); },
+    keyedStores: function () {
+      // 从 stores 表按 bridge_key 非空筛选（而非依赖 bridges 列表，后者可能因代理未连接而缺失）
+      return ST.stores.filter(function (s) { return !!(s.bridge_key || '').trim(); })
+        .map(function (s) { return { store_id: s.id, store_name: s.name }; });
+    },
     // 是否有任一门店代理在线（PC 端据此提示下载，移动端仅提示）
     anyAgentOnline: function () { return ST.bridges.some(function (b) { return b.online; }); },
     // 代理下载地址：按所选门店服务端内嵌密钥后下发 exe
@@ -3590,7 +3595,7 @@ var app = Vue.createApp({
     copyStoreKey: copyStoreKey, bindBizPrinter: bindBizPrinter, bizPrinterOf: bizPrinterOf,
     storeControl: storeControl,
     loadShops: loadShops, loadStores: loadStores, storesByShop: storesByShop,
-    selectStore: selectStore, bridgeOfStore: bridgeOfStore, shopOfStore: shopOfStore,
+    selectStore: selectStore, bridgeOfStore: bridgeOfStore, storeSecStore: storeSecStore, shopOfStore: shopOfStore,
     editShop: editShop, resetShopEdit: resetShopEdit, saveShop: saveShop, delShop: delShop,
     editStore: editStore, resetStoreEdit: resetStoreEdit, saveStore: saveStore, inboundForStore: inboundForStore,
     labelStoreBridge: labelStoreBridge,
