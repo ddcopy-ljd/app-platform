@@ -73,7 +73,6 @@ class EpcCollectActivity : BaseActivity() {
     private var scanning = false
     private var hitCount = 0
     private var dupCount = 0
-    private var lastTriggerAt = 0L
     private var tone: ToneGenerator? = null
 
     private lateinit var etServer: EditText
@@ -147,7 +146,11 @@ class EpcCollectActivity : BaseActivity() {
     // -------------------------------- 扫描
 
     private fun toggleScan() {
-        if (scanning) { stopScan(); return }
+        if (scanning) stopScan() else beginScan()
+    }
+
+    private fun beginScan() {
+        if (scanning) return
         if (!RfidManager.ready) { rfidErrorToast(this, R.string.epc_rfid_fail); return }
         RfidManager.setPower(prefs.power)
         val ok = RfidManager.start { epc, rssi -> onTag(epc, rssi) }
@@ -281,67 +284,32 @@ class EpcCollectActivity : BaseActivity() {
         }
     }
 
-    // -------------------------------- 扳机
+    // -------------------------------- 扳机（按下开始，松开结束）
 
-    private val triggerReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            val action = intent?.action ?: return
-            if (!TriggerChannels.handlesBroadcast(prefs.triggerMode)) return
-            if (prefs.triggerMode != TriggerChannels.MODE_AUTO &&
-                action != TriggerChannels.actionForMode(prefs.triggerMode)) return
-            val down = when (val v = intent.extras?.get("keydown")) {
-                is Boolean -> v
-                is String -> v.equals("true", ignoreCase = true) || v == "1"
-                is Int -> v != 0
-                null -> true
-                else -> intent.getBooleanExtra("keydown", true)
-            }
-            if (down) onTriggerDown()
-        }
+    private val keyRouter by lazy {
+        KeyRouter(this, prefs.triggerMode == TriggerChannels.MODE_SCREEN_ONLY,
+            object : KeyRouter.Callbacks {
+                override fun onGun(down: Boolean) {
+                    if (down) beginScan() else stopScan()
+                }
+                override fun onScanKey() {}
+                override fun onModeKey() {}
+                override fun onBarcode(text: String) {}
+            })
     }
 
     override fun onResume() {
         super.onResume()
-        val actions = TriggerChannels.actionsForMode(prefs.triggerMode)
-        if (actions.isEmpty()) return
-        val filter = IntentFilter().apply { actions.forEach { addAction(it) } }
-        try {
-            ContextCompat.registerReceiver(this, triggerReceiver, filter, ContextCompat.RECEIVER_EXPORTED)
-        } catch (_: Exception) {
-            @Suppress("UnspecifiedRegisterReceiverFlag")
-            registerReceiver(triggerReceiver, filter)
-        }
+        keyRouter.register()
     }
 
     override fun onPause() {
         super.onPause()
-        try { unregisterReceiver(triggerReceiver) } catch (_: Exception) {}
-    }
-
-    /** 扳机：按一下开始，再按一下停止；800ms 防抖。 */
-    private fun onTriggerDown() {
-        val now = SystemClock.elapsedRealtime()
-        if (now - lastTriggerAt < 800) return
-        lastTriggerAt = now
-        toggleScan()
+        keyRouter.unregister()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (!TriggerChannels.handlesKeyEvent(prefs.triggerMode)) return super.dispatchKeyEvent(event)
-        val code = event.keyCode
-        val candidate = code == 66 || code == 82 ||
-                code in 96..110 || code in 131..143 || code in 280..300
-        val focusEditable = currentFocus is EditText
-        val knownTrigger = candidate && !(code == 66 && focusEditable)
-        val src = event.source
-        val physical = (src and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
-                (src and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
-        val dpadCenter = (src and InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD &&
-                code == KeyEvent.KEYCODE_DPAD_CENTER
-        if (knownTrigger || physical || dpadCenter) {
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) onTriggerDown()
-            return true
-        }
+        if (keyRouter.dispatch(event)) return true
         return super.dispatchKeyEvent(event)
     }
 

@@ -30,8 +30,11 @@ import java.util.concurrent.Executors
 /**
  * 销售出单（原生页）：与手机/电脑网页端出单内容一致。
  *
- * 商品识别三种方式：扫描条码 / 扫描二维码 / 扫描EPC码。
- * EPC 使用【出单功率】小功率单次识别（防止串扫邻柜商品），机身扳机 = 快捷 EPC 识别。
+ * 实体键分工（C72）：
+ *  - 侧边 SCAN(139)：单件识别。RFID 模式=出单小功率 EPC 单扫；条码模式=2D 头扫条码/二维码
+ *  - F12(142)：切换 RFID / 条码 模式
+ *  - 手柄扳机(293/280)：高功率 EPC 单扫（按下扫、松开停），用于远处单件
+ * 扫到商品自动填名称/金额，只需点一次【提交出单】。
  */
 class SaleActivity : BaseActivity() {
 
@@ -66,7 +69,6 @@ class SaleActivity : BaseActivity() {
     private var options = listOf<Product>()
     private var picked: Product? = null
     private var epcScanning = false
-    private var lastTriggerAt = 0L
     private var method = "现金"
     private var pendingType = "barcode"
 
@@ -81,7 +83,7 @@ class SaleActivity : BaseActivity() {
         bindViews()
         setupListeners()
         etDate.setText(SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()))
-        tvPower.text = "EPC ${prefs.salePower}dBm"
+        updateSourceUi()
         loadOptions()
     }
 
@@ -108,9 +110,13 @@ class SaleActivity : BaseActivity() {
     private fun setupListeners() {
         findViewById<TextView>(R.id.btnSaleBack).setOnClickListener { finish() }
         tvPower.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
-        findViewById<TextView>(R.id.btnScanBarcode).setOnClickListener { scanCamera(ScanOptions.ONE_D_CODE_TYPES, "barcode") }
-        findViewById<TextView>(R.id.btnScanQr).setOnClickListener { scanCamera(listOf(ScanOptions.QR_CODE), "qrcode") }
-        btnEpc.setOnClickListener { toggleEpc() }
+        findViewById<TextView>(R.id.btnScanBarcode).setOnClickListener {
+            setSource(1); scanCamera(ScanOptions.ONE_D_CODE_TYPES, "barcode")
+        }
+        findViewById<TextView>(R.id.btnScanQr).setOnClickListener {
+            setSource(1); scanCamera(listOf(ScanOptions.QR_CODE), "qrcode")
+        }
+        btnEpc.setOnClickListener { setSource(0); startEpcSingle(prefs.salePower) }
 
         val chips = listOf(
             findViewById<TextView>(R.id.chipCash) to "现金",
@@ -174,16 +180,29 @@ class SaleActivity : BaseActivity() {
         cameraLauncher.launch(opts)
     }
 
-    /** EPC：切出单小功率，扫到第一枚即停。 */
-    private fun toggleEpc() {
-        if (epcScanning) { stopEpc(); return }
+    /** 142 键：在 RFID(EPC) / 条码摄像头 两种单件识别方式间切换。 */
+    private fun setSource(mode: Int) {
+        if (prefs.saleSource != mode) prefs.saleSource = mode
+        updateSourceUi()
+    }
+
+    private fun updateSourceUi() {
+        tvPower.text = if (prefs.saleSource == 1)
+            getString(R.string.sc_mode_camera)
+        else
+            getString(R.string.sc_mode_rfid, prefs.salePower)
+    }
+
+    /** EPC 单件识别：扫到第一枚即停。dbm 区分 SCAN 小功率 / 扳机高功率。 */
+    private fun startEpcSingle(dbm: Int) {
+        if (epcScanning) return
         if (!RfidManager.ready) {
-            Toast.makeText(this, R.string.demo_mode, Toast.LENGTH_SHORT).show()
+            // 无 UHF 模块：直接退化为摄像头扫条码
+            setSource(1)
             scanCamera(ScanOptions.ONE_D_CODE_TYPES, "barcode")
             return
         }
-        RfidManager.setPower(prefs.salePower)
-        tvPower.text = "EPC ${prefs.salePower}dBm"
+        RfidManager.setPower(dbm)
         epcScanning = true
         setEpcUi(true)
         val ok = RfidManager.start { epc, _ ->
@@ -330,51 +349,75 @@ class SaleActivity : BaseActivity() {
         }
     }
 
-    // -------------------------------- 扳机
+    // -------------------------------- 实体键（139 单件 / 142 切换 / 扳机高功率）
 
-    private val triggerReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            val action = intent?.action ?: return
-            if (!TriggerChannels.handlesBroadcast(prefs.triggerMode)) return
-            if (prefs.triggerMode != TriggerChannels.MODE_AUTO &&
-                action != TriggerChannels.actionForMode(prefs.triggerMode)) return
-            val down = when (val v = intent.extras?.get("keydown")) {
-                is Boolean -> v
-                is String -> v.equals("true", ignoreCase = true) || v == "1"
-                is Int -> v != 0
-                null -> true
-                else -> intent.getBooleanExtra("keydown", true)
-            }
-            if (down) onTrigger()
-        }
+    private val cameraFallback = Runnable {
+        scanCamera(ScanOptions.ONE_D_CODE_TYPES + ScanOptions.QR_CODE, "barcode")
     }
 
-    private fun onTrigger() {
-        val now = SystemClock.elapsedRealtime()
-        if (now - lastTriggerAt < 800) return
-        lastTriggerAt = now
-        toggleEpc()
+    private val keyRouter by lazy {
+        KeyRouter(this, prefs.triggerMode == TriggerChannels.MODE_SCREEN_ONLY,
+            object : KeyRouter.Callbacks {
+                override fun onGun(down: Boolean) {
+                    // 手柄扳机：高功率 EPC 单件，按下扫、松开停
+                    if (down) { setSource(0); startEpcSingle(prefs.power) } else stopEpc()
+                }
+
+                override fun onScanKey() {
+                    // 键盘助手可能已把条码注入商品名输入框（139 收尾），优先取字段文本
+                    if (consumeWedgeField()) return
+                    if (prefs.saleSource == 0) {
+                        startEpcSingle(prefs.salePower)
+                    } else {
+                        // 条码模式：等 2D 头结果广播；350ms 无数据则开摄像头兜底
+                        main.removeCallbacks(cameraFallback)
+                        main.postDelayed(cameraFallback, 350)
+                    }
+                }
+
+                override fun onModeKey() {
+                    stopEpc()
+                    val toRfid = prefs.saleSource != 0
+                    setSource(if (toRfid) 0 else 1)
+                    Toast.makeText(
+                        this@SaleActivity,
+                        if (toRfid) R.string.sc_mode_to_rfid else R.string.sc_mode_to_camera,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+
+                override fun onBarcode(text: String) = onBarcodeDelivered(text)
+
+                // 出单页不把其它 F 键/手柄设备当扳机，避免误触
+                override fun fallbackAsGun() = false
+            })
+    }
+
+    /** 键盘助手 wedge 模式：条码字符被注入「商品名称」输入框，139 到达时整段取走。 */
+    private fun consumeWedgeField(): Boolean {
+        if (currentFocus !== etProduct) return false
+        val t = etProduct.text?.toString()?.trim().orEmpty()
+        if (t.isEmpty()) return false
+        etProduct.setText("")
+        onBarcodeDelivered(t)
+        return true
+    }
+
+    private fun onBarcodeDelivered(code: String) {
+        main.removeCallbacks(cameraFallback)
+        stopEpc()
+        beep()
+        onCode(code, "barcode")
     }
 
     override fun onResume() {
         super.onResume()
-        val filter = IntentFilter().apply {
-            TriggerChannels.actionsForMode(prefs.triggerMode).forEach { addAction(it) }
-        }
-        if (filter.countActions() > 0) {
-            try {
-                ContextCompat.registerReceiver(this, triggerReceiver, filter,
-                    ContextCompat.RECEIVER_EXPORTED)
-            } catch (_: Exception) {
-                @Suppress("UnspecifiedRegisterReceiverFlag")
-                registerReceiver(triggerReceiver, filter)
-            }
-        }
+        keyRouter.register()
     }
 
     override fun onPause() {
         super.onPause()
-        try { unregisterReceiver(triggerReceiver) } catch (_: Exception) {}
+        keyRouter.unregister()
     }
 
     override fun onStart() {
@@ -385,22 +428,19 @@ class SaleActivity : BaseActivity() {
 
     override fun onStop() {
         super.onStop()
+        main.removeCallbacks(cameraFallback)
         stopEpc()
         if (RfidManager.ready) RfidManager.setPower(prefs.power)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (!TriggerChannels.handlesKeyEvent(prefs.triggerMode))
-            return super.dispatchKeyEvent(event)
-        val code = event.keyCode
-        val focusEditable = currentFocus is EditText
-        val candidate = (code == 66 || code == 82 || code in 96..110 || code in 131..143 || code in 280..300)
-                && !(code == 66 && focusEditable)
-        val src = event.source
-        val physical = (src and android.view.InputDevice.SOURCE_GAMEPAD) == android.view.InputDevice.SOURCE_GAMEPAD ||
-                (src and android.view.InputDevice.SOURCE_JOYSTICK) == android.view.InputDevice.SOURCE_JOYSTICK
-        if (candidate || physical) {
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) onTrigger()
+        if (keyRouter.dispatch(event)) return true
+        // 回车快捷提交：商品/金额已就绪时一次回车即出单
+        if (event.keyCode == KeyEvent.KEYCODE_ENTER &&
+            event.action == KeyEvent.ACTION_DOWN &&
+            (etAmount.text?.toString()?.trim()?.toDoubleOrNull() ?: 0.0) > 0
+        ) {
+            submit()
             return true
         }
         return super.dispatchKeyEvent(event)

@@ -61,7 +61,6 @@ class StockActivity : BaseActivity() {
 
     private var pending = LinkedHashMap<String, Int>() // 待上报 EPC->RSSI
     private var lastNetworkOk = false
-    private var lastTriggerDownAt = 0L
 
     private var tone: ToneGenerator? = null
     private var vibrator: Vibrator? = null
@@ -153,9 +152,9 @@ class StockActivity : BaseActivity() {
         }
         findViewById<TextView>(R.id.btnJoin).setOnClickListener { scanJoinQr() }
         findViewById<TextView>(R.id.btnDownload).setOnClickListener { downloadSnapshot() }
-        // 屏幕模拟扳机：点按=扣下扳机（开始扫描），再点按=停止；与机身扳机同一套状态机
+        // 屏幕模拟扳机：触摸没有"松开"事件，保持按一下开始/再按一下停止
         btnTrigger.setOnClickListener {
-            onTriggerDown()
+            if (scanning) pauseScan() else gunDown()
         }
         tabStore.setOnClickListener { abnormalTab = false; refreshList() }
         tabAbnormal.setOnClickListener { abnormalTab = true; refreshList() }
@@ -579,102 +578,96 @@ class StockActivity : BaseActivity() {
     private fun toast(resId: Int) = Toast.makeText(this, resId, Toast.LENGTH_SHORT).show()
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
-    // -------------------------------- 触发键
+    // -------------------------------- 实体键（扳机高功率连扫 / 139 单件低功率 / 142 切换）
 
-    /**
-     * C27（RSCJA/Chainway 方案）机身扳机不产生 KeyEvent——系统扫描服务会吞掉按键，
-     * 改为通过系统广播下发：action=android.rfid.FUN_KEY（部分固件为 android.intent.action.FUN_KEY），
-     * extras: keyCode(int，缺省 139)、keydown(boolean，部分固件为字符串 "true"/"false")。
-     * 以广播为主通道、KeyEvent 为兜底，两者都汇入 onTriggerDown/Up。
-     */
-    private val triggerReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            val action = intent?.action ?: return
-            if (!TriggerChannels.handlesBroadcast(prefs.triggerMode)) return
-            if (prefs.triggerMode != TriggerChannels.MODE_AUTO &&
-                action != TriggerChannels.actionForMode(prefs.triggerMode)) return
-            val down = when (val v = intent.extras?.get("keydown")) {
-                is Boolean -> v
-                is String -> v.equals("true", ignoreCase = true) || v == "1"
-                is Int -> v != 0
-                // 部分固件只发"按下"广播且不带任何 extras：注册的动作出现即视为按下
-                null -> true
-                else -> intent.getBooleanExtra("keydown", true)
+    private val keyRouter by lazy {
+        KeyRouter(this, prefs.triggerMode == TriggerChannels.MODE_SCREEN_ONLY,
+            object : KeyRouter.Callbacks {
+                override fun onGun(down: Boolean) {
+                    if (down) gunDown() else gunUp()
+                }
+
+                override fun onScanKey() {
+                    scanSingle()
+                }
+
+                override fun onModeKey() {
+                    if (scanning) pauseScan()
+                    prefs.stockSource = if (prefs.stockSource == 0) 1 else 0
+                    toast(if (prefs.stockSource == 0) R.string.sc_mode_to_rfid
+                          else R.string.sc_mode_to_camera)
+                }
+
+                override fun onBarcode(text: String) {
+                    if (canScan()) onTag(text, 0)
+                }
+            })
+    }
+
+    /** 手柄扳机按下：RFID 源=高功率连扫；摄像头源=条码连续兜底；未加入任务则走扫码加入。 */
+    private fun gunDown() {
+        if (!canScan()) {
+            if (api.isConfigured) doJoin(autoSnapshot = false) else scanJoinQr()
+            return
+        }
+        if (prefs.stockSource == 1) {
+            if (!scanning) openCameraScan()
+        } else {
+            startScan()
+        }
+    }
+
+    /** 手柄扳机松开：RFID 连扫立即停止（摄像头兜底是独立页面，由其页面自行结束）。 */
+    private fun gunUp() {
+        if (scanning && prefs.stockSource == 0) pauseScan()
+    }
+
+    /** 侧边 SCAN：单件识别。RFID 源=出单小功率只读一枚；摄像头源=摄像头单件条码。 */
+    private fun scanSingle() {
+        if (!canScan()) {
+            gunDown() // 未加入/任务未开始：SCAN 与扳机同走加入流程
+            return
+        }
+        if (prefs.stockSource == 1 || !RfidManager.ready) {
+            if (scanning) return
+            scanning = true
+            BarcodeScanActivity.onBarcode = { code ->
+                onTag(code, 0)
+                false // 读一枚即自动关闭摄像头页
             }
-            // 只处理按下事件；部分固件按住期间连发 keydown=false 双拍会秒停扫描
-            if (down) onTriggerDown()
+            cameraLauncher.launch(android.content.Intent(this, BarcodeScanActivity::class.java))
+            refreshUi()
+            return
+        }
+        if (scanning) return
+        RfidManager.setPower(prefs.salePower)
+        val ok = RfidManager.start { epc, rssi ->
+            if (!scanning) return@start
+            RfidManager.stop()
+            scanning = false
+            onTag(epc, rssi)
+            refreshUi()
+        }
+        if (ok) {
+            scanning = true
+            refreshUi()
+        } else {
+            rfidErrorToast(this, R.string.rfid_fail)
         }
     }
 
     override fun onResume() {
         super.onResume()
-        val actions = TriggerChannels.actionsForMode(prefs.triggerMode)
-        if (actions.isEmpty()) return
-        val filter = IntentFilter().apply {
-            actions.forEach { addAction(it) }
-        }
-        try {
-            // FUN_KEY 由系统扫描服务发出，属于跨应用广播，Android 13+ 必须声明 EXPORTED
-            ContextCompat.registerReceiver(this, triggerReceiver, filter,
-                ContextCompat.RECEIVER_EXPORTED)
-        } catch (_: Exception) {
-            @Suppress("UnspecifiedRegisterReceiverFlag")
-            registerReceiver(triggerReceiver, filter)
-        }
+        keyRouter.register()
     }
 
     override fun onPause() {
         super.onPause()
-        try { unregisterReceiver(triggerReceiver) } catch (_: Exception) {}
-    }
-
-    /** 触发（硬件扳机广播/KeyEvent/屏幕按钮共用）：按一下开始连续扫描，再按一下停止。
-     *  不依赖"松开"事件——不同固件的松开语义不可靠（双拍/连发），按住即停模式已废弃。
-     *  防抖：800ms 内的重复触发只算一次（KeyEvent+广播双通道、固件连发）。 */
-    private fun onTriggerDown() {
-        val now = android.os.SystemClock.elapsedRealtime()
-        if (now - lastTriggerDownAt < 800) return
-        lastTriggerDownAt = now
-        if (scanning) {
-            pauseScan()
-            return
-        }
-        if (canScan()) {
-            if (RfidManager.ready) startScan() else openCameraScan()
-        } else if (api.isConfigured) {
-            // 已加入过任务但状态不是进行中（待核对/已暂停）：用原密钥重新加入即可，无需重新扫码
-            doJoin(autoSnapshot = false)
-        } else {
-            scanJoinQr()
-        }
+        keyRouter.unregister()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (!TriggerChannels.handlesKeyEvent(prefs.triggerMode))
-            return super.dispatchKeyEvent(event)
-        val code = event.keyCode
-        // C27 实测物理键：293=厂商扳机、139=Scan键(F9)、142=F12、66=回车、82=菜单；
-        // 另覆盖常见 F1-F12(131-143)、手柄键(96-110)、对焦(280-300)。
-        // 注意：4=返回键绝不拦截，否则无法退出页面。
-        val candidate = code == 66 || code == 82 ||
-                code in 96..110 || code in 131..143 || code in 280..300
-        // 回车键在输入框聚焦时不拦截（避免影响文本录入）
-        val focusEditable = currentFocus is android.widget.EditText
-        val knownTrigger = candidate && !(code == 66 && focusEditable)
-        // 事件来源是物理按键（手柄/摇杆/方向键设备）——扳机被系统扫描服务吞掉时
-        // 常以 GAMEPAD/JOYSTICK 来源上报，不在键码表里也能兜住
-        val src = event.source
-        val physical = (src and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
-                (src and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
-        val dpadCenter = (src and InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD &&
-                code == KeyEvent.KEYCODE_DPAD_CENTER
-        val isTrigger = knownTrigger || physical || dpadCenter
-        if (isTrigger) {
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                onTriggerDown()
-            }
-            return true
-        }
+        if (keyRouter.dispatch(event)) return true
         return super.dispatchKeyEvent(event)
     }
 
@@ -724,7 +717,7 @@ class StockActivity : BaseActivity() {
         } else tvHv.visibility = View.GONE
 
         // 扫描按钮：扫描中红色，待扫绿色，未加入任务蓝色（点按直接扫码加入）。
-        // 无 UHF 模块的手机：任务内点按即开摄像头连续扫条码（onTriggerDown 内分流）
+        // 无 UHF 模块的手机：任务内扣扳机即开摄像头连续扫条码（gunDown 内分流）
         if (canScan()) {
             if (scanning) {
                 btnTrigger.setBackgroundResource(R.drawable.bg_btn_red)

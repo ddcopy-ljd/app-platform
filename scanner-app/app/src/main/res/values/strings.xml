@@ -43,7 +43,7 @@
     <string name="epc_empty">尚未采集到 EPC</string>
     <string name="epc_count">已采集 %1$d 条（新扫 %2$d · 重复 %3$d）</string>
     <string name="epc_state_idle">未开始</string>
-    <string name="epc_state_scanning">采集中…再按一次停止</string>
+    <string name="epc_state_scanning">采集中…松开扳机停止</string>
     <string name="epc_cleared">已清空 %1$d 条</string>
     <string name="epc_copied">已复制 %1$d 条 EPC 到剪贴板</string>
     <string name="epc_saved">已保存到：%1$s</string>
@@ -227,7 +227,11 @@
     <!-- 出单页补充 -->
     <string name="sc_group_item">识别到的商品</string>
     <string name="sc_group_bill">出单信息</string>
-    <string name="sc_scan_hint">扫EPC用小功率（参数设置里可调），防止串扫邻柜；机身扳机 = 快捷扫EPC</string>
+    <string name="sc_scan_hint">SCAN 键=单件识别（小功率 EPC/条码），F12 切换 RFID/条码，手柄扳机=高功率 EPC（按下扫、松开停）</string>
+    <string name="sc_mode_rfid">RFID %1$ddBm · SCAN单件 · 扳机高功率</string>
+    <string name="sc_mode_camera">条码/二维码 · SCAN扫码 · 142切回</string>
+    <string name="sc_mode_to_rfid">已切换：RFID（EPC）模式</string>
+    <string name="sc_mode_to_camera">已切换：条码/摄像头模式</string>
     <string name="sc_product_hint">扫码自动填入，可手工修改</string>
     <string name="task_not_active">任务当前不是【进行中】状态，请在网页端开始盘点后再按扫描</string>
     <!-- 扫码页 -->

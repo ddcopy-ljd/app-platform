@@ -28,6 +28,16 @@ class Prefs(context: Context) {
         get() = sp.getInt("sale_power", 10)
         set(v) = sp.edit().putInt("sale_power", v).apply()
 
+    /** 出单页扫码方式：0=RFID(EPC低功率单件) 1=摄像头/2D条码，机身 142 键切换。 */
+    var saleSource: Int
+        get() = sp.getInt("sale_source", 0)
+        set(v) = sp.edit().putInt("sale_source", v).apply()
+
+    /** 盘点页扫码方式：0=RFID(高功率连扫) 1=摄像头条码兜底，机身 142 键切换。 */
+    var stockSource: Int
+        get() = sp.getInt("stock_source", 0)
+        set(v) = sp.edit().putInt("stock_source", v).apply()
+
     /** 一次性把老版本（默认20dBm，读取距离仅20cm）提升到最大功率30dBm；用户之后可自行调小。 */
     fun migratePowerIfNeeded() {
         if (sp.getBoolean("power_mig_v2", false)) return

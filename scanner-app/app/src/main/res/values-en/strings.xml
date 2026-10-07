@@ -184,7 +184,11 @@
     <!-- sale checkout -->
     <string name="sc_group_item">Scanned item</string>
     <string name="sc_group_bill">Order</string>
-    <string name="sc_scan_hint">EPC uses low power (tunable in settings) to avoid reading neighbor counters; trigger = quick EPC</string>
+    <string name="sc_scan_hint">SCAN = single read (low-power EPC/barcode), F12 toggles RFID/barcode, grip trigger = high-power EPC (hold to scan, release to stop)</string>
+    <string name="sc_mode_rfid">RFID %1$ddBm · SCAN single · trigger high</string>
+    <string name="sc_mode_camera">Barcode/QR · SCAN to read · F12 back</string>
+    <string name="sc_mode_to_rfid">Switched to RFID (EPC)</string>
+    <string name="sc_mode_to_camera">Switched to barcode/camera</string>
     <string name="sc_product_hint">Filled by scan, editable</string>
     <string name="task_not_active">Task is not running. Start it on the web page, then press scan again</string>
     <!-- capture -->
