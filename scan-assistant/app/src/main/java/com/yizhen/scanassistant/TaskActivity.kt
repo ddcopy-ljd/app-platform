@@ -459,11 +459,12 @@ class TaskActivity : AppCompatActivity() {
 
     private fun initRfid() {
         bg.execute {
-            // 部分固件首次 init 会失败（串口被占用/未就绪），重试 3 次
-            repeat(3) {
+            // 部分固件首次 init 会失败（串口被占用/未就绪），最多重试 3 次；成功即停，避免重复打开串口
+            var attempt = 0
+            while (attempt < 3 && !RfidManager.ready) {
                 RfidManager.init(applicationContext)
-                if (RfidManager.ready) return@repeat
-                Thread.sleep(800)
+                attempt++
+                if (!RfidManager.ready) Thread.sleep(800)
             }
             main.post {
                 if (RfidManager.ready) RfidManager.setPower(prefs.power)
