@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="trigger_modes">
+        <item>@string/trig_auto</item>
+        <item>@string/trig_fun1</item>
+        <item>@string/trig_fun2</item>
+        <item>@string/trig_svc</item>
+        <item>@string/trig_result</item>
+        <item>@string/trig_key</item>
+        <item>@string/trig_screen</item>
+    </string-array>
+</resources>
