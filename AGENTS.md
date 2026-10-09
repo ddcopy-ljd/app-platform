@@ -129,6 +129,13 @@
 要点：目标版本必须高于正式版；插件包排除构建产物与本地配置；**正式切换只能由人工在平台执行，AI 严禁代为切换**；
 升级自测可调用 `plugin-upgrade-selftest` 技能。多个插件版本允许同时试运行；未指定版本的沙箱票证默认路由到最高试运行版本。
 
+**版本管理（plugin_service.delete_version / register_package 已实现）：**
+- 非正式版（uploaded / failed / preparing / trial / trial_passed）**可以删除**：DELETE /api/plugins/{id}/versions/{vid}
+  自动 stop_if_running 停服务 + 删 DB 行 + 清包目录 + 清该版本所有租户 DB 快照（含 trial 沙箱库）+ 清 storage 快照
+- 受保护不可删除：current_version 正式版、status=init/switching 数据任务中、插件 gatew_state=MAINTENANCE
+- 上传**同 softwareVersion 的非正式版** → 自动替换（删旧行+清旧包+清旧数据快照 → 插新行+新包），不再报"版本号必须递增"
+- 上传同 softwareVersion 但已是 current_version 正式版 → 仍然拒绝（保护正式版不被误替换）
+
 ---
 
 ## 11. 高频踩坑速查（违反过且造成过实际事故）
