@@ -1,7 +1,7 @@
 """打包综合业务应用服务平台为整站 zip：python platform/build_all.py
 
 产物输出到 dist/yizhen-stack_v{VERSION}.zip。
-白名单收录平台 + jewelry 插件 + scan-assistant/scanner-app 两个 Android 客户端，
+白名单收录平台 + jewelry 插件 + scan-assistant Android 客户端，
 排除 .trae/、.git/、.venv/、__pycache__/、运行时 data/、*.aar 厂商 SDK、签名密钥 release.jks、
 Android build/.gradle 产物、本地 sqlite 调试库等敏感/可变数据。
 
@@ -81,7 +81,6 @@ def collect_files(root: Path, base_arc: str, exclude_extra=None):
 PLATFORM_DIR = ROOT / "platform"
 PLUGIN_DIR = ROOT / "plugins" / "jewelry"
 SCAN_DIR = ROOT / "scan-assistant"
-SCANNER_DIR = ROOT / "scanner-app"
 
 def collect_platform() -> list[tuple[Path, str]]:
     """收录平台源码（不含 data/、demo/、docs/ 之外的运行时）。"""
@@ -224,8 +223,7 @@ def main() -> None:
     files: list[tuple[Path, str]] = []
     files += collect_platform();              log(f"  platform/ 源码 {len(files)}")
     files += collect_jewelry();               log(f"  + jewelry/ 插件源码 {len(files)}")
-    files += collect_android(SCAN_DIR, "scan-assistant")
-    files += collect_android(SCANNER_DIR, "scanner-app"); log(f"  + Android 客户端 {len(files)}")
+    files += collect_android(SCAN_DIR, "scan-assistant"); log(f"  + Android 客户端 {len(files)}")
     files += collect_root_files();            log(f"  + 根脚本 {len(files)}")
 
     dup = {}
@@ -266,7 +264,6 @@ git 基线：请见 .git 或 changes.lst
   platform/            服务端平台源码（FastAPI + Uvicorn）
   plugins/jewelry/     懿臻珠宝云插件源码 v1.1.2 / dataVersion 1.1.0
   scan-assistant/      Android 扫码助手客户端（源码）
-  scanner-app/         Android RFID 盘点客户端（源码）
   backup/              本次打包附带的开发数据库备份（可选恢复）
 
 Windows Server 部署：
@@ -283,9 +280,8 @@ Windows Server 部署：
   5. 首次启动访问 http://服务器IP:8000/ 完成初始化
 
 重要安全提示：
-  - scanner-app/app/release.jks（签名密钥）未打包，签正式 APK 时请自行放回
   - Android 厂商 SDK（DeviceAPI_*.aar）未打包，请从厂商渠道获取后放入
-    scan-assistant/app/libs/ 与 scanner-app/app/libs/
+    scan-assistant/app/libs/
   - 生产部署务必修改默认管理员密码 admin123 与 admin/123456（插件内）
   - AGENT_API_KEY 环境变量控制 Agent 升级流水线接口，生产不开启可留空
 
