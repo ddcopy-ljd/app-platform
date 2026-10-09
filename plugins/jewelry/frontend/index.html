@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>懿臻珠宝云</title>
 <link rel="icon" href="/logo/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./app.css?v=20261009f119">
+<link rel="stylesheet" href="./app.css?v=20261009f123">
 </head>
 <body>
 <div id="app">
@@ -31,7 +31,7 @@
 
   <div v-else class="app-shell" :class="{pc:isPc, mobile:!isPc}">
     <aside v-if="isPc" class="sidebar">
-      <div class="side-brand"><img src="/logo/logo.svg" alt=""><div><b>{{ softName }}</b><span v-if="mode==='SANDBOX'" class="mode-badge sandbox">🧪 {{ t('mode.sandbox') }}<template v-if="version">&nbsp;v{{ version }}</template></span><small>{{ tenant }}</small></div></div>
+      <div class="side-brand"><img src="/logo/logo.svg" alt=""><div><b>{{ softName }}</b><small>{{ tenant }}</small></div></div>
       <nav>
         <button v-for="n in nav" :key="n.id" class="nav-item" :class="{active:tab===n.id}" @click="go(n.id)">{{ n.icon }} {{ t(n.key) }}</button>
       </nav>
@@ -46,7 +46,6 @@
     <div class="app-main">
       <header class="app-bar" v-if="!isPc">
         <div class="brand"><img src="/logo/logo.svg" class="app-logo" alt=""> {{ softName }}</div>
-        <span v-if="mode==='SANDBOX'" class="mode-badge sandbox">🧪 {{ t('mode.sandbox') }}</span>
         <div class="store-tag">{{ tenant }}</div>
         <div class="health-wrap">
           <button class="health-bell" :class="healthBad ? 'bad' : 'ok'" @click.stop="healthOpen=!healthOpen" :title="t('hc.title')">
@@ -70,7 +69,6 @@
       <header v-else class="pc-top">
         <div class="pc-title">
           <h1>{{ currentTitle }}</h1>
-          <span v-if="mode==='SANDBOX'" class="mode-badge sandbox">🧪 {{ t('mode.sandbox') }}<template v-if="version">&nbsp;v{{ version }}</template></span>
         </div>
         <div class="pc-top-actions">
           <select v-if="stores.length>1" :value="curStoreId" @change="switchStore($event.target.value)" class="store-switch" :title="t('store.switch')">
@@ -1676,6 +1674,7 @@ Content-Type: application/json
             <div v-else class="prod-meta" style="margin-bottom:12px">{{ t('tpl.empty') }}</div>
           </div>
           </div>
+          <div class="footer-version">v{{ version }} · {{ tenant }}</div>
         </section>
 
         <!-- more (mobile) -->
@@ -1700,6 +1699,7 @@ Content-Type: application/json
             <div class="menu-item"><a href="/site" target="_blank" class="menu-text">{{ t('nav.site') }}</a></div>
             <div class="menu-item" @click="doLogout"><div class="menu-text">{{ t('nav.logout') }}</div></div>
           </div>
+          <div class="footer-version">v{{ version }} · {{ tenant }}</div>
         </section>
       </div>
 
@@ -2649,6 +2649,6 @@ Content-Type: application/json
 <script src="./vendor/qrcode.min.js"></script>
 <script src="./vendor/zxing.min.js"></script>
 <script src="./i18n.js?v=20261008d117"></script>
-<script src="./app.js?v=20261008e119"></script>
+<script src="./app.js?v=20261009e121"></script>
 </body>
 </html>

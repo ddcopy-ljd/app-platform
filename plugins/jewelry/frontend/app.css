@@ -490,6 +490,14 @@ body.mt-dragging { cursor: col-resize !important; user-select: none !important; 
 .app-shell.mobile .app-bar { position: sticky; top: 0; z-index: 100; }
 .app-shell.mobile .main-content { padding-bottom: calc(78px + var(--safe-bottom)); }
 .app-shell.mobile .tab-bar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 420px; }
+.app-shell.mobile .health-wrap { position: static; }
+.app-shell.mobile .health-panel {
+  left: 8px; right: 8px; top: calc(100% + 8px);
+  min-width: 0; max-width: none; width: auto;
+}
+.app-shell.mobile .health-line { gap: 8px; flex-wrap: nowrap; }
+.app-shell.mobile .health-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-shell.mobile .health-state { white-space: nowrap; flex: none; }
 
 @media (min-width: 440px) {
   .app-shell.mobile { margin: 12px auto; border-radius: 24px; min-height: calc(100vh - 24px); overflow: hidden; box-shadow: var(--shadow-lg); }
@@ -872,14 +880,14 @@ tr.row-flash, tr.row-flash:hover { background-color: #FFF3CD !important; transit
 }
 .health-panel { position: absolute; right: 0; top: 30px; z-index: 60; min-width: 240px;
   background: #fff; border: 1px solid #e5dcc8; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.12);
-  padding: 10px; }
-.health-title { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
-.health-line { display: flex; align-items: center; gap: 6px; padding: 4px 0; font-size: 14px; cursor: pointer; }
+  padding: 10px; color: #1a1a1a; }
+.health-title { font-size: 14px; font-weight: 600; margin-bottom: 6px; color: #1a1a1a; }
+.health-line { display: flex; align-items: center; gap: 6px; padding: 4px 0; font-size: 14px; cursor: pointer; color: #1a1a1a; }
 .health-dot { width: 10px; height: 10px; border-radius: 50%; background: #ccc; flex: none; }
 .health-dot.ok { background: #1d7a37; }
 .health-dot.bad { background: #d4a017; }
-.health-name { flex: 1; }
-.health-state { font-size: 14px; color: #999; }
+.health-name { flex: 1; color: #1a1a1a; }
+.health-state { font-size: 14px; color: #444; }
 .bridge-keybox { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
 .bridge-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .bridge-actions .btn-small { min-width: 64px; }
@@ -1321,3 +1329,12 @@ tr.tr-row-hit { animation: tr-hit-flash 1.2s ease; }
 
 /* 13. 调拨详情信息 grid — mobile 强制 1 列（已在 @media 640px 覆盖，这里兜底） */
 .app-shell.mobile .tr-info-grid { grid-template-columns: 1fr !important; gap: 4px 12px; }
+
+/* 版本号（PC 系统管理 / mobile 我的） */
+.footer-version {
+  text-align: center;
+  font-size: 14px;
+  color: #999;
+  padding: 20px 0 8px;
+  letter-spacing: .3px;
+}

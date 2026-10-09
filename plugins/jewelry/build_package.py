@@ -131,8 +131,8 @@ def main() -> None:
     for key in ("id", "name", "softwareVersion", "dataVersion"):
         if not manifest.get(key):
             fail(f"plugin.json 缺少必填字段：{key}")
-    if not re.fullmatch(r"\d+\.\d+\.\d+", manifest["softwareVersion"]):
-        fail(f"softwareVersion 格式应为 x.y.z，当前为：{manifest['softwareVersion']}")
+    if not re.fullmatch(r"\d+\.\d+\.\d+(\.\d{6})?", manifest["softwareVersion"]):
+        fail(f"softwareVersion 格式应为 x.y.z 或 x.y.z.YYMMDD，当前为：{manifest['softwareVersion']}")
     if not isinstance(manifest.get("features"), list) or not manifest["features"]:
         fail("plugin.json 的 features 必须是非空数组")
 

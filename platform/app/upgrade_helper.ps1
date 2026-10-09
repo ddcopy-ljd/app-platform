@@ -60,14 +60,28 @@ if (Test-Path $platNew) {
         if ($exclude -contains $name) { Log "skip platform/$name"; return }
         $dest = Join-Path $Root "platform\$name"
         try {
-            if ($_.PSIsContainer) { Copy-Item -Path $_.FullName -Destination $dest -Recurse -Force }
-            else { Copy-Item -Path $_.FullName -Destination $dest -Force }
+            if ($_.PSIsContainer) {
+                # PS5.1 pitfall: Copy-Item -Recurse into an EXISTING dir nests
+                # the source INSIDE it (frontend\frontend). Copy CONTENTS instead.
+                if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
+                Copy-Item -Path (Join-Path $_.FullName '*') -Destination $dest -Recurse -Force
+            } else {
+                Copy-Item -Path $_.FullName -Destination $dest -Force
+            }
             Log "copied platform/$name"
         } catch { Log "FAIL copy platform/$name : $($_.Exception.Message)" }
     }
     # clean stale bytecode
     Get-ChildItem -Path (Join-Path $Root 'platform\app') -Recurse -Directory -Filter '__pycache__' -ErrorAction SilentlyContinue |
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    # clean nested leftovers from previous buggy upgrades (frontend\frontend, app\app ...)
+    Get-ChildItem -Path $platNew -Directory | Where-Object { $exclude -notcontains $_.Name } | ForEach-Object {
+        $nested = Join-Path $Root "platform\$($_.Name)\$($_.Name)"
+        if (Test-Path $nested) {
+            try { Remove-Item -Path $nested -Recurse -Force -ErrorAction Stop; Log "removed nested platform/$($_.Name)/$($_.Name)" }
+            catch { Log "FAIL remove nested $($_.Name): $($_.Exception.Message)" }
+        }
+    }
 }
 # root-level items (requirements.txt / scripts\ / *.md)
 Get-ChildItem -Path $NewDir | Where-Object { $_.Name -ne 'platform' } | ForEach-Object {

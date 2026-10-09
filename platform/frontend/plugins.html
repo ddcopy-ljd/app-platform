@@ -13,8 +13,8 @@
       <div class="sidebar-head">
         <h2>插件列表</h2>
         <div style="display:flex;flex-direction:column;gap:6px;align-items:stretch">
+          <button class="btn ghost sm" :disabled="upgrading" :title="'当前平台 v' + platformVersion" @click="pickUpgradeFile">⬆ {{ upgrading ? '升级中…' : '上传平台包' }}</button>
           <button class="btn primary sm" @click="pickFile">＋ 上传插件包</button>
-          <button class="btn ghost sm" :disabled="upgrading" :title="'当前平台 v' + platformVersion" @click="pickUpgradeFile">⬆ {{ upgrading ? '升级中…' : '升级平台' }}</button>
         </div>
       </div>
       <ul class="plugin-list">
@@ -46,7 +46,7 @@
 
       <div v-else class="panel">
         <div v-if="dragging" class="drop-overlay" @dragleave="dragging = false">⬆️ 松开鼠标，上传新版本插件包</div>
-        <div class="panel-title-bar">应用插件升级管理<span class="ver-tag">v{{ version }}</span></div>
+        <div class="panel-title-bar">应用插件升级管理<span class="ver-tag">v{{ platformVersion }}</span></div>
 
         <section class="guide">
           <div class="guide-head" @click="guideOpen = !guideOpen">

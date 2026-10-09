@@ -1,5 +1,5 @@
 const { createApp, ref, reactive, computed, onMounted } = Vue;
-const { api, getToken, setToken } = Platform;
+const { api, getToken, setToken, loadPlatformVersion } = Platform;
 
 // 每个功能菜单对应一个独立的 iframe 页面
 // FRAME_VER 取页面加载时刻，拼在 iframe 地址后，确保每次加载都拉取最新页面，
@@ -20,6 +20,7 @@ createApp({
     const currentMenu = computed(() => MENUS.find(m => m.key === menu.value));
     const maintenance = ref([]);
     const digest = ref(null);
+    const platformVersion = ref('');
     let pollTimer = null;
     let digestTimer = null;
 
@@ -53,6 +54,7 @@ createApp({
         loginForm.password = '';
         pollMaintenance();
         loadDigest();
+        loadPlatformVersion().then(v => platformVersion.value = v);
       } catch (e) {
         loginError.value = e.message;
       } finally {
@@ -87,6 +89,7 @@ createApp({
         user.value = await api('/api/auth/me');
         pollMaintenance();
         loadDigest();
+        loadPlatformVersion().then(v => platformVersion.value = v);
       } catch (_) {
         logoutLocal();
       }
@@ -94,7 +97,7 @@ createApp({
 
     return {
       user, loginForm, loginError, loggingIn, doLogin, doLogout,
-      menus: MENUS, menu, currentMenu, maintenance, digest, fmtMB, num, version: Platform.version,
+      menus: MENUS, menu, currentMenu, maintenance, digest, fmtMB, num, version: Platform.version, platformVersion,
     };
   },
 }).mount('#app');

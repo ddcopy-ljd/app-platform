@@ -3,7 +3,7 @@
   "name": "懿臻珠宝云",
   "icon": "💍",
   "category": "业务应用",
-  "author": "懿珠宝研发组",
+  "author": "俊达",
   "description": "面向珠宝门店的一站式业务管理，包含商品、库存、销售、定金尾款、借货、客户、维修、采购与委外加工等核心业务，支持电脑端与手机端。",
   "features": [
     "商品一物一码归档（含 RFID 芯片 EPC）",
@@ -16,7 +16,7 @@
     "企业网站与到店预约",
     "智能安防（RFID/EAS 防盗设备接入与离店告警）"
   ],
-  "softwareVersion": "1.1.2",
+  "softwareVersion": "1.1.4.261009",
   "dataVersion": "1.1.0",
   "scripts": {
     "init": "scripts/init.py",

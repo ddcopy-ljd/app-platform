@@ -7,12 +7,13 @@
 var API = (window.__APP_BASE__ || '').replace(/\/+$/, '');
 
 // ---- 响应式布局判定 ----
-// 有鼠标/触控板等精确指针的设备（台式机、笔记本）一律使用 PC 宽屏布局，
-// 不受浏览器窗口宽度、系统显示缩放(125%/150%)或 iframe 容器宽度影响；
-// 纯触屏设备（手机/手持机）再按屏宽判断。
+// 判断 PC / mobile 布局：纯 UA + 屏宽兜底。
+// pointer: fine 在部分安卓定制浏览器（微信/UC/QQ/华为/小米等）上会误判为 true，
+// 彻底不用 pointer，UA 里带 Android|iPhone|iPad|Mobile 就判 mobile，否则走屏宽。
 function isPcLayout() {
   try {
-    if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) return true;
+    var ua = navigator.userAgent || '';
+    if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return false;
   } catch (e) {}
   return window.innerWidth >= 900;
 }

@@ -2,7 +2,7 @@
 
 // 前端版本标识（由开发侧手动维护）。每次改动前端后递增末位，
 // 页面会显示它，便于快速判断浏览器是否加载了最新页面（排查缓存问题）。
-window.APP_VERSION = '2026.10.05.13';
+window.APP_VERSION = '2026.10.09.14';
 
 window.Platform = (() => {
   const TOKEN_KEY = 'token';
@@ -36,5 +36,15 @@ window.Platform = (() => {
 
   const fmtSize = b => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
 
-  return { api, getToken, setToken, fmtSize, inFrame, version: window.APP_VERSION };
+  // 平台发布版本（platform/VERSION）：登录后拉取，未登录/失败静默，
+  // 徽章降级显示 APP_VERSION 指纹
+  async function loadPlatformVersion() {
+    try {
+      const r = await api('/api/platform/version');
+      if (r && r.version) window.PLATFORM_VERSION = r.version;
+    } catch (_) { /* 静默 */ }
+    return window.PLATFORM_VERSION || '';
+  }
+
+  return { api, getToken, setToken, fmtSize, inFrame, version: window.APP_VERSION, loadPlatformVersion };
 })();

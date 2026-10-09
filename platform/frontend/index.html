@@ -36,7 +36,7 @@
     </div>
 
     <header class="topbar">
-      <div class="brand"><i>◆</i>综合业务应用服务平台<span class="ver-tag">v{{ version }}</span></div>
+      <div class="brand"><i>◆</i>综合业务应用服务平台<span class="ver-tag">v{{ platformVersion || version }}</span></div>
       <div class="spacer"></div>
       <span class="user">{{ user.display_name }}（{{ user.username }}）</span>
       <button class="btn sm" @click="doLogout">退出</button>

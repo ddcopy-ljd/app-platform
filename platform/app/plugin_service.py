@@ -25,7 +25,7 @@ from .config import (
 from .db import audit, get_conn, now_str
 
 PLUGIN_ID_RE = re.compile(r"^[a-z][a-z0-9_]{1,31}$")
-VERSION_RE = re.compile(r"^\d{1,4}\.\d{1,4}\.\d{1,4}$")
+VERSION_RE = re.compile(r"^\d{1,4}\.\d{1,4}\.\d{1,4}(\.\d+)?$")
 BUSY_STATUSES = ("preparing", "switching")
 # 演示节奏：让进度条与暂停横幅可见
 STEP_DELAY = float(os.environ.get("DEMO_STEP_DELAY", "0.8"))

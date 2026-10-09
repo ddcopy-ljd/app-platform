@@ -28,9 +28,22 @@ def log(msg: str) -> None:
 
 def read_version() -> str:
     v = (ROOT / "platform" / "VERSION").read_text(encoding="utf-8").strip()
-    if not re.fullmatch(r"\d+\.\d+\.\d+", v):
-        raise SystemExit(f"VERSION 格式应为 x.y.z，当前：{v!r}")
+    if not re.fullmatch(r"\d+\.\d+\.\d+(\.\d+)?", v):
+        raise SystemExit(f"VERSION 格式应为 x.y.z 或 x.y.z.日期，当前：{v!r}")
     return v
+
+
+def bump_version() -> None:
+    """发布递增：修订号 +1，日期段刷新为当天（YYMMDD）。
+    1.0.9.261009 -> 1.0.10.261009；三段版本则自动补日期段。"""
+    vp = ROOT / "platform" / "VERSION"
+    v = vp.read_text(encoding="utf-8-sig").strip()
+    m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?", v)
+    if not m:
+        raise SystemExit(f"VERSION 格式无法识别：{v!r}")
+    new = f"{m.group(1)}.{m.group(2)}.{int(m.group(3)) + 1}.{datetime.now():%y%m%d}"
+    vp.write_text(new, encoding="ascii")
+    print(f"  版本号已递增：v{v} -> v{new}")
 
 IGNORE_PARTS = (
     "__pycache__", ".git", ".venv", ".trae", ".idea", ".vscode",
@@ -215,8 +228,12 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--platform-only", action="store_true",
                     help="仅打包 platform/ 自身 + 启动/部署脚本，不含 plugins/、scan-assistant/、backup/")
+    ap.add_argument("--bump", action="store_true",
+                    help="打包前递增版本号：修订号+1 并刷新日期段（升级发布时使用；重打包不加此参不递增）")
     args = ap.parse_args()
 
+    if args.bump:
+        bump_version()
     version = read_version()
     is_platform_only = args.platform_only
     if is_platform_only:

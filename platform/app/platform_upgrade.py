@@ -76,8 +76,9 @@ def apply_upgrade(filename: str, content: bytes, operator: str) -> dict:
         )
     new_ver = zf.read(ver_entry).decode("utf-8-sig", errors="ignore").strip()
     cur = current_version()
-    if _vkey(new_ver) <= _vkey(cur):
-        raise UpgradeError(f"升级包版本 v{new_ver} 不高于当前版本 v{cur}，拒绝升级")
+    if _vkey(new_ver) < _vkey(cur):
+        raise UpgradeError(f"升级包版本 v{new_ver} 低于当前版本 v{cur}，拒绝降级")
+    # 同级版本允许覆盖上传（用于修复文件未落盘等问题）
 
     # --- 2) 解包到 _upgrade/new_{ts}，若带单层顶层目录则剥离 ---
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -125,8 +126,12 @@ def apply_upgrade(filename: str, content: bytes, operator: str) -> dict:
         shutil.rmtree(old, ignore_errors=True)
 
     # --- 4) 复制助手脚本并以分离进程拉起（响应返回后由它接管） ---
+    # 助手优先取自 staged 新包：本轮升级即刻使用新版复制逻辑（旧版有嵌套复制坑）
+    helper_src = new_dir / "platform" / "app" / HELPER_NAME
+    if not helper_src.exists():
+        helper_src = PLATFORM_DIR / "app" / HELPER_NAME
     helper_dst = UPGRADE_DIR / HELPER_NAME
-    shutil.copy2(PLATFORM_DIR / "app" / HELPER_NAME, helper_dst)
+    shutil.copy2(helper_src, helper_dst)
     log_file = UPGRADE_DIR / "upgrade.log"
     spawn_args = [
         "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
