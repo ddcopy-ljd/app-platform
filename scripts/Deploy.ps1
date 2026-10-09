@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
   Yizhen Platform · One-click deployment script
   =============================================
@@ -18,8 +18,8 @@
 $ErrorActionPreference = "Continue"
 $Host.UI.RawUI.WindowTitle = "Yizhen Platform - Deploy"
 
-# --- Resolve root: this script sits at zip extraction root ---
-$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+# --- Resolve root: this script sits in <root>\scripts\ ---
+$Root = Split-Path -Parent $PSScriptRoot
 $Venv = Join-Path $Root ".venv"
 $VenvPy = Join-Path $Venv "Scripts\python.exe"
 $PlatformDir = Join-Path $Root "platform"
@@ -209,7 +209,7 @@ Write-Host ""
 
 $go = Ask "Launch now?" "y"
 if ($go) {
-    $bat = Join-Path $Root "start_platform.bat"
+    $bat = Join-Path $Root "scripts\start_platform.bat"
     if (-not (Test-Path $bat)) { throw "start_platform.bat not found at $bat" }
     Write-Host "  Launch in 3 seconds..." -ForegroundColor Gray
     Start-Sleep -Seconds 3

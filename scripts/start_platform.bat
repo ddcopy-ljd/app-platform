@@ -1,5 +1,5 @@
 @echo off
-cd /d "%~dp0"
+cd /d "%~dp0.."
 title Platform 80 - close this window to STOP
 
 REM ============================================================
@@ -9,7 +9,7 @@ REM ============================================================
 
 set "HOST=0.0.0.0"
 set "PORT=80"
-set "PYEXE=%~dp0.venv\Scripts\python.exe"
+set "PYEXE=%~dp0..\.venv\Scripts\python.exe"
 
 REM Agent pipeline is enabled only when env var AGENT_API_KEY is set (X-Agent-Key).
 REM Set it once at user level, e.g. in PowerShell:
@@ -46,7 +46,7 @@ echo    Waiting for "Uvicorn running" ... keep this window OPEN.
 echo ============================================================
 echo.
 
-cd /d "%~dp0platform"
+cd /d "%~dp0..\platform"
 "%PYEXE%" -m uvicorn app.main:app --host %HOST% --port %PORT%
 
 echo.

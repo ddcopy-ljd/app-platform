@@ -1,5 +1,5 @@
 @echo off
-cd /d "%~dp0"
+cd /d "%~dp0.."
 title Jewelry Cloud 8002 - close this window to STOP
 
 REM ============================================================
@@ -12,7 +12,7 @@ REM ============================================================
 set "HOST=0.0.0.0"
 set "PORT=8002"
 set "PYEXE=C:\Python\Python313\python.exe"
-set "PYTHONPATH=%~dp0.venv\Lib\site-packages"
+set "PYTHONPATH=%~dp0..\.venv\Lib\site-packages"
 
 echo ============================================================
 echo    Yizhen Jewelry Cloud  -  Port %PORT%

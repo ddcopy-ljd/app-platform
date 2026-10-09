@@ -1,4 +1,4 @@
-﻿# ========================================================================
+# ========================================================================
 # Extract-platform.ps1  —  解压纯平台包，跳过顶层版本目录
 #
 # 输入：dist\yizhen-platform_v1.0.1.zip  （你自己打出来的）
@@ -16,7 +16,7 @@ $zipName = "yizhen-platform_v1.0.1.zip"
 $topDir  = "yizhen-platform_v1.0.1"   # zip 里的顶层目录名
 $outDir  = "yizhen-platform"          # 解压目标
 
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$scriptDir = Split-Path -Parent $PSScriptRoot   # project root (this script lives in <root>\scripts\)
 $zipPath   = Join-Path $scriptDir "dist\$zipName"
 $outPath   = Join-Path $scriptDir $outDir
 

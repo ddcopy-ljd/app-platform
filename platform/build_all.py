@@ -261,15 +261,17 @@ def main() -> None:
             seen.add(line)
             merged_reqs.write(line + "\n")
 
-    # 启动 & 部署脚本 & Windows 服务管理脚本
+    # 启动 & 部署脚本 & Windows 服务管理脚本（统一放在仓库根 scripts/ 目录）
     script_contents = {}
     for name in ["start_platform.bat", "start_jewelry.bat", "Deploy.ps1",
                  "register_platform_service.bat", "start_platform_service.bat",
                  "stop_platform_service.bat", "unregister_platform_service.bat",
                  "Extract-platform.ps1"]:
-        p = ROOT / name
+        p = ROOT / "scripts" / name
         if p.is_file():
             script_contents[name] = p.read_bytes()
+        else:
+            print(f"  [WARN] script missing: scripts/{name}")
 
     # 部署说明
     if is_platform_only:
@@ -281,13 +283,14 @@ def main() -> None:
 
 目录结构：
   platform/            服务端平台源码（FastAPI + Uvicorn）
+  scripts/             全部启动/部署/服务管理脚本
 
 Windows Server 部署（一键）：
   1. 解压 zip 到目标目录（例：C:\\Yizhen）
-  2. 右键 Deploy.ps1 → 以管理员身份运行
-     或 PowerShell：powershell -ExecutionPolicy Bypass -File Deploy.ps1
+  2. 右键 scripts\\Deploy.ps1 → 以管理员身份运行
+     或 PowerShell：powershell -ExecutionPolicy Bypass -File scripts\\Deploy.ps1
   3. 按提示回答（全部默认即走完整流程）
-  4. 完成后 start_platform.bat 自动弹出；之后直接点启动脚本即可
+  4. 完成后 scripts\\start_platform.bat 自动弹出；之后直接点启动脚本即可
   5. 启动后浏览器访问 http://服务器IP:80/ 完成平台管理员登录
 
 重要安全提示：
@@ -305,14 +308,15 @@ git 基线：请见 .git 或 changes.lst
   platform/            服务端平台源码（FastAPI + Uvicorn）
   plugins/jewelry/     懿臻珠宝云插件源码 v1.1.2 / dataVersion 1.1.0
   scan-assistant/      Android 扫码助手客户端（源码）
+  scripts/             全部启动/部署/服务管理脚本
   backup/              本次打包附带的开发数据库备份（可选恢复）
 
 Windows Server 部署（一键）：
   1. 解压 zip 到目标目录（例：C:\\Yizhen）
-  2. 右键 Deploy.ps1 → 以管理员身份运行
-     或 PowerShell：powershell -ExecutionPolicy Bypass -File Deploy.ps1
+  2. 右键 scripts\\Deploy.ps1 → 以管理员身份运行
+     或 PowerShell：powershell -ExecutionPolicy Bypass -File scripts\\Deploy.ps1
   3. 按提示回答（全部默认即走完整流程）
-  4. 完成后 start_platform.bat 自动弹出；之后直接点启动脚本即可
+  4. 完成后 scripts\\start_platform.bat 自动弹出；之后直接点启动脚本即可
 
 重要安全提示：
   - Android 厂商 SDK（DeviceAPI_*.aar）未打包，请从厂商渠道获取后放入
@@ -349,11 +353,9 @@ Windows Server 部署（一键）：
         # 依赖清单
         zf.writestr(f"{top}/requirements.txt", merged_reqs.getvalue())
 
-        # 启动 & 部署脚本（scripts/ 子目录 + zip 根目录）
+        # 启动 & 部署脚本（仅 scripts/ 子目录，根目录不留散文件）
         for name, data in script_contents.items():
             zf.writestr(f"{top}/scripts/{name}", data)
-            if name in ("start_platform.bat", "start_jewelry.bat", "Deploy.ps1"):
-                zf.writestr(f"{top}/{name}", data)
 
         # 部署说明
         zf.writestr(f"{top}/DEPLOY.txt", deploy_guide)
