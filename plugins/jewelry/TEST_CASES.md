@@ -106,3 +106,42 @@
   7. 更新设备可修改心跳超时、清空字段映射。
   浏览器走查：安防中心五面板齐全（含「接入指南」「原始报文调试」），设备行有「编辑」按钮，编辑表单含心跳超时与字段映射。
 
+## TC-15 快速开单会员联想把 `{items:[...]}` 当数组用导致渲染抛错（1.0.9）
+- **问题现象**：开单输入不存在的手机号（如 13900000209）时，「一键新建会员」按钮不出现，控制台报 `TypeError: (d._memList || []).filter is not a function`，Vue render 中断。
+- **根因**：`GET /api/customers/lookup` 返回结构是 `{"items": [...]}`，前端 `onPhoneInput/quickCreateMember` 误把整个响应当数组赋给 `_memList`，对象没有 `filter`。
+- **验证方法**：浏览器开单面板手机号填一个库中不存在的 11 位号码，等待 0.5 秒，应出现「＋ 一键新建会员」按钮且控制台无报错；再填已有会员号码应出现联想卡片（等级/积分/金价折扣率）。
+
+## TC-16 中文段缺 `pay.cash/wechat/card/transfer` 字典键（1.0.9）
+- **问题现象**：中文界面下开单支付方式下拉显示原始 key（`pay.cash`、`pay.wechat`…）而非「现金/微信/刷卡/转账」。
+- **根因**：i18n 的 en/it 段有 pay.* 键，zh 段长期缺键（历史遗留，旧版单笔支付下拉同样受影响，只是未被注意）。
+- **验证方法**：中文语言下打开快速开单，展开支付方式下拉，四项必须显示中文；切换 EN/IT 各核对一遍；组合支付两行分别选微信/刷卡，提交后销售卡片子摘要显示「微信 ￥5,000 + 刷卡 ￥1,000」。
+
+## TC-17 入库单把 computed `curStoreName` 当函数调用导致整单渲染崩溃（1.0.9）
+- **问题现象**：分店账号在「门店管理」点「📥 入库」，入库弹窗完全不出现（`v-if` 已翻转但渲染失败），控制台报 `TypeError: curStoreName is not a function`（商品档案表单共用同一模板块，同样受影响）。
+- **根因**：`curStoreName` 在 app.js 中注册为 **computed**，模板里却写成 `curStoreName()` 调用；computed 在模板中自动解包为值，加括号即对字符串/undefined 做函数调用，render 抛错后 Vue 丢弃本次渲染。
+- **验证方法**：切到分店（顶栏门店切换器选非总店），「门店管理 → 📥 入库」弹窗正常打开，入库门店只读框显示当前门店名、控制台无报错；商品管理 → ＋ 新增商品同样正常显示门店名。
+
+## TC-18 协同任务「功能名 #序号」与门店手持机列表（1.1.0）
+- **问题现象**：同名功能多个操作者同时发起手持机协同任务时，手持机端和网页端只显示一串 RW 长编号，无法辨认任务归属；门店管理也看不到本店绑定了哪些手持机。
+- **根因**：任务无「门店+功能类型」维度的序号；设备列表只在弹窗中可查。1.1.0 起 tasks 增加 type_seq（按 store_id+type 永久递增，部分唯一索引 `idx_tasks_type_seq`），任务 brief 下发 type_seq，网页/手持机统一显示「功能名 #序号」（销售开单/盘点/借货/调拨出库/调拨收货/商品EPC/入库EPC/扫码），epc_product、epc_inbound 从 generic 拆为独立类型；门店管理新增手持机卡片。
+- **验证方法**：
+  1. 迁移：对租户库跑两次 `migrate_schema` 均成功（幂等），tasks 有 type_seq 列与 `idx_tasks_type_seq`，历史任务 type_seq=0；
+  2. API：同门店连发两个 epc_product 任务再发一个 loan，type_seq 依次为 1、2、1；`GET /api/devices` 含 current_task_type/current_task_seq；
+  3. 浏览器：分店视图「门店管理」自动选中本店，出现「📱 手持机 (N)」卡片，列出每台设备名称/SH-码/当前任务标签/在线状态/启停状态；快速开单 📱 协同浮层显示「销售开单 #n」+ RW 长编号，切 EN/IT 显示 `Sale #n` / `Vendita #n`（序号不变）；商品编辑表单 RFID EPC 旁 📱 协同显示「商品EPC #n」；控制台无报错；
+  4. 手持机 App（1.1.0）：任务列表两行卡片（粗体「功能名 #序号」+ 长编号），工作页 tvTaskNo 同步；
+  5. 注意：手持机卡片在 PC 端必须加在 `v-if="tab==='stores'"` 的 curStore 详情区（`!isPc && tab==='profile'` 内的同名卡片只服务移动端），两端都要验证。
+
+## TC-19 看板销售同比环比 + 调拨收发链路 + Vue 模板 `.bind` 白名单拦截坑（1.1.1）
+- **问题现象**：① 看板 KPI 卡片只有今日/本月绝对额，无同比/环比；趋势图只有 6 个月单柱，看不出同比对比；② 前端调起调拨发送弹窗时被下层选货抽屉遮罩层拦截（modal z-index 竞争）；③ Vue 模板编译器白名单拦截 `.bind` 关键字导致整页 SyntaxError，所有业务渲染中断。
+- **根因**：
+  1. `/api/dashboard/overview` 只返回绝对额，`_current_store` 同口径的日/月/同比聚合缺失；`/api/dashboard/trend` 只拉 6 个月无去年同期。
+  2. `openTransferSend()` 只设 `transferSendOpen=true` 打开发送弹窗，**没关 `transferMode=false`（选货抽屉遮罩）** 也没 `exitCoopScan()`（协同面板遮罩），三层 modal-mask 叠在一起。
+  3. Vue 3 template compiler 白名单明确禁止 `Function.prototype.apply/call/bind` —— **任何模板表达式只要出现 `.bind` 字面量就被拦截**，哪怕位置在字符串里（如 `t('hq.bindStore')` 键名），会被编译器当作函数绑定调用生成非法 JS，`new Function(code)` 抛 SyntaxError: Unexpected token ')'。
+- **验证方法**：
+  1. API：`/api/dashboard/overview` 含 todaySales.momPct、monthSales.momPct、monthSales.yoyPct；分母为 0 时返回 null；`/api/dashboard/trend` 返回近 12 个月 + `amountsLastYear`（去年同期）。
+  2. 前端：看板今日卡片「今日 N 笔 · 环比 ↓xx%」、本月卡片「本月 ￥xxx · 环比 ↓xx% · 同比 ↓xx%」，趋势图有双色柱（本年金 / 去年灰）；三语切换键齐全。
+  3. **关键模板白名单约束**：所有 i18n 键名、模板表达式、helper 函数里**禁止出现 `.bind`、`.apply`、`.call`** 字符串；键名改用 `storeBind/assignOk` 等不敏感命名。
+  4. 调拨创建链：选货抽屉勾选后点「📤 发送」按钮 → 发送确认弹窗无遮罩拦截（需在 `openTransferSend` 里先 `exitCoopScan()` + `transferMode=false` 再 `transferSendOpen=true`）。
+  5. 调拨验收链（**Python API 验证**）：`POST /api/auth/switch-store {store_id: 6}` 切店 → `GET /api/transfers?scope=in` 能看到 to_store_id=当前店 的在途单 → `GET /api/transfers/{tid}` 拉到 items → `POST /api/transfers/{tid}/receive {items:[{product_id,ok,reason}]}` 校验：当前工作门店必须是接收方（to_store_id）；status 必须是在途；items 必须与明细完全对齐；不符必填原因。
+- **踩坑档案**：Vue global build（`vue.global.prod.js`）模板编译器白名单极严，`.bind/.apply/.call` 关键字任何位置（包括字符串）都触发 SyntaxError；改造前端先全局扫 `{{.*}}` 表达式找这些敏感词，再逐个改名。
+

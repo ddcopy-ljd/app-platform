@@ -11,6 +11,7 @@ import base64
 import json
 import logging
 import os
+import io
 import random
 import re
 import secrets
@@ -24,9 +25,10 @@ from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
-from fastapi import FastAPI, Body, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Body, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -67,6 +69,82 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 
 _sessions: dict[str, dict] = {}
 _lock = threading.Lock()
+
+# ---------------------------------------------------------------- 高管(EXECUTIVE)只读闸门
+# 高管可跨所有门店巡查、可任意切换；业务数据只读（任何门店都不能写）；
+# 行政/系统类（账号/门店组织/企业资料/编码规则/品类/库位/安防配置）仅当当前工作门店为总店(HQ)时可写。
+# 统一在中间件按路径前缀裁决，避免逐个端点散落判断；设备/公开链路无会话，不受此限。
+_EXEC_ADMIN_PREFIXES = (
+    "/api/admin/", "/api/shops", "/api/stores", "/api/profile", "/api/biz-config",
+    "/api/categories", "/api/product-types", "/api/label-templates",
+    "/api/clerk-types", "/api/locations", "/api/sensors",
+)
+_EXEC_PASS_PREFIXES = ("/api/auth/",)
+_EXEC_READONLY_DETAIL = "高管账号为只读账号，仅可查看，不能进行该操作"
+_EXEC_NONHQ_DETAIL = "总部/系统设置仅可在总店修改，请先切换到总店"
+
+
+def _hq_store_id(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT id FROM stores WHERE UPPER(IFNULL(code,''))='HQ' ORDER BY id LIMIT 1").fetchone()
+    return int(row["id"]) if row else 0
+
+
+# ---- 列级权限：成本查看（店长/高管强制可见；店员等按 users.can_view_cost 逐账号授予）----
+_COST_FORCE_VISIBLE_ROLES = ("TENANT_ADMIN", "EXECUTIVE")
+
+
+def _can_view_cost(conn: sqlite3.Connection, sess: dict) -> bool:
+    """以库中开关为唯一准绳（会话快照仅兜底），使权限收回在下个请求即生效。"""
+    if sess.get("role") in _COST_FORCE_VISIBLE_ROLES:
+        return True
+    row = conn.execute(
+        "SELECT IFNULL(can_view_cost,0) v FROM users WHERE username=?",
+        (sess.get("username") or "",),
+    ).fetchone()
+    return bool(row and row["v"])
+
+
+def _hide_cost(rows, allow: bool):
+    """无成本权限时把 dict 或 dict 列表里的 cost 抹为 None（前端统一渲染 ***）。"""
+    if allow:
+        return rows
+    if isinstance(rows, dict):
+        if "cost" in rows:
+            rows["cost"] = None
+    elif isinstance(rows, list):
+        for r in rows:
+            if isinstance(r, dict) and "cost" in r:
+                r["cost"] = None
+    return rows
+
+
+@app.middleware("http")
+async def executive_write_guard(request: Request, call_next):
+    method = request.method.upper()
+    path = request.url.path
+    if method in ("GET", "HEAD", "OPTIONS") or not path.startswith("/api/"):
+        return await call_next(request)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+    with _lock:
+        sess = _sessions.get(token)
+    # 无会话（未登录/设备密钥/平台网关注入身份）交给各端点自身鉴权，不在此拦截
+    if not sess or sess.get("role") != "EXECUTIVE":
+        return await call_next(request)
+    if path.startswith(_EXEC_PASS_PREFIXES):
+        return await call_next(request)
+    if path.startswith(_EXEC_ADMIN_PREFIXES):
+        # 行政类：仅当前工作门店为总店时放行
+        cur = int(sess.get("store_id") or 0)
+
+        def _is_hq() -> bool:
+            with _open(request) as conn:
+                return cur == _hq_store_id(conn) and cur != 0
+
+        if await run_in_threadpool(_is_hq):
+            return await call_next(request)
+        return JSONResponse(status_code=403, content={"detail": _EXEC_NONHQ_DETAIL})
+    # 其余业务写一律拒绝
+    return JSONResponse(status_code=403, content={"detail": _EXEC_READONLY_DETAIL})
 
 
 def _safe_relative(f: Path, base: Path) -> bool:
@@ -150,8 +228,8 @@ def _require_auth(request: Request) -> dict:
 # ---------------------------------------------------------------- 门店授权与当前工作门店
 
 def _accessible_store_rows(conn: sqlite3.Connection, sess: dict) -> list[sqlite3.Row]:
-    """当前会话可访问的门店：TENANT_ADMIN=全部门店；EMPLOYEE=user_stores 授权门店。"""
-    if sess.get("role") == "TENANT_ADMIN":
+    """当前会话可访问的门店：店长/高管=全部门店（高管可跨店巡查）；店员=user_stores 授权门店。"""
+    if sess.get("role") in ("TENANT_ADMIN", "EXECUTIVE"):
         return conn.execute("SELECT * FROM stores ORDER BY id").fetchall()
     return conn.execute(
         """SELECT s.* FROM stores s
@@ -205,9 +283,10 @@ def _inv(conn: sqlite3.Connection, product_id: int | None, epc: str, typ: str, o
     )
 
 
-def _touch_customer(conn: sqlite3.Connection, name: str, phone: str, amount: float, due: float) -> None:
+def _touch_customer(conn: sqlite3.Connection, name: str, phone: str, amount: float, due: float) -> int:
+    """销售成交后回写客户：存在则累加累计消费/欠款，不存在则建档（散客）。返回 customer_id（无则 0）。"""
     if not phone and not name:
-        return
+        return 0
     cust = None
     if phone:
         cust = conn.execute("SELECT * FROM customers WHERE phone=?", (phone,)).fetchone()
@@ -216,11 +295,12 @@ def _touch_customer(conn: sqlite3.Connection, name: str, phone: str, amount: flo
             "UPDATE customers SET total_amount=total_amount+?, due_amount=due_amount+?, name=COALESCE(NULLIF(?,''),name) WHERE id=?",
             (amount, due, name, cust["id"]),
         )
-    elif name or phone:
-        conn.execute(
-            "INSERT INTO customers(name,phone,level,total_amount,due_amount) VALUES(?,?,?,?,?)",
-            (name or "散客", phone or "", "普通", amount, max(due, 0)),
-        )
+        return cust["id"]
+    cur = conn.execute(
+        "INSERT INTO customers(name,phone,level,total_amount,due_amount) VALUES(?,?,?,?,?)",
+        (name or "散客", phone or "", "普通", amount, max(due, 0)),
+    )
+    return cur.lastrowid
 
 
 def _next_code(conn: sqlite3.Connection, prefix: str = "J") -> str:
@@ -859,7 +939,9 @@ def api_login(body: LoginReq, request: Request):
         if not user or user["password"] != body.password:
             raise HTTPException(status_code=401, detail="用户名或密码错误")
         token = secrets.token_urlsafe(24)
-        info = {"username": user["username"], "display_name": user["display_name"], "role": user["role"]}
+        info = {"username": user["username"], "display_name": user["display_name"], "role": user["role"],
+                "can_view_cost": bool(user["can_view_cost"]) if "can_view_cost" in user.keys()
+                else user["role"] in _COST_FORCE_VISIBLE_ROLES}
         store_rows = _accessible_store_rows(conn, info)
         stores = _store_payload(store_rows)
         info["store_id"] = stores[0]["id"] if stores else 0
@@ -911,6 +993,8 @@ def api_logout(request: Request):
 def api_me(request: Request):
     u = _require_auth(request)
     with _db(request) as conn:
+        # 列级权限实时读库：店长在用户管理里收回/授予后，店员下次刷新即生效，无需重登
+        u["can_view_cost"] = _can_view_cost(conn, u)
         rows = _accessible_store_rows(conn, u)
         stores = _store_payload(rows)
     cur = int(u.get("store_id") or 0)
@@ -1056,6 +1140,36 @@ def dashboard_overview(request: Request):
             "SELECT COALESCE(SUM(amount),0) a FROM sales "
             "WHERE substr(biz_date,1,7)=? AND status!='已冲红' AND (store_id=? OR store_id=0)", (month, sid)
         ).fetchone()
+        # ----- 环比/同比计算：同口径 status!='已冲红' AND (store_id=? OR store_id=0) -----
+        scope_filter = " AND status!='已冲红' AND (store_id=? OR store_id=0)"
+        scope_args_base = [sid]
+        # 昨日环比
+        yesterday = (date.today() + __import__('datetime').timedelta(days=-1)).isoformat()
+        prev_day = conn.execute(
+            f"SELECT COALESCE(SUM(amount),0) a FROM sales WHERE biz_date BETWEEN ? AND ?{scope_filter}",
+            [yesterday, yesterday] + scope_args_base).fetchone()["a"]
+        today_amount = today_sales["a"]
+        day_mom_pct = round((today_amount - prev_day) * 100.0 / prev_day, 1) if prev_day and prev_day > 0 else None
+        # 上月环比
+        from datetime import timedelta as _td
+        first_of_this = date.today().replace(day=1)
+        first_of_prev = (first_of_this + _td(days=-1)).replace(day=1)
+        prev_month_end = first_of_this + _td(days=-1)
+        prev_month = conn.execute(
+            f"SELECT COALESCE(SUM(amount),0) a FROM sales WHERE biz_date BETWEEN ? AND ?{scope_filter}",
+            [first_of_prev.isoformat(), prev_month_end.isoformat()] + scope_args_base
+        ).fetchone()["a"]
+        month_amount = month_sales["a"]
+        month_mom_pct = round((month_amount - prev_month) * 100.0 / prev_month, 1) if prev_month and prev_month > 0 else None
+        # 去年同期同比（同月）
+        first_of_prev_year = first_of_this.replace(year=first_of_this.year - 1)
+        prev_year_end = first_of_prev_year + _td(days=-1)  # 去年同月最后一天
+        last_year_month = conn.execute(
+            f"SELECT COALESCE(SUM(amount),0) a FROM sales WHERE biz_date BETWEEN ? AND ?{scope_filter}",
+            [first_of_prev_year.isoformat(), prev_year_end.isoformat()] + scope_args_base
+        ).fetchone()["a"]
+        month_yoy_pct = round((month_amount - last_year_month) * 100.0 / last_year_month, 1) if last_year_month and last_year_month > 0 else None
+
         deposit = conn.execute(
             "SELECT COALESCE(SUM(balance),0) a FROM deposits WHERE status='已定' AND (store_id=? OR store_id=0)",
             (sid,)).fetchone()
@@ -1070,12 +1184,15 @@ def dashboard_overview(request: Request):
             "SELECT bill_no, customer, amount, method, biz_date, status FROM sales "
             "WHERE store_id=? OR store_id=0 ORDER BY id DESC LIMIT 8", (sid,)
         ).fetchall()
+        cost_visible = _can_view_cost(conn, sess)
         return {
             "tenant": _tenant_of(request),
             "date": today,
-            "stock": {"count": stock["n"], "cost": round(stock["c"], 2), "reserved": reserved["n"], "loaned": loaned["n"], "inTransit": in_transit["n"]},
-            "todaySales": {"amount": round(today_sales["a"], 2), "count": today_sales["n"]},
-            "monthSales": {"amount": round(month_sales["a"], 2)},
+            # 列级权限：无成本权限时库存成本金额返回 None（前端 *** 渲染）
+            "stock": {"count": stock["n"], "cost": round(stock["c"], 2) if cost_visible else None,
+                      "reserved": reserved["n"], "loaned": loaned["n"], "inTransit": in_transit["n"]},
+            "todaySales": {"amount": round(today_amount, 2), "count": today_sales["n"], "momPct": day_mom_pct},
+            "monthSales": {"amount": round(month_amount, 2), "momPct": month_mom_pct, "yoyPct": month_yoy_pct},
             "depositPending": {"amount": round(deposit["a"], 2)},
             "customerDue": {"amount": round(due["a"], 2)},
             "loansActive": loans["n"],
@@ -1091,11 +1208,25 @@ def dashboard_trend(request: Request):
         sid, _ = _current_store(request, conn, sess)
         rows = conn.execute("""
             SELECT substr(biz_date,1,7) m, COALESCE(SUM(amount),0) a
-            FROM sales WHERE status!='已冲红' AND biz_date >= date('now','start of month','-5 months')
+            FROM sales WHERE status!='已冲红' AND biz_date >= date('now','start of month','-11 months')
               AND (store_id=? OR store_id=0)
             GROUP BY m ORDER BY m
         """, (sid,)).fetchall()
-        return {"months": [r["m"] for r in rows], "amounts": [round(r["a"], 2) for r in rows]}
+        months = [r["m"] for r in rows]
+        amounts = [round(r["a"], 2) for r in rows]
+        # 去年同月：YYYY-MM → YYYY-1-MM
+        last_year_amounts = []
+        for m in months:
+            parts = m.split("-")
+            y = int(parts[0]) - 1
+            ym_last = f"{y}-{parts[1]}"
+            r2 = conn.execute(
+                "SELECT COALESCE(SUM(amount),0) a FROM sales WHERE status!='已冲红' "
+                "AND substr(biz_date,1,7)=? AND (store_id=? OR store_id=0)", (ym_last, sid)
+            ).fetchone()
+            v = round(r2["a"], 2) if r2 and r2["a"] else None
+            last_year_amounts.append(v)
+        return {"months": months, "amounts": amounts, "amountsLastYear": last_year_amounts}
 
 
 @app.get("/api/dashboard/category-sales")
@@ -1232,17 +1363,20 @@ def language_list(request: Request):
 def biz_config_get(request: Request):
     _require_auth(request)
     with _db(request) as conn:
-        r = conn.execute("SELECT epc_prefix,seq_bits FROM biz_config WHERE id=1").fetchone()
+        r = conn.execute(
+            "SELECT epc_prefix,seq_bits,IFNULL(gold_price,0) FROM biz_config WHERE id=1"
+        ).fetchone()
         if not r:
             conn.execute("INSERT OR IGNORE INTO biz_config(id,epc_prefix,seq_bits) VALUES(1,'E280',8)")
             conn.commit()
-            r = ("E280", 8)
-        return {"epc_prefix": r[0], "seq_bits": r[1]}
+            r = ("E280", 8, 0)
+        return {"epc_prefix": r[0], "seq_bits": r[1], "gold_price": r[2] or 0}
 
 
 class BizConfigUpdate(BaseModel):
-    epc_prefix: str
-    seq_bits: int = 6
+    epc_prefix: str | None = None
+    seq_bits: int | None = None
+    gold_price: float | None = None  # 当日金价（元/克）；None=本次不改
 
 
 @app.put("/api/biz-config")
@@ -1250,6 +1384,19 @@ def biz_config_update(request: Request, body: BizConfigUpdate):
     _require_auth(request)
     prefix = (body.epc_prefix or "").strip().upper()
     with _db(request) as conn:
+        # 当日金价：允许单独更新（开单配置入口只传 gold_price）
+        if body.gold_price is not None and body.epc_prefix is None and body.seq_bits is None:
+            if body.gold_price < 0:
+                raise HTTPException(400, "当日金价不能为负数")
+            conn.execute(
+                "INSERT INTO biz_config(id,gold_price) VALUES(1,?) "
+                "ON CONFLICT(id) DO UPDATE SET gold_price=excluded.gold_price",
+                (round(body.gold_price, 2),),
+            )
+            conn.commit()
+            return {"ok": True, "gold_price": round(body.gold_price, 2)}
+        if body.epc_prefix is None or body.seq_bits is None:
+            raise HTTPException(400, "EPC 前缀与序号位数必填")
         # 前缀留空时，按企业名称拼音首字母前三位自动生成
         if not prefix:
             prow = conn.execute("SELECT name FROM tenant_profiles ORDER BY id DESC LIMIT 1").fetchone()
@@ -1336,6 +1483,7 @@ class ProductTypeIn(BaseModel):
     code: str = ""
     names: dict = Field(default_factory=dict)
     sort_order: int = 0
+    pricing_mode: str = "piece"  # piece=计件（一口价）；weight=计重（克重×金价+工费）
 
 
 @app.get("/api/product-types")
@@ -1343,10 +1491,12 @@ def product_type_list(request: Request):
     _require_auth(request)
     with _db(request) as conn:
         rows = conn.execute(
-            "SELECT code,names,sort_order,label_template_id FROM product_types ORDER BY sort_order,code"
+            "SELECT code,names,sort_order,label_template_id,IFNULL(pricing_mode,'piece') "
+            "FROM product_types ORDER BY sort_order,code"
         ).fetchall()
         return [{"code": r[0], "names": json.loads(r[1] or "{}"),
-                 "sort_order": r[2], "label_template_id": r[3]} for r in rows]
+                 "sort_order": r[2], "label_template_id": r[3],
+                 "pricing_mode": r[4] if r[4] in ("piece", "weight") else "piece"} for r in rows]
 
 
 @app.post("/api/product-types")
@@ -1360,9 +1510,10 @@ def product_type_create(request: Request, body: ProductTypeIn):
     with _db(request) as conn:
         if conn.execute("SELECT 1 FROM product_types WHERE code=?", (code,)).fetchone():
             raise HTTPException(400, "品类编码已存在")
+        mode = body.pricing_mode if body.pricing_mode in ("piece", "weight") else "piece"
         conn.execute(
-            "INSERT INTO product_types(code,names,sort_order) VALUES(?,?,?)",
-            (code, json.dumps(body.names, ensure_ascii=False), body.sort_order),
+            "INSERT INTO product_types(code,names,sort_order,pricing_mode) VALUES(?,?,?,?)",
+            (code, json.dumps(body.names, ensure_ascii=False), body.sort_order, mode),
         )
         conn.commit()
     return {"ok": True, "code": code}
@@ -1376,9 +1527,10 @@ def product_type_update(request: Request, code: str, body: ProductTypeIn):
     with _db(request) as conn:
         if not conn.execute("SELECT 1 FROM product_types WHERE code=?", (code,)).fetchone():
             raise HTTPException(404, "品类不存在")
+        mode = body.pricing_mode if body.pricing_mode in ("piece", "weight") else "piece"
         conn.execute(
-            "UPDATE product_types SET names=?, sort_order=? WHERE code=?",
-            (json.dumps(body.names, ensure_ascii=False), body.sort_order, code),
+            "UPDATE product_types SET names=?, sort_order=?, pricing_mode=? WHERE code=?",
+            (json.dumps(body.names, ensure_ascii=False), body.sort_order, mode, code),
         )
         # 同步历史商品冗余的品类中文名
         zh = body.names.get("zh") or body.names.get("en") or code
@@ -1634,7 +1786,9 @@ def product_list(request: Request, q: str = "", status: str = "", page: int = 1,
             f"SELECT {_PRODUCT_COLS} FROM products {join} {cond} ORDER BY products.id DESC LIMIT ? OFFSET ?",
             args + [size, (page - 1) * size],
         ).fetchall()
-        return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
+        # 列级权限：无成本权限时逐行抹掉 cost（前端 *** 渲染），防止从接口直取
+        items = _hide_cost([dict(r) for r in rows], _can_view_cost(conn, sess))
+        return {"total": total, "page": page, "size": size, "items": items}
 
 
 @app.get("/api/products/options")
@@ -1642,11 +1796,159 @@ def product_options(request: Request, status: str = "在库"):
     sess = _require_auth(request)
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, sess)
+        sql = (
+            "SELECT p.id,p.code,p.name,p.price,p.status,p.rfid_epc,p.barcode,p.store_id,"
+            "p.product_type_code,p.weight,"
+            "CASE WHEN pt.pricing_mode='weight' THEN 'weight' ELSE 'piece' END pricing_mode "
+            "FROM products p LEFT JOIN product_types pt ON pt.code=p.product_type_code "
+            "WHERE {cond} ORDER BY p.id"
+        )
         if status:
-            rows = conn.execute("SELECT id, code, name, price, status, rfid_epc, barcode, store_id, product_type_code FROM products WHERE status=? AND store_id=? ORDER BY id", (status, sid)).fetchall()
+            rows = conn.execute(sql.format(cond="p.status=? AND p.store_id=?"), (status, sid)).fetchall()
         else:
-            rows = conn.execute("SELECT id, code, name, price, status, rfid_epc, barcode, store_id, product_type_code FROM products WHERE store_id=? ORDER BY id", (sid,)).fetchall()
+            rows = conn.execute(sql.format(cond="p.store_id=?"), (sid,)).fetchall()
         return {"items": [dict(r) for r in rows]}
+
+
+# -------------------------------------------- 商品批量导入（Excel .xlsx，按行建档一物一码）
+_IMPORT_HEADERS = ["货号", "名称", "品类码", "品类", "材质", "重量(g)", "规格", "证书号", "成本", "售价"]
+_IMPORT_XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+_IMPORT_MAX_BYTES = 5 * 1024 * 1024
+
+
+def _build_import_template_xlsx(type_rows) -> bytes:
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "商品导入"
+    ws.append(_IMPORT_HEADERS)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+        c.fill = PatternFill("solid", fgColor="FFF3D6")
+    ws.append(["A001-01", "示例 足金戒指", "01", "黄金", "足金999", 3.52, "12#", "CERT00001", 1800, 2280])
+    ws.freeze_panes = "A2"
+    widths = [14, 24, 8, 10, 12, 9, 10, 16, 10, 10]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws2 = wb.create_sheet("品类码对照")
+    ws2.append(["品类码", "品类名称"])
+    for r in type_rows:
+        zh = r["names"]
+        try:
+            zh = (json.loads(r["names"] or "{}").get("zh") or "").strip()
+        except Exception:
+            zh = ""
+        ws2.append([r["code"], zh or r["code"]])
+    ws2.column_dimensions["A"].width = 10
+    ws2.column_dimensions["B"].width = 18
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+@app.get("/api/products/import-template")
+def products_import_template(request: Request):
+    """下载商品批量导入 Excel 模板（含当前品类码对照页）。静态路由，须在 /api/products/{pid} 前注册。"""
+    _require_auth(request)
+    with _db(request) as conn:
+        type_rows = conn.execute("SELECT code,names FROM product_types ORDER BY code").fetchall()
+    data = _build_import_template_xlsx(type_rows)
+    fn = urllib.parse.quote("商品批量导入模板.xlsx")
+    return Response(
+        content=data, media_type=_IMPORT_XLSX_MEDIA,
+        headers={"Content-Disposition":
+                 "attachment; filename=products_import.xlsx; filename*=UTF-8''" + fn})
+
+
+@app.post("/api/products/import-xlsx")
+async def products_import_xlsx(request: Request, file: UploadFile):
+    """按 Excel 行批量建档：每行一件商品（一物一码，EPC 自动生成）；部分行失败不影响其他行。"""
+    sess = _require_auth(request)
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(400, "文件为空")
+    if len(raw) > _IMPORT_MAX_BYTES:
+        raise HTTPException(400, "文件不能超过 5MB")
+
+    def _work():
+        from openpyxl import load_workbook
+        with _db(request) as conn:
+            sid, _ = _current_store(request, conn, sess)
+            _assert_stock_unfrozen(conn)
+            try:
+                wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+            except Exception:
+                raise HTTPException(400, "无法解析文件，请使用模板另存为 .xlsx 后上传")
+            ws = wb.worksheets[0]
+            rows = ws.iter_rows(values_only=True)
+            try:
+                header = [str(c).strip() if c is not None else "" for c in next(rows)]
+            except StopIteration:
+                raise HTTPException(400, "Excel 内容为空")
+            # 按表头名定位列（允许列序与模板不同/有多余列）
+            col = {h: i for i, h in enumerate(header)}
+            missing = [h for h in ("货号", "名称") if h not in col]
+            if missing:
+                raise HTTPException(400, "缺少必需列：" + "、".join(missing) + "（请使用最新模板）")
+
+            def cell(r, name):
+                i = col.get(name)
+                v = r[i] if i is not None and i < len(r) else None
+                return "" if v is None else str(v).strip()
+
+            def num(r, name):
+                v = cell(r, name)
+                if not v:
+                    return 0.0
+                try:
+                    return float(v)
+                except ValueError:
+                    raise ValueError(name + "需为数字")
+
+            created, failed = 0, []
+            seen = set()  # 文件内货号去重
+            for idx, r in enumerate(rows, start=2):
+                code = cell(r, "货号")
+                name = cell(r, "名称")
+                if not code and not name:
+                    continue  # 整行空白跳过
+                try:
+                    if not code:
+                        raise ValueError("货号不能为空")
+                    if not name:
+                        raise ValueError("名称不能为空")
+                    if code in seen:
+                        raise ValueError("文件内货号重复")
+                    if conn.execute("SELECT 1 FROM products WHERE code=? AND store_id=?", (code, sid)).fetchone():
+                        raise ValueError("本店已存在该货号")
+                    weight = num(r, "重量(g)")
+                    cost = num(r, "成本")
+                    price = num(r, "售价")
+                    type_code = cell(r, "品类码")
+                    type_name_in = cell(r, "品类")
+                    type_code, type_name = _resolve_type(conn, type_code, type_name_in)
+                    epc = _gen_type_epc(conn, type_code, sid)
+                    conn.execute(
+                        """INSERT INTO products(code,name,category,category_code,material,product_type,product_type_code,
+                                               weight,size,cert,cost,price,status,store_id,rfid_epc)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'在库',?,?)""",
+                        (code, name, type_name, type_code, cell(r, "材质"), type_name, type_code,
+                         weight, cell(r, "规格"), cell(r, "证书号"), cost, price, sid, epc))
+                    seen.add(code)
+                    created += 1
+                except ValueError as e:
+                    failed.append({"row": idx, "code": code, "name": name, "reason": str(e)})
+                except HTTPException:
+                    raise
+                except Exception as e:  # 单行意外异常记录后继续
+                    failed.append({"row": idx, "code": code, "name": name, "reason": "行数据异常：" + str(e)[:60]})
+            conn.commit()
+            _log(conn, sess["username"], "批量导入商品", f"成功 {created} 条，失败 {len(failed)} 条")
+            return {"ok": True, "created": created, "failed": failed, "total": created + len(failed)}
+
+    return await run_in_threadpool(_work)
 
 
 @app.get("/api/products/{pid}")
@@ -1659,7 +1961,7 @@ def product_detail(pid: int, request: Request):
             raise HTTPException(404, "商品不存在")
         if row["store_id"] != sid:
             raise HTTPException(403, "该商品不属于当前工作门店")
-        return dict(row)
+        return _hide_cost(dict(row), _can_view_cost(conn, sess))
 
 
 @app.post("/api/products")
@@ -1710,6 +2012,9 @@ def product_update(pid: int, body: ProductIn, request: Request):
         row = _assert_product_in_store(conn, pid, sid)
         if row["status"] == "在途":
             raise HTTPException(400, "商品调拨在途中，验收完成后不可编辑")
+        # 列级权限：无成本查看权的账号改商品时，忽略其提交的 cost，保留原值（前端字段 *** 禁用，此处兜底）
+        if not _can_view_cost(conn, op):
+            body.cost = row["cost"]
         body.store_id = sid  # 不允许借编辑跨店改归属
         type_code, type_name = _resolve_type(conn, body.product_type_code, body.product_type)
         _assert_locations_in_store(conn, body.store_id, body.location_id, body.cert_location_id)
@@ -1825,7 +2130,9 @@ def product_print_label(pid: int, body: PrintLabelIn, request: Request):
         _inv(conn, pid, epc, "rfid", op["username"], body.copies)
         conn.commit()
         _log(conn, op["username"], "RFID标签打印", f"{row['code']} {epc}")
-        return {"ok": True, "rfid_epc": epc, "product": dict(row) | {"rfid_epc": epc}, "copies": body.copies, "template": body.template}
+        return {"ok": True, "rfid_epc": epc,
+                "product": _hide_cost(dict(row) | {"rfid_epc": epc}, _can_view_cost(conn, op)),
+                "copies": body.copies, "template": body.template}
 
 
 # ---------------------------------------------------------------- 库存 / RFID
@@ -1835,10 +2142,11 @@ def inventory_summary(request: Request):
     sess = _require_auth(request)
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, sess)
+        cost_visible = _can_view_cost(conn, sess)
         def cnt(st):
             r = conn.execute("SELECT COUNT(*) n, COALESCE(SUM(cost),0) c FROM products WHERE status=? AND store_id=?",
                              (st, sid)).fetchone()
-            return {"count": r["n"], "cost": round(r["c"], 2)}
+            return {"count": r["n"], "cost": round(r["c"], 2) if cost_visible else None}
         logs = conn.execute(
             "SELECT * FROM inventory_logs WHERE store_id=? OR store_id=0 ORDER BY id DESC LIMIT 30",
             (sid,)).fetchall()
@@ -1969,6 +2277,7 @@ def transfer_create(body: TransferIn, request: Request):
         scan_pids: list[int] = []
         seen_pid = set()
         seen_raw = set()
+        pid_set = set(body.product_ids or [])
         for s in (body.scan_codes or []):
             s2 = (s or "").strip()
             if not s2 or s2 in seen_raw:
@@ -1977,7 +2286,8 @@ def transfer_create(body: TransferIn, request: Request):
             p = _resolve_product(conn, s2, sid)
             if not p:
                 raise HTTPException(400, f"扫描的码 {s2} 未登记、不存在或不属于当前门店，无法调拨")
-            if p["id"] in seen_pid:
+            # 已在 product_ids 里的跳过，避免前端勾选+扫码双路径提交同一商品导致重复
+            if p["id"] in seen_pid or p["id"] in pid_set:
                 continue
             seen_pid.add(p["id"])
             scan_pids.append(p["id"])
@@ -3054,6 +3364,15 @@ def _next_task_no(conn: sqlite3.Connection) -> str:
     return "RW" + time.strftime("%Y%m%d%H%M%S") + secrets.token_hex(2).upper()
 
 
+def _next_type_seq(conn: sqlite3.Connection, store_id: int, ttype: str) -> int:
+    """同店同功能的人类可读序号：取当前最大值 +1（永久递增、不复用、不补洞）。
+    并发依赖 idx_tasks_type_seq 唯一索引兜底，插入撞号由调用方重试。"""
+    row = conn.execute(
+        "SELECT COALESCE(MAX(type_seq),0)+1 AS n FROM tasks WHERE store_id=? AND type=?",
+        (store_id or 0, ttype)).fetchone()
+    return int(row["n"])
+
+
 def _active_session(conn: sqlite3.Connection):
     """统一任务引擎：进行中的盘点任务（冻结判定唯一数据源）。"""
     return conn.execute(
@@ -3106,7 +3425,9 @@ def _task_progress(conn: sqlite3.Connection, t) -> dict:
                       "matchedCount": r["matched_count"], "surplusCount": r["surplus_count"],
                       "shortageCount": r["shortage_count"], "abnormalCount": r["abnormal_count"]}
     return {
-        "id": t["id"], "task_no": t["task_no"], "type": t["type"], "status": t["status"],
+        "id": t["id"], "task_no": t["task_no"], "type": t["type"],
+        "type_seq": t["type_seq"] if "type_seq" in t.keys() else 0,
+        "status": t["status"],
         "operator": t["initiator"], "started": t["created"], "ended": t["ended"],
         "closed_by": t["closed_by"], "scanned_count": scanned,
         "stats": _scan_stats(conn, t["id"]),
@@ -3131,7 +3452,8 @@ class TaskStartIn(BaseModel):
 
 # 任务类型：stocktake=盘点（冻结库存，全局唯一进行中）；
 # 其余为业务轻量扫码任务（不冻结库存，同店可多个并行，手持机从任务列表自由选择）
-SCAN_TASK_TYPES = {"stocktake", "sale", "transfer_out", "transfer_in", "loan", "generic"}
+SCAN_TASK_TYPES = {"stocktake", "sale", "transfer_out", "transfer_in", "loan", "generic",
+                  "epc_product", "epc_inbound"}
 
 
 @app.post("/api/tasks/start")
@@ -3147,12 +3469,24 @@ def task_start(body: TaskStartIn, request: Request):
             raise HTTPException(409, "已有盘点任务进行中，请先结束当前任务")
         task_no = _next_task_no(conn)
         key = secrets.token_urlsafe(18)
-        try:
-            cur = conn.execute(
-                "INSERT INTO tasks(task_no,task_key,type,status,initiator,title,store_id) VALUES(?,?,?,'进行中',?,?,?)",
-                (task_no, key, ttype, op["username"], (body.title or "").strip(), sid))
-        except sqlite3.IntegrityError:
-            raise HTTPException(409, "已有盘点任务进行中，请先结束当前任务")
+        title = (body.title or "").strip()
+        # 同店同功能序号：Max+1 后插入，撞唯一索引则重取重试（不补洞、不复用）
+        cur = None
+        for _attempt in range(6):
+            type_seq = _next_type_seq(conn, sid, ttype)
+            try:
+                cur = conn.execute(
+                    "INSERT INTO tasks(task_no,task_key,type,type_seq,status,initiator,title,store_id) "
+                    "VALUES(?,?,?,?,'进行中',?,?,?)",
+                    (task_no, key, ttype, type_seq, op["username"], title, sid))
+                break
+            except sqlite3.IntegrityError:
+                # 盘点全局唯一进行中的友好提示；其余视为序号撞号并重试
+                if ttype == "stocktake" and _active_session(conn):
+                    raise HTTPException(409, "已有盘点任务进行中，请先结束当前任务")
+                cur = None
+        if cur is None:
+            raise HTTPException(409, "任务创建繁忙，请稍后重试")
         tid = cur.lastrowid
         _task_event(conn, tid, "create", op["username"])
         conn.commit()
@@ -3189,7 +3523,9 @@ def tasks_list(request: Request, scope: str = "active", limit: int = 50):
         for r in rows:
             n = conn.execute(
                 "SELECT COUNT(*) n FROM task_scans WHERE task_id=?", (r["id"],)).fetchone()["n"]
-            out.append({"id": r["id"], "task_no": r["task_no"], "type": r["type"], "status": r["status"],
+            out.append({"id": r["id"], "task_no": r["task_no"], "type": r["type"],
+                        "type_seq": r["type_seq"] if "type_seq" in r.keys() else 0,
+                        "status": r["status"],
                         "operator": r["initiator"], "created": r["created"], "ended": r["ended"],
                         "closed_by": r["closed_by"], "result_id": r["result_id"], "scanned_count": n})
         return out
@@ -3635,14 +3971,18 @@ def devices_list(request: Request, store_id: int = 0):
         rows = conn.execute(sql, args).fetchall()
         out = []
         for r in rows:
-            task_no = ""
+            task_no, task_type, task_seq = "", "", 0
             if r["current_task_id"]:
-                tr = conn.execute("SELECT task_no FROM tasks WHERE id=?", (r["current_task_id"],)).fetchone()
-                task_no = tr["task_no"] if tr else ""
+                tr = conn.execute(
+                    "SELECT task_no,type,type_seq FROM tasks WHERE id=?",
+                    (r["current_task_id"],)).fetchone()
+                if tr:
+                    task_no, task_type, task_seq = tr["task_no"], tr["type"], tr["type_seq"] or 0
             # WS 常驻连接即在线；离线后回退到 last_seen 60 秒判定（心跳帧兜底）
             with _dev_ws_lock:
                 ws_online = r["code"] in _dev_ws.get(r["bound_store_id"], {})
             out.append({**dict(r), "store_name": r["store_name"], "current_task_no": task_no,
+                        "current_task_type": task_type, "current_task_seq": task_seq,
                         "online": ws_online or (now - (r["last_seen"] or 0)) <= 60})
         return out
 
@@ -3860,6 +4200,7 @@ def _broadcast_pages(store_id: int, payload: dict) -> None:
 def _task_brief(conn: sqlite3.Connection, t) -> dict:
     """任务简报（任务列表/推送共用载荷）。"""
     return {"task_id": t["id"], "task_no": t["task_no"], "type": t["type"],
+            "type_seq": t["type_seq"] if "type_seq" in t.keys() else 0,
             "title": t["title"], "status": t["status"], "store_id": t["store_id"],
             "initiator": t["initiator"], "created": t["created"],
             "stats": _scan_stats(conn, t["id"])}
@@ -4078,7 +4419,14 @@ class SaleItemIn(BaseModel):
     product_id: int | None = None
     epc: str = ""          # 扫码加件：RFID EPC
     code: str = ""         # 扫码加件：条码/货号
-    price: float | None = None  # 可空，默认取商品售价
+    price: float | None = None    # 计件类成交价（可空，默认取商品售价）
+    gold_price: float | None = None  # 计重类成交金价（元/克，已含会员折扣）；空取当日金价
+    labor_fee: float | None = None    # 计重类工费（元/件）
+
+
+class SalePaymentIn(BaseModel):
+    method: str = "现金"
+    amount: float = Field(default=0, ge=0)
 
 
 class SaleReq(BaseModel):
@@ -4086,9 +4434,11 @@ class SaleReq(BaseModel):
     phone: str = ""
     product: str = ""
     product_id: int | None = None
-    amount: float = Field(default=0, ge=0)  # 多件时由后端按明细自动汇总，忽略传入
-    paid: float = Field(default=0, ge=0)
+    amount: float = Field(default=0, ge=0)  # 旧字段，由后端汇总忽略
+    paid: float = Field(default=0, ge=0)    # 无组合支付时的实收
     method: str = "现金"
+    discount: float = Field(default=0, ge=0)  # 整单优惠：应付 = 应收 - 优惠
+    payments: list[SalePaymentIn] = []        # 组合支付（可多笔）；为空时回退 paid/method
     biz_date: str = ""
     clerk_type: str = ""   # 经办人类别（存名称快照，缺省取默认类别）
     clerk_name: str = ""   # 经办人具体人名（可空）
@@ -4157,7 +4507,15 @@ def sale_create(body: SaleReq, request: Request):
         if not req_items:
             raise HTTPException(400, "请至少添加一件商品")
 
-        resolved = []
+        # 当日金价 + 品类计价方式（计重/计件）
+        cfg = conn.execute("SELECT IFNULL(gold_price,0) gp FROM biz_config WHERE id=1").fetchone()
+        daily_gold = float(cfg["gp"] if cfg else 0) or 0.0
+        type_modes = {
+            r["code"]: (r["pricing_mode"] if r["pricing_mode"] in ("piece", "weight") else "piece")
+            for r in conn.execute("SELECT code,pricing_mode FROM product_types").fetchall()
+        }
+
+        resolved = []   # [(product, item_snapshot_dict)]
         seen = set()
         shop_id = 0
         store_id = sid  # 开单门店固定为当前工作门店
@@ -4172,9 +4530,22 @@ def sale_create(body: SaleReq, request: Request):
             pstore = p["store_id"] or 0
             if pstore != sid:
                 raise HTTPException(403, f"商品 {p['code']} 不属于当前工作门店，不能跨店开单")
-            price = float(it.price if it.price is not None else (p["price"] or 0))
+            mode = type_modes.get(p["product_type_code"] or "", "piece")
+            if mode == "weight":
+                weight = float(p["weight"] or 0)
+                gold = float(it.gold_price) if it.gold_price is not None and it.gold_price > 0 else daily_gold
+                labor = max(0.0, float(it.labor_fee or 0))
+                if gold <= 0:
+                    raise HTTPException(400, f"商品 {p['code']} 为计重品类，请先在业务配置设置当日金价或录入金价")
+                subtotal = round(weight * gold + labor, 2)
+                snap = {"pricing_mode": "weight", "weight": weight, "gold_price": gold,
+                        "labor_fee": round(labor, 2), "subtotal": subtotal}
+            else:
+                subtotal = round(float(it.price if it.price is not None else (p["price"] or 0)), 2)
+                snap = {"pricing_mode": "piece", "weight": 0.0, "gold_price": 0.0,
+                        "labor_fee": 0.0, "subtotal": subtotal}
             seen.add(p["id"])
-            resolved.append((p, price))
+            resolved.append((p, snap))
 
         # 店铺件数上限（经商品门店→店铺）
         if store_id:
@@ -4188,12 +4559,33 @@ def sale_create(body: SaleReq, request: Request):
         if limit and len(resolved) > limit:
             raise HTTPException(400, f"本店铺单张开单最多 {limit} 件，当前 {len(resolved)} 件")
 
-        amount = round(sum(price for _p, price in resolved), 2)
-        paid = body.paid if body.paid is not None else 0
+        # 应收（各件小计汇总）→ 优惠 → 应付
+        receivable = round(sum(s["subtotal"] for _p, s in resolved), 2)
+        discount = round(max(0.0, float(body.discount or 0)), 2)
+        if discount > receivable:
+            raise HTTPException(400, f"优惠金额 ￥{discount} 不能大于应收 ￥{receivable}")
+        payable = round(receivable - discount, 2)
+
+        # 组合支付：优先 payments；为空回退旧的单支付 paid/method
+        pay_list = [(pm.method.strip() or "现金", round(float(pm.amount or 0), 2))
+                    for pm in body.payments if float(pm.amount or 0) > 0]
+        if pay_list:
+            for m, _amt in pay_list:
+                if m not in ("现金", "微信", "刷卡", "转账"):
+                    raise HTTPException(400, f"不支持的支付方式：{m}")
+        else:
+            pay_list = [(body.method or "现金", round(float(body.paid or 0), 2))] if float(body.paid or 0) > 0 else []
+        paid = round(sum(a for _m, a in pay_list), 2)
+        if paid > payable + 0.01:
+            raise HTTPException(400, f"实收 ￥{paid} 超过应付 ￥{payable}，请核对")
+        main_method = pay_list[0][0] if len(pay_list) == 1 else ("组合" if pay_list else (body.method or "现金"))
+
         bill = _next_bill_no(conn)
         biz = body.biz_date or date.today().isoformat()
-        status = "已完成" if paid >= amount else "欠款"
-        names = "、".join(p["name"] for p, _pr in resolved)
+        status = "已完成" if paid + 0.01 >= payable and payable > 0 else "欠款"
+        if payable == 0:
+            status = "已完成"
+        names = "、".join(p["name"] for p, _s in resolved)
         first = resolved[0][0]
         # 经办人类别：缺省取默认类别；传值按名称原样落库（历史快照），人名可空
         clerk_type = (body.clerk_type or "").strip()
@@ -4203,22 +4595,35 @@ def sale_create(body: SaleReq, request: Request):
         clerk_name = (body.clerk_name or "").strip()[:40]
         cur = conn.execute(
             """INSERT INTO sales(bill_no,customer,phone,product,product_id,amount,paid,method,biz_date,type,status,
-                                 clerk_type,clerk_name,store_id)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (bill, body.customer, body.phone, names, first["id"], amount, paid,
-             body.method, biz, "普通", status, clerk_type, clerk_name, sid),
+                                 clerk_type,clerk_name,store_id,discount,receivable)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (bill, body.customer, body.phone, names, first["id"], payable, paid,
+             main_method, biz, "普通", status, clerk_type, clerk_name, sid,
+             discount, receivable),
         )
         sale_id = cur.lastrowid
-        for seq, (p, price) in enumerate(resolved):
+        for seq, (p, s) in enumerate(resolved):
             conn.execute(
-                "INSERT INTO sale_items(sale_id,product_id,epc,code,name,price,seq) VALUES(?,?,?,?,?,?,?)",
-                (sale_id, p["id"], p["rfid_epc"] or "", p["code"] or "", p["name"], price, seq))
+                "INSERT INTO sale_items(sale_id,product_id,epc,code,name,price,seq,"
+                "pricing_mode,weight,gold_price,labor_fee,subtotal) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (sale_id, p["id"], p["rfid_epc"] or "", p["code"] or "", p["name"],
+                 s["subtotal"], seq, s["pricing_mode"], s["weight"], s["gold_price"],
+                 s["labor_fee"], s["subtotal"]))
             conn.execute("UPDATE products SET status='已售' WHERE id=?", (p["id"],))
             _inv(conn, p["id"], p["rfid_epc"], "out", op["username"], store_id=sid)
-        _touch_customer(conn, body.customer, body.phone, amount, amount - paid)
+        for pseq, (m, amt) in enumerate(pay_list):
+            conn.execute(
+                "INSERT INTO sale_payments(sale_id,method,amount,seq) VALUES(?,?,?,?)",
+                (sale_id, m, amt, pseq))
+        # 客户回写 + 关联会员；积分按实付 1 元 = 1 分累计
+        customer_id = _touch_customer(conn, body.customer, body.phone, payable, max(0.0, payable - paid))
+        if customer_id:
+            conn.execute("UPDATE sales SET customer_id=? WHERE id=?", (customer_id, sale_id))
+            conn.execute("UPDATE customers SET points=IFNULL(points,0)+? WHERE id=?", (paid, customer_id))
         conn.commit()
         _log(conn, op["username"], "销售开单", f"{bill} {len(resolved)}件")
-        return {"bill_no": bill, "id": sale_id, "amount": amount, "count": len(resolved)}
+        return {"bill_no": bill, "id": sale_id, "amount": payable, "receivable": receivable,
+                "discount": discount, "paid": paid, "points": paid, "count": len(resolved)}
 
 
 @app.get("/api/sales")
@@ -4248,12 +4653,20 @@ def sale_list(request: Request, q: str = "", clerk_type: str = "", clerk_name: s
             f"SELECT s.* FROM sales s {cond} ORDER BY s.id DESC LIMIT ? OFFSET ?",
             args + [size, (page - 1) * size],
         ).fetchall()
-        items_map = _sale_item_dicts(conn, [r["id"] for r in rows])
+        sale_ids = [r["id"] for r in rows]
+        items_map = _sale_item_dicts(conn, sale_ids)
+        pays_map: dict[int, list] = {sid2: [] for sid2 in sale_ids}
+        if sale_ids:
+            for pr in conn.execute(
+                    f"SELECT sale_id,method,amount,seq FROM sale_payments WHERE sale_id IN "
+                    f"({','.join('?' * len(sale_ids))}) ORDER BY sale_id,seq", sale_ids).fetchall():
+                pays_map[pr["sale_id"]].append({"method": pr["method"], "amount": pr["amount"]})
         out = []
         for r in rows:
             d = dict(r)
             d["items"] = items_map.get(r["id"], [])
             d["item_count"] = len(d["items"])
+            d["payments"] = pays_map.get(r["id"], [])
             out.append(d)
         return {"total": total, "page": page, "size": size, "items": out}
 
@@ -4282,9 +4695,11 @@ def sale_void(sid: int, request: Request):
             conn.execute("UPDATE products SET status='在库' WHERE id=? AND status='已售'", (pid,))
             _inv(conn, pid, "", "in", op["username"], store_id=row["store_id"] or cur_sid)
         if row["phone"]:
+            # 冲红回滚：累计消费、欠款、已累计积分（实付部分）
             conn.execute(
-                "UPDATE customers SET total_amount=MAX(total_amount-?,0), due_amount=MAX(due_amount-?,0) WHERE phone=?",
-                (row["amount"], row["amount"] - row["paid"], row["phone"]),
+                "UPDATE customers SET total_amount=MAX(total_amount-?,0), due_amount=MAX(due_amount-?,0), "
+                "points=MAX(IFNULL(points,0)-?,0) WHERE phone=?",
+                (row["amount"], max(0.0, row["amount"] - row["paid"]), row["paid"], row["phone"]),
             )
         conn.commit()
         _log(conn, op["username"], "销售冲红", row["bill_no"])
@@ -4344,22 +4759,25 @@ def store_update(sid: int, body: dict, request: Request):
 # ------------------------------------------------- 用户与门店授权（仅店长）
 
 def _require_admin(request: Request) -> dict:
+    """行政/系统类操作要求店长或高管。
+    高管仅在当前工作门店为总店(HQ)时可行政——该约束由 executive_write_guard 中间件统一拦截，
+    店长在任意门店均可行政（既有行为不变）。"""
     sess = _require_auth(request)
-    if sess.get("role") != "TENANT_ADMIN":
+    if sess.get("role") not in ("TENANT_ADMIN", "EXECUTIVE"):
         raise HTTPException(403, "仅店长可操作")
     return sess
 
 
 @app.get("/api/admin/users")
 def admin_user_list(request: Request):
-    """账号列表 + 各账号被授权的门店（店长自动拥有全部门店，store_ids 返回 -1 标记全店）。"""
+    """账号列表 + 各账号被授权的门店（店长/高管自动拥有全部门店，store_ids 返回 -1 标记全店）。"""
     _require_admin(request)
     with _db(request) as conn:
-        users = conn.execute("SELECT id,username,display_name,role FROM users ORDER BY id").fetchall()
+        users = conn.execute("SELECT id,username,display_name,role,IFNULL(can_view_cost,0) can_view_cost FROM users ORDER BY id").fetchall()
         out = []
         for u in users:
             d = dict(u)
-            if d["role"] == "TENANT_ADMIN":
+            if d["role"] in ("TENANT_ADMIN", "EXECUTIVE"):
                 d["store_ids"] = [-1]
             else:
                 d["store_ids"] = [r["store_id"] for r in conn.execute(
@@ -4373,6 +4791,7 @@ class AdminUserIn(BaseModel):
     display_name: str = ""
     password: str = ""
     role: str = "EMPLOYEE"
+    can_view_cost: bool | None = None  # 列级权限：不传时按角色默认（店长/高管开，店员关）
 
 
 @app.post("/api/admin/users")
@@ -4383,13 +4802,15 @@ def admin_user_create(body: AdminUserIn, request: Request):
         raise HTTPException(400, "登录名需 2-32 位字母、数字或 _-")
     if not body.password:
         raise HTTPException(400, "请设置初始密码")
-    role = "TENANT_ADMIN" if body.role == "TENANT_ADMIN" else "EMPLOYEE"
+    role = body.role if body.role in ("TENANT_ADMIN", "EXECUTIVE", "EMPLOYEE") else "EMPLOYEE"
+    # 成本权限：店长/高管强制开；店员默认关，可由店长显式授予
+    cost_perm = 1 if role in _COST_FORCE_VISIBLE_ROLES or body.can_view_cost is True else 0
     with _db(request) as conn:
         if conn.execute("SELECT 1 FROM users WHERE username=?", (uname,)).fetchone():
             raise HTTPException(409, "登录名已存在")
         cur = conn.execute(
-            "INSERT INTO users(username,password,display_name,role) VALUES(?,?,?,?)",
-            (uname, body.password, body.display_name.strip() or uname, role))
+            "INSERT INTO users(username,password,display_name,role,can_view_cost) VALUES(?,?,?,?,?)",
+            (uname, body.password, body.display_name.strip() or uname, role, cost_perm))
         conn.commit()
         _log(conn, op["username"], "新增账号", uname)
         return {"ok": True, "id": cur.lastrowid}
@@ -4406,10 +4827,17 @@ def admin_user_update(uid: int, body: AdminUserIn, request: Request):
             conn.execute("UPDATE users SET display_name=? WHERE id=?", (body.display_name.strip(), uid))
         if body.password:
             conn.execute("UPDATE users SET password=? WHERE id=?", (body.password, uid))
-        if body.role in ("TENANT_ADMIN", "EMPLOYEE"):
+        if body.role in ("TENANT_ADMIN", "EXECUTIVE", "EMPLOYEE"):
             conn.execute("UPDATE users SET role=? WHERE id=?", (body.role, uid))
-            if body.role == "TENANT_ADMIN":
+            # 店长/高管自动拥有全部门店，转任这两类角色时清掉残留的逐店授权
+            if body.role in ("TENANT_ADMIN", "EXECUTIVE"):
                 conn.execute("DELETE FROM user_stores WHERE user_id=?", (uid,))
+        # 成本查看权：店长/高管强制 1（忽略传入的 false）；店员且显式传值时按勾选更新
+        new_role = body.role if body.role in ("TENANT_ADMIN", "EXECUTIVE", "EMPLOYEE") else row["role"]
+        if new_role in _COST_FORCE_VISIBLE_ROLES:
+            conn.execute("UPDATE users SET can_view_cost=1 WHERE id=? AND IFNULL(can_view_cost,0)=0", (uid,))
+        elif body.can_view_cost is not None:
+            conn.execute("UPDATE users SET can_view_cost=? WHERE id=?", (1 if body.can_view_cost else 0, uid))
         conn.commit()
         _log(conn, op["username"], "修改账号", row["username"])
         return {"ok": True}
@@ -4440,14 +4868,14 @@ class GrantStoresIn(BaseModel):
 
 @app.put("/api/admin/users/{uid}/stores")
 def admin_grant_stores(uid: int, body: GrantStoresIn, request: Request):
-    """设置店员可访问的门店集合（全量覆盖）。店长账号不使用此关系（自动全店）。"""
+    """设置店员可访问的门店集合（全量覆盖）。店长/高管不使用此关系（自动全店）。"""
     op = _require_admin(request)
     with _db(request) as conn:
         row = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
         if not row:
             raise HTTPException(404, "账号不存在")
-        if row["role"] == "TENANT_ADMIN":
-            raise HTTPException(400, "店长自动拥有全部门店，无需单独授权")
+        if row["role"] in ("TENANT_ADMIN", "EXECUTIVE"):
+            raise HTTPException(400, "店长/高管自动拥有全部门店，无需单独授权")
         valid = {r["id"] for r in conn.execute("SELECT id FROM stores").fetchall()}
         ids = [i for i in dict.fromkeys(body.store_ids) if i in valid]
         conn.execute("DELETE FROM user_stores WHERE user_id=?", (uid,))
@@ -4916,6 +5344,7 @@ class CustomerIn(BaseModel):
     level: str = "普通"
     birthday: str = ""
     preference: str = ""
+    gold_discount: float | None = None  # 金价折扣待遇（0<值<=1）；积分由开单自动累计，不在此手改
 
 
 @app.get("/api/customers/list")
@@ -4927,13 +5356,43 @@ def customer_list(request: Request, page: int = 1, size: int = 50):
         return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
 
 
+@app.get("/api/customers/lookup")
+def customer_lookup(request: Request, phone: str = ""):
+    """开单手机号联想：精确匹配优先，其次号码包含匹配，最多 8 条，带出会员等级/积分/金价折扣。"""
+    _require_auth(request)
+    q = (phone or "").strip()
+    with _db(request) as conn:
+        if not q:
+            return {"items": []}
+        exact = conn.execute(
+            "SELECT * FROM customers WHERE phone=? ORDER BY total_amount DESC LIMIT 1", (q,)
+        ).fetchall()
+        rows = list(exact)
+        if not rows:
+            rows = conn.execute(
+                "SELECT * FROM customers WHERE phone LIKE ? OR name LIKE ? "
+                "ORDER BY total_amount DESC LIMIT 8",
+                (f"%{q}%", f"%{q}%"),
+            ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["gold_discount"] = r["gold_discount"] if r["gold_discount"] else 1.0
+            out.append(d)
+        return {"items": out}
+
+
 @app.post("/api/customers")
 def customer_create(body: CustomerIn, request: Request):
     op = _require_auth(request)
+    gd = body.gold_discount
+    if gd is not None and not (0 < gd <= 1):
+        raise HTTPException(400, "金价折扣需在 0~1 之间（如 0.98）")
     with _db(request) as conn:
         cur = conn.execute(
-            "INSERT INTO customers(name,phone,level,birthday,preference) VALUES(?,?,?,?,?)",
-            (body.name, body.phone, body.level, body.birthday, body.preference),
+            "INSERT INTO customers(name,phone,level,birthday,preference,gold_discount) VALUES(?,?,?,?,?,?)",
+            (body.name, body.phone, body.level, body.birthday, body.preference,
+             gd if gd is not None else 1.0),
         )
         conn.commit()
         _log(conn, op["username"], "新增客户", body.name)
@@ -4943,11 +5402,20 @@ def customer_create(body: CustomerIn, request: Request):
 @app.put("/api/customers/{cid}")
 def customer_update(cid: int, body: CustomerIn, request: Request):
     op = _require_auth(request)
+    gd = body.gold_discount
+    if gd is not None and not (0 < gd <= 1):
+        raise HTTPException(400, "金价折扣需在 0~1 之间（如 0.98）")
     with _db(request) as conn:
-        conn.execute(
-            "UPDATE customers SET name=?,phone=?,level=?,birthday=?,preference=? WHERE id=?",
-            (body.name, body.phone, body.level, body.birthday, body.preference, cid),
-        )
+        if gd is not None:
+            conn.execute(
+                "UPDATE customers SET name=?,phone=?,level=?,birthday=?,preference=?,gold_discount=? WHERE id=?",
+                (body.name, body.phone, body.level, body.birthday, body.preference, gd, cid),
+            )
+        else:
+            conn.execute(
+                "UPDATE customers SET name=?,phone=?,level=?,birthday=?,preference=? WHERE id=?",
+                (body.name, body.phone, body.level, body.birthday, body.preference, cid),
+            )
         conn.commit()
         _log(conn, op["username"], "修改客户", body.name)
         return {"ok": True}
@@ -5156,7 +5624,8 @@ def outsource_receive(oid: int, request: Request):
         _inv(conn, cur.lastrowid, "", "in", op["username"], store_id=sid)
         conn.commit()
         _log(conn, op["username"], "委外收货入库", code)
-        return {"ok": True, "code": code, "cost": cost}
+        # 成本照常按公式入库（业务流转），但不向无成本权限的账号回显金额
+        return {"ok": True, "code": code, "cost": round(cost, 2) if _can_view_cost(conn, op) else None}
 
 
 # ---------------------------------------------------------------- 日志 / 预约 / 公开

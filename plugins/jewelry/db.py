@@ -77,7 +77,8 @@ CREATE TABLE IF NOT EXISTS biz_config (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   epc_prefix TEXT DEFAULT 'E28',
   seq_bits INTEGER DEFAULT 8,
-  bridge_key TEXT DEFAULT ''
+  bridge_key TEXT DEFAULT '',
+  gold_price REAL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS categories (
@@ -87,11 +88,13 @@ CREATE TABLE IF NOT EXISTS categories (
 );
 
 -- 商品品类（戒指/项链/手镯…，按产品形态划分，可配置，绑定标签模板）
+-- pricing_mode：piece=计件（一口价）；weight=计重（克重×当日金价+工费）
 CREATE TABLE IF NOT EXISTS product_types (
   code TEXT PRIMARY KEY,
   names TEXT NOT NULL DEFAULT '{}',
   sort_order INTEGER DEFAULT 0,
-  label_template_id INTEGER DEFAULT NULL
+  label_template_id INTEGER DEFAULT NULL,
+  pricing_mode TEXT DEFAULT 'piece'
 );
 
 CREATE TABLE IF NOT EXISTS products (
@@ -132,7 +135,9 @@ CREATE TABLE IF NOT EXISTS customers (
   total_amount REAL DEFAULT 0,
   due_amount REAL DEFAULT 0,
   birthday TEXT DEFAULT '',
-  preference TEXT DEFAULT ''
+  preference TEXT DEFAULT '',
+  points REAL DEFAULT 0,          -- 会员积分（开单按实付 1 元 = 1 分自动累计）
+  gold_discount REAL DEFAULT 1.0  -- 金价折扣待遇：0.98=金价打98折，1=无折扣
 );
 
 CREATE TABLE IF NOT EXISTS sales (
@@ -150,10 +155,13 @@ CREATE TABLE IF NOT EXISTS sales (
   status TEXT DEFAULT '已完成',
   clerk_type TEXT DEFAULT '店员',
   clerk_name TEXT DEFAULT '',
+  discount REAL DEFAULT 0,       -- 整单优惠金额：应付 = 应收 - 优惠
+  receivable REAL DEFAULT 0,     -- 应收金额（各件小计汇总的快照）
+  customer_id INTEGER DEFAULT 0, -- 关联会员（手机号匹配老会员时回填）
   created TEXT DEFAULT (datetime('now','localtime'))
 );
 
--- 销售明细：一单多件，每件一行（成交单价快照）
+-- 销售明细：一单多件，每件一行（成交单价/计重价格快照）
 CREATE TABLE IF NOT EXISTS sale_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   sale_id INTEGER NOT NULL,
@@ -162,9 +170,24 @@ CREATE TABLE IF NOT EXISTS sale_items (
   code TEXT DEFAULT '',
   name TEXT DEFAULT '',
   price REAL DEFAULT 0,
+  pricing_mode TEXT DEFAULT 'piece', -- piece=计件；weight=计重
+  weight REAL DEFAULT 0,             -- 成交克重快照（克）
+  gold_price REAL DEFAULT 0,         -- 成交金价快照（元/克，已含会员折扣）
+  labor_fee REAL DEFAULT 0,          -- 工费快照（元/件）
+  subtotal REAL DEFAULT 0,           -- 小计：计件=price；计重=weight×gold_price+labor_fee
   seq INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
+
+-- 组合支付：一单可拆多笔（如 微信5000 + 刷卡5000）
+CREATE TABLE IF NOT EXISTS sale_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sale_id INTEGER NOT NULL,
+  method TEXT DEFAULT '现金',
+  amount REAL DEFAULT 0,
+  seq INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_sale_payments_sale ON sale_payments(sale_id);
 
 CREATE TABLE IF NOT EXISTS tenant_profiles (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -309,7 +332,8 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT UNIQUE NOT NULL,
   password TEXT NOT NULL,
   display_name TEXT DEFAULT '',
-  role TEXT DEFAULT 'EMPLOYEE'
+  role TEXT DEFAULT 'EMPLOYEE',
+  can_view_cost INTEGER NOT NULL DEFAULT 0  -- 列级权限：成本查看（店长/高管默认 1，店员默认 0 可逐账号授予）
 );
 
 -- 用户-门店授权：EMPLOYEE 仅可访问被授予的门店；TENANT_ADMIN 自动拥有全部门店（不落记录）
@@ -391,7 +415,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_no TEXT UNIQUE,
   task_key TEXT UNIQUE,
-  type TEXT DEFAULT 'stocktake',      -- 本期仅 stocktake；预留 transfer/sale
+  type TEXT DEFAULT 'stocktake',      -- stocktake/sale/transfer_out/transfer_in/loan/epc_product/epc_inbound
+  type_seq INTEGER DEFAULT 0,         -- 同店同功能人类可读序号（按 store_id+type 独立递增，>0 唯一）
   type_ref INTEGER DEFAULT 0,         -- 关联业务单据 id
   status TEXT DEFAULT '进行中',        -- 进行中 | 已完成 | 已撤销 | 已终止
   initiator TEXT DEFAULT '',          -- 发起人 username
@@ -724,10 +749,35 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("appointments", "store_id", "INTEGER DEFAULT 0"),
         ("inventory_logs", "store_id", "INTEGER DEFAULT 0"),
         ("stocktakes", "store_id", "INTEGER DEFAULT 0"),
+        # 1.0.8 列级权限：成本查看开关（店长/高管强制 1；店员默认 0，可由店长逐账号授予）
+        ("users", "can_view_cost", "INTEGER NOT NULL DEFAULT 0"),
+        # 1.0.9 快速开单增强：品类计价方式 / 当日金价
+        ("product_types", "pricing_mode", "TEXT DEFAULT 'piece'"),
+        ("biz_config", "gold_price", "REAL DEFAULT 0"),
+        # 1.0.9 会员：积分 + 金价折扣待遇
+        ("customers", "points", "REAL DEFAULT 0"),
+        ("customers", "gold_discount", "REAL DEFAULT 1.0"),
+        # 1.0.9 销售：整单优惠 / 应收快照 / 关联会员
+        ("sales", "discount", "REAL DEFAULT 0"),
+        ("sales", "receivable", "REAL DEFAULT 0"),
+        ("sales", "customer_id", "INTEGER DEFAULT 0"),
+        # 1.0.9 销售明细：计重计价快照
+        ("sale_items", "pricing_mode", "TEXT DEFAULT 'piece'"),
+        ("sale_items", "weight", "REAL DEFAULT 0"),
+        ("sale_items", "gold_price", "REAL DEFAULT 0"),
+        ("sale_items", "labor_fee", "REAL DEFAULT 0"),
+        ("sale_items", "subtotal", "REAL DEFAULT 0"),
+        # 1.1.0 协同扫码：同店同功能任务序号（手持机/网页统一显示「功能名 #序号」）
+        ("tasks", "type_seq", "INTEGER DEFAULT 0"),
     ]
     for table, col, decl in alters:
         if not _has_column(conn, table, col):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    # 角色级兜底：店长/高管始终拥有成本查看权（不触碰店员被显式授予/收回的状态）
+    conn.execute(
+        "UPDATE users SET can_view_cost=1 WHERE role IN ('TENANT_ADMIN','EXECUTIVE') "
+        "AND IFNULL(can_view_cost,0)=0"
+    )
     _relax_products_code_unique(conn)
     # 进行中任务唯一性仅约束盘点（库存冻结全局唯一）；开单/调拨/借货等轻量扫码任务允许多个并行。
     # 旧库存在全类型唯一索引时先 DROP 再按新口径重建（幂等）。
@@ -738,6 +788,10 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_one_active ON tasks(status) "
         "WHERE status='进行中' AND type='stocktake'")
+    # 1.1.0 同店同功能序号唯一（历史行 type_seq=0 不纳入约束）；并发靠插入冲突重试兜底。
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_type_seq "
+        "ON tasks(store_id, type, type_seq) WHERE type_seq>0")
     conn.commit()
     seed_store_printers(conn)
     _seed_base_dicts(conn)

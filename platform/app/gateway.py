@@ -66,8 +66,12 @@ def proxy_app(plugin_id: str, tenant_id: str, operator: str,
 
 def _forward(ctx: dict, path: str, method: str, query: str, headers: dict[str, str], body: bytes):
     # 客户端自带的上下文头一律丢弃，只使用网关注入的值
+    # accept-encoding 也不透传：平台需要在 text/html 响应体中注入 window.__APP_BASE__，
+    # 若上游返回 gzip 等压缩字节，注入会因无法解码而静默失效（回环转发不压缩无性能问题）。
     fwd = {k: v for k, v in headers.items()
-           if k.lower() not in _HOP_HEADERS and not k.lower().startswith(_CONTEXT_PREFIX)}
+           if k.lower() not in _HOP_HEADERS
+           and not k.lower().startswith(_CONTEXT_PREFIX)
+           and k.lower() != "accept-encoding"}
     fwd.update(ctx["headers"])
     url = f"http://127.0.0.1:{ctx['port']}/{path}" + (f"?{query}" if query else "")
     req = urllib.request.Request(url, data=body or None, headers=fwd, method=method)

@@ -6,7 +6,12 @@
   1.0.5 的 store_printers 门店按打印业务指派打印机、
   1.0.7 的 sensors/sensor_events/sensor_pass/sensor_settings 智能安防四表、
   1.0.8 的 locations 库位/clerk_types 经办人类别/transfers/transfer_items 门店调拨
-  与 products 两位置列、sales 两经办人列）；
+  与 products 两位置列、sales 两经办人列、users.can_view_cost 成本查看列级权限；
+  dataVersion 1.0.9 的快速开单增强：product_types.pricing_mode 品类计价方式、
+  biz_config.gold_price 当日金价、customers.points/gold_discount 会员积分与金价折扣、
+  sales.discount/receivable/customer_id、sale_items 计重五列、新表 sale_payments 组合支付；
+  dataVersion 1.1.0 的协同扫码序号：tasks.type_seq 同店同功能任务序号、
+  唯一索引 idx_tasks_type_seq(store_id,type,type_seq WHERE type_seq>0)）；
 - 幂等执行 EPC 现行规则化（前缀+门店段+品类码+序号）与材质英文长码收敛为简写。
 参数/环境变量与平台约定一致：
   OLD_DB_PATH / NEW_DB_PATH / OLD_STORAGE / NEW_STORAGE /

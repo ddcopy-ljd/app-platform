@@ -8,6 +8,8 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
         android:orientation="vertical"
         android:paddingHorizontal="18dp"
         android:paddingTop="14dp"
@@ -66,14 +68,20 @@
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp" />
 
+            <!-- 只读展示：服务器地址只能由激活二维码扫入，禁止手填（避免输错 IP/端口） -->
             <EditText
                 android:id="@+id/etServer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
                 android:background="@drawable/bg_input"
+                android:clickable="false"
+                android:cursorVisible="false"
+                android:focusable="false"
+                android:focusableInTouchMode="false"
                 android:hint="@string/server_url_hint"
-                android:inputType="textUri"
+                android:inputType="none"
+                android:longClickable="false"
                 android:padding="12dp"
                 android:textColor="#DDDDDD"
                 android:textColorHint="@color/text_hint"

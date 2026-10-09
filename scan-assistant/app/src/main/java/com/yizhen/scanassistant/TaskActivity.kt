@@ -49,6 +49,7 @@ class TaskActivity : AppCompatActivity() {
     private lateinit var cardWork: View
     private lateinit var llTaskList: LinearLayout
     private lateinit var tvEmpty: TextView
+    private lateinit var tvStoreInfo: TextView
     private lateinit var btnRefresh: TextView
     private lateinit var btnTrigger: TextView
     private lateinit var btnCamera: TextView
@@ -149,6 +150,7 @@ class TaskActivity : AppCompatActivity() {
     }
 
     private fun bindViews() {
+        tvStoreInfo = findViewById(R.id.tvStoreInfo)
         cardIdle = findViewById(R.id.cardIdle)
         cardWork = findViewById(R.id.cardWork)
         llTaskList = findViewById(R.id.llTaskList)
@@ -187,6 +189,23 @@ class TaskActivity : AppCompatActivity() {
         }
         persistQueue()
         refreshUi()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        val working = task != null
+        AlertDialog.Builder(this)
+            .setTitle(R.string.exit_confirm_title)
+            .setMessage(if (working) R.string.exit_confirm_working else R.string.exit_confirm_idle)
+            .setPositiveButton(R.string.dialog_confirm_exit) { _, _ ->
+                if (scanning) {
+                    scanning = false
+                    RfidManager.stop()
+                }
+                finish()
+            }
+            .setNegativeButton(R.string.dialog_cancel, null)
+            .show()
     }
 
     override fun onDestroy() {
@@ -252,7 +271,7 @@ class TaskActivity : AppCompatActivity() {
                     val o = TaskOffer.fromBrief(b)
                     if (offers.none { it.id == o.id }) {
                         offers.add(0, o)
-                        if (task == null) toast(getString(R.string.task_offer_tip, o.taskNo))
+                        if (task == null) toast(getString(R.string.task_offer_tip, taskLabel(o.type, o.typeSeq)))
                     }
                     renderTaskList()
                 }
@@ -300,6 +319,7 @@ class TaskActivity : AppCompatActivity() {
                                 id = tj.optInt("task_id", 0),
                                 taskNo = tj.optString("task_no", ""),
                                 type = tj.optString("type", ""),
+                                typeSeq = tj.optInt("type_seq", 0),
                                 title = tj.optString("title", ""),
                                 status = tj.optString("status", STATUS_ACTIVE),
                                 deviceNo = msg.optInt("device_no", 0),
@@ -377,7 +397,7 @@ class TaskActivity : AppCompatActivity() {
     // ============================================================ 任务列表 / 领取
 
     private data class TaskOffer(
-        val id: Int, val taskNo: String, val type: String, val title: String,
+        val id: Int, val taskNo: String, val type: String, val typeSeq: Int, val title: String,
         val inStore: Int, val otherStore: Int, val unknown: Int, val total: Int
     ) {
         companion object {
@@ -387,6 +407,7 @@ class TaskActivity : AppCompatActivity() {
                     id = o.optInt("task_id", o.optInt("id", 0)),
                     taskNo = o.optString("task_no", ""),
                     type = o.optString("type", ""),
+                    typeSeq = o.optInt("type_seq", 0),
                     title = o.optString("title", ""),
                     inStore = st?.optInt("in_store", 0) ?: 0,
                     otherStore = st?.optInt("other_store", 0) ?: 0,
@@ -397,14 +418,17 @@ class TaskActivity : AppCompatActivity() {
         }
     }
 
+    /** 手持机列表与网页端统一显示的「功能名 #序号」（同名功能并发时靠序号辨识）。 */
+    private fun taskLabel(tp: String, seq: Int): String =
+        typeLabel(tp) + if (seq > 0) " #$seq" else ""
+
     private fun renderTaskList() {
         llTaskList.removeAllViews()
         for ((idx, o) in offers.withIndex()) {
-            val row = TextView(this).apply {
-                text = "${o.taskNo}  ·  ${typeLabel(o.type)}${if (o.title.isNotBlank()) "  ${o.title}" else ""}  ·  ${o.total}"
-                textSize = 16f
-                setTextColor(Color.parseColor("#222222"))
-                setPadding(28, 26, 28, 26)
+            // 两行布局：上行大字「功能名 #序号」为主辨识，下行长编号/标题/数量为辅
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(28, 22, 28, 22)
                 setBackgroundResource(R.drawable.bg_card)
                 val lp = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -415,6 +439,28 @@ class TaskActivity : AppCompatActivity() {
                 isClickable = true
                 setOnClickListener { claimTask(o) }
             }
+            row.addView(TextView(this).apply {
+                text = taskLabel(o.type, o.typeSeq)
+                textSize = 17f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor("#E8D5A0"))
+            })
+            val sub = buildString {
+                append(o.taskNo)
+                if (o.title.isNotBlank()) append("  ·  ").append(o.title)
+                append("  ·  ").append(o.total)
+            }
+            row.addView(TextView(this).apply {
+                text = sub
+                textSize = 13f
+                setTextColor(Color.parseColor("#9A9088"))
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                lp.topMargin = 4
+                layoutParams = lp
+            })
             llTaskList.addView(row)
         }
         tvEmpty.visibility = if (offers.isEmpty()) View.VISIBLE else View.GONE
@@ -426,6 +472,8 @@ class TaskActivity : AppCompatActivity() {
         "transfer_out" -> "调拨出库"
         "transfer_in" -> "调拨收货"
         "loan" -> "借货"
+        "epc_product" -> "商品EPC"
+        "epc_inbound" -> "入库EPC"
         else -> "扫码"
     }
 
@@ -700,6 +748,7 @@ class TaskActivity : AppCompatActivity() {
         val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastTriggerAt < 800) return
         lastTriggerAt = now
+        android.util.Log.i("ScanTrigger", "trigger down, task=${task?.taskNo ?: "<none>"}")
         if (task != null) toggleScan()
     }
 
@@ -707,6 +756,9 @@ class TaskActivity : AppCompatActivity() {
         if (!TriggerChannels.handlesKeyEvent(prefs.triggerMode))
             return super.dispatchKeyEvent(event)
         val code = event.keyCode
+        // 本机（C72，2026-10-07 实测）：机身扳机 keyCode=293，左右侧 SCAN 键=139。
+        // 候选范围保留其它 PDA 常见键：66 回车、82 菜单、96..110 小键盘、
+        // 131..143 F1-F12、280..300 厂商自定义扫描键。
         val candidate = code == 66 || code == 82 ||
                 code in 96..110 || code in 131..143 || code in 280..300
         val focusEditable = currentFocus is android.widget.EditText
@@ -719,9 +771,15 @@ class TaskActivity : AppCompatActivity() {
         val isTrigger = knownTrigger || physical || dpadCenter
         if (isTrigger) {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                android.util.Log.i("ScanTrigger", "key code=$code src=$src (trigger)")
                 onTriggerDown()
             }
             return true
+        }
+        // 诊断：非扳机键只在按下时记录，方便现场核对键码
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
+            (code in 131..300)) {
+            android.util.Log.i("ScanTrigger", "key code=$code src=$src (not mapped)")
         }
         return super.dispatchKeyEvent(event)
     }
@@ -763,11 +821,17 @@ class TaskActivity : AppCompatActivity() {
         val inTask = t != null
         cardIdle.visibility = if (inTask) View.GONE else View.VISIBLE
         cardWork.visibility = if (inTask) View.VISIBLE else View.GONE
+        tvStoreInfo.text = getString(
+            R.string.store_info_fmt,
+            prefs.storeName.ifBlank { "—" },
+            prefs.deviceCode.ifBlank { "—" })
 
         renderTaskList()
 
         if (t != null) {
-            tvTaskNo.text = t.taskNo
+            // 与网页端提示一致：大字显示「功能名 #序号」，长编号降级为副信息
+            tvTaskNo.text = taskLabel(t.type, t.typeSeq) +
+                if (t.taskNo.isNotBlank()) "  (${t.taskNo})" else ""
             tvDeviceNo.text = if (t.deviceNo > 0) "${t.deviceNo}号" else "—"
         }
         tvNet.text = getString(if (online) R.string.net_online else R.string.net_offline)

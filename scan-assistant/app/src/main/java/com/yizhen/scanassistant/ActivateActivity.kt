@@ -1,8 +1,10 @@
 package com.yizhen.scanassistant
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
@@ -48,8 +50,9 @@ class ActivateActivity : AppCompatActivity() {
                     toast(getString(R.string.qr_invalid_activate)); return@registerForActivityResult
                 }
                 val (origin, key) = parsed
-                prefs.serverUrl = origin
-                etServer.setText(origin)
+                // 服务器地址栏显示扫码得到的完整字符串（含路径与 key），便于人工核对；
+                // 激活时由 ApiClient.serverOrigin() 剥出 origin，手填地址也同样兼容
+                etServer.setText(raw)
                 pendingAkey = key
                 activate(key)
             }
@@ -74,6 +77,11 @@ class ActivateActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.tvDeviceCode).text = prefs.deviceCode
         etServer.setText(prefs.serverUrl)
         etName.setText(prefs.deviceName)
+        // 部分 ROM（讯飞 IME）无视 stateHidden，进入页面仍把键盘顶起；
+        // 主动清焦点并强制收起，用户点输入框时才重新弹出
+        etServer.clearFocus()
+        etName.clearFocus()
+        hideIme()
 
         btnScan.setOnClickListener {
             // 激活二维码自带服务器 origin，地址栏为空也可直接扫；扫到后回填 origin
@@ -100,6 +108,14 @@ class ActivateActivity : AppCompatActivity() {
         super.onResume()
         // 从设置页解绑回来时，按钮恢复可用（token 已被清除）
         if (prefs.deviceToken.isBlank()) setBusy(false, "")
+        // 从扫码相机/设置页返回后再收一次，防止 IME 被重新拉起
+        window.decorView.post { hideIme() }
+    }
+
+    private fun hideIme() {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.hideSoftInputFromWindow(window.decorView.windowToken, 0)
+        currentFocus?.clearFocus()
     }
 
     private fun scanActivateQr() {
@@ -136,7 +152,8 @@ class ActivateActivity : AppCompatActivity() {
 
     /** 阻塞激活调用（工作线程），成功落盘并进作业页，失败原样弹窗展示 detail。 */
     private fun activate(akey: String) {
-        val base = ApiClient.normalizeBase(etServer.text.toString())
+        // 输入框可能是完整激活 URL（扫码整串）或手填的 ip:port，统一剥成 origin
+        val base = ApiClient.serverOrigin(etServer.text.toString())
         if (base.isBlank()) {
             toast(getString(R.string.need_url)); return
         }

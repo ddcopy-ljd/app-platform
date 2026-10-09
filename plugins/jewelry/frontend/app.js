@@ -34,7 +34,7 @@ var ST = Vue.reactive({
   catEdit: { code: '', names: { zh: '', en: '' }, sort_order: 0 }, catEditMode: 'new',
   // 商品品类（戒指/项链…）
   productTypes: [],
-  typeEdit: { code: '', names: { zh: '', en: '', it: '' }, sort_order: 0 }, typeEditMode: 'new',
+  typeEdit: { code: '', names: { zh: '', en: '', it: '' }, sort_order: 0, pricing_mode: 'piece' }, typeEditMode: 'new',
   // 商品图片裁切弹窗
   imgCrop: { show: false, pid: 0, src: '', orient: 'landscape', busy: false,
              iw: 0, ih: 0, zoom: 1, tx: 0, ty: 0 },
@@ -94,18 +94,20 @@ var ST = Vue.reactive({
   // 统一任务复盘报告弹窗
   taskReport: null, reportTaskId: 0,
   // 扫描设备管理
-  devModal: false, devices: [],
+  devModal: false, devices: [], allDevices: [],
   activations: [], actStoreId: 0, actName: '', actQrUrl: '', actUrl: '',
   devStoreScope: 0,   // 门店管理内打开设备弹窗时锁定的门店（0=盘点页全部）
   // 手持机扫码登录（网页端弹窗）
-  hqShow: false, hqStatus: '', hqDevice: '', hqImg: '', hqKey: '', hqTimer: null,
+  hqShow: false, hqStatus: '', hqDevice: '', hqImg: '', hqKey: '', hqUrl: '', hqErr: '', hqTimer: null,
   yzScanReady: false,   // App WebView 注入 YzApp 桥接后为 true，出单表单显示扫码按钮
   // 摄像头扫码（本地 zxing，无需 App/外网）
   camOpen: false, camBusy: false, camErr: '', _camControls: null,
   // 业务端扫码任务 WS（/ws/scan-page）：连接句柄/重连计时
   _pageWs: null, _pageWsTimer: null,
   // 当前表单协同模式状态（type/任务/已扫数/最近 EPC/新开任务提示）
-  scanCoop: { type: '', taskId: 0, taskNo: '', count: 0, recent: [], offer: false, applied: {} },
+  scanCoop: { type: '', taskId: 0, taskNo: '', typeSeq: 0, count: 0, recent: [], offer: false, applied: {} },
+  // 多模态输入基座（统一的手持机协同气泡/摄像头取景/PC 扫码枪就绪提示）
+  anchor: { pop: '', x: 0, y: 0, w: 280, above: false, tip: '', tipX: 0, tipY: 0, tipW: 0, _tipTimer: null },
   // 智能安防
   secSensors: [], secEvents: [], secPending: 0, secSettings: null, secPass: [],
   secDrivers: [], secNew: null, secNewKey: null,
@@ -128,11 +130,14 @@ var ST = Vue.reactive({
   clerkEdit: { id: 0, name: '', sort_order: 0 }, clerkEditMode: 'new',
   // 用户与门店授权（系统管理-店长）
   adminUsers: [], adminUserOpen: false,
-  adminUserForm: { id: 0, username: '', display_name: '', password: '', role: 'EMPLOYEE' },
+  adminUserForm: { id: 0, username: '', display_name: '', password: '', role: 'EMPLOYEE', can_view_cost: false },
   saleClerkType: '',   // 销售列表类别筛选（''=全部）
-  // 门店调拨：商品页多选 / 调拨单列表 / 详情与验货
-  transferMode: false,           // 商品页调拨选择模式
+  // 门店调拨：调拨页选货抽屉 / 调拨单列表 / 详情与验货
+  transferMode: false,           // 调拨页选货抽屉开关
+  pickerQ: '', pickerCat: '',    // 选货抽屉搜索/品类筛选
   transferSel: {},               // {productId: product}
+  // 商品批量导入弹窗
+  importDlg: { open: false, file: null, busy: false, result: null },
   transferSelStore: 0,           // 已选商品所属门店（首件决定）
   transferSendOpen: false,       // 发起调拨弹窗
   transferToStore: 0, transferRemark: '', transferBusy: false,
@@ -150,13 +155,57 @@ var ST = Vue.reactive({
 function fmt(n) { return n == null ? '0' : Number(n).toLocaleString(); }
 function fmtY(n) { return '￥' + fmt(n); }
 function dateFmt(s) { return s ? String(s).replace(/-/g, '/') : ''; }
+// 同比/环比辅助：返回 {label: '↑10.5%'/'↓10.5%'/null, cls: 'pct-up'/'pct-down'/null}
+// 模板直接调用 {{ pctLabel(v) }} 和 :class="pctCls(v)" 避免 Math.abs/toFixed 等复杂表达式
+function pctLabel(v) {
+  if (v == null || v === undefined) return null;
+  var n = Number(v);
+  var arrow = n >= 0 ? '↑' : '↓';
+  return arrow + Math.abs(n).toFixed(1) + '%';
+}
+function pctCls(v) {
+  if (v == null || v === undefined) return null;
+  return Number(v) >= 0 ? 'pct-up' : 'pct-down';
+}
+// 趋势图辅助：合并两数组并取最大值，全 null 时返回 1；避免模板写 Math.max.apply + .concat + .filter 链
+function trendMax(a, b) {
+  var arr = [];
+  if (Array.isArray(a)) arr = arr.concat(a);
+  if (Array.isArray(b)) arr = arr.concat(b);
+  arr = arr.filter(function (x) { return x != null && Number(x) > 0; });
+  arr.push(1);
+  return Math.max.apply(null, arr);
+}
+// 判断去年柱是否有数据（用于图例显示）
+function hasLastYear(arr) {
+  if (!Array.isArray(arr)) return false;
+  for (var i = 0; i < arr.length; i++) { if (arr[i] != null) return true; }
+  return false;
+}
 
 // i18n.js 已提供全局 t(key) 翻译函数（先于本文件加载）；
 // 切勿在此重新声明同名 function t，否则会覆盖 window.t 导致自递归栈溢出。
 // 仅在 i18n.js 缺失时兜底：原样返回 key。
 if (typeof window.t !== 'function') { window.t = function (key) { return key; }; }
 
+// 高管(EXECUTIVE)：可跨所有门店巡查切换，但业务只读。
+// 行政/系统类写路径（与后端 executive_write_guard 白名单一致）：仅总店视图下放行
+var EXEC_ADMIN_PREFIXES = ['/api/admin/', '/api/shops', '/api/stores', '/api/profile', '/api/biz-config',
+  '/api/categories', '/api/product-types', '/api/label-templates', '/api/clerk-types',
+  '/api/locations', '/api/sensors'];
+
 function api(m, url, body) {
+  // 高管只读闸门（前端提示层；后端中间件同时强拒兜底）：
+  // 认证类(登出/切店)放行；行政类仅总店视图放行；其余写操作一律拦截提示
+  if (m !== 'GET' && isExecRole()) {
+    var isAuthPath = url.indexOf('/api/auth/') === 0;
+    var isAdminPath = EXEC_ADMIN_PREFIXES.some(function (p) { return url.indexOf(p) === 0; });
+    if (!isAuthPath && !(isAdminPath && isHqStore())) {
+      var denyMsg = t(isAdminPath ? 'role.execNeedHq' : 'role.execReadonly');
+      toast(denyMsg, 'error');
+      return Promise.reject(new Error(denyMsg));
+    }
+  }
   var h = { 'Content-Type': 'application/json' };
   if (ST.token) h['Authorization'] = 'Bearer ' + ST.token;
   var o = { method: m, headers: h };
@@ -205,7 +254,6 @@ var ADMIN_SUBS = [
   { key: 'users', icon: '👥', label: '用户与门店权限' },
   { key: 'epc', icon: '🔢', label: 'EPC 编码规则' },
   { key: 'clerk', icon: '🧑‍💼', label: '经办人类别' },
-  { key: 'categories', icon: '🏷️', label: '商品品类与标签' },
   { key: 'security', icon: '🛡️', label: '安防中心' },
   { key: 'logs', icon: '📋', label: '操作日志' },
 ];
@@ -402,6 +450,24 @@ function invStockGroups() {
     g.count = g.items.length;
     g.first = g.items[0];
     g.name = g.items[0].name || '';
+    // 组内各件的克重/尺寸/售价/成本完全一致时，合并行直接列出全部 EPC/条码；
+    // 任一字段不同（典型：计重款克重不同）则保持「点击展开」
+    var f = g.first;
+    g.uniform = g.items.every(function (p) {
+      return Number(p.weight) === Number(f.weight) &&
+             String(p.size || '').trim() === String(f.size || '').trim() &&
+             Number(p.price) === Number(f.price) &&
+             Number(p.cost) === Number(f.cost);
+    });
+    var _seen = {};
+    g.epcs = [];
+    g.barcodes = [];
+    g.items.forEach(function (p) {
+      var e = (p.rfid_epc || '').trim();
+      if (e && !_seen['e' + e]) { _seen['e' + e] = 1; g.epcs.push(e); }
+      var bc = (p.barcode || '').trim();
+      if (bc && !_seen['b' + bc]) { _seen['b' + bc] = 1; g.barcodes.push(bc); }
+    });
     return g;
   });
   var _sk = ST.tblSort && ST.tblSort.stock && ST.tblSort.stock.key;
@@ -451,10 +517,37 @@ function currentTitle() {
   return item ? t(item.key) : '';
 }
 
-// 当前工作门店名（顶部门店切换器/表单只读显示）
+// 当前工作门店（顶部门店切换器/表单只读显示；注意区别于门店管理页选中态 curStore computed）
+function workStore() {
+  return ST.stores.find(function (x) { return x.id === ST.curStoreId; }) || null;
+}
 function curStoreName() {
-  var s = ST.stores.find(function (x) { return x.id === ST.curStoreId; });
+  var s = workStore();
   return s ? s.name : '';
+}
+// 当前工作门店是否为总店（种子总店 code=HQ）：
+// 总店视图有「总部管理」无「门店管理」；分店视图相反，且系统管理只剩门店级子页
+function isHqStore() {
+  var s = workStore();
+  return !!s && (s.code || '').toUpperCase() === 'HQ';
+}
+
+// ===== 总店/分店视图可见性（单一判断口径，导航/子页/门店页共用） =====
+// 系统管理子页归属：企业整体级（账号门店权限/EPC/品类/经办人）仅总店；门店级（安防/日志）分店保留
+function isAdminSubAllowed(key) {
+  if (key === 'users') return isAdminRole();
+  if (key === 'epc' || key === 'clerk' || key === 'categories') return isHqStore();
+  return true; // security / logs 与门店相关，分店保留
+}
+// 把非法（当前门店视图不可见）的系统管理子页校正为首个可见子页
+function normalizeAdminSub() {
+  if (!isAdminSubAllowed(ST.adminSub)) ST.adminSub = 'security';
+}
+// 门店管理页可见门店：总店看全部，分店只看当前工作门店
+function manageStores() {
+  if (isHqStore()) return ST.stores;
+  var cur = workStore();
+  return cur ? [cur] : [];
 }
 
 function subTitle() {
@@ -523,8 +616,11 @@ function setLang(lang) {
 
 // ---- navigation ----
 function go(tab) {
+  // 总店(HQ)没有「门店管理」、分店没有「总部管理」，任何直达都回退到首页
+  if (tab === 'stores' && isHqStore()) tab = 'dashboard';
+  if (tab === 'shops' && !isHqStore()) tab = 'dashboard';
   // 旧入口兼容：profile/security/logs 全部归到系统管理
-  if (tab === 'profile') { ST.tab = 'system'; ST.adminSub = 'epc'; }
+  if (tab === 'profile') { ST.tab = 'system'; ST.adminSub = isHqStore() ? 'epc' : 'security'; }
   else if (tab === 'security') { ST.tab = 'system'; ST.adminSub = 'security'; }
   else if (tab === 'logs') { ST.tab = 'system'; ST.adminSub = 'logs'; }
   else { ST.tab = tab; }
@@ -532,9 +628,11 @@ function go(tab) {
   if (ST.tab === 'inventory') { loadInv(); loadStockBatches(); loadCoTask(); }
   if (ST.tab === 'transfers') loadTransfers();
   if (ST.tab === 'appointments') loadAppt();
-  if (ST.tab === 'shops') { loadShops(); loadStores(true); loadBridgeList(); loadProfile(); }
-  if (ST.tab === 'stores') { loadShops(); loadStores(true); loadBridgeList(); loadLocations(); }
+  if (ST.tab === 'shops') { syncManageStore(); loadShops(); loadStores(true); loadBridgeList(); loadProfile(); loadProductTypes(); loadTemplates(); loadAllDevices(); }
+  if (ST.tab === 'stores') { syncManageStore(); loadShops(); loadStores(true); loadBridgeList(); loadLocations(); loadAllDevices(); }
   if (ST.tab === 'system') {
+    // 企业整体级子页（账号权限/EPC/品类/经办人）在分店视图不可见，校正到门店级子页
+    normalizeAdminSub();
     // 公共数据（企业资料已搬 shops，但品类/经办人类别/EPC 仍在这里）
     loadProfile(); loadBizConfig(); loadClerkTypes(); loadProductTypes(); loadLocations();
     if (ST.adminSub === 'security') loadSecurity();
@@ -581,6 +679,7 @@ function refreshAll() {
   loadTemplates();
   loadHealth();
   startHealthTimer();
+  loadTransfers();   // 切店后同步刷新「我发出的/我接收的」调拨视角
 }
 
 function loadSubList() {
@@ -764,6 +863,13 @@ function switchStore(sid) {
   api('POST', '/api/auth/switch-store', { store_id: sid }).then(function (r) {
     ST.curStoreId = r.store_id;
     ST.stores = r.stores || ST.stores;
+    // 切店后按新门店视图校正页面：
+    // 总店无「门店管理」、分店无「总部管理」，停留在隐藏页时回首页
+    if ((ST.tab === 'stores' && isHqStore()) || (ST.tab === 'shops' && !isHqStore())) ST.tab = 'dashboard';
+    // 系统管理子页在新视图下不可见时（如分店看不到 EPC/账号权限）校正到门店级子页
+    if (ST.tab === 'system') normalizeAdminSub();
+    // 门店管理页选中态：分店锁定本店
+    if (ST.tab === 'stores') syncManageStore();
     // 切店后当前页所有弹窗/选择态失效，回到列表态并整页重载
     ST.sheet = null; ST.detail = null; ST.subView = '';
     toast(t('store.switched').replace('{name}', curStoreName()));
@@ -792,39 +898,31 @@ function doLogout() {
   syncToken();
 }
 
-// ---- 手持机扫码登录（网页端） ----
-function openHandheldLogin() {
+// ---- 手持机绑定（为当前工作门店生成扫描助手激活码，App 扫码即激活绑定）----
+function openHandheldLogin(storeId) {
   if (!ST.token) { toast(t('login.err'), 'error'); return; }
-  api('GET', '/api/handheld/login-qr').then(function (r) {
-    ST.hqKey = r.hkey;
-    ST.hqStatus = 'pending';
-    ST.hqDevice = '';
-    ST.hqImg = qrSvgDataUrl(r.url, 5);
-    ST.hqShow = true;
-    clearInterval(ST.hqTimer);
-    ST.hqTimer = setInterval(hqPoll, 2000);
-  }).catch(function (e) { toast(e.message || t('login.err'), 'error'); });
+  var sid = storeId || ST.curStoreId || (ST.stores[0] && ST.stores[0].id) || 0;
+  if (!sid) { toast(t('hq.needStore'), 'error'); return; }
+  ST.hqShow = true;
+  ST.hqStatus = 'loading';
+  ST.hqImg = ''; ST.hqUrl = ''; ST.hqErr = '';
+  api('POST', '/api/devices/activation', { store_id: sid, name: '' }).then(function (r) {
+    ST.hqImg = qrSvgDataUrl(r.url, 6);
+    ST.hqUrl = r.url;
+    ST.hqStatus = 'ready';
+  }).catch(function (e) {
+    ST.hqStatus = 'error';
+    ST.hqErr = (e && e.message) || t('login.err');
+  });
 }
 
-function hqPoll() {
-  if (!ST.hqKey || !ST.hqShow) return;
-  api('GET', '/api/handheld/login-status?hkey=' + encodeURIComponent(ST.hqKey)).then(function (r) {
-    ST.hqStatus = r.status;
-    ST.hqDevice = r.name || r.device || '';
-    if (r.status === 'confirmed' || r.status === 'denied' || r.status === 'expired') clearInterval(ST.hqTimer);
-  }).catch(function () { clearInterval(ST.hqTimer); ST.hqStatus = 'expired'; });
-}
-
-function handheldConfirm(ok) {
-  api('POST', '/api/handheld/confirm', { hkey: ST.hqKey, approve: ok }).then(function () {
-    ST.hqStatus = ok ? 'confirmed' : 'denied';
-    clearInterval(ST.hqTimer);
-  }).catch(function (e) { toast(e.message || 'error', 'error'); });
+function copyHqUrl() {
+  if (ST.hqUrl) copyText(ST.hqUrl);
 }
 
 function closeHandheldLogin() {
   clearInterval(ST.hqTimer);
-  ST.hqShow = false; ST.hqKey = ''; ST.hqStatus = ''; ST.hqDevice = ''; ST.hqImg = '';
+  ST.hqShow = false; ST.hqKey = ''; ST.hqStatus = ''; ST.hqDevice = ''; ST.hqImg = ''; ST.hqUrl = ''; ST.hqErr = '';
 }
 
 // ---- 手持机 App 扫码桥接 ----
@@ -837,7 +935,16 @@ window.YzScanner = {
     }
     return false;
   },
-  onResult: function (code, type) { applyScanToSale(code, type); },
+  onResult: function (code, type) {
+    // 多模态输入基座：按本次扫码触发的锚点路由
+    var id = ST._camAnchor || '';
+    if (id === 'epc_product' || id === 'epc_inbound') {
+      if (ST.sheetData) ST.sheetData.rfid_epc = String(code || '').trim().toUpperCase();
+      return;
+    }
+    if (id === 'loan') { addLoanRawCode(code); return; }
+    applyScanToSale(code, type);
+  },
   // App 通知扫码状态（EPC 连续扫描中）
   onState: function (scanning) { if (ST.sheetMode === 'sale') ST.sheetData._scanning = !!scanning; }
 };
@@ -910,10 +1017,38 @@ function saleItemLimit() {
   var shop = st && ST.shops.find(function (p) { return p.id === st.shop_id; });
   return shop ? (Number(shop.sale_item_limit) || 0) : 0;
 }
-function saleTotal() {
-  return (ST.sheetData.items || []).reduce(function (s, it) { return s + (Number(it.price) || 0); }, 0);
+function round2(x) { return Math.round((Number(x) || 0) * 100) / 100; }
+// 单件小计：计件=单价；计重=克重×金价+工费
+function itemSubtotal(it) {
+  if (!it) return 0;
+  if (it.pricing_mode === 'weight') {
+    return round2((Number(it.weight) || 0) * (Number(it.gold_price) || 0) + (Number(it.labor_fee) || 0));
+  }
+  return round2(Number(it.price) || 0);
 }
-// 加一件：去重 / 同店 / 件数上限校验
+function saleReceivable() {
+  return round2((ST.sheetData.items || []).reduce(function (s, it) { return s + itemSubtotal(it); }, 0));
+}
+function salePayable() {
+  return Math.max(0, round2(saleReceivable() - (Number(ST.sheetData.discount) || 0)));
+}
+function salePaid() {
+  return round2((ST.sheetData.payments || []).reduce(function (s, p) { return s + (Number(p.amount) || 0); }, 0));
+}
+function saleTotal() { return saleReceivable(); }
+// 会员折扣后的金价（元/克）
+function memberGoldPrice() {
+  var d = ST.sheetData;
+  var base = Number(d.goldPrice) || (ST.bizConfig && Number(ST.bizConfig.gold_price)) || 0;
+  var gd = d.member && d.member.gold_discount ? Number(d.member.gold_discount) : 1;
+  return round2(base * (gd || 1));
+}
+// 选中会员 / 保存金价后，把折扣价套到全部计重件
+function applyMemberGold() {
+  var g = memberGoldPrice();
+  (ST.sheetData.items || []).forEach(function (it) { if (it.pricing_mode === 'weight') it.gold_price = g; });
+}
+// 加一件：去重 / 同店 / 件数上限校验；按品类计价方式带出不同字段
 function addSaleItem(p) {
   if (!p) return;
   var items = ST.sheetData.items || (ST.sheetData.items = []);
@@ -922,26 +1057,230 @@ function addSaleItem(p) {
   if (sid && p.store_id && p.store_id !== sid) { toast(t('sale.crossStore'), 'error'); return; }
   var limit = saleItemLimit();
   if (limit && items.length >= limit) { toast(t('sale.limitReached', { n: limit }), 'error'); return; }
-  items.push({ product_id: p.id, name: p.name, code: p.code || '', epc: p.rfid_epc || '', price: Number(p.price) || 0, store_id: p.store_id || 0 });
+  var mode = p.pricing_mode === 'weight' ? 'weight' : 'piece';
+  var gold = mode === 'weight' ? memberGoldPrice() : 0;
+  items.push({
+    product_id: p.id, name: p.name, code: p.code || '', epc: p.rfid_epc || '',
+    store_id: p.store_id || 0, pricing_mode: mode,
+    weight: Number(p.weight) || 0, gold_price: gold, labor_fee: 0,
+    price: Number(p.price) || 0,
+  });
+  if (mode === 'weight' && !(gold > 0)) toast(t('sale.goldNeed'), 'error');
   toast(t('sale.added') + '：' + p.code + ' ' + p.name);
 }
 function removeSaleItem(i) { ST.sheetData.items.splice(i, 1); }
-// 手工下拉选择在库商品
-function onPickSaleProduct() {
-  var pid = ST.sheetData._pickId;
-  if (!pid) return;
-  var p = ST.stockOptions.find(function (x) { return x.id === pid; });
-  ST.sheetData._pickId = null;
-  if (p) addSaleItem(p);
+
+// ---- 选货搜索（本地防抖建议：款号/条码/EPC/名称模糊）----
+function onSaleKw() {
+  var d = ST.sheetData;
+  if (d._sugTimer) clearTimeout(d._sugTimer);
+  d._sugTimer = setTimeout(function () {
+    var kw = String(d._kw || '').trim().toUpperCase();
+    var added = {};
+    (d.items || []).forEach(function (it) { added[it.product_id] = 1; });
+    var list;
+    if (!kw) {
+      list = ST.stockOptions.filter(function (p) { return !added[p.id]; }).slice(0, 8);
+    } else {
+      list = ST.stockOptions.filter(function (p) {
+        if (added[p.id]) return false;
+        return String(p.code || '').toUpperCase().indexOf(kw) >= 0
+          || String(p.name || '').toUpperCase().indexOf(kw) >= 0
+          || String(p.barcode || '').toUpperCase().indexOf(kw) >= 0
+          || String(p.rfid_epc || '').toUpperCase().indexOf(kw) >= 0;
+      }).slice(0, 8);
+    }
+    d._suggest = list;
+    d._suggestOpen = true;
+  }, 300);
+}
+function pickSuggest(p) {
+  ST.sheetData._kw = '';
+  ST.sheetData._suggest = [];
+  ST.sheetData._suggestOpen = false;
+  addSaleItem(p);
+}
+function blurSaleSuggest() {
+  setTimeout(function () { if (ST.sheetData) ST.sheetData._suggestOpen = false; }, 200);
+}
+// PC 扫码枪：扫完带回车，按货号/条码/EPC 精确命中且未加过则直接入单
+function onSaleKwEnter() {
+  var d = ST.sheetData;
+  var kw = String(d._kw || '').trim();
+  if (!kw) return;
+  var p = matchStockProduct(kw, 'auto');
+  if (p) pickSuggest(p);
+}
+// 调拨选货框扫码枪回车：直接勾选命中的在库商品
+function anchorPickerEnter(kw) {
+  var c = String(kw || '').trim().toUpperCase();
+  if (c) applyScanToTransfer(c, 'auto');
 }
 
-// ---- 摄像头扫码加件（本地 zxing）----
-function openSaleCam() {
+// ---- 手机号会员联想（防抖）+ 一键新建会员 ----
+function onPhoneInput() {
+  var d = ST.sheetData;
+  if (d.member && d.phone !== d.member.phone) d.member = null;
+  if (d._memTimer) clearTimeout(d._memTimer);
+  var kw = String(d.phone || '').trim();
+  if (kw.length < 3) { d._memOpen = false; d._memList = []; return; }
+  d._memTimer = setTimeout(function () {
+    api('GET', '/api/customers/lookup?phone=' + encodeURIComponent(kw)).then(function (r) {
+      d._memList = (r && r.items) || [];
+      d._memOpen = true;
+    }).catch(function () {});
+  }, 300);
+}
+function memExactMatch() {
+  var d = ST.sheetData;
+  var phone = String(d.phone || '').trim();
+  return (d._memList || []).filter(function (c) { return String(c.phone || '') === phone; })[0] || null;
+}
+function memCanCreate() {
+  var d = ST.sheetData;
+  var phone = String(d.phone || '').trim();
+  return /^1\d{10}$/.test(phone) && !memExactMatch() && (d._memOpen || d._memList);
+}
+function pickMember(c) {
+  var d = ST.sheetData;
+  d.member = {
+    id: c.id, name: c.name || '', phone: c.phone || '',
+    level: c.level || '普通', points: Number(c.points) || 0,
+    gold_discount: Number(c.gold_discount) || 1,
+  };
+  d.customer = c.name || d.customer;
+  d.phone = c.phone || d.phone;
+  d._memOpen = false;
+  applyMemberGold();
+  toast(t('sale.memHi', { n: d.member.name }));
+}
+function quickCreateMember() {
+  var d = ST.sheetData;
+  var phone = String(d.phone || '').trim();
+  var name = (d.customer || '').trim() || t('sale.memDefaultName', { n: phone.slice(-4) });
+  api('POST', '/api/customers', { name: name, phone: phone, level: '普通', gold_discount: 1 }).then(function () {
+    return api('GET', '/api/customers/lookup?phone=' + encodeURIComponent(phone));
+  }).then(function (r) {
+    var list = (r && r.items) || [];
+    var c = list.filter(function (x) { return String(x.phone || '') === phone; })[0] || list[0];
+    toast(t('sale.memCreated'));
+    if (c) pickMember(c);
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+
+// ---- 当日金价（店长可保存并应用到本单计重件）----
+function saveGoldPrice() {
+  var d = ST.sheetData;
+  var v = round2(Number(d.goldPrice) || 0);
+  if (v < 0) { toast(t('sale.goldNeed'), 'error'); return; }
+  api('PUT', '/api/biz-config', { gold_price: v }).then(function () {
+    if (ST.bizConfig) ST.bizConfig.gold_price = v;
+    applyMemberGold();
+    toast(t('sale.goldSaved'));
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+
+// ---- 组合支付 ----
+function addPayment() { ST.sheetData.payments.push({ method: '现金', amount: 0 }); }
+function removePayment(i) {
+  var ps = ST.sheetData.payments;
+  if (ps && ps.length > 1) ps.splice(i, 1);
+}
+
+// ---- 多模态输入基座：输入框右侧 [📱手持机协同] [⤢摄像头/扫码枪] 两个图标 ----
+// 锚点 id → 协同任务类型（见 ANCHOR_COOP）；EPC 录入任务扫到后直填输入框
+// 商品/入库 EPC 是两个不同功能：任务类型独立，手持机列表分别显示「商品EPC #n」「入库EPC #n」
+var ANCHOR_COOP = { sale: 'sale', loan: 'loan', transfer_out: 'transfer_out',
+                    epc_product: 'epc_product', epc_inbound: 'epc_inbound' };
+// 任务类型 → 多语言功能名（zh 文案必须与扫描助手 App typeLabel 完全一致）
+var COOP_NAME_KEYS = {
+  stocktake: 'co.name.stocktake', sale: 'co.name.sale', loan: 'co.name.loan',
+  transfer_out: 'co.name.transferOut', transfer_in: 'co.name.transferIn',
+  epc_product: 'co.name.epcProduct', epc_inbound: 'co.name.epcInbound', generic: 'co.name.generic'
+};
+function coopTypeName(tp) { return COOP_NAME_KEYS[tp] ? t(COOP_NAME_KEYS[tp]) : (tp || ''); }
+// 手持机列表与网页提示统一显示的「功能名 #序号」
+function coopTaskLabel(tp, seq) {
+  var name = coopTypeName(tp);
+  return name + (seq ? ' #' + seq : '');
+}
+ST._camAnchor = '';        // 本次扫码（摄像头/原生桥）结果要回填的锚点
+ST._coopAnchor = '';       // 当前协同任务对应的锚点
+
+function isTouchDevice() {
+  try {
+    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
+  } catch (e) {}
+  return 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
+}
+function _anchorEl(ev) { return ev && ev.currentTarget ? ev.currentTarget.closest('.scan-anchor') : null; }
+
+// 点手持机图标：在输入框下方切换协同状态气泡
+function anchorCoop(id, ev) {
+  var a = ST.anchor;
+  if (a.pop === id) { a.pop = ''; return; }
+  var wrap = _anchorEl(ev);
+  var r = wrap.getBoundingClientRect();
+  var w = Math.max(r.width, 280);
+  a.w = w;
+  a.x = Math.max(8, Math.min(r.left, window.innerWidth - w - 12));
+  a.above = r.bottom + 250 > window.innerHeight;
+  a.y = a.above ? r.top - 6 : r.bottom + 6;
+  a.pop = id;
+}
+function closeAnchorPop() { ST.anchor.pop = ''; }
+function anchorCoopActive(id) {
+  return !!ST.scanCoop.type && ST.scanCoop.type === ANCHOR_COOP[id]
+    && (!ST._coopAnchor || ST._coopAnchor === id);
+}
+function startAnchorCoop(id) {
+  var tp = ANCHOR_COOP[id];
+  if (!tp) return;
+  ST._coopAnchor = id;
+  startCoopScan(tp);
+}
+function anchorPopStyle() {
+  var a = ST.anchor;
+  var o = { left: a.x + 'px', width: a.w + 'px', zIndex: 960 };
+  if (a.above) o.bottom = (window.innerHeight - a.y) + 'px'; else o.top = a.y + 'px';
+  return o;
+}
+// PC 扫码枪就绪提示气泡
+function showAnchorGunTip(wrap) {
+  var a = ST.anchor;
+  var r = wrap.getBoundingClientRect();
+  a.tipW = Math.max(r.width, 280);
+  a.tipX = Math.max(8, Math.min(r.left, window.innerWidth - a.tipW - 12));
+  a.tipY = r.bottom + 6;
+  a.tip = t('scan.gunReady');
+  clearTimeout(a._tipTimer);
+  a._tipTimer = setTimeout(function () { a.tip = ''; }, 2600);
+}
+// 扫码图标：触屏浏览器→网页摄像头；手持机 App→原生扫码桥；PC→聚焦输入框+扫码枪提示
+function anchorCamera(id, ev) {
+  var wrap = _anchorEl(ev);
+  var input = wrap ? wrap.querySelector('input') : null;
+  ST._camAnchor = id;
+  if (ST.yzScanReady) {
+    var nativeType = (id === 'epc_product' || id === 'epc_inbound') ? 'epc' : 'barcode';
+    if (!window.YzScanner.scan(nativeType)) toast(t('scan.unavailable'), 'error');
+    return;
+  }
+  if (!isTouchDevice()) {
+    if (input) input.focus();
+    showAnchorGunTip(wrap);
+    return;
+  }
+  openAnchorCam();
+}
+
+// ---- 共享摄像头取景（全站单实例，根级 #anchorCamVideo）----
+function openAnchorCam() {
   if (!window.ZXing) { toast(t('scan.libMissing'), 'error'); return; }
   ST.camOpen = true; ST.camErr = ''; ST.camBusy = true;
   ST._camLast = ''; ST._camLastAt = 0;
   Vue.nextTick(function () {
-    var video = document.getElementById('saleCamVideo');
+    var video = document.getElementById('anchorCamVideo');
     if (!video) { ST.camErr = t('scan.camNoEl'); ST.camBusy = false; return; }
     try {
       var reader = new ZXing.BrowserMultiFormatReader();
@@ -951,8 +1290,7 @@ function openSaleCam() {
         var now = Date.now();
         if (text === ST._camLast && now - ST._camLastAt < 2500) return;  // 连续画面去抖
         ST._camLast = text; ST._camLastAt = now;
-        var p = matchStockProduct(text, 'auto');
-        if (p) addSaleItem(p); else toast(t('scan.notFound') + ' ' + text, 'error');
+        onAnchorCamResult(text);
       });
       if (pr && pr.then) pr.then(function (controls) {
         ST._camControls = controls; ST.camBusy = false;
@@ -965,7 +1303,22 @@ function openSaleCam() {
     }
   });
 }
-function closeSaleCam() {
+// 摄像头扫到结果 → 按锚点路由：业务锚点持续连扫，裸 EPC 锚点填框后自动关闭
+function onAnchorCamResult(text) {
+  var id = ST._camAnchor || '';
+  if (id === 'sale') {
+    var p = matchStockProduct(text, 'auto');
+    if (p) addSaleItem(p); else toast(t('scan.notFound') + ' ' + text, 'error');
+  } else if (id === 'loan') {
+    addLoanRawCode(text);
+  } else if (id === 'transfer_out') {
+    applyScanToTransfer(String(text || '').trim().toUpperCase(), 'auto');
+  } else if (id === 'epc_product' || id === 'epc_inbound') {
+    if (ST.sheetData) ST.sheetData.rfid_epc = String(text || '').trim().toUpperCase();
+    closeAnchorCam();
+  }
+}
+function closeAnchorCam() {
   try { if (ST._camControls && ST._camControls.stop) ST._camControls.stop(); } catch (e) {}
   try { if (ST._camReader && ST._camReader.reset) ST._camReader.reset(); } catch (e) {}
   ST._camControls = null; ST._camReader = null;
@@ -974,10 +1327,18 @@ function closeSaleCam() {
 
 // ---- sheet ----
 function openSheet(mode, title, data) {
+  // 高管只读：纯新增弹层（无 id）一律不打开直接提示；只读详情(detail)与既有记录
+  // 弹层（data.id，用于查看）可打开，但保存链路上还有 api() 拦截 + 后端中间件双保险
+  if (mode !== 'detail' && !(data && data.id) && isExecRole()) { toast(t('role.execReadonly'), 'error'); return; }
   ST.sheetMode = mode; ST.sheetTitle = title; ST.sheetData = Vue.reactive(data || {});
   ST.rfidResult = null;
 }
-function closeSheet() { if (ST.camOpen) closeSaleCam(); ST.sheetMode = ''; ST.sheetData = {}; exitCoopScan(); }
+function closeSheet() {
+  if (ST.camOpen) closeAnchorCam();
+  ST.anchor.pop = ''; ST.anchor.tip = '';
+  ST.sheetMode = ''; ST.sheetData = {};
+  exitCoopScan();
+}
 
 function openInbound(store) {
   if (checkFrozen()) return;
@@ -1091,12 +1452,13 @@ function loadProductTypes() {
   api('GET', '/api/product-types').then(function (r) { ST.productTypes = r || []; }).catch(function () {});
 }
 function resetTypeEdit() {
-  ST.typeEdit = { code: '', names: { zh: '', en: '', it: '' }, sort_order: (ST.productTypes || []).length + 1 };
+  ST.typeEdit = { code: '', names: { zh: '', en: '', it: '' }, sort_order: (ST.productTypes || []).length + 1, pricing_mode: 'piece' };
   ST.typeEditMode = 'new';
 }
 function editType(o) {
   ST.typeEditMode = 'edit';
-  ST.typeEdit = { code: o.code, names: Object.assign({ zh: '', en: '', it: '' }, o.names || {}), sort_order: o.sort_order || 0 };
+  ST.typeEdit = { code: o.code, names: Object.assign({ zh: '', en: '', it: '' }, o.names || {}),
+    sort_order: o.sort_order || 0, pricing_mode: o.pricing_mode === 'weight' ? 'weight' : 'piece' };
   setTimeout(function () {
     var el = document.getElementById('type-edit-form');
     if (el) {
@@ -1113,7 +1475,8 @@ function saveType() {
   if (!(te.names.zh || te.names.en)) { toast(t('toast.fillCatName'), 'error'); return; }
   var body = { code: te.code.trim(),
     names: { zh: te.names.zh || '', en: te.names.en || '', it: te.names.it || '' },
-    sort_order: Number(te.sort_order) || 0 };
+    sort_order: Number(te.sort_order) || 0,
+    pricing_mode: te.pricing_mode === 'weight' ? 'weight' : 'piece' };
   var method = ST.typeEditMode === 'edit' ? 'PUT' : 'POST';
   var url = ST.typeEditMode === 'edit' ? '/api/product-types/' + te.code : '/api/product-types';
   api(method, url, body).then(function () {
@@ -1140,10 +1503,7 @@ function bindTypeTemplate(code, tplId) {
 function loadLocations() {
   return api('GET', '/api/locations').then(function (r) {
     ST.locations = r || [];
-    if (!ST.locStore && ST.stores.length) ST.locStore = ST.stores[0].id;
-    if (ST.locStore && (!ST.stores.length || !ST.stores.some(function (s) { return s.id === ST.locStore; }))) {
-      ST.locStore = ST.stores.length ? ST.stores[0].id : 0;
-    }
+    syncManageStore();  // 校正门店管理选中态（分店锁本店，总店兜底首店）
   }).catch(function () {});
 }
 function storeNameOf(sid) {
@@ -1227,6 +1587,14 @@ function loadClerkTypes() {
 
 // ---- 用户与门店授权（仅店长）----
 function isAdminRole() { return !!(ST.user && ST.user.role === 'TENANT_ADMIN'); }
+// 高管：跨店巡查，业务只读（api() 闸门 + 后端中间件）
+function isExecRole() { return !!(ST.user && ST.user.role === 'EXECUTIVE'); }
+// 角色显示名（三语走 i18n）
+function roleText(role) {
+  if (role === 'TENANT_ADMIN') return t('misc.role.admin');
+  if (role === 'EXECUTIVE') return t('misc.role.exec');
+  return t('misc.role.staff');
+}
 function loadAdminUsers() {
   api('GET', '/api/admin/users').then(function (r) { ST.adminUsers = r.items || []; })
     .catch(function (e) { toast(e.message, 'error'); });
@@ -1243,11 +1611,11 @@ function toggleUserStore(u, sid) {
 }
 function openUserCreate() {
   ST.adminUserOpen = true;
-  ST.adminUserForm = { id: 0, username: '', display_name: '', password: '', role: 'EMPLOYEE' };
+  ST.adminUserForm = { id: 0, username: '', display_name: '', password: '', role: 'EMPLOYEE', can_view_cost: false };
 }
 function openUserEdit(u) {
   ST.adminUserOpen = true;
-  ST.adminUserForm = { id: u.id, username: u.username, display_name: u.display_name, password: '', role: u.role };
+  ST.adminUserForm = { id: u.id, username: u.username, display_name: u.display_name, password: '', role: u.role, can_view_cost: !!u.can_view_cost };
 }
 function closeUserForm() { ST.adminUserOpen = false; }
 function saveAdminUser() {
@@ -1257,12 +1625,12 @@ function saveAdminUser() {
     if (!f.username.trim() || !f.password) { toast(t('adminUser.fieldsReq'), 'error'); return; }
     req = api('POST', '/api/admin/users', {
       username: f.username.trim(), display_name: f.display_name.trim(),
-      password: f.password, role: f.role,
+      password: f.password, role: f.role, can_view_cost: !!f.can_view_cost,
     });
   } else {
     req = api('PUT', '/api/admin/users/' + f.id, {
       username: f.username, display_name: f.display_name.trim(),
-      password: f.password, role: f.role,
+      password: f.password, role: f.role, can_view_cost: !!f.can_view_cost,
     });
   }
   req.then(function () {
@@ -1335,9 +1703,23 @@ function printReceipt(s) {
     });
   };
   var due = Number(s.amount) - Number(s.paid);
-  var rows = [
-    ['<td>' + esc(s.product) + '</td><td style="text-align:right">￥' + fmt(s.amount) + '</td>'],
-  ];
+  var itemRows = (s.items && s.items.length) ? s.items : [{ name: s.product, subtotal: s.amount }];
+  var rows = itemRows.map(function (it) {
+    var detail = '';
+    if (it.pricing_mode === 'weight') {
+      detail = '<div style="font-size:12px;opacity:.75">' + Number(it.weight).toFixed(2) + 'g × ￥'
+        + fmt(it.gold_price) + ' + ' + t('sale.colLabor') + ' ￥' + fmt(it.labor_fee) + '</div>';
+    }
+    return ['<td>' + esc(it.name) + detail + '</td><td style="text-align:right">￥' + fmt(it.subtotal != null ? it.subtotal : it.price) + '</td>'];
+  });
+  var pays = (s.payments && s.payments.length)
+    ? s.payments
+    : [{ method: s.method, amount: s.paid }];
+  var payRows = pays.map(function (p) {
+    return '<tr><td>' + esc(methodText(p.method)) + '</td><td class="r">￥' + fmt(p.amount) + '</td></tr>';
+  }).join('');
+  var receivable = s.receivable != null ? Number(s.receivable) : Number(s.amount) + (Number(s.discount) || 0);
+  var discount = Number(s.discount) || 0;
   var html =
 '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(s.bill_no) + '</title>' +
 '<style>@page{size:58mm auto;margin:0}body{font-family:"Microsoft YaHei",sans-serif;width:58mm;margin:0;padding:6px 4px;color:#000;font-size:12px;line-height:1.55}' +
@@ -1357,10 +1739,11 @@ function printReceipt(s) {
 '<table>' + rows.map(function (r) { return '<tr>' + r[0] + r[1] + '</tr>'; }).join('') + '</table>' +
 '<div class="sep"></div>' +
 '<table>' +
-'<tr><td>' + t('lbl.amount') + '</td><td class="r b">￥' + fmt(s.amount) + '</td></tr>' +
-'<tr><td>' + t('lbl.paid') + '</td><td class="r">￥' + fmt(s.paid) + '</td></tr>' +
+'<tr><td>' + t('sale.receivable') + '</td><td class="r">￥' + fmt(receivable) + '</td></tr>' +
+(discount > 0 ? '<tr><td>' + t('sale.discount') + '</td><td class="r">-￥' + fmt(discount) + '</td></tr>' : '') +
+'<tr><td>' + t('sale.payable') + '</td><td class="r b">￥' + fmt(s.amount) + '</td></tr>' +
+payRows +
 (due > 0 ? '<tr><td>' + t('sale.dueShort') + '</td><td class="r">￥' + fmt(due) + '</td></tr>' : '') +
-'<tr><td>' + t('sale.pay') + '</td><td class="r">' + esc(methodText(s.method)) + '</td></tr>' +
 '</table>' +
 '<div class="sep"></div>' +
 '<div class="c g">' + t('sale.receiptThanks') + '</div>' +
@@ -1549,7 +1932,7 @@ function reloadProducts() {
     .catch(function () {});
 }
 
-// 商品页：调拨多选模式
+// 门店调拨页：选货抽屉
 function transferSelList() {
   return Object.keys(ST.transferSel).map(function (k) { return ST.transferSel[k]; });
 }
@@ -1558,7 +1941,91 @@ function canTransferPick(p) { return p.status === '在库'; }
 function toggleTransferMode() {
   ST.transferMode = !ST.transferMode;
   clearTransferSel();
-  if (!ST.transferMode) exitCoopScan(); else resetScanCoop();
+  ST.pickerQ = ''; ST.pickerCat = '';
+  if (!ST.transferMode) exitCoopScan(); else { resetScanCoop(); reloadProducts(); }
+}
+// 选货抽屉内的在库商品列表（独立于商品页筛选）
+function filteredPickerProducts() {
+  var list = (ST.products || []).filter(function (p) { return p.status === '在库'; });
+  if (ST.pickerCat) list = list.filter(function (p) { return p.product_type_code === ST.pickerCat; });
+  if (ST.pickerQ) {
+    var q = ST.pickerQ.toLowerCase();
+    list = list.filter(function (p) {
+      return (p.name && p.name.toLowerCase().indexOf(q) >= 0) ||
+             (p.code && p.code.toLowerCase().indexOf(q) >= 0) ||
+             (p.barcode && String(p.barcode).toLowerCase().indexOf(q) >= 0) ||
+             (p.rfid_epc && p.rfid_epc.toLowerCase().indexOf(q) >= 0);
+    });
+  }
+  return list;
+}
+
+// ---------------- 列级权限：成本查看 ----------------
+function isCostVisible() {
+  return !!(ST.user && ST.user.can_view_cost);
+}
+// 无权（或后端已剥离 cost）时统一脱敏
+function costText(v) {
+  if (v == null || v === '') return '***';
+  return '￥' + fmt(v);
+}
+
+// ---------------- 商品批量导入 ----------------
+function openImportDlg() {
+  ST.importDlg = { open: true, file: null, busy: false, result: null };
+}
+function closeImportDlg() { ST.importDlg.open = false; }
+function onImportFile(ev) {
+  var f = ev.target.files && ev.target.files[0];
+  ST.importDlg.file = f || null;
+  ST.importDlg.result = null;
+}
+function authHeaders(extra) {
+  var h = extra || {};
+  var token = ST.token || sessionStorage.getItem('jewelry_token') || '';
+  if (token) h['Authorization'] = 'Bearer ' + token;
+  return h;
+}
+function downloadImportTpl() {
+  // 带鉴权头拉 blob（鉴权资源不能裸 window.open）
+  fetch(API + '/api/products/import-template', { headers: authHeaders() })
+  .then(function (resp) {
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    return resp.blob();
+  }).then(function (blob) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'products_template.xlsx';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+function submitImportXlsx() {
+  var f = ST.importDlg.file;
+  if (!f || ST.importDlg.busy) return;
+  ST.importDlg.busy = true; ST.importDlg.result = null;
+  var fd = new FormData();
+  fd.append('file', f);
+  fetch(API + '/api/products/import-xlsx', {
+    method: 'POST',
+    headers: authHeaders(),  // 勿手设 Content-Type，浏览器自动加 multipart boundary
+    body: fd,
+  }).then(function (resp) {
+    return resp.json().then(function (j) { return { ok: resp.ok, j: j }; });
+  }).then(function (r) {
+    ST.importDlg.busy = false;
+    if (!r.ok) { toast((r.j && r.j.detail) || t('import.fail'), 'error'); return; }
+    ST.importDlg.result = { created: r.j.created || 0, failed: r.j.failed || [] };
+    if (r.j.created) reloadProducts();
+  }).catch(function (e) {
+    ST.importDlg.busy = false;
+    toast(e.message || t('import.fail'), 'error');
+  });
+}
+// 打印标签：有勾选走批量，无勾选提示
+function onPrintLabelBtn() {
+  if (printSelCount()) openPrintSelected();
+  else toast(t('toast.pickLabel'), 'error');
 }
 function clearTransferSel() {
   ST.transferSel = {};
@@ -1583,7 +2050,8 @@ function applyScanToTransfer(c, type) {
       return e === c || (e && e.endsWith(c));
     }
     var cd = String(x.code || '').toUpperCase();
-    return cd === c || cd === c.replace(/^0+/, '');
+    if (cd === c || cd === c.replace(/^0+/, '')) return true;
+    return String(x.barcode || '').toUpperCase() === c;
   });
   if (!p) { toast(t('scan.notFound') + ' ' + c, 'error'); return; }
   if (ST.transferSel[p.id]) { toast(t('tr.alreadyPicked')); return; }
@@ -1601,6 +2069,8 @@ function openTransferSend() {
   var others = transferStoreOptions();
   ST.transferToStore = others.length ? others[0].id : 0;
   ST.transferRemark = '';
+  exitCoopScan();            // 关掉选货抽屉可能打开的协同面板
+  ST.transferMode = false;   // 关闭选货抽屉遮罩，让发送确认弹窗能点
   ST.transferSendOpen = true;
 }
 function closeTransferSend() { ST.transferSendOpen = false; exitCoopScan(); }
@@ -1608,9 +2078,8 @@ function submitTransfer() {
   if (!ST.transferToStore || ST.transferToStore === ST.transferSelStore) { toast(t('tr.needToStore'), 'error'); return; }
   var sel = transferSelList();
   var ids = sel.map(function (p) { return p.id; });
-  var scanCodes = sel.map(function (p) { return (p.rfid_epc || p.code || '').toUpperCase(); }).filter(function (s) { return s; });
   ST.transferBusy = true;
-  api('POST', '/api/transfers', { to_store_id: ST.transferToStore, product_ids: ids, scan_codes: scanCodes, remark: ST.transferRemark || '' })
+  api('POST', '/api/transfers', { to_store_id: ST.transferToStore, product_ids: ids, remark: ST.transferRemark || '' })
     .then(function (r) {
       ST.transferBusy = false;
       toast(t('tr.sendOk') + r.transfer_no);
@@ -1743,7 +2212,18 @@ function saveBizConfig() {
 
 function quickSale() {
   if (checkFrozen()) return;
-  openSheet('sale', t('sheet.sale'), { customer: '', phone: '', items: [], paid: 0, method: '现金', biz_date: new Date().toISOString().slice(0, 10), clerk_type: defaultClerkTypeName(), clerk_name: '', _scanning: false, _pickId: null });
+  if (!(ST.bizConfig && ST.bizConfig.gold_price != null)) {
+    api('GET', '/api/biz-config').then(function (r) { ST.bizConfig = r; if (ST.sheetData) ST.sheetData.goldPrice = Number(r.gold_price) || 0; }).catch(function () {});
+  }
+  openSheet('sale', t('sheet.sale'), {
+    customer: '', phone: '', items: [],
+    discount: 0, payments: [{ method: '现金', amount: 0 }],
+    member: null, goldPrice: (ST.bizConfig && Number(ST.bizConfig.gold_price)) || 0,
+    _kw: '', _suggest: [], _suggestOpen: false,
+    _memList: [], _memOpen: false,
+    biz_date: new Date().toISOString().slice(0, 10),
+    clerk_type: defaultClerkTypeName(), clerk_name: '', _scanning: false,
+  });
 }
 
 function openDeposit() {
@@ -1771,41 +2251,6 @@ function addLoanRawCode(raw) {
   toast('✓ ' + p.code + ' ' + p.name);
 }
 function removeLoanCode(i) { ST.sheetData.codes.splice(i, 1); }
-function openLoanCam() {
-  if (!window.ZXing) { toast(t('scan.libMissing'), 'error'); return; }
-  ST.camOpen = true; ST.camErr = ''; ST.camBusy = true;
-  ST._camLast = ''; ST._camLastAt = 0;
-  Vue.nextTick(function () {
-    var video = document.getElementById('loanCamVideo');
-    if (!video) { ST.camErr = t('scan.camNoEl'); ST.camBusy = false; return; }
-    try {
-      var reader = new ZXing.BrowserMultiFormatReader();
-      var pr = reader.decodeFromVideoDevice(undefined, video, function (result) {
-        if (!result || !result.getText) return;
-        var text = result.getText();
-        var now = Date.now();
-        if (text === ST._camLast && now - ST._camLastAt < 2500) return;
-        ST._camLast = text; ST._camLastAt = now;
-        addLoanRawCode(text);
-      });
-      if (pr && pr.then) pr.then(function (controls) {
-        ST._camControls = controls; ST.camBusy = false;
-      }, function (err) {
-        ST.camBusy = false; ST.camErr = t('scan.camFail') + '：' + ((err && err.message) || '');
-      });
-      ST._camReader = reader;
-    } catch (e) {
-      ST.camBusy = false; ST.camErr = t('scan.camFail') + '：' + (e && e.message ? e.message : '');
-    }
-  });
-}
-function closeLoanCam() {
-  try { if (ST._camControls && ST._camControls.stop) ST._camControls.stop(); } catch (e) {}
-  try { if (ST._camReader && ST._camReader.reset) ST._camReader.reset(); } catch (e) {}
-  ST._camControls = null; ST._camReader = null;
-  ST.camOpen = false; ST.camBusy = false; ST.camErr = '';
-}
-
 // ---- 业务端扫码任务 WS（/ws/scan-page）----
 // 登录成功后由 refreshAll 建立；断线指数退避重连（1s→30s 封顶）；
 // 服务端 4401/4403 关闭表示会话/权限失效，不再重连。
@@ -1842,9 +2287,11 @@ function scanPageWsDisconnect() {
 // ---- 表单输入模式：协同（手持机推送）/ 自主（摄像头扫码）----
 // 各扫码表单共享 ST.scanCoop；进入协同模式即创建对应类型扫码任务，
 // 服务端同店广播 task_offer 给在线手持机，进度经 scan_progress 实时回推。
-var COOP_TYPES = { sale: 1, transfer_out: 1, transfer_in: 1, loan: 1, generic: 1 };
+var COOP_TYPES = { sale: 1, transfer_out: 1, transfer_in: 1, loan: 1, generic: 1,
+                  epc_product: 1, epc_inbound: 1 };
 function resetScanCoop() {
-  ST.scanCoop = { type: '', taskId: 0, taskNo: '', count: 0, recent: [], offer: false, applied: {} };
+  ST.scanCoop = { type: '', taskId: 0, taskNo: '', typeSeq: 0, count: 0, recent: [], offer: false, applied: {} };
+  ST._coopAnchor = '';
 }
 function setScanMode(mode) {
   if (mode === 'coop') {
@@ -1856,8 +2303,10 @@ function setScanMode(mode) {
 // 退出协同模式：撤销服务端任务（手持机收到 task_closed 自动停扫），已加入单据的商品保留
 function exitCoopScan() {
   var tid = ST.scanCoop && ST.scanCoop.taskId;
-  ST.scanCoop.type = ''; ST.scanCoop.taskId = 0; ST.scanCoop.taskNo = '';
+  ST.scanCoop.type = ''; ST.scanCoop.taskId = 0; ST.scanCoop.taskNo = ''; ST.scanCoop.typeSeq = 0;
   ST.scanCoop.count = 0; ST.scanCoop.recent = []; ST.scanCoop.offer = false; ST.scanCoop.applied = {};
+  ST._coopAnchor = '';
+  if (ST.anchor) ST.anchor.pop = '';
   if (tid) { api('POST', '/api/tasks/' + tid + '/cancel', {}).catch(function () {}); }
 }
 // 协同任务类型 ← 当前表单（开单/借货 sheet、调拨选货、调拨收货）
@@ -1868,13 +2317,16 @@ function currentCoopType() {
   if (ST.sheetMode === 'loan') return 'loan';
   return '';
 }
-function startCoopScan() {
-  var tp = currentCoopType();
+function startCoopScan(tpArg) {
+  var tp = tpArg || currentCoopType();
   if (!tp) return;
-  api('POST', '/api/tasks/start', { type: tp, title: currentTitle() || sheetTitleText() }).then(function (r) {
+  // 功能名由类型决定（手持机/网页同一份字典）；title 仅作附加上下文
+  var extraTitle = (tp === 'epc_product' || tp === 'epc_inbound') ? '' : (currentTitle() || sheetTitleText());
+  api('POST', '/api/tasks/start', { type: tp, title: extraTitle }).then(function (r) {
     ST.scanCoop.type = tp;
     ST.scanCoop.taskId = r.id || 0;
     ST.scanCoop.taskNo = r.task_no || '';
+    ST.scanCoop.typeSeq = r.type_seq || 0;
     ST.scanCoop.count = (r.stats && r.stats.total) || 0;
     ST.scanCoop.recent = []; ST.scanCoop.offer = false; ST.scanCoop.applied = {};
   }).catch(function (e) { toast(e.message, 'error'); });
@@ -1887,8 +2339,8 @@ function scanPageWsDispatch(d) {
     var tid = tk.task_id || tk.id || 0;
     if (tid === ST.scanCoop.taskId) return;  // 本页面自己创建的任务，无需提示
     if (COOP_TYPES[tk.type] && !ST.scanCoop.type) {
-      // 其他端发起的本店任务：仅提示，不抢当前表单
-      toast(t('scan.taskOffer') + (tk.task_no ? ' ' + tk.task_no : ''));
+      // 其他端发起的本店任务：提示与手持机列表一致的「功能名 #序号」
+      toast(t('scan.taskOffer') + ' ' + coopTaskLabel(tk.type, tk.type_seq || 0));
     }
     ST.scanCoop.offer = true;
   } else if (d.type === 'scan_progress') {
@@ -1908,9 +2360,10 @@ function scanPageWsDispatch(d) {
   } else if (d.type === 'task_closed') {
     if (d.task_id && d.task_id === ST.scanCoop.taskId) {
       toast(t('scan.taskClosed'));
-      ST.scanCoop.taskId = 0; ST.scanCoop.taskNo = '';
+      ST.scanCoop.taskId = 0; ST.scanCoop.taskNo = ''; ST.scanCoop.typeSeq = 0;
       ST.scanCoop.count = 0; ST.scanCoop.recent = []; ST.scanCoop.offer = false; ST.scanCoop.applied = {};
       ST.scanCoop.type = '';  // 手持机首发提交终结：回到自主模式，已入单商品保留
+      ST._coopAnchor = '';
     }
   }
 }
@@ -1927,6 +2380,12 @@ function applyCoopEpc(epc) {
     applyScanToTransfer(epc, 'epc');
   } else if (tp === 'transfer_in') {
     applyScanToReceive(epc, 'epc');
+  } else if (tp === 'generic' || tp === 'epc_product' || tp === 'epc_inbound') {
+    // 商品/入库表单的裸 EPC 锚点：手持机扫到直接写入 EPC 输入框
+    if (ST.sheetData && ('rfid_epc' in ST.sheetData)) {
+      ST.sheetData.rfid_epc = epc;
+      toast(t('anchor.epcReceived') + ' ' + epc.slice(-8));
+    }
   }
 }
 
@@ -1947,7 +2406,11 @@ function openOutsource() {
 }
 
 function openCustomer() {
-  openSheet('customer', t('sheet.customer'), { name: '', phone: '', level: '普通', birthday: '', preference: '' });
+  openSheet('customer', t('sheet.customer'), { name: '', phone: '', level: '普通', birthday: '', preference: '', gold_discount: 1, points: 0 });
+}
+
+function editCustomer(d) {
+  openSheet('customer', t('sheet.customer'), Object.assign({}, d));
 }
 
 function openRfid() {
@@ -2001,10 +2464,37 @@ function submitSheet() {
   if (FROZEN_SHEETS[ST.sheetMode] && checkFrozen()) { closeSheet(); return; }
   if (ST.sheetMode === 'sale') {
     if (!d.customer && !d.phone) { toast(t('toast.fillCustomer'), 'error'); return; }
-    var saleItems = (d.items || []).map(function (it) { return { product_id: it.product_id, epc: it.epc || '', code: it.code || '', price: Number(it.price) || 0 }; });
-    if (!saleItems.length) { toast(t('sale.needItem'), 'error'); return; }
-    api('POST', '/api/sales', { customer: d.customer || '', phone: d.phone || '', paid: Number(d.paid) || 0, method: d.method || '现金', biz_date: d.biz_date || '', clerk_type: d.clerk_type || '', clerk_name: d.clerk_name || '', items: saleItems }).then(function (r) {
-      toast(t('toast.saveOk') + ' ' + r.bill_no + ' · ' + (r.count || saleItems.length) + t('sale.itemsUnit') + ' ￥' + r.amount); closeSheet(); refreshAll();
+    var rawItems = d.items || [];
+    if (!rawItems.length) { toast(t('sale.needItem'), 'error'); return; }
+    if (rawItems.some(function (it) { return it.pricing_mode === 'weight' && !(Number(it.gold_price) > 0); })) {
+      toast(t('sale.goldNeed'), 'error'); return;
+    }
+    var disc = round2(Number(d.discount) || 0);
+    if (disc > saleReceivable()) { toast(t('sale.discountTooBig'), 'error'); return; }
+    var pays = (d.payments || [])
+      .filter(function (p) { return Number(p.amount) > 0; })
+      .map(function (p) { return { method: p.method || '现金', amount: round2(Number(p.amount) || 0) }; });
+    if (!pays.length) { toast(t('sale.payNeed'), 'error'); return; }
+    if (salePaid() > salePayable() + 0.01) { toast(t('sale.paidTooBig'), 'error'); return; }
+    var saleItems = rawItems.map(function (it) {
+      return {
+        product_id: it.product_id, epc: it.epc || '', code: it.code || '',
+        price: it.pricing_mode === 'weight' ? itemSubtotal(it) : (Number(it.price) || 0),
+        gold_price: it.pricing_mode === 'weight' ? (Number(it.gold_price) || 0) : 0,
+        labor_fee: it.pricing_mode === 'weight' ? (Number(it.labor_fee) || 0) : 0,
+      };
+    });
+    api('POST', '/api/sales', {
+      customer: d.customer || '', phone: d.phone || '',
+      discount: disc, payments: pays,
+      biz_date: d.biz_date || '', clerk_type: d.clerk_type || '', clerk_name: d.clerk_name || '',
+      items: saleItems,
+    }).then(function (r) {
+      var msg = t('toast.saveOk') + ' ' + r.bill_no + ' · ' + (r.count || saleItems.length) + t('sale.itemsUnit')
+        + ' ' + t('sale.payable') + ' ￥' + r.amount;
+      if (r.points) msg += ' · +' + r.points + t('sale.pointsUnit');
+      toast(msg);
+      closeSheet(); refreshAll();
     }).catch(function (e) { toast(e.message, 'error'); });
   } else if (ST.sheetMode === 'deposit') {
     if (!d.customer) { toast(t('toast.fillCustomer'), 'error'); return; }
@@ -2054,7 +2544,9 @@ function submitSheet() {
     if (!d.name) { toast(t('toast.fillCustomer'), 'error'); return; }
     var cm = d.id ? 'PUT' : 'POST';
     var cu = d.id ? '/api/customers/' + d.id : '/api/customers';
-    api(cm, cu, { name: d.name, phone: d.phone || '', level: d.level || '普通', birthday: d.birthday || '', preference: d.preference || '' }).then(function () {
+    var gd = Number(d.gold_discount);
+    if (!(gd > 0 && gd <= 1)) { toast(t('cust.goldDiscountRange'), 'error'); return; }
+    api(cm, cu, { name: d.name, phone: d.phone || '', level: d.level || '普通', birthday: d.birthday || '', preference: d.preference || '', gold_discount: round2(gd) }).then(function () {
       toast(t('toast.custSaveOk')); closeSheet(); loadSubList();
     }).catch(function (e) { toast(e.message, 'error'); });
   }
@@ -3012,10 +3504,25 @@ function openDevices(storeId) {
   loadDevices();
   loadActivations();
 }
-function closeDevices() { ST.devModal = false; ST.devStoreScope = 0; }
+function closeDevices() {
+  ST.devModal = false; ST.devStoreScope = 0;
+  loadAllDevices();  // 弹窗内绑定/解绑后同步门店管理列表
+}
 function loadDevices() {
   var q = ST.devStoreScope ? ('?store_id=' + ST.devStoreScope) : '';
   api('GET', '/api/devices' + q).then(function (r) { ST.devices = r || []; }).catch(function () {});
+}
+// 门店管理：拉全量设备后按门店分组（页面只渲染当前账号可见门店）
+function loadAllDevices() {
+  api('GET', '/api/devices').then(function (r) { ST.allDevices = r || []; }).catch(function () {});
+}
+function devicesOfStore(sid) {
+  return (ST.allDevices || []).filter(function (d) { return d.bound_store_id === sid; });
+}
+// 设备当前任务的「功能名 #序号」（与手持机列表一致）
+function deviceTaskLabel(d) {
+  if (!d || !d.current_task_type) return '';
+  return coopTaskLabel(d.current_task_type, d.current_task_seq || 0);
 }
 function genActivation() {
   var sid = ST.actStoreId || (ST.stores[0] && ST.stores[0].id) || 1;
@@ -3203,10 +3710,23 @@ function delShop(s) {
   api('DELETE', '/api/shops/' + s.id).then(function () { toast(t('toast.saveOk')); loadShops(); })
     .catch(function (e) { toast(e.message, 'error'); });
 }
-// 门店管理：按店铺分组
-function storesByShop(shopId) { return ST.stores.filter(function (s) { return (s.shop_id || 0) === shopId; }); }
+// 门店管理：按店铺分组（分组数据受总店/分店可见性约束：分店只有本店）
+function storesByShop(shopId) { return manageStores().filter(function (s) { return (s.shop_id || 0) === shopId; }); }
+// 门店管理页选中态校正：分店锁定当前工作门店，总店默认选第一家
+function syncManageStore() {
+  if (!isHqStore()) {
+    var cur = workStore();
+    if (cur) ST.locStore = cur.id;
+  } else if (!ST.locStore || !ST.stores.some(function (s) { return s.id === ST.locStore; })) {
+    ST.locStore = ST.stores.length ? ST.stores[0].id : 0;
+  }
+}
 // 门店管理：当前选中门店（复用 locStore 作为选中态）及其桥状态/库位/所属店铺
-function selectStore(id) { ST.locStore = id || 0; }
+function selectStore(id) {
+  // 分店视图只能选本店（列表也只有本店，此处为兜底，防止脏状态切到其他门店）
+  if (!isHqStore() && workStore() && id !== workStore().id) return;
+  ST.locStore = id || 0;
+}
 function bridgeOfStore(sid) { return ST.bridges.find(function (b) { return b.store_id === sid; }) || null; }
 function storeSecStore(sid) { return ST.secSensors.filter(function (x) { return (x.store_id || 1) === sid; }); }
 function shopOfStore(s) { return ST.shops.find(function (p) { return p.id === (s && s.shop_id); }) || null; }
@@ -3476,11 +3996,26 @@ var app = Vue.createApp({
     curStoreName: curStoreName,
     subTitle: subTitle,
     exportHref: exportHref,
-    nav: function () { return NAV_ITEMS; },
+    nav: function () {
+      // 依赖 curStoreId/stores：切店即时刷新
+      // 总店(HQ)无「门店管理」；分店无「总部管理」
+      return NAV_ITEMS.filter(function (n) {
+        if (n.id === 'stores' && isHqStore()) return false;
+        if (n.id === 'shops' && !isHqStore()) return false;
+        return true;
+      });
+    },
+    // 门店管理页可见的店铺分组：总店全部，分店只有本店所属店铺（避免列出其他门店/空分组）
+    manageShops: function () {
+      if (isHqStore()) return ST.shops;
+      var cur = workStore();
+      var sid = cur ? cur.shop_id : 0;
+      return ST.shops.filter(function (p) { return p.id === sid; });
+    },
     adminSubs: function () {
-      // 「用户与门店权限」仅店长可见
+      // 「用户与门店权限」仅店长；企业整体级子页仅总店（安防/日志分店保留）
       return ADMIN_SUBS.filter(function (s) {
-        return s.key !== 'users' || isAdminRole();
+        return isAdminSubAllowed(s.key);
       });
     },
     cats: function () {
@@ -3520,9 +4055,13 @@ var app = Vue.createApp({
     curBridge: function () { return ST.bridges.find(function (b) { return b.store_id === ST.locStore; }) || null; },
     curLocations: function () { return ST.locations.filter(function (l) { return l.store_id === ST.locStore; }); },
     curShop: function () { var s = ST.stores.find(function (x) { return x.id === ST.locStore; }); return s ? (ST.shops.find(function (p) { return p.id === s.shop_id; }) || null) : null; },
-    // 多件开单：件数上限 / 实时合计（模板按属性使用 sItemLimit / sTotal）
+    // 多件开单：件数上限 / 应收 / 优惠后应付 / 实收合计
     sItemLimit: function () { return saleItemLimit(); },
     sTotal: function () { return saleTotal(); },
+    sReceivable: function () { return saleReceivable(); },
+    sPayable: function () { return salePayable(); },
+    sPaid: function () { return salePaid(); },
+    sDue: function () { return round2(salePayable() - salePaid()); },
     // 系统自检铃铛：检查项列表 / 是否有启用项异常
     healthItems: healthItems,
     healthBad: healthBad,
@@ -3535,7 +4074,11 @@ var app = Vue.createApp({
   methods: {
     go: go, switchAdminSub: switchAdminSub,
     switchStore: switchStore,
+    isHqStore: isHqStore,   // 总店/分店视图判定（模板以 isHqStore() 调用，故放 methods）
+    isExecRole: isExecRole, // 高管只读标识（模板可用于只读角标）
+    roleText: roleText,
     t: t, fmt: fmt, fmtY: fmtY, dateFmt: dateFmt,
+    pctLabel: pctLabel, pctCls: pctCls, trendMax: trendMax, hasLastYear: hasLastYear,
     toggleHealth: toggleHealth,
     statusClass: statusClass,
     statusText: statusText, methodText: methodText, levelText: levelText,
@@ -3543,7 +4086,7 @@ var app = Vue.createApp({
     fieldLabelText: fieldLabelText, labelFieldText: labelFieldText,
     doLogin: doLogin, doLogout: doLogout,
     openHandheldLogin: openHandheldLogin, closeHandheldLogin: closeHandheldLogin,
-    handheldConfirm: handheldConfirm, yzScan: yzScan,
+    copyHqUrl: copyHqUrl, yzScan: yzScan,
     go: go, openSubView: openSubView, setLang: setLang,
     sortTbl: sortTbl, sortCls: sortCls,
     openSheet: openSheet, closeSheet: closeSheet, submitSheet: submitSheet,
@@ -3584,7 +4127,14 @@ var app = Vue.createApp({
     toggleTransferMode: toggleTransferMode, clearTransferSel: clearTransferSel,
     transferSelList: transferSelList, transferSelCount: transferSelCount,
     canTransferPick: canTransferPick, toggleTransferPick: toggleTransferPick,
+    filteredPickerProducts: filteredPickerProducts,
     transferStoreOptions: transferStoreOptions,
+    // 列级权限：成本查看
+    isCostVisible: isCostVisible, costText: costText,
+    // 商品批量导入
+    openImportDlg: openImportDlg, closeImportDlg: closeImportDlg,
+    onImportFile: onImportFile, downloadImportTpl: downloadImportTpl,
+    submitImportXlsx: submitImportXlsx, onPrintLabelBtn: onPrintLabelBtn,
     openTransferSend: openTransferSend, closeTransferSend: closeTransferSend,
     submitTransfer: submitTransfer,
     loadTransfers: loadTransfers, transferList: transferList,
@@ -3611,21 +4161,32 @@ var app = Vue.createApp({
     copyCoUrl: copyCoUrl,
     copyH5Url: copyH5Url,
     openDevices: openDevices, closeDevices: closeDevices, loadDevices: loadDevices,
+    loadAllDevices: loadAllDevices, devicesOfStore: devicesOfStore, deviceTaskLabel: deviceTaskLabel,
+    coopTypeName: coopTypeName, coopTaskLabel: coopTaskLabel,
     genActivation: genActivation, loadActivations: loadActivations, copyActUrl: copyActUrl,
     unbindDevice: unbindDevice, toggleDeviceStatus: toggleDeviceStatus, devOnlineText: devOnlineText,
     quickSale: quickSale, openDeposit: openDeposit,
-    addSaleItem: addSaleItem, removeSaleItem: removeSaleItem, onPickSaleProduct: onPickSaleProduct,
+    addSaleItem: addSaleItem, removeSaleItem: removeSaleItem,
+    itemSubtotal: itemSubtotal, round2: round2,
+    onSaleKw: onSaleKw, pickSuggest: pickSuggest, blurSaleSuggest: blurSaleSuggest, onSaleKwEnter: onSaleKwEnter,
+    anchorPickerEnter: anchorPickerEnter,
+    anchorCoop: anchorCoop, closeAnchorPop: closeAnchorPop, anchorCoopActive: anchorCoopActive,
+    startAnchorCoop: startAnchorCoop, anchorPopStyle: anchorPopStyle,
+    anchorCamera: anchorCamera, closeAnchorCam: closeAnchorCam,
+    onPhoneInput: onPhoneInput, memExactMatch: memExactMatch, memCanCreate: memCanCreate,
+    pickMember: pickMember, quickCreateMember: quickCreateMember,
+    memberGoldPrice: memberGoldPrice, saveGoldPrice: saveGoldPrice,
+    addPayment: addPayment, removePayment: removePayment,
     matchStockProduct: matchStockProduct,
-    openSaleCam: openSaleCam, closeSaleCam: closeSaleCam,
     setScanMode: setScanMode,
     exitCoopScan: exitCoopScan,
     voidSale: voidSale, payDeposit: payDeposit, voidDeposit: voidDeposit,
     openLoan: openLoan, returnLoan: returnLoan,
-    addLoanRawCode: addLoanRawCode, removeLoanCode: removeLoanCode, openLoanCam: openLoanCam, closeLoanCam: closeLoanCam, loanCodes: loanCodes,
+    addLoanRawCode: addLoanRawCode, removeLoanCode: removeLoanCode, loanCodes: loanCodes,
     openRepair: openRepair, editRepair: editRepair,
     openPurchase: openPurchase, receivePurchase: receivePurchase,
     openOutsource: openOutsource, receiveOut: receiveOut,
-    openCustomer: openCustomer,
+    openCustomer: openCustomer, editCustomer: editCustomer,
     setAppt: setAppt, saveProfile: saveProfile, exportLogs: exportLogs,
     recordLines: recordLines, recordKind: recordKind, statusClass: statusClass,
     openRecordDetail: openRecordDetail, detailRows: detailRows, editFromDetail: editFromDetail,

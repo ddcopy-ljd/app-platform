@@ -45,11 +45,26 @@ object RfidManager {
     fun init(context: Context) {
         synchronized(initLock) {
             if (ready) return
+            // init(Context) 返回 boolean：串口能打开但模块不应答（如被系统
+            // 「扫描键盘」服务 com.rscja.scanner 占用）时返回 false。
+            // 必须检查返回值，否则会把失败当就绪，后续 startInventory 全部 -1。
             try {
                 uhf = RFIDWithUHFUART.getInstance()
-                uhf?.init(context)
-                ready = true
-            } catch (_: Throwable) {
+                val ok = uhf?.init(context) ?: false
+                if (ok) {
+                    ready = true
+                    lastError = ""
+                } else {
+                    lastError = "UHF init() 返回 false（串口已开但模块无应答，可能被系统扫描服务占用）"
+                    // 释放本次失败的串口句柄，保证下次 init 从干净状态重开
+                    try { uhf?.free() } catch (_: Exception) {}
+                    uhf = null
+                    ready = false
+                }
+            } catch (e: Throwable) {
+                lastError = e.message ?: e.javaClass.simpleName
+                try { uhf?.free() } catch (_: Exception) {}
+                uhf = null
                 ready = false
             }
         }

@@ -35,6 +35,7 @@ data class TaskInfo(
     val id: Int,
     val taskNo: String,
     val type: String,
+    val typeSeq: Int,
     val title: String,
     val status: String,
     val deviceNo: Int,
@@ -44,6 +45,7 @@ data class TaskInfo(
         .put("id", id)
         .put("task_no", taskNo)
         .put("type", type)
+        .put("type_seq", typeSeq)
         .put("title", title)
         .put("status", status)
         .put("device_no", deviceNo)
@@ -54,6 +56,7 @@ data class TaskInfo(
             id = o.optInt("id", 0),
             taskNo = o.optString("task_no", ""),
             type = o.optString("type", ""),
+            typeSeq = o.optInt("type_seq", 0),
             title = o.optString("title", ""),
             status = o.optString("status", ""),
             deviceNo = o.optInt("device_no", 0),

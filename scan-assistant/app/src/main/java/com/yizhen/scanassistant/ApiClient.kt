@@ -63,6 +63,20 @@ object ApiClient {
         return s.trimEnd('/')
     }
 
+    /**
+     * 从输入中提取服务器 origin（协议+主机+端口）。
+     * 输入既可能是手填的 `192.168.1.10:8002`，也可能是扫码后整串贴入的
+     * `http://192.168.1.10:8002/api/device/activate?key=xxx`——后者必须剥掉路径，
+     * 否则拼激活端点会变成 .../activate/api/device/activate 导致 404。
+     */
+    fun serverOrigin(raw: String?): String {
+        val s = (raw ?: "").trim()
+        if (s.isEmpty()) return ""
+        Regex("^(https?://[^/]+)", RegexOption.IGNORE_CASE).find(s)
+            ?.let { return it.groupValues[1].trimEnd('/') }
+        return normalizeBase(s)
+    }
+
     /** 识别二维码种类（激活码 / 任务码 / 未知）。 */
     fun qrKind(raw: String?): QrKind {
         val s = (raw ?: "").trim()

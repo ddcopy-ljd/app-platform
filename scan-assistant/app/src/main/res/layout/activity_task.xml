@@ -53,6 +53,15 @@
                 android:textSize="14sp" />
         </LinearLayout>
 
+        <!-- 绑定门店 + 设备码（空闲/作业态均常驻显示，避免跨店混淆） -->
+        <TextView
+            android:id="@+id/tvStoreInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp" />
+
         <!-- ============ 待领取态：本店可领取扫描任务（服务端推送） ============ -->
         <LinearLayout
             android:id="@+id/cardIdle"
@@ -95,7 +104,7 @@
                 android:layout_marginTop="20dp"
                 android:gravity="center"
                 android:text="@string/task_empty"
-                android:textColor="@color/text_hint"
+                android:textColor="@color/text_secondary"
                 android:textSize="15sp"
                 android:visibility="gone" />
         </LinearLayout>
