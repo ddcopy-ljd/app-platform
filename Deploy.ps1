@@ -92,15 +92,19 @@ Step "2. venv create/verify" {
 # Stage 3 · pip + requirements
 # ================================================================
 Step "3. pip install dependencies" {
-    & $VenvPy -m pip install --upgrade pip 2>&1 | Out-Null
+    # Default mirror for China Mainland; pass -i https://pypi.org/simple to override
+    $Mirror = "https://pypi.tuna.tsinghua.edu.cn/simple"
+    Write-Host "  Using mirror: $Mirror" -ForegroundColor Gray
+    Write-Host "  Upgrading pip (first run may take 10-30s on slow links)..." -ForegroundColor Gray
+    & $VenvPy -m pip install --upgrade pip -i $Mirror
     if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed" }
 
     $req = Join-Path $Root "requirements.txt"
     if (-not (Test-Path $req)) { $req = Join-Path $PlatformDir "requirements.txt" }
     if (-not (Test-Path $req)) { throw "requirements.txt not found" }
 
-    Write-Host "  requirements: $req" -ForegroundColor Gray
-    & $VenvPy -m pip install -r $req 2>&1 | Out-Null
+    Write-Host "  Installing dependencies from $req (download + compile, 1-3 min first run)..." -ForegroundColor Gray
+    & $VenvPy -m pip install -r $req -i $Mirror
     if ($LASTEXITCODE -ne 0) { throw "pip install failed; see output above" }
 }
 
