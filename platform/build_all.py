@@ -261,9 +261,11 @@ def main() -> None:
             seen.add(line)
             merged_reqs.write(line + "\n")
 
-    # 启动脚本 & 一键部署脚本（放根目录和 scripts/ 各一份）
+    # 启动 & 部署脚本 & Windows 服务管理脚本
     script_contents = {}
-    for name in ["start_platform.bat", "start_jewelry.bat", "Deploy.ps1"]:
+    for name in ["start_platform.bat", "start_jewelry.bat", "Deploy.ps1",
+                 "register_platform_service.bat", "start_platform_service.bat",
+                 "stop_platform_service.bat", "unregister_platform_service.bat"]:
         p = ROOT / name
         if p.is_file():
             script_contents[name] = p.read_bytes()
