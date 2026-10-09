@@ -19,10 +19,62 @@ PLUGIN_REL = "plugins/jewelry"
 OUT_DIR = ROOT / "dist"
 
 # 打包白名单
-INCLUDE_FILES = ["plugin.json", "main.py", "db.py", "rfid_print.py", "requirements.txt"]
+# 顶层 .py 模块：自动扫描 ROOT/*.py，避免新增模块时漏加
+TOP_PY_MODULES = []          # 留空即自动发现（glob 全部顶层 .py）
+OTHER_FILES = ["plugin.json", "requirements.txt"]
 INCLUDE_DIRS = ["scripts", "frontend", "promo", "logo"]
 EXCLUDE_PARTS = ("__pycache__", ".pyc", "build", "dist")  # scripts/build、scripts/dist 为打印桥接 EXE 构建产物，另行分发
 EXCLUDE_NAMES = ("print_agent.json",)  # 门店本地运行配置，不入包
+
+
+def discover_top_py() -> list[str]:
+    """扫描 ROOT 下所有顶层 .py，排除打包/测试/临时脚本。"""
+    skip = {"build_package.py"}  # 打包脚本自身不入包
+    mods = []
+    for f in ROOT.glob("*.py"):
+        if f.name.startswith("_"): continue  # _xxx.py 临时脚本
+        if f.name.startswith("test_"): continue  # test_*.py 测试脚本
+        if f.name in skip: continue
+        mods.append(f.stem)
+    return sorted(mods)
+
+
+def discover_local_modules(entry: str = "main.py") -> list[str]:
+    """递归扫描 entry.py 的 import 链，返回所有本项目模块名（不含 .py）。"""
+    import ast
+    visited: set[str] = set()
+    stack = [entry]
+    while stack:
+        name = stack.pop()
+        if name in visited:
+            continue
+        visited.add(name)
+        src = (ROOT / name).read_text(encoding="utf-8", errors="replace")
+        try:
+            tree = ast.parse(src)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    mod = alias.name.split(".")[0]
+                    if (ROOT / f"{mod}.py").is_file() and mod not in visited:
+                        stack.append(f"{mod}.py")
+            elif isinstance(node, ast.ImportFrom):
+                if node.module and node.level == 0:
+                    mod = node.module.split(".")[0]
+                    if (ROOT / f"{mod}.py").is_file() and mod not in visited:
+                        stack.append(f"{mod}.py")
+    return sorted(visited)
+
+
+def validate_package_modules(files: list[Path]) -> None:
+    """打包前验证：所有 main.py 的本项目 import 链都在 files 里。"""
+    imported = discover_local_modules("main.py")  # 返回 ["main.py", "db.py", ...]
+    packed = {f.name for f in files if f.suffix == ".py"}
+    missing = [m for m in imported if m not in packed and m != "main.py"]
+    if missing:
+        fail(f"main.py 的本项目 import 链中，以下模块未被打包：{', '.join(missing)}")
 
 
 def fail(msg: str) -> None:
@@ -92,7 +144,9 @@ def main() -> None:
             fail(f"plugin.json 引用的文件不存在：{ref}")
 
     # 收集文件
-    files = [ROOT / name for name in INCLUDE_FILES if (ROOT / name).is_file()]
+    top_py = TOP_PY_MODULES if TOP_PY_MODULES else discover_top_py()
+    files = [ROOT / f"{n}.py" for n in top_py if (ROOT / f"{n}.py").is_file()]
+    files += [ROOT / name for name in OTHER_FILES if (ROOT / name).is_file()]
     for d in INCLUDE_DIRS:
         base = ROOT / d
         if not base.is_dir():
@@ -103,6 +157,9 @@ def main() -> None:
                 files.append(f)
     if not files:
         fail("没有可打包的文件")
+
+    # 防御：确保 main.py 的本项目 import 链全部被打包
+    validate_package_modules(files)
 
     OUT_DIR.mkdir(exist_ok=True)
     version = manifest["softwareVersion"]

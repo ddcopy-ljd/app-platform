@@ -1,5 +1,5 @@
 @echo off
-cd /d "%~dp0"
+cd /d "%~dp0.."
 title Register Yizhen Platform Service
 
 REM ============================================================
@@ -9,9 +9,9 @@ REM ============================================================
 
 set "SVC=YizhenPlatform"
 set "NSSM=C:\Windows\system32\nssm.exe"
-set "PYEXE=%~dp0.venv\Scripts\python.exe"
-set "APPDIR=%~dp0platform"
-set "LOGDIR=%~dp0logs"
+set "PYEXE=%~dp0..\.venv\Scripts\python.exe"
+set "APPDIR=%~dp0..\platform"
+set "LOGDIR=%~dp0..\logs"
 
 echo ============================================================
 echo    Yizhen Platform  -  Register Windows Service

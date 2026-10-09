@@ -1,7 +1,7 @@
 """懿臻珠宝云 · 插件后端（可独立运行）。
 
 独立启动：在本目录执行  python main.py
-默认 http://127.0.0.1:8002  演示账号 admin / 123456
+默认 http://127.0.0.1:8002  演示账号 admin / admin123456
 """
 
 from __future__ import annotations
@@ -6243,5 +6243,5 @@ def spa_asset(asset_path: str):
 
 if __name__ == "__main__":
     os.environ.setdefault("UNIFIED_ACCESS_MODE", "STANDALONE")
-    logger.info("懿臻珠宝云独立启动 http://%s:%s  账号 admin / 123456", HOST, PORT)
+    logger.info("懿臻珠宝云独立启动 http://%s:%s  账号 admin / admin123456", HOST, PORT)
     uvicorn.run(app, host=HOST, port=PORT, log_level="info")

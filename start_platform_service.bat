@@ -1,5 +1,5 @@
 @echo off
-cd /d "%~dp0"
+cd /d "%~dp0.."
 title Start Yizhen Platform Service
 
 REM ============================================================
@@ -8,7 +8,7 @@ REM   Requires Administrator privileges.
 REM ============================================================
 
 set "SVC=YizhenPlatform"
-set "LOGDIR=%~dp0logs"
+set "LOGDIR=%~dp0..\logs"
 
 echo ============================================================
 echo    Yizhen Platform  -  Start Service

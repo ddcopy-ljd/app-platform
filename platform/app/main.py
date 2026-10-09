@@ -467,7 +467,9 @@ async def gateway_proxy(ticket: str, path: str, request: Request):
 _MACHINE_PATHS = {"api/stores/bridge-whoami", "api/print-agent/download"}
 
 
-# 演示：企业登录尚未实现，暂由平台登录会话模拟企业用户访问
+# 插件 SPA 自管理登录：平台网关只做路由转发，不查平台 Cookie 登录态。
+# 插件前端自带独立登录页（v-if="!token" 渲染登录表单），插件后端各 API 端点自行校验 Bearer token。
+# operator 仅作审计标识，无平台会话时记为 "anonymous"。
 @app.api_route("/app/{plugin_id}/{tenant_id}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def app_entry(plugin_id: str, tenant_id: str, path: str, request: Request):
     if path in _MACHINE_PATHS:
@@ -475,10 +477,9 @@ async def app_entry(plugin_id: str, tenant_id: str, path: str, request: Request)
     else:
         try:
             user = cookie_user(request)
+            operator = user["username"]
         except HTTPException:
-            # 未登录/会话过期（重启平台会清空内存会话）：跳转平台登录页，而不是裸 401
-            return RedirectResponse("/", status_code=302)
-        operator = user["username"]
+            operator = "anonymous"
     body = await request.body()
     status, headers, content = await run_in_threadpool(
         gw.proxy_app, plugin_id, tenant_id, operator,

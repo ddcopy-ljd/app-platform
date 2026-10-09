@@ -1297,7 +1297,7 @@ def ensure_new_seeds(conn: sqlite3.Connection) -> None:
                       '面向中高端珠宝门店的数智化经营。','张店长','13800000000','上海市黄浦区南京东路 88 号','10:00-21:00','黄金,钻石,翡翠,铂金,彩宝',1)"""
         )
     if conn.execute("SELECT 1 FROM users WHERE username='admin'").fetchone() is None:
-        conn.execute("INSERT INTO users(username,password,display_name,role) VALUES('admin','123456','店长','TENANT_ADMIN')")
+        conn.execute("INSERT INTO users(username,password,display_name,role) VALUES('admin','admin123456','店长','TENANT_ADMIN')")
     if conn.execute("SELECT 1 FROM users WHERE username='staff'").fetchone() is None:
         conn.execute("INSERT INTO users(username,password,display_name,role) VALUES('staff','123456','店员','EMPLOYEE')")
     conn.commit()
