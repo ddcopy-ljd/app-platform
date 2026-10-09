@@ -111,15 +111,15 @@ Step "3. pip install dependencies" {
 # ================================================================
 # Stage 4 · Windows Firewall (Administrator required)
 # ================================================================
-Step "4. Firewall rules 8000 / 8002" {
+Step "4. Firewall rules 80 / 8002" {
     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     if (-not $isAdmin) {
         Write-Host "  Not elevated. Skipping firewall rules. Re-run as admin or add rules manually:" -ForegroundColor Yellow
-        Write-Host "    netsh advfirewall firewall add rule name='Yizhen Port 8000' dir=in action=allow protocol=TCP localport=8000" -ForegroundColor Gray
+        Write-Host "    netsh advfirewall firewall add rule name='Yizhen Port 80' dir=in action=allow protocol=TCP localport=80" -ForegroundColor Gray
         Write-Host "    netsh advfirewall firewall add rule name='Yizhen Port 8002' dir=in action=allow protocol=TCP localport=8002" -ForegroundColor Gray
         return
     }
-    foreach ($port in @(8000, 8002)) {
+    foreach ($port in @(80, 8002)) {
         $name = "Yizhen Platform Port $port"
         $existing = netsh advfirewall firewall show rule name=$name 2>&1 | Select-String -Pattern "No rules match" -Quiet
         if (-not $existing) {
@@ -186,7 +186,7 @@ if ($setPwd) {
 # ================================================================
 Write-Host ""
 Write-Host "=== 7. Port occupancy ===" -ForegroundColor Cyan
-foreach ($port in @(8000, 8002)) {
+foreach ($port in @(80, 8002)) {
     $used = netstat -ano -p tcp | Select-String ":$port " | Select-String "LISTENING"
     if ($used) {
         $pid = ($used -split '\s+')[-1]
@@ -226,9 +226,9 @@ $ok = $false
 for ($i = 1; $i -le 30; $i++) {
     Start-Sleep -Seconds 1
     try {
-        $resp = Invoke-WebRequest -Uri "http://localhost:8000/api/auth/login" -Method Head -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+        $resp = Invoke-WebRequest -Uri "http://localhost:80/api/auth/login" -Method Head -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
         if ($resp.StatusCode -in 200, 404, 405) {
-            Write-Host "  [OK] Port 8000 responding (HTTP $($resp.StatusCode)) at ${i}s" -ForegroundColor Green
+            Write-Host "  [OK] Port 80 responding (HTTP $($resp.StatusCode)) at ${i}s" -ForegroundColor Green
             $ok = $true
             break
         }
@@ -243,7 +243,7 @@ if (-not $ok) {
 # ================================================================
 Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Cyan
-Write-Host "  Deploy done. Open http://localhost:8000/ in browser." -ForegroundColor White
+Write-Host "  Deploy done. Open http://localhost:80/ in browser." -ForegroundColor White
 Write-Host "  Post-deploy checklist -> DEPLOY.txt section 4." -ForegroundColor Gray
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""

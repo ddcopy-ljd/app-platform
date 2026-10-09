@@ -285,7 +285,7 @@ Windows Server 部署（一键）：
      或 PowerShell：powershell -ExecutionPolicy Bypass -File Deploy.ps1
   3. 按提示回答（全部默认即走完整流程）
   4. 完成后 start_platform.bat 自动弹出；之后直接点启动脚本即可
-  5. 启动后浏览器访问 http://服务器IP:8000/ 完成平台管理员登录
+  5. 启动后浏览器访问 http://服务器IP:80/ 完成平台管理员登录
 
 重要安全提示：
   - 生产部署务必修改默认管理员密码 admin123

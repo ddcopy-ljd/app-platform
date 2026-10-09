@@ -1,6 +1,6 @@
 @echo off
 cd /d "%~dp0"
-title Platform 8000 - close this window to STOP
+title Platform 80 - close this window to STOP
 
 REM ============================================================
 REM   ƽ̨���������ű�
@@ -8,7 +8,7 @@ REM   ���: platform\app\main.py  (FastAPI + Uvicorn)
 REM ============================================================
 
 set "HOST=0.0.0.0"
-set "PORT=8000"
+set "PORT=80"
 set "PYEXE=%~dp0.venv\Scripts\python.exe"
 
 REM Agent pipeline is enabled only when env var AGENT_API_KEY is set (X-Agent-Key).
