@@ -12,7 +12,10 @@
     <aside class="sidebar">
       <div class="sidebar-head">
         <h2>插件列表</h2>
-        <button class="btn primary sm" @click="pickFile">＋ 上传插件包</button>
+        <div style="display:flex;flex-direction:column;gap:6px;align-items:stretch">
+          <button class="btn primary sm" @click="pickFile">＋ 上传插件包</button>
+          <button class="btn ghost sm" :disabled="upgrading" :title="'当前平台 v' + platformVersion" @click="pickUpgradeFile">⬆ {{ upgrading ? '升级中…' : '升级平台' }}</button>
+        </div>
       </div>
       <ul class="plugin-list">
         <li v-for="p in plugins" :key="p.id" class="pl-item" :class="{active: p.id === activeId}" @click="openPlugin(p.id)">
@@ -216,6 +219,7 @@
   </section>
 
   <input ref="fileInput" type="file" accept=".zip" style="display:none" @change="onFilePicked">
+  <input ref="upFileInput" type="file" accept=".zip" style="display:none" @change="onUpgradePicked">
 
   <!-- 发起试运行 -->
   <div v-if="modal === 'prepare'" class="mask" @click.self="modal = null">

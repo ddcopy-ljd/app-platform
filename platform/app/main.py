@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware.gzip import GZipMiddleware
 
 from . import gateway as gw
+from . import platform_upgrade as pupgrade
 from . import plugin_service as svc
 from . import runtime
 from . import traffic
@@ -74,6 +75,11 @@ def _shutdown() -> None:
 @app.exception_handler(svc.PluginError)
 def _plugin_error(_: Request, exc: svc.PluginError):
     return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
+
+
+@app.exception_handler(pupgrade.UpgradeError)
+def _upgrade_error(_: Request, exc: pupgrade.UpgradeError):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
 # ---------------------------------------------------------------- 登录
@@ -185,6 +191,19 @@ def traffic_query(dim: str = "tenant", granularity: str = "month", months: int =
 async def upload(file: UploadFile = File(...), user: dict = Depends(current_user)):
     content = await file.read(MAX_PACKAGE_BYTES + 1)
     return svc.register_package(file.filename or "plugin.zip", content, user["username"])
+
+
+# ---------------------------------------------------------------- 平台自我升级
+
+@app.get("/api/platform/version")
+def platform_version(_: dict = Depends(current_user)):
+    return {"version": pupgrade.current_version()}
+
+
+@app.post("/api/platform/upgrade")
+async def platform_upgrade(file: UploadFile = File(...), user: dict = Depends(current_user)):
+    content = await file.read(pupgrade.MAX_ZIP_BYTES + 1)
+    return pupgrade.apply_upgrade(file.filename or "upgrade.zip", content, user["username"])
 
 
 @app.get("/api/plugins/{plugin_id}")

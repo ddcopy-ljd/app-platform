@@ -134,6 +134,71 @@ createApp({
       }
     }
 
+    // ------------------------------------------------ 平台自我升级
+    const upFileInput = ref(null);
+    const upgrading = ref(false);
+    const platformVersion = ref('');
+
+    async function loadPlatformVersion() {
+      try { platformVersion.value = (await api('/api/platform/version')).version; } catch {}
+    }
+
+    function pickUpgradeFile() { upFileInput.value.click(); }
+
+    function onUpgradePicked(e) {
+      const f = e.target.files[0];
+      e.target.value = '';
+      if (!f) return;
+      if (!f.name.toLowerCase().endsWith('.zip')) return toast('请上传 .zip 平台发布包', true);
+      openConfirm({
+        title: '⬆ 升级平台',
+        lines: [
+          `升级包：${f.name}`,
+          '平台将自动展开升级包并重启服务（约 1 分钟），期间平台短暂不可用。',
+          '升级前自动备份当前版本（保留最近 3 份，位于 platform/_backup/）。',
+          '租户数据与插件数据不受影响。',
+        ],
+        okText: '开始升级',
+        btnClass: 'warn',
+        onOk: () => doPlatformUpgrade(f),
+      });
+    }
+
+    async function doPlatformUpgrade(file) {
+      upgrading.value = true;
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const r = await api('/api/platform/upgrade', { method: 'POST', body: fd });
+        toast(r.message);
+        pollUpgrade(r.new_version);
+      } catch (e) {
+        upgrading.value = false;
+        toast(e.message, true);
+      }
+    }
+
+    function pollUpgrade(newVer) {
+      let tries = 0;
+      const timer = setInterval(async () => {
+        tries++;
+        try {
+          const r = await api('/api/platform/version');
+          if (cmpVer(r.version, newVer) >= 0) {
+            clearInterval(timer);
+            toast(`平台已升级到 v${r.version}，即将刷新页面`);
+            setTimeout(() => location.reload(), 1200);
+            return;
+          }
+        } catch {}                     // 重启期间请求失败属正常，继续轮询
+        if (tries >= 60) {             // 约 3 分钟仍未恢复
+          clearInterval(timer);
+          upgrading.value = false;
+          toast('升级超时，请确认服务是否已重启，日志见 platform/_upgrade/upgrade.log', true);
+        }
+      }, 3000);
+    }
+
     // ------------------------------------------------ 运行控制
     async function setAppStatus(status) {
       if (detail.value.app_status === status) return;
@@ -317,11 +382,12 @@ createApp({
     });
     const isNewer = v => !detail.value.current_version || cmpVer(v.software_version, detail.value.current_version) > 0;
 
-    onMounted(() => reload().catch(e => toast(e.message, true)));
+    onMounted(() => { reload().catch(e => toast(e.message, true)); loadPlatformVersion(); });
 
     return {
       plugins, activeId, detail, guideOpen, dragging, fileInput, svcBusy,
       openPlugin, currentVer, busy, realTenants, canStart, pickFile, onFilePicked, onDrop,
+      upFileInput, upgrading, platformVersion, pickUpgradeFile, onUpgradePicked,
       setAppStatus, serviceAction, confirmStopService,
       modal, modalVer, prepareTenants, confirmBox, logData, logBox, logLines,
       act, openPrepare, doPrepare, confirmSwitch, confirmFormal, confirmDelete, openLog, openServiceLog,
