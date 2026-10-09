@@ -253,8 +253,7 @@ def set_current(plugin_id: str, version_id: int, user: dict = Depends(current_us
 
 @app.delete("/api/plugins/{plugin_id}/versions/{version_id}")
 def delete_version(plugin_id: str, version_id: int, user: dict = Depends(current_user)):
-    svc.delete_version(plugin_id, version_id, user["username"])
-    return {"ok": True}
+    return svc.delete_version(plugin_id, version_id, user["username"])
 
 
 @app.post("/api/plugins/{plugin_id}/gateway/ticket")

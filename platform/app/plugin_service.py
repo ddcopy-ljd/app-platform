@@ -314,12 +314,36 @@ def register_package(filename: str, content: bytes, operator: str) -> dict:
         with get_conn() as conn:
             plugin = conn.execute("SELECT * FROM plugins WHERE id=?", (m["id"],)).fetchone()
             versions = _version_rows(conn, m["id"]) if plugin else []
-            if versions:
+            same_sw_old = None   # 同 software_version 的旧非正式版本行（替换目标）
+            if plugin and versions:
                 last = versions[-1]
-                if vkey(m["softwareVersion"]) <= vkey(last["software_version"]):
+                # 同 softwareVersion 且非正式版 → 自动替换（删除旧行后插入新行）
+                same_row = next((v for v in reversed(versions)
+                                 if v["software_version"] == m["softwareVersion"]
+                                 and v["software_version"] != plugin["current_version"]),
+                                None)
+                if same_row:
+                    same_sw_old = same_row
+                elif vkey(m["softwareVersion"]) <= vkey(last["software_version"]):
                     raise PluginError(
                         f"软件版本 {m['softwareVersion']} 必须大于已有最新版本 {last['software_version']}"
                     )
+
+            # --- 同版本替换：先 stop 旧服务 + 删旧 DB 行 + 清旧包目录 + 清旧数据快照 ---
+            if same_sw_old is not None:
+                from . import runtime
+                old_sw = same_sw_old["software_version"]
+                old_pkg = package_dir(m["id"], old_sw)
+                runtime.stop_if_running(m["id"], same_sw_old["id"], operator)
+                conn.execute("DELETE FROM plugin_versions WHERE id=?", (same_sw_old["id"],))
+                if old_pkg.exists():
+                    shutil.rmtree(old_pkg, ignore_errors=True)
+                for f in (TENANT_DB_DIR / m["id"]).glob(f"db_{m['id']}_*_v{old_sw}.sqlite*"):
+                    f.unlink(missing_ok=True)
+                for d in (STORAGE_DIR / m["id"]).glob(f"*/v{old_sw}"):
+                    shutil.rmtree(d, ignore_errors=True)
+                audit(conn, operator, "上传替换同版本", m["id"],
+                      f"旧 v{old_sw}（{same_sw_old['status']}）已删除，准备写入新包")
 
             target = package_dir(m["id"], m["softwareVersion"])
             if target.exists():
@@ -737,25 +761,87 @@ def set_app_status(plugin_id: str, status: str, operator: str) -> None:
               "开放" if status == "OPEN" else "维护（暂停企业业务访问）")
 
 
-def delete_version(plugin_id: str, version_id: int, operator: str) -> None:
+def delete_version(plugin_id: str, version_id: int, operator: str) -> dict:
+    """删除指定插件版本。
+
+    只允许删除非正式版（uploaded / failed / preparing / trial / trial_passed）。
+    正式版（等于 plugins.current_version）、正在初始化的数据任务（init）、
+    正式切换数据任务（switching）一律拒绝。
+    返回清理摘要（包目录、沙箱库、storage 清理情况）。
+    """
+    from . import runtime
+
+    # --- 1) 校验 + 拷贝字段（避免 sqlite3.Row 跨 conn 失效）---
     with get_conn() as conn:
         p = _get_plugin(conn, plugin_id)
         v = _get_version(conn, plugin_id, version_id)
-        _ensure_idle(conn, plugin_id)
-        rows = _version_rows(conn, plugin_id)
-        idx = [r["id"] for r in rows].index(version_id)
-        if idx >= len(rows) - 2 or v["software_version"] == p["current_version"]:
-            raise PluginError("最后两个版本及正式版本受保护，不可删除")
-    _stop_before_data_task(plugin_id, version_id)
-    with get_conn() as conn:
         sw = v["software_version"]
+        v_status = v["status"]
+        svc_pid = v["service_pid"]
+        is_current = sw == p["current_version"]
+        gw_state = p["gateway_state"]
+
+    # 保护 1：正式版受保护
+    if is_current:
+        raise PluginError(
+            f"v{sw} 是当前正式版本（current_version），不可删除。"
+            " 如需更换版本，请先发布新版本并设为正式版。"
+        )
+    # 保护 2：数据任务进行中受保护
+    if v_status in ("init", "switching"):
+        raise PluginError(
+            f"v{sw} 正在 {v_status} 数据任务中，不可删除。"
+            " 请等任务结束或手动停止。"
+        )
+    # 保护 3：网关维护中受保护
+    if gw_state == "MAINTENANCE":
+        raise PluginError("插件处于 MAINTENANCE 维护状态，无法删除版本")
+
+    # --- 2) 停服务 + 串行保护 ---
+    stopped = runtime.stop_if_running(plugin_id, version_id, operator)
+    with get_conn() as c:
+        _ensure_idle(c, plugin_id)
+
+    pkg = package_dir(plugin_id, sw)
+    pkg_gone = False
+    db_gone = []
+    storage_gone = []
+
+    # --- 3) 删版本行 + 审计 ---
+    with get_conn() as conn:
         conn.execute("DELETE FROM plugin_versions WHERE id=?", (version_id,))
-        audit(conn, operator, "删除版本", plugin_id, f"v{sw}，连同程序目录与各租户数据快照")
-    shutil.rmtree(package_dir(plugin_id, sw), ignore_errors=True)
+        audit(conn, operator, "删除版本", plugin_id,
+              f"v{sw}（{v_status}），PID {svc_pid} 已停={stopped}")
+
+    # --- 4) 清包目录 ---
+    if pkg.exists():
+        shutil.rmtree(pkg, ignore_errors=True)
+        pkg_gone = not pkg.exists()
+
+    # --- 5) 清该版本所有租户数据库快照（含 trial 沙箱库）---
     for f in (TENANT_DB_DIR / plugin_id).glob(f"db_{plugin_id}_*_v{sw}.sqlite*"):
-        f.unlink(missing_ok=True)
+        try:
+            f.unlink(missing_ok=True)
+            db_gone.append(f.name)
+        except OSError:
+            pass
+
+    # --- 6) 清该版本所有 storage 快照 ---
     for d in (STORAGE_DIR / plugin_id).glob(f"*/v{sw}"):
-        shutil.rmtree(d, ignore_errors=True)
+        try:
+            shutil.rmtree(d, ignore_errors=True)
+            storage_gone.append(str(d))
+        except OSError:
+            pass
+
+    return {
+        "plugin_id": plugin_id,
+        "software_version": sw,
+        "service_stopped": stopped,
+        "package_removed": pkg_gone,
+        "db_snapshots_removed": db_gone,
+        "storage_snapshots_removed": storage_gone,
+    }
 
 
 # ---------------------------------------------------------------- 网关上下文
