@@ -156,7 +156,7 @@ def collect_android(proj_root: Path, arc_top: str) -> list[tuple[Path, str]]:
 
 def collect_root_files() -> list[tuple[Path, str]]:
     """仓库根目录要带走的启动脚本与规范。"""
-    pick = ["start_platform.bat", "start_jewelry.bat", "AGENTS.md", "应用插件开发说明.md"]
+    pick = ["AGENTS.md", "应用插件开发说明.md"]
     out = []
     for name in pick:
         p = ROOT / name
@@ -246,10 +246,9 @@ def main() -> None:
             seen.add(line)
             merged_reqs.write(line + "\n")
 
-    # 启动脚本（从 start_platform.bat / start_jewelry.bat 复制一份到 scripts/）
-    scripts_dir = PLATFORM_DIR / "_scripts_placeholder"   # 仅用于占位，实际直接写 zip
+    # 启动脚本 & 一键部署脚本（放根目录和 scripts/ 各一份）
     script_contents = {}
-    for name in ["start_platform.bat", "start_jewelry.bat"]:
+    for name in ["start_platform.bat", "start_jewelry.bat", "Deploy.ps1"]:
         p = ROOT / name
         if p.is_file():
             script_contents[name] = p.read_bytes()
@@ -266,18 +265,12 @@ git 基线：请见 .git 或 changes.lst
   scan-assistant/      Android 扫码助手客户端（源码）
   backup/              本次打包附带的开发数据库备份（可选恢复）
 
-Windows Server 部署：
-  1. 安装 Python 3.11+（推荐 3.13），勾选 Add to PATH
-  2. 在项目根目录运行：
-     python -m venv .venv
-     .venv\\Scripts\\python.exe -m pip install --upgrade pip
-     .venv\\Scripts\\python.exe -m pip install -r requirements.txt
-  3. 可选：恢复开发数据 backup/ 到 platform/data/tenant_dbs/ 与 platform/data/platform.db
-     （正式生产部署建议全新初始化，首次启动自动创建 admin/admin123 管理员与默认租户）
-  4. 启动平台：
-     start_platform.bat
-     平台会自动拉起已注册的 jewelry/inventory 插件服务
-  5. 首次启动访问 http://服务器IP:8000/ 完成初始化
+Windows Server 部署（一键）：
+  1. 解压 zip 到目标目录（例：C:\\Yizhen）
+  2. 右键 Deploy.ps1 → 以管理员身份运行
+     或 PowerShell：powershell -ExecutionPolicy Bypass -File Deploy.ps1
+  3. 按提示回答（全部默认即走完整流程）
+  4. 完成后 start_platform.bat 自动弹出；之后直接点启动脚本即可
 
 重要安全提示：
   - Android 厂商 SDK（DeviceAPI_*.aar）未打包，请从厂商渠道获取后放入
@@ -312,15 +305,11 @@ Windows Server 部署：
         # 依赖清单
         zf.writestr(f"{top}/requirements.txt", merged_reqs.getvalue())
 
-        # 启动脚本（scripts/ 子目录）
-        zf.writestr(
-            f"{top}/scripts/start_platform.bat",
-            (ROOT / "start_platform.bat").read_bytes() if (ROOT / "start_platform.bat").is_file() else b"",
-        )
-        zf.writestr(
-            f"{top}/scripts/start_jewelry.bat",
-            (ROOT / "start_jewelry.bat").read_bytes() if (ROOT / "start_jewelry.bat").is_file() else b"",
-        )
+        # 启动 & 部署脚本：scripts/ 子目录 + zip 根目录（方便解压后直接双击）
+        for name, data in script_contents.items():
+            zf.writestr(f"{top}/scripts/{name}", data)
+            if name in ("start_platform.bat", "start_jewelry.bat", "Deploy.ps1"):
+                zf.writestr(f"{top}/{name}", data)
 
         # 部署说明
         zf.writestr(f"{top}/DEPLOY.txt", deploy_guide)
