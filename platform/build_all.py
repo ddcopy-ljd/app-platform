@@ -1,12 +1,13 @@
-"""打包综合业务应用服务平台为整站 zip：python platform/build_all.py
+"""打包综合业务应用服务平台为 zip：python platform/build_all.py [--platform-only]
 
-产物输出到 dist/yizhen-stack_v{VERSION}.zip。
-白名单收录平台 + jewelry 插件 + scan-assistant Android 客户端，
-排除 .trae/、.git/、.venv/、__pycache__/、运行时 data/、*.aar 厂商 SDK、签名密钥 release.jks、
-Android build/.gradle 产物、本地 sqlite 调试库等敏感/可变数据。
+默认（无参）产物：dist/yizhen-stack_v{VERSION}.zip —— 整站包（平台 + 插件 + Android + DB 备份）。
+--platform-only 产物：dist/yizhen-platform_v{VERSION}.zip —— 仅平台自身（platform/ + 根启动脚本 + requirements + Deploy.ps1）。
+  不包含 plugins/、scan-assistant/、backup/（目标机需先上传插件或后续走上传流程）。
 
-额外拷贝一份运行时生产数据库到 backup/（排除 trial/沙箱库），目标机解压后可选择恢复或全新初始化。
+白名单排除 .trae/、.git/、.venv/、__pycache__/、运行时 data/、*.aar、release.jks、*.sqlite 等。
 """
+
+import argparse
 
 import io
 import re
@@ -211,9 +212,19 @@ def make_db_backup(out_dir: Path) -> list[tuple[Path, str]]:
 
 # ============ 主流程 ============
 def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--platform-only", action="store_true",
+                    help="仅打包 platform/ 自身 + 启动/部署脚本，不含 plugins/、scan-assistant/、backup/")
+    args = ap.parse_args()
+
     version = read_version()
-    top = f"yizhen-stack_v{version}"
+    is_platform_only = args.platform_only
+    if is_platform_only:
+        top = f"yizhen-platform_v{version}"
+    else:
+        top = f"yizhen-stack_v{version}"
     log(f"版本号 v{version}，输出顶层目录 {top}")
+    log(f"模式：{'纯平台（--platform-only）' if is_platform_only else '整站（平台+插件+Android+DB备份）'}")
 
     dist_dir = ROOT / "dist"
     dist_dir.mkdir(exist_ok=True)
@@ -222,8 +233,9 @@ def main() -> None:
     log("收集文件...")
     files: list[tuple[Path, str]] = []
     files += collect_platform();              log(f"  platform/ 源码 {len(files)}")
-    files += collect_jewelry();               log(f"  + jewelry/ 插件源码 {len(files)}")
-    files += collect_android(SCAN_DIR, "scan-assistant"); log(f"  + Android 客户端 {len(files)}")
+    if not is_platform_only:
+        files += collect_jewelry();               log(f"  + jewelry/ 插件源码 {len(files)}")
+        files += collect_android(SCAN_DIR, "scan-assistant"); log(f"  + Android 客户端 {len(files)}")
     files += collect_root_files();            log(f"  + 根脚本 {len(files)}")
 
     dup = {}
@@ -233,10 +245,13 @@ def main() -> None:
     if duplicates:
         log(f"⚠ 以下路径在 zip 中重复，只保留一份：{list(duplicates.keys())[:5]}")
 
-    # 依赖清单（去重聚合）
+    # 依赖清单（纯平台只用 platform/requirements.txt；整站合并两个）
     merged_reqs = io.StringIO()
     seen = set()
-    for p in [PLATFORM_DIR / "requirements.txt", PLUGIN_DIR / "requirements.txt"]:
+    req_sources = [PLATFORM_DIR / "requirements.txt"]
+    if not is_platform_only:
+        req_sources.append(PLUGIN_DIR / "requirements.txt")
+    for p in req_sources:
         if not p.is_file():
             continue
         for line in p.read_text(encoding="utf-8").splitlines():
@@ -253,9 +268,33 @@ def main() -> None:
         if p.is_file():
             script_contents[name] = p.read_bytes()
 
-    # 极简部署说明
-    readme = (ROOT / "README.txt").read_text(encoding="utf-8") if (ROOT / "README.txt").is_file() else ""
-    deploy_guide = f"""综合业务应用服务平台 v{version} · 外网部署包
+    # 部署说明
+    if is_platform_only:
+        deploy_guide = f"""综合业务应用服务平台 v{version} · 纯平台部署包
+打包时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+本包**仅含平台自身**，不含 plugins/、scan-assistant/、backup/。
+插件需在平台启动后通过「上传插件包」入口上传，或另行下载整站包（yizhen-stack_v{version}.zip）。
+
+目录结构：
+  platform/            服务端平台源码（FastAPI + Uvicorn）
+
+Windows Server 部署（一键）：
+  1. 解压 zip 到目标目录（例：C:\\Yizhen）
+  2. 右键 Deploy.ps1 → 以管理员身份运行
+     或 PowerShell：powershell -ExecutionPolicy Bypass -File Deploy.ps1
+  3. 按提示回答（全部默认即走完整流程）
+  4. 完成后 start_platform.bat 自动弹出；之后直接点启动脚本即可
+  5. 启动后浏览器访问 http://服务器IP:8000/ 完成平台管理员登录
+
+重要安全提示：
+  - 生产部署务必修改默认管理员密码 admin123
+  - AGENT_API_KEY 环境变量控制 Agent 升级流水线接口，生产不开启可留空
+
+参考文档：应用插件开发说明.md
+""".encode("utf-8")
+    else:
+        deploy_guide = f"""综合业务应用服务平台 v{version} · 外网部署包
 打包时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 git 基线：请见 .git 或 changes.lst
 
@@ -281,8 +320,10 @@ Windows Server 部署（一键）：
 参考文档：应用插件开发说明.md
 """.encode("utf-8")
 
-    db_backups = make_db_backup(ROOT / "_backup_tmp")
-    log(f"  附带数据库备份 {len(db_backups)} 个（排除 trial/沙箱）")
+    db_backups = []
+    if not is_platform_only:
+        db_backups = make_db_backup(ROOT / "_backup_tmp")
+        log(f"  附带数据库备份 {len(db_backups)} 个（排除 trial/沙箱）")
 
     # ===== 写入 zip =====
     log(f"写入 {out_zip.name} ...")
@@ -305,7 +346,7 @@ Windows Server 部署（一键）：
         # 依赖清单
         zf.writestr(f"{top}/requirements.txt", merged_reqs.getvalue())
 
-        # 启动 & 部署脚本：scripts/ 子目录 + zip 根目录（方便解压后直接双击）
+        # 启动 & 部署脚本（scripts/ 子目录 + zip 根目录）
         for name, data in script_contents.items():
             zf.writestr(f"{top}/scripts/{name}", data)
             if name in ("start_platform.bat", "start_jewelry.bat", "Deploy.ps1"):
@@ -314,14 +355,13 @@ Windows Server 部署（一键）：
         # 部署说明
         zf.writestr(f"{top}/DEPLOY.txt", deploy_guide)
 
-        # 数据库备份
+        # 数据库备份（仅整站模式）
         for src, arc in db_backups:
             arc_top = f"{top}/{arc}"
             zf.write(src, arc_top)
             total_bytes += src.stat().st_size
 
-        # backup/ 目录说明（当没有任何备份时也保留空壳说明）
-        if not db_backups:
+        if not is_platform_only and not db_backups:
             zf.writestr(
                 f"{top}/backup/__README__.txt",
                 "本目录为数据库备份预留。若需要恢复数据，请把 .sqlite 文件按\nbackup/<日期>/<plugin_id>/<dbname>.sqlite 放入此处。",
@@ -329,7 +369,8 @@ Windows Server 部署（一键）：
 
     final_kb = out_zip.stat().st_size / 1024
     log(f"✓ 打包完成 {out_zip}")
-    log(f"  zip 体积 {final_kb:.1f} KB，未压缩源码 {total_bytes/1024:.1f} KB，收录 {len(files)} 个源码文件 + {len(db_backups)} 个数据库备份")
+    extras = f" + {len(db_backups)} 个数据库备份" if db_backups else ""
+    log(f"  zip 体积 {final_kb:.1f} KB，未压缩源码 {total_bytes/1024:.1f} KB，收录 {len(files)} 个源码文件{extras}")
 
 if __name__ == "__main__":
     main()
