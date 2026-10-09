@@ -227,15 +227,27 @@ createApp({
     }
 
     function confirmDelete(v) {
+      const risky = ['trial', 'trial_passed', 'preparing'].includes(v.status);
       openConfirm({
-        title: `删除版本 v${v.software_version}`,
-        lines: ['将删除该版本的程序目录及所有租户的数据快照（db_*_v' + v.software_version + '），不可恢复。'],
+        title: `🗑 删除版本 v${v.software_version}${v.is_current ? '（正式版本）' : ''}`,
+        lines: [
+          `将停止该版本服务进程（如运行中）、删除 v${v.software_version} 的程序目录，以及：`,
+          risky ? '· 沙箱库 db_' + activeId.value + '_tenant_trial_v' + v.software_version + '.sqlite（试运行租户隔离快照）'
+                : '· 所有租户的数据快照 db_' + activeId.value + '_*_v' + v.software_version + '.sqlite',
+          '· storage/' + activeId.value + '/*/v' + v.software_version + ' 下的文件',
+          '⚠ 以上操作不可恢复。',
+        ],
         okText: '确认删除', btnClass: 'danger',
         onOk: async () => {
           try {
-            await api(`/api/plugins/${detail.value.id}/versions/${v.id}`, { method: 'DELETE' });
+            const r = await api(`/api/plugins/${detail.value.id}/versions/${v.id}`, { method: 'DELETE' });
+            const lines = [];
+            if (r.service_stopped) lines.push('服务进程已停止');
+            if (r.package_removed) lines.push('程序目录已删除');
+            if (r.db_snapshots_removed && r.db_snapshots_removed.length) lines.push(`数据库快照 ${r.db_snapshots_removed.length} 个已删除`);
+            if (r.storage_snapshots_removed && r.storage_snapshots_removed.length) lines.push(`storage 快照 ${r.storage_snapshots_removed.length} 个已删除`);
             modal.value = null;
-            toast(`v${v.software_version} 已删除`);
+            toast(`v${v.software_version} 已删除${lines.length ? '：' + lines.join('，') : ''}`);
             await reload();
           } catch (e) { toast(e.message, true); }
         },

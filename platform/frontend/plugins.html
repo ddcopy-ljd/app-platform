@@ -119,7 +119,7 @@
                       <template v-else> · 结构升级 v{{ v.prev_data_version }}→v{{ v.data_version }}</template>
                     </span>
                     <div class="ver-side-actions">
-                      <span v-if="v.protected" class="badge b-protect" title="最后两个版本及正式版本不可删除">🔒 受保护</span>
+                      <span v-if="v.protected" class="badge b-protect" title="正式版本 / 数据任务进行中不可删除">🔒 受保护</span>
                       <button v-else class="btn danger-ghost sm" :disabled="busy" @click="confirmDelete(v)">删除</button>
                     </div>
                   </div>

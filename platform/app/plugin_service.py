@@ -136,16 +136,22 @@ def get_plugin_detail(plugin_id: str) -> dict:
     with get_conn() as conn:
         p = _get_plugin(conn, plugin_id)
         rows = _version_rows(conn, plugin_id)
-        protected_from = max(0, len(rows) - 2)
         versions = []
         prev = None
-        for idx, v in enumerate(rows):
+        for v in rows:
             if prev is None:
                 structure = "initial"
             elif v["data_version"] == prev["data_version"]:
                 structure = "same"
             else:
                 structure = "upgrade"
+            # protected 规则与 delete_version 严格对齐：
+            #   - current_version 正式版受保护
+            #   - 数据任务进行中（init / switching）受保护
+            #   - 其余状态（uploaded / failed / preparing / trial / trial_passed / ready）均可删除
+            is_current = v["software_version"] == p["current_version"]
+            gw_busy = p["gateway_state"] == "MAINTENANCE"
+            protected = is_current or v["status"] in ("init", "switching") or gw_busy
             versions.append({
                 "id": v["id"],
                 "software_version": v["software_version"],
@@ -171,8 +177,8 @@ def get_plugin_detail(plugin_id: str) -> dict:
                 },
                 "structure": structure,
                 "prev_data_version": prev["data_version"] if prev else None,
-                "is_current": v["software_version"] == p["current_version"],
-                "protected": idx >= protected_from or v["software_version"] == p["current_version"],
+                "is_current": is_current,
+                "protected": protected,
             })
             prev = v
         tenants = conn.execute(
