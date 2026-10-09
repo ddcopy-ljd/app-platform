@@ -265,7 +265,8 @@ def main() -> None:
     script_contents = {}
     for name in ["start_platform.bat", "start_jewelry.bat", "Deploy.ps1",
                  "register_platform_service.bat", "start_platform_service.bat",
-                 "stop_platform_service.bat", "unregister_platform_service.bat"]:
+                 "stop_platform_service.bat", "unregister_platform_service.bat",
+                 "Extract-platform.ps1"]:
         p = ROOT / name
         if p.is_file():
             script_contents[name] = p.read_bytes()
