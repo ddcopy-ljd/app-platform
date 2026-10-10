@@ -1165,11 +1165,73 @@ def handheld_poll(hkey: str):
 # ---------------------------------------------------------------- 看板 / 店铺
 
 @app.get("/api/dashboard/overview")
-def dashboard_overview(request: Request):
+def dashboard_overview(request: Request, start: str = Query(default=""), end: str = Query(default="")):
     sess = _require_auth(request)
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, sess)
         today = date.today().isoformat()
+        # ---- 区间口径（今日/本周/本月/自定义）：start/end 为 ISO 日期，缺省=今日 ----
+        rs = (start or today)[:10]
+        re_ = (end or today)[:10]
+        if rs > re_:
+            rs, re_ = re_, rs
+        scope = " AND status!='已冲红' AND (store_id=? OR store_id=0)"
+        r_sale = conn.execute(
+            f"SELECT COALESCE(SUM(amount),0) a, COUNT(*) n FROM sales WHERE biz_date BETWEEN ? AND ?{scope}",
+            (rs, re_, sid)).fetchone()
+        # 库存出入库动态（区间内 inventory_logs）：入库 in/transfer_in，出库 out/transfer_out
+        r_in = conn.execute(
+            "SELECT COALESCE(SUM(l.qty),0) q, COALESCE(SUM(l.qty * COALESCE(p.cost,0)),0) c "
+            "FROM inventory_logs l LEFT JOIN products p ON p.id=l.product_id "
+            "WHERE l.type IN ('in','transfer_in') AND substr(l.ts,1,10) BETWEEN ? AND ? "
+            "AND (l.store_id=? OR l.store_id=0)", (rs, re_, sid)).fetchone()
+        r_out = conn.execute(
+            "SELECT COALESCE(SUM(l.qty),0) q, COALESCE(SUM(l.qty * COALESCE(p.cost,0)),0) c "
+            "FROM inventory_logs l LEFT JOIN products p ON p.id=l.product_id "
+            "WHERE l.type IN ('out','transfer_out') AND substr(l.ts,1,10) BETWEEN ? AND ?", (rs, re_)).fetchone()
+        # 区间内到期应交付的定金余额
+        r_dep = conn.execute(
+            "SELECT COALESCE(SUM(balance),0) a, COUNT(*) n FROM deposits "
+            "WHERE status='已定' AND promised_date BETWEEN ? AND ? AND (store_id=? OR store_id=0)",
+            (rs, re_, sid)).fetchone()
+        # 区间内有消费客户的当前应收合计（sales.phone → customers.phone）
+        r_due = conn.execute(
+            "SELECT COALESCE(SUM(due_amount),0) a FROM customers WHERE phone IN "
+            "(SELECT DISTINCT phone FROM sales WHERE biz_date BETWEEN ? AND ? AND status!='已冲红' "
+            "AND phone!='' AND (store_id=? OR store_id=0))", (rs, re_, sid)).fetchone()
+        cost_visible = _can_view_cost(conn, sess)
+        r_avg = round(r_sale["a"] / r_sale["n"], 2) if r_sale["n"] else 0
+        # 区间环比：对比前一个等长区间；整月区间再算同比（去年同月）
+        from datetime import timedelta as _rngtd
+        d_s, d_e = date.fromisoformat(rs), date.fromisoformat(re_)
+        span = (d_e - d_s).days + 1
+        p_end = d_s - _rngtd(days=1)
+        p_start = p_end - _rngtd(days=span - 1)
+        prev_amt = conn.execute(
+            f"SELECT COALESCE(SUM(amount),0) a FROM sales WHERE biz_date BETWEEN ? AND ?{scope}",
+            (p_start.isoformat(), p_end.isoformat(), sid)).fetchone()["a"]
+        rng_mom = round((r_sale["a"] - prev_amt) * 100.0 / prev_amt, 1) if prev_amt and prev_amt > 0 else None
+        rng_yoy = None
+        next_day = d_e + _rngtd(days=1)
+        if d_s.day == 1 and next_day.day == 1 and (d_e.year, d_e.month) == (d_s.year, d_s.month):
+            ly_s = d_s.replace(year=d_s.year - 1).isoformat()
+            try:
+                ly_e = d_e.replace(year=d_e.year - 1).isoformat()
+            except ValueError:  # 闰年 2/29 → 去年 2/28
+                ly_e = (d_e - _rngtd(days=1)).replace(year=d_e.year - 1).isoformat()
+            ly_amt = conn.execute(
+                f"SELECT COALESCE(SUM(amount),0) a FROM sales WHERE biz_date BETWEEN ? AND ?{scope}",
+                (ly_s, ly_e, sid)).fetchone()["a"]
+            rng_yoy = round((r_sale["a"] - ly_amt) * 100.0 / ly_amt, 1) if ly_amt and ly_amt > 0 else None
+        range_data = {
+            "start": rs, "end": re_,
+            "sales": {"amount": round(r_sale["a"], 2), "count": r_sale["n"], "avg": r_avg,
+                      "momPct": rng_mom, "yoyPct": rng_yoy},
+            "stockIn": {"qty": r_in["q"], "cost": round(r_in["c"], 2) if cost_visible else None},
+            "stockOut": {"qty": r_out["q"], "cost": round(r_out["c"], 2) if cost_visible else None},
+            "depositPending": {"amount": round(r_dep["a"], 2), "count": r_dep["n"]},
+            "customerDue": {"amount": round(r_due["a"], 2)},
+        }
         stock = conn.execute("SELECT COUNT(*) n, COALESCE(SUM(cost),0) c FROM products WHERE status='在库' AND store_id=?", (sid,)).fetchone()
         in_transit = conn.execute("SELECT COUNT(*) n FROM products WHERE status='在途' AND store_id=?", (sid,)).fetchone()
         reserved = conn.execute("SELECT COUNT(*) n FROM products WHERE status='已定' AND store_id=?", (sid,)).fetchone()
@@ -1224,10 +1286,27 @@ def dashboard_overview(request: Request):
             "SELECT COUNT(*) n FROM repairs WHERE status NOT IN ('已完成','已取走') AND (store_id=? OR store_id=0)",
             (sid,)).fetchone()
         recent = conn.execute(
-            "SELECT bill_no, customer, amount, method, biz_date, status FROM sales "
+            "SELECT id, bill_no, customer, amount, method, biz_date, status FROM sales "
             "WHERE store_id=? OR store_id=0 ORDER BY id DESC LIMIT 8", (sid,)
         ).fetchall()
+        # 销售明细：一次取回这 8 单的条目，按 sale_id 分组附上
+        recent_items = {}
+        if recent:
+            ids = [r["id"] for r in recent]
+            marks = ",".join("?" * len(ids))
+            for it in conn.execute(
+                f"SELECT sale_id, name, code, price, weight, pricing_mode, labor_fee, subtotal, seq "
+                f"FROM sale_items WHERE sale_id IN ({marks}) ORDER BY sale_id, seq", ids
+            ).fetchall():
+                d = {k: it[k] for k in ("name", "code", "price", "weight", "pricing_mode", "labor_fee", "subtotal")}
+                recent_items.setdefault(it["sale_id"], []).append(d)
         cost_visible = _can_view_cost(conn, sess)
+        recent_out = []
+        for r in recent:
+            row = dict(r)
+            row.pop("id")
+            row["items"] = recent_items.get(r["id"], [])
+            recent_out.append(row)
         return {
             "tenant": _tenant_of(request),
             "date": today,
@@ -1240,7 +1319,8 @@ def dashboard_overview(request: Request):
             "customerDue": {"amount": round(due["a"], 2)},
             "loansActive": loans["n"],
             "repairsActive": repairs["n"],
-            "recentSales": [dict(r) for r in recent],
+            "recentSales": recent_out,
+            "rangeData": range_data,
         }
 
 
@@ -1273,18 +1353,30 @@ def dashboard_trend(request: Request):
 
 
 @app.get("/api/dashboard/category-sales")
-def dashboard_category_sales(request: Request):
-    """近6个月各品类销售额占比（与趋势图同口径，未关联档案的销售计入「其他」）。"""
+def dashboard_category_sales(request: Request, start: str = Query(default=""), end: str = Query(default="")):
+    """品类销售额占比：默认近6个月；带 start/end 时按区间统计。"""
     sess = _require_auth(request)
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, sess)
-        rows = conn.execute("""
-            SELECT COALESCE(NULLIF(p.product_type,''), '其他') cat, COALESCE(SUM(s.amount),0) a, COUNT(*) n
-            FROM sales s LEFT JOIN products p ON p.id = s.product_id
-            WHERE s.status!='已冲红' AND s.biz_date >= date('now','start of month','-5 months')
-              AND (s.store_id=? OR s.store_id=0)
-            GROUP BY cat ORDER BY a DESC
-        """, (sid,)).fetchall()
+        if start and end:
+            rs, re_ = start[:10], end[:10]
+            if rs > re_:
+                rs, re_ = re_, rs
+            rows = conn.execute("""
+                SELECT COALESCE(NULLIF(p.product_type,''), '其他') cat, COALESCE(SUM(s.amount),0) a, COUNT(*) n
+                FROM sales s LEFT JOIN products p ON p.id = s.product_id
+                WHERE s.status!='已冲红' AND s.biz_date BETWEEN ? AND ?
+                  AND (s.store_id=? OR s.store_id=0)
+                GROUP BY cat ORDER BY a DESC
+            """, (rs, re_, sid)).fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT COALESCE(NULLIF(p.product_type,''), '其他') cat, COALESCE(SUM(s.amount),0) a, COUNT(*) n
+                FROM sales s LEFT JOIN products p ON p.id = s.product_id
+                WHERE s.status!='已冲红' AND s.biz_date >= date('now','start of month','-5 months')
+                  AND (s.store_id=? OR s.store_id=0)
+                GROUP BY cat ORDER BY a DESC
+            """, (sid,)).fetchall()
         total = sum(r["a"] for r in rows) or 1
         return {"items": [
             {"category": r["cat"], "amount": round(r["a"], 2), "count": r["n"], "pct": round(r["a"] * 100 / total, 1)}
@@ -3566,7 +3658,7 @@ class TaskStartIn(BaseModel):
 # 任务类型：stocktake=盘点（冻结库存，全局唯一进行中）；
 # 其余为业务轻量扫码任务（不冻结库存，同店可多个并行，手持机从任务列表自由选择）
 SCAN_TASK_TYPES = {"stocktake", "sale", "transfer_out", "transfer_in", "loan", "generic",
-                  "epc_product", "epc_inbound"}
+                  "epc_product", "epc_inbound", "deposit"}
 
 
 @app.post("/api/tasks/start")
@@ -5259,7 +5351,9 @@ def deposit_list(request: Request, page: int = 1, size: int = 50):
         total = conn.execute(
             "SELECT COUNT(*) n FROM deposits WHERE store_id=? OR store_id=0", (sid,)).fetchone()["n"]
         rows = conn.execute(
-            "SELECT * FROM deposits WHERE store_id=? OR store_id=0 ORDER BY id DESC LIMIT ? OFFSET ?",
+            """SELECT d.*, CASE WHEN p.image IS NOT NULL THEN 1 ELSE 0 END AS has_image, p.image_ts AS image_ts
+               FROM deposits d LEFT JOIN products p ON p.id = d.product_id
+               WHERE d.store_id=? OR d.store_id=0 ORDER BY d.id DESC LIMIT ? OFFSET ?""",
             (sid, size, (page - 1) * size)).fetchall()
         return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
 

@@ -472,6 +472,7 @@ class TaskActivity : AppCompatActivity() {
         "transfer_out" -> "调拨出库"
         "transfer_in" -> "调拨收货"
         "loan" -> "借货"
+        "deposit" -> "收定金"
         "epc_product" -> "商品EPC"
         "epc_inbound" -> "入库EPC"
         else -> "扫码"

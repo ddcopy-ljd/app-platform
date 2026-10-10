@@ -30,6 +30,8 @@ var ST = Vue.reactive({
   loginUser: 'admin', loginPwd: '123456',
   // data
   dashData: null, trendData: null, remindData: null, showRemind: true, catSales: null,
+  // 看板时间范围：mode=today|week|month|custom；custom 用 start/end（ISO 日期）
+  dashRange: { mode: 'today', start: '', end: '' },
   products: [], prodTotal: 0, prodCat: '', prodQ: '', prodHasCert: false, prodLoc: 0, prodStatusFilter: '',
   cats: [], bizConfig: { epc_prefix: 'E280', seq_bits: 8 }, languages: [],
   catEdit: { code: '', names: { zh: '', en: '' }, sort_order: 0 }, catEditMode: 'new',
@@ -250,10 +252,11 @@ var NAV_ITEMS = [
   { id: 'system', icon: '⚙️', key: 'nav.system' },
 ];
 // 系统管理子视图（tab==='system' 下的 adminSub）
-// enterprise（企业资料）搬去了 shops section，这里剩 5 个
+// enterprise（企业资料）搬去了 shops section
 var ADMIN_SUBS = [
   { key: 'users', icon: '👥', label: '用户与门店权限' },
   { key: 'epc', icon: '🔢', label: 'EPC 编码规则' },
+  { key: 'tpl', icon: '🏷', label: '标签打印模板' },
   { key: 'clerk', icon: '🧑‍💼', label: '经办人类别' },
   { key: 'security', icon: '🛡️', label: '安防中心' },
   { key: 'logs', icon: '📋', label: '操作日志' },
@@ -537,10 +540,10 @@ function isHqStore() {
 }
 
 // ===== 总店/分店视图可见性（单一判断口径，导航/子页/门店页共用） =====
-// 系统管理子页归属：企业整体级（账号门店权限/EPC/品类/经办人）仅总店；门店级（安防/日志）分店保留
+// 系统管理子页归属：企业整体级（账号门店权限/EPC/打印模板/经办人）仅总店；门店级（安防/日志）分店保留
 function isAdminSubAllowed(key) {
   if (key === 'users') return isAdminRole();
-  if (key === 'epc' || key === 'clerk' || key === 'categories') return isHqStore();
+  if (key === 'epc' || key === 'clerk' || key === 'tpl') return isHqStore();
   return true; // security / logs 与门店相关，分店保留
 }
 // 把非法（当前门店视图不可见）的系统管理子页校正为首个可见子页
@@ -661,10 +664,11 @@ function go(tab) {
   if (ST.tab === 'shops') { syncManageStore(); loadShops(); loadStores(true); loadBridgeList(); loadProfile(); loadProductTypes(); loadTemplates(); loadAllDevices(); }
   if (ST.tab === 'stores') { syncManageStore(); loadShops(); loadStores(true); loadBridgeList(); loadLocations(); loadAllDevices(); }
   if (ST.tab === 'system') {
-    // 企业整体级子页（账号权限/EPC/品类/经办人）在分店视图不可见，校正到门店级子页
+    // 企业整体级子页（账号权限/EPC/打印模板/经办人）在分店视图不可见，校正到门店级子页
     normalizeAdminSub();
-    // 公共数据（企业资料已搬 shops，但品类/经办人类别/EPC 仍在这里）
+    // 公共数据（企业资料已搬 shops，品类/经办人类别/EPC 仍在这里）
     loadProfile(); loadBizConfig(); loadClerkTypes(); loadProductTypes(); loadLocations();
+    if (ST.adminSub === 'tpl') loadTemplates();
     if (ST.adminSub === 'security') loadSecurity();
     if (ST.adminSub === 'logs') loadLogs();
     if (ST.adminSub === 'users' && isAdminRole()) { loadAdminUsers(); loadStores(true); }
@@ -694,10 +698,45 @@ function openSubView(name) {
 }
 
 // ---- data loading ----
+// 计算看板时间区间 [start,end]（ISO 日期）；today/week/month 按当前日期推导，custom 用已存值
+function dashRangeCompute() {
+  var dr = ST.dashRange;
+  var now = new Date();
+  var iso = function (d) {
+    var y = d.getFullYear(), m = ('0' + (d.getMonth() + 1)).slice(-2), dd = ('0' + d.getDate()).slice(-2);
+    return y + '-' + m + '-' + dd;
+  };
+  if (dr.mode === 'custom' && dr.start && dr.end) return { start: dr.start, end: dr.end };
+  if (dr.mode === 'week') {
+    var day = (now.getDay() + 6) % 7;   // 周一为一周开始
+    var mon = new Date(now); mon.setDate(now.getDate() - day);
+    var sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    return { start: iso(mon), end: iso(sun) };
+  }
+  if (dr.mode === 'month') {
+    var first = new Date(now.getFullYear(), now.getMonth(), 1);
+    var last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return { start: iso(first), end: iso(last) };
+  }
+  var t = iso(now);
+  return { start: t, end: t };
+}
+function setDashRange(mode) {
+  ST.dashRange.mode = mode;
+  if (mode !== 'custom') loadDash();
+}
+function applyDashCustomRange() {
+  if (!ST.dashRange.start || !ST.dashRange.end) { toast(t('dash.pickRange'), 'error'); return; }
+  ST.dashRange.mode = 'custom';
+  loadDash();
+}
 function loadDash() {
-  api('GET', '/api/dashboard/overview').then(function (r) { ST.dashData = r; }).catch(function () {});
+  var rg = dashRangeCompute();
+  var q = '?start=' + rg.start + '&end=' + rg.end;
+  ST.dashRange.curStart = rg.start; ST.dashRange.curEnd = rg.end;
+  api('GET', '/api/dashboard/overview' + q).then(function (r) { ST.dashData = r; }).catch(function () {});
   api('GET', '/api/dashboard/trend').then(function (r) { ST.trendData = r; }).catch(function () {});
-  api('GET', '/api/dashboard/category-sales').then(function (r) { ST.catSales = r; }).catch(function () {});
+  api('GET', '/api/dashboard/category-sales' + q).then(function (r) { ST.catSales = r; }).catch(function () {});
   api('GET', '/api/dashboard/reminders').then(function (r) { ST.remindData = r; }).catch(function () {});
 }
 
@@ -1000,6 +1039,7 @@ window.YzScanner = {
       return;
     }
     if (id === 'loan') { addLoanRawCode(code); return; }
+    if (id === 'deposit') { applyDepositScan(code); return; }
     applyScanToSale(code, type);
   },
   // App 通知扫码状态（EPC 连续扫描中）
@@ -1247,13 +1287,14 @@ function removePayment(i) {
 // ---- 多模态输入基座：输入框右侧 [📱手持机协同] [⤢摄像头/扫码枪] 两个图标 ----
 // 锚点 id → 协同任务类型（见 ANCHOR_COOP）；EPC 录入任务扫到后直填输入框
 // 商品/入库 EPC 是两个不同功能：任务类型独立，手持机列表分别显示「商品EPC #n」「入库EPC #n」
-var ANCHOR_COOP = { sale: 'sale', loan: 'loan', transfer_out: 'transfer_out',
+var ANCHOR_COOP = { sale: 'sale', loan: 'loan', transfer_out: 'transfer_out', deposit: 'deposit',
                     epc_product: 'epc_product', epc_inbound: 'epc_inbound' };
 // 任务类型 → 多语言功能名（zh 文案必须与扫描助手 App typeLabel 完全一致）
 var COOP_NAME_KEYS = {
   stocktake: 'co.name.stocktake', sale: 'co.name.sale', loan: 'co.name.loan',
   transfer_out: 'co.name.transferOut', transfer_in: 'co.name.transferIn',
-  epc_product: 'co.name.epcProduct', epc_inbound: 'co.name.epcInbound', generic: 'co.name.generic'
+  epc_product: 'co.name.epcProduct', epc_inbound: 'co.name.epcInbound', generic: 'co.name.generic',
+  deposit: 'co.name.deposit'
 };
 function coopTypeName(tp) { return COOP_NAME_KEYS[tp] ? t(COOP_NAME_KEYS[tp]) : (tp || ''); }
 // 手持机列表与网页提示统一显示的「功能名 #序号」
@@ -1368,6 +1409,8 @@ function onAnchorCamResult(text) {
     if (p) addSaleItem(p); else toast(t('scan.notFound') + ' ' + text, 'error');
   } else if (id === 'loan') {
     addLoanRawCode(text);
+  } else if (id === 'deposit') {
+    applyDepositScan(text);
   } else if (id === 'transfer_out') {
     applyScanToTransfer(String(text || '').trim().toUpperCase(), 'auto');
   } else if (id === 'epc_product' || id === 'epc_inbound') {
@@ -2334,7 +2377,7 @@ function quickSale() {
 
 function openDeposit() {
   if (checkFrozen()) return;
-  openSheet('deposit', t('sheet.deposit'), { customer: '', phone: '', product: '', product_id: null, total: 0, deposit: 0, balance: 0, promised_date: '', reminder_days: 7 });
+  openSheet('deposit', t('sheet.deposit'), { customer: '', phone: '', product: '', product_id: null, total: 0, deposit: 0, balance: 0, promised_date: '', delivery_time: '', deliver_requirements: '', reminder_days: 7 });
 }
 
 function openLoan() {
@@ -2357,6 +2400,23 @@ function addLoanRawCode(raw) {
   toast('✓ ' + p.code + ' ' + p.name);
 }
 function removeLoanCode(i) { ST.sheetData.codes.splice(i, 1); }
+// ---- 收定金 sheet：商品扫码/手输识别 ----
+// 扫到（或手输回车）条码/EPC/货号 → 命中在库商品则锁定并带出名称、售价；未命中则作为自定义商品名填入
+function applyDepositScan(raw) {
+  var c = String(raw || '').trim();
+  if (!c) return;
+  var p = matchStockProduct(c, 'auto');
+  if (p) {
+    ST.sheetData.product_id = p.id;
+    ST.sheetData.product = p.name;
+    if (p.price) ST.sheetData.total = p.price;
+    ST.sheetData.balance = (ST.sheetData.total || 0) - (ST.sheetData.deposit || 0);
+    toast(t('scan.found') + '：' + p.code + ' ' + p.name);
+  } else {
+    ST.sheetData.product = c;   // 未匹配：保留为自定义商品名，可继续手工编辑
+    toast(t('scan.notFound') + ' ' + c, 'error');
+  }
+}
 // ---- 业务端扫码任务 WS（/ws/scan-page）----
 // 登录成功后由 refreshAll 建立；断线指数退避重连（1s→30s 封顶）；
 // 服务端 4401/4403 关闭表示会话/权限失效，不再重连。
@@ -2393,7 +2453,7 @@ function scanPageWsDisconnect() {
 // ---- 表单输入模式：协同（手持机推送）/ 自主（摄像头扫码）----
 // 各扫码表单共享 ST.scanCoop；进入协同模式即创建对应类型扫码任务，
 // 服务端同店广播 task_offer 给在线手持机，进度经 scan_progress 实时回推。
-var COOP_TYPES = { sale: 1, transfer_out: 1, transfer_in: 1, loan: 1, generic: 1,
+var COOP_TYPES = { sale: 1, transfer_out: 1, transfer_in: 1, loan: 1, generic: 1, deposit: 1,
                   epc_product: 1, epc_inbound: 1 };
 function resetScanCoop() {
   ST.scanCoop = { type: '', taskId: 0, taskNo: '', typeSeq: 0, count: 0, recent: [], offer: false, applied: {} };
@@ -2482,6 +2542,8 @@ function applyCoopEpc(epc) {
     if (p) addSaleItem(p); else toast(t('scan.notFound') + ' EPC ' + epc, 'error');
   } else if (tp === 'loan') {
     addLoanRawCode(epc);
+  } else if (tp === 'deposit') {
+    applyDepositScan(epc);
   } else if (tp === 'transfer_out') {
     applyScanToTransfer(epc, 'epc');
   } else if (tp === 'transfer_in') {
@@ -2610,7 +2672,7 @@ function submitSheet() {
     }).catch(function (e) { toast(e.message, 'error'); });
   } else if (ST.sheetMode === 'deposit') {
     if (!d.customer) { toast(t('toast.fillCustomer'), 'error'); return; }
-    api('POST', '/api/deposits', { customer: d.customer || '', phone: d.phone || '', product_id: d.product_id || null, product: d.product || '', total: Number(d.total) || 0, deposit: Number(d.deposit) || 0, balance: Number(d.balance) || 0, promised_date: d.promised_date || '', reminder_days: Number(d.reminder_days) || 7 }).then(function () {
+    api('POST', '/api/deposits', { customer: d.customer || '', phone: d.phone || '', product_id: d.product_id || null, product: d.product || '', total: Number(d.total) || 0, deposit: Number(d.deposit) || 0, balance: Number(d.balance) || 0, promised_date: d.promised_date || '', delivery_time: d.delivery_time || '', deliver_requirements: d.deliver_requirements || '', reminder_days: Number(d.reminder_days) || 7 }).then(function () {
       toast(t('toast.saveOk')); closeSheet(); refreshAll();
     }).catch(function (e) { toast(e.message, 'error'); });
   } else if (ST.sheetMode === 'product') {
@@ -4188,6 +4250,7 @@ var app = Vue.createApp({
   },
   methods: {
     go: go, switchAdminSub: switchAdminSub, goInvStatus: goInvStatus, clearInvStatusFilter: clearInvStatusFilter,
+    setDashRange: setDashRange, applyDashCustomRange: applyDashCustomRange,
     switchStore: switchStore,
     isHqStore: isHqStore,   // 总店/分店视图判定（模板以 isHqStore() 调用，故放 methods）
     isExecRole: isExecRole, // 高管只读标识（模板可用于只读角标）
@@ -4300,6 +4363,7 @@ var app = Vue.createApp({
     voidSale: voidSale, payDeposit: payDeposit, voidDeposit: voidDeposit,
     openLoan: openLoan, returnLoan: returnLoan,
     addLoanRawCode: addLoanRawCode, removeLoanCode: removeLoanCode, loanCodes: loanCodes,
+    applyDepositScan: applyDepositScan,
     openRepair: openRepair, editRepair: editRepair,
     openPurchase: openPurchase, receivePurchase: receivePurchase,
     openOutsource: openOutsource, receiveOut: receiveOut,

@@ -101,6 +101,23 @@ a { text-decoration: none; color: inherit; }
 .stat-card .stat-value { font-size: 22px; font-weight: 700; color: var(--text); }
 .stat-card .stat-sub { font-size: 14px; color: var(--text2); margin-top: 2px; }
 
+/* ---------- dashboard range bar ---------- */
+.range-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0 2px; }
+.range-tabs { display: inline-flex; background: var(--white); border: 1px solid var(--border); border-radius: 10px; padding: 3px; gap: 2px; }
+.range-tab { border: 0; background: transparent; padding: 5px 14px; font-size: 14px; color: var(--text2); border-radius: 8px; cursor: pointer; transition: .15s; white-space: nowrap; }
+.range-tab.on { background: var(--wine); color: #fff; font-weight: 600; }
+.range-cur { font-size: 14px; color: var(--text3); }
+.range-custom { display: inline-flex; align-items: center; gap: 6px; }
+.range-custom input[type=date] { border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; font-size: 14px; color: var(--text); background: var(--white); }
+.range-to { color: var(--text3); }
+/* KPI 卡压缩空白：值字号自适应，卡片等高 */
+.dash-kpi .stat-card { padding: 10px 12px; display: flex; flex-direction: column; justify-content: center; min-height: 74px; }
+.dash-kpi .stat-value { font-size: clamp(17px, 2.4vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-kpi .stat-sub { white-space: normal; line-height: 1.35; }
+.mv-in { color: var(--success); }
+.mv-out { color: var(--wine); }
+.mv-sep { color: var(--text3); margin: 0 4px; font-weight: 400; }
+
 /* ---------- mini chart ---------- */
 .mini-chart { background: var(--white); border-radius: 14px; padding: 16px; border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(92,34,51,.04); margin-top: 10px; }
 .mini-chart-title { font-size: 14px; color: var(--text2); margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
@@ -135,8 +152,12 @@ a { text-decoration: none; color: inherit; }
 .catc3 { background: #4E8A5A; } .catc4 { background: #B36A2E; } .catc5 { background: #7A5C9E; }
 
 /* ---------- reminders ---------- */
+.dash-pair { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; margin-top: 10px; }
+.dash-pair .reminder-section { flex: 1 1 340px; min-width: 0; max-width: none; margin-top: 0; }
+.dash-pair .recent-section { flex: 1 1 340px; min-width: 0; margin-top: 0; }
 .reminder-section { background: var(--white); border-radius: 12px; overflow: hidden; border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(92,34,51,.04), 0 4px 16px -8px rgba(92,34,51,.08); margin-top: 10px; }
 .app-shell.pc .reminder-section { max-width: 460px; }
+.app-shell.pc .dash-pair .reminder-section { max-width: none; }
 .filter-banner { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; padding: 8px 14px; margin: 10px 0; font-size: 14px; color: #78350f; display: flex; align-items: center; gap: 8px; }
 .filter-banner b { color: #92400e; }
 .filter-banner .link { color: #92400e; font-size: 14px; margin-left: auto; }
@@ -226,19 +247,21 @@ a { text-decoration: none; color: inherit; }
 .repair-steps .step.done:not(:last-child)::after { background: var(--success, #4E8A5A); }
 
 /* ---------- deposit ---------- */
-.deposit-card { border-left: 4px solid var(--gold); }
+.deposit-card { border-left: 4px solid var(--gold); display: flex; flex-direction: column; }
 .deposit-card.urgent { border-left-color: var(--danger); }
 .deposit-card .dep-row { display: flex; justify-content: space-between; align-items: center; }
 .deposit-card .dep-customer { font-size: 15px; font-weight: 600; }
 .deposit-card .dep-phone { font-size: 14px; color: var(--text3); font-weight: 400; margin-left: 4px; }
 .deposit-card .dep-product { font-size: 14px; color: var(--text2); margin-top: 2px; }
+.deposit-card .dep-prod-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.deposit-card .dep-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid #eee; flex-shrink: 0; }
 .deposit-card .dep-amounts { text-align: right; }
 .deposit-card .dep-total { font-size: 16px; font-weight: 700; color: var(--wine); }
 .deposit-card .dep-detail { font-size: 14px; color: var(--text2); }
 .deposit-card .dep-date { font-size: 14px; color: var(--text3); margin-top: 6px; }
 .deposit-card .dep-req { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
 .deposit-card .dep-req-item { font-size: 14px; color: var(--text2); line-height: 1.4; word-break: break-word; }
-.deposit-card .dep-tags { display: flex; gap: 6px; margin-top: 6px; }
+.deposit-card .dep-tags { display: flex; gap: 6px; margin-top: auto; padding-top: 6px; }
 
 /* ---------- loan ---------- */
 .loan-card { border-left: 4px solid var(--blue); }
@@ -260,6 +283,11 @@ a { text-decoration: none; color: inherit; }
 .sale-card .sale-no { font-size: 14px; color: var(--text3); }
 .sale-card .sale-amount { font-size: 17px; font-weight: 700; color: var(--text); }
 .sale-card .sale-info { font-size: 14px; color: var(--text2); margin-top: 2px; }
+.sale-items { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--border); }
+.sale-item-row { display: flex; align-items: baseline; gap: 8px; font-size: 14px; padding: 2px 0; }
+.sale-item-row .si-name { color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sale-item-row .si-meta { color: var(--text3); flex-shrink: 0; }
+.sale-item-row .si-sub { color: var(--wine); font-weight: 600; flex-shrink: 0; min-width: 72px; text-align: right; }
 /* 销售卡片一行显示：单号 + 状态 + 客户信息 + 金额 + 操作按钮 */
 .sale-card .sale-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .sale-card .sale-line .sale-info { flex: 1; min-width: 0; margin-top: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -537,7 +565,6 @@ body.mt-dragging { cursor: col-resize !important; user-select: none !important; 
   .app-shell.pc .inv-stats-grid .stat-value { font-size: 24px; }
 }
 .app-shell.pc .mini-chart { max-width: none; }
-.app-shell.pc .quick-grid { display: none; }
 
 /* language mini buttons (login) */
 .lang-row { display: flex; gap: 6px; justify-content: center; margin-top: 12px; }

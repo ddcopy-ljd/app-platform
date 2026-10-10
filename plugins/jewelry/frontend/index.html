@@ -113,11 +113,38 @@
         <!-- dashboard -->
         <section v-if="tab==='dashboard'">
           <details class="biz-guide"><summary>📖 {{ t('biz.title') }}</summary><div class="biz-body">{{ t('biz.dashboard') }}</div></details>
-          <div class="stats-grid" v-if="dashData">
-            <div class="stat-card clickable" @click="go('products')"><div class="stat-label">{{ t('kpi.stock') }}<span class="stat-hint">›</span></div><div class="stat-value">{{ dashData.stock.count }}</div><div class="stat-sub" :class="{'cell-secret':!isCostVisible()}">{{ t('dash.cost') }} {{ dashData.stock.cost==null ? '***' : '￥'+fmt(dashData.stock.cost) }}</div></div>
-            <div class="stat-card gold clickable" @click="go('sales')"><div class="stat-label">{{ t('kpi.today') }}<span class="stat-hint">›</span></div><div class="stat-value">￥{{ fmt(dashData.todaySales.amount) }}</div><div class="stat-sub">{{ dashData.todaySales.count }} {{ t('dash.bills') }}<span v-if="dashData.todaySales.momPct != null" class="pct" :class="pctCls(dashData.todaySales.momPct)"> · {{ t('dash.mom') }} {{ pctLabel(dashData.todaySales.momPct) }}</span></div></div>
-            <div class="stat-card blue clickable" @click="go('sales')"><div class="stat-label">{{ t('kpi.month') }}<span class="stat-hint">›</span></div><div class="stat-value">￥{{ fmt(dashData.monthSales.amount) }}</div><div class="stat-sub"><span v-if="dashData.monthSales.momPct != null" class="pct" :class="pctCls(dashData.monthSales.momPct)">{{ t('dash.mom') }} {{ pctLabel(dashData.monthSales.momPct) }}</span><span v-if="dashData.monthSales.yoyPct != null" class="pct" :class="pctCls(dashData.monthSales.yoyPct)"> · {{ t('dash.yoy') }} {{ pctLabel(dashData.monthSales.yoyPct) }}</span></div></div>
-            <div class="stat-card green clickable" @click="go('deposits')"><div class="stat-label">{{ t('kpi.due') }}<span class="stat-hint">›</span></div><div class="stat-value">￥{{ fmt(dashData.depositPending.amount) }}</div></div>
+          <!-- 时间范围工具栏 -->
+          <div class="range-bar">
+            <div class="range-tabs">
+              <button class="range-tab" :class="{on: dashRange.mode==='today'}" @click="setDashRange('today')">{{ t('dash.today') }}</button>
+              <button class="range-tab" :class="{on: dashRange.mode==='week'}" @click="setDashRange('week')">{{ t('dash.week') }}</button>
+              <button class="range-tab" :class="{on: dashRange.mode==='month'}" @click="setDashRange('month')">{{ t('dash.month') }}</button>
+              <button class="range-tab" :class="{on: dashRange.mode==='custom'}" @click="dashRange.mode='custom'">{{ t('dash.custom') }}</button>
+            </div>
+            <div class="range-custom" v-if="dashRange.mode==='custom'">
+              <input type="date" v-model="dashRange.start"> <span class="range-to">~</span> <input type="date" v-model="dashRange.end">
+              <button class="btn btn-sm btn-gold" @click="applyDashCustomRange">{{ t('dash.query') }}</button>
+            </div>
+            <div class="range-cur" v-else>{{ dashRange.curStart }} ~ {{ dashRange.curEnd }}</div>
+          </div>
+          <div class="stats-grid dash-kpi" v-if="dashData && dashData.rangeData">
+            <div class="stat-card gold clickable" @click="go('sales')"><div class="stat-label">{{ t('dash.rangeSales') }}<span class="stat-hint">›</span></div><div class="stat-value">￥{{ fmt(dashData.rangeData.sales.amount) }}</div><div class="stat-sub">{{ dashData.rangeData.sales.count }} {{ t('dash.bills') }} · {{ t('dash.avg') }} ￥{{ fmt(dashData.rangeData.sales.avg) }}<span v-if="dashData.rangeData.sales.momPct != null" class="pct" :class="pctCls(dashData.rangeData.sales.momPct)"> · {{ t('dash.mom') }} {{ pctLabel(dashData.rangeData.sales.momPct) }}</span><span v-if="dashData.rangeData.sales.yoyPct != null" class="pct" :class="pctCls(dashData.rangeData.sales.yoyPct)"> · {{ t('dash.yoy') }} {{ pctLabel(dashData.rangeData.sales.yoyPct) }}</span></div></div>
+            <div class="stat-card clickable" @click="go('inventory')"><div class="stat-label">{{ t('dash.rangeMove') }}<span class="stat-hint">›</span></div><div class="stat-value"><span class="mv-in">+{{ dashData.rangeData.stockIn.qty }}</span><span class="mv-sep">/</span><span class="mv-out">-{{ dashData.rangeData.stockOut.qty }}</span></div><div class="stat-sub" :class="{'cell-secret':!isCostVisible()}">{{ t('dash.onhand') }} {{ dashData.stock.count }} · {{ t('dash.cost') }} {{ dashData.stock.cost==null ? '***' : '￥'+fmt(dashData.stock.cost) }}</div></div>
+            <div class="stat-card green clickable" @click="go('deposits')"><div class="stat-label">{{ t('dash.rangeDue') }}<span class="stat-hint">›</span></div><div class="stat-value">￥{{ fmt(dashData.rangeData.depositPending.amount) }}</div><div class="stat-sub">{{ dashData.rangeData.depositPending.count }} {{ t('dash.depBills') }}</div></div>
+            <div class="stat-card blue clickable" @click="openSubView('customers')"><div class="stat-label">{{ t('dash.rangeCustDue') }}</div><div class="stat-value">￥{{ fmt(dashData.rangeData.customerDue.amount) }}</div></div>
+          </div>
+          <div class="section">
+            <div class="section-title"><span class="dot"></span>{{ t('kpi.quick') }}</div>
+            <div class="quick-grid">
+              <div class="quick-item" @click="go('products')"><div class="quick-icon wine">💎</div><div class="quick-label">{{ t('q.products') }}</div></div>
+              <div class="quick-item" @click="go('inventory')"><div class="quick-icon gold">📦</div><div class="quick-label">{{ t('q.inventory') }}</div></div>
+              <div class="quick-item" @click="go('sales')"><div class="quick-icon blue">🧾</div><div class="quick-label">{{ t('q.sales') }}</div></div>
+              <div class="quick-item" @click="go('deposits')"><div class="quick-icon green">💰</div><div class="quick-label">{{ t('q.deposits') }}</div></div>
+              <div class="quick-item" @click="openSubView('loans')"><div class="quick-icon orange">📥</div><div class="quick-label">{{ t('q.loans') }}</div></div>
+              <div class="quick-item" @click="openSubView('repairs')"><div class="quick-icon wine">🔧</div><div class="quick-label">{{ t('q.repairs') }}</div></div>
+              <div class="quick-item" @click="openSubView('customers')"><div class="quick-icon gold">👥</div><div class="quick-label">{{ t('q.customers') }}</div></div>
+              <div class="quick-item" @click="openSubView('logs')"><div class="quick-icon blue">📋</div><div class="quick-label">{{ t('q.logs') }}</div></div>
+            </div>
           </div>
           <div class="dash-row">
           <div class="mini-chart" v-if="trendData && trendData.months && trendData.months.length">
@@ -147,6 +174,7 @@
             </div>
           </div>
           </div>
+          <div class="dash-pair" v-if="remindData || (dashData && dashData.recentSales && dashData.recentSales.length)">
           <div class="reminder-section" v-if="remindData">
             <div class="reminder-head" @click="showRemind=!showRemind"><span>🕐 {{ t('kpi.todo') }}</span><span class="badge">{{ todoCount }}</span></div>
             <div class="reminder-body" v-if="showRemind">
@@ -156,27 +184,23 @@
               <div class="reminder-empty" v-if="!todoCount">{{ t('empty.todo') }}</div>
             </div>
           </div>
-          <div class="section" v-if="!isPc">
-            <div class="section-title"><span class="dot"></span>{{ t('kpi.quick') }}</div>
-            <div class="quick-grid">
-              <div class="quick-item" @click="go('products')"><div class="quick-icon wine">💎</div><div class="quick-label">{{ t('q.products') }}</div></div>
-              <div class="quick-item" @click="go('inventory')"><div class="quick-icon gold">📦</div><div class="quick-label">{{ t('q.inventory') }}</div></div>
-              <div class="quick-item" @click="go('sales')"><div class="quick-icon blue">🧾</div><div class="quick-label">{{ t('q.sales') }}</div></div>
-              <div class="quick-item" @click="go('deposits')"><div class="quick-icon green">💰</div><div class="quick-label">{{ t('q.deposits') }}</div></div>
-              <div class="quick-item" @click="openSubView('loans')"><div class="quick-icon orange">📥</div><div class="quick-label">{{ t('q.loans') }}</div></div>
-              <div class="quick-item" @click="openSubView('repairs')"><div class="quick-icon wine">🔧</div><div class="quick-label">{{ t('q.repairs') }}</div></div>
-              <div class="quick-item" @click="openSubView('customers')"><div class="quick-icon gold">👥</div><div class="quick-label">{{ t('q.customers') }}</div></div>
-              <div class="quick-item" @click="openSubView('logs')"><div class="quick-icon blue">📋</div><div class="quick-label">{{ t('q.logs') }}</div></div>
-            </div>
-          </div>
-          <div class="section" v-if="dashData && dashData.recentSales && dashData.recentSales.length">
+          <div class="section recent-section" v-if="dashData && dashData.recentSales && dashData.recentSales.length">
             <div class="section-title"><span class="dot"></span>{{ t('kpi.recent') }}</div>
             <div class="card-list">
               <div class="card-item sale-card" v-for="s in dashData.recentSales" :key="s.bill_no">
                 <div class="sale-top"><span class="sale-no">{{ s.bill_no }}</span><span class="sale-amount">￥{{ fmt(s.amount) }}</span></div>
                 <div class="sale-info">{{ s.customer }} · {{ methodText(s.method) }} · {{ s.biz_date }} · {{ statusText(s.status) }}</div>
+                <div class="sale-items" v-if="s.items && s.items.length">
+                  <div class="sale-item-row" v-for="(it,ii) in s.items" :key="ii">
+                    <span class="si-name">{{ it.name }}</span>
+                    <span class="si-meta" v-if="it.pricing_mode==='weight'">{{ it.weight }}g · ￥{{ fmt(it.labor_fee) }}</span>
+                    <span class="si-meta" v-else-if="it.price">￥{{ fmt(it.price) }}</span>
+                    <span class="si-sub">￥{{ fmt(it.subtotal) }}</span>
+                  </div>
+                </div>
               </div>
             </div>
+          </div>
           </div>
         </section>
 
@@ -640,7 +664,10 @@
           <div class="card-grid">
             <div class="card-item deposit-card clickable" v-for="d in deposits" :key="d.id" @click="openRecordDetail('deposits', d)">
               <div class="dep-row"><div class="dep-customer">{{ d.customer }}<span class="dep-phone" v-if="d.phone">· {{ d.phone }}</span></div><div class="dep-amounts"><div class="dep-total">￥{{ fmt(d.total) }}</div><div class="dep-detail">{{ t('dep.paid') }} ￥{{ fmt(d.deposit) }} / {{ t('lbl.balance') }} ￥{{ fmt(d.balance) }}</div></div></div>
-              <div class="dep-product">{{ d.product }} · {{ d.promised_date }}</div>
+              <div class="dep-prod-row">
+                <img v-if="d.has_image && d.product_id" class="dep-thumb" :src="productImageUrl({id:d.product_id, image_ts:d.image_ts})" :alt="d.product" loading="lazy" @error="$event.target.style.display='none'">
+                <div class="dep-product">{{ d.product }} · {{ d.promised_date }}</div>
+              </div>
               <div class="dep-req" v-if="d.delivery_time || d.deliver_requirements">
                 <span v-if="d.delivery_time" class="dep-req-item">⏰ {{ d.delivery_time }}</span>
                 <span v-if="d.deliver_requirements" class="dep-req-item">📝 {{ d.deliver_requirements }}</span>
@@ -1075,17 +1102,6 @@
               <button class="btn btn-gold" @click="saveType">{{ typeEditMode==='edit'?t('cat.saveEdit'):t('type.addNew') }}</button>
               <button class="btn btn-outline" v-if="typeEditMode==='edit'" @click="resetTypeEdit" style="margin-left:8px">{{ t('act.cancel') }}</button>
             </div>
-
-            <div class="card-title" style="margin-top:16px">{{ t('tpl.title') }} <button class="btn btn-sm btn-gold" style="margin-left:8px" @click="openTplDesigner(null)">{{ t('tpl.new') }}</button></div>
-            <table class="data-table" style="margin-bottom:12px" v-if="labelTemplates.length">
-              <tbody>
-                <tr v-for="tp in labelTemplates" :key="tp.id">
-                  <td><b>{{ tp.name }}</b></td>
-                  <td class="mono">{{ tp.size_width }}×{{ tp.size_height }}mm</td>
-                  <td><button class="btn-small" @click="openTplDesigner(tp)">{{ t('tpl.design') }}</button> <button class="btn-small btn-danger" @click="delTemplate(tp.id)">{{ t('act.del') }}</button></td>
-                </tr>
-              </tbody>
-            </table>
           </div>
         </section>
 
@@ -1677,48 +1693,10 @@ Content-Type: application/json
           </div>
           </div>
 
-          <!-- 商品品类管理（企业整体级，仅总店；戒指/项链…，标签模板按品类绑定） -->
-          <div v-if="adminSub==='categories' && isHqStore()">
+          <!-- 标签打印模板（企业整体级，仅总店；品类绑定在「总部管理」品类表中操作） -->
+          <div v-if="adminSub==='tpl' && isHqStore()">
           <div class="card-item">
-            <div class="card-title">{{ t('type.mgrTitle') }}</div>
-            <table class="data-table" style="margin-bottom:12px">
-              <thead><tr><th>{{ t('lbl.code') }}</th><th>{{ t('cat.name') }}</th><th>{{ t('cat.sort') }}</th><th>{{ t('type.pricingMode') }}</th><th>{{ t('tpl.boundTpl') }}</th><th>{{ t('common.op') }}</th></tr></thead>
-              <tbody>
-                <tr v-for="o in typeList" :key="o.code">
-                  <td class="mono">{{ o.code }}</td>
-                  <td>{{ catNameOf(o) }}</td>
-                  <td>{{ o.sort_order }}</td>
-                  <td><span class="tag" :class="o.pricing_mode==='weight'?'tag-gold':'tag-stock'">{{ o.pricing_mode==='weight' ? t('type.modeWeight') : t('type.modePiece') }}</span></td>
-                  <td>
-                    <select :value="o.label_template_id||''" @change="bindTypeTemplate(o.code, $event.target.value?+$event.target.value:null)">
-                      <option value="">{{ t('tpl.none') }}</option>
-                      <option v-for="tp in labelTemplates" :key="tp.id" :value="tp.id">{{ tp.name }}</option>
-                    </select>
-                  </td>
-                  <td><button class="btn-small" :class="{'btn-gold': typeEditMode==='edit' && typeEdit.code===o.code}" @click="(typeEditMode==='edit' && typeEdit.code===o.code) ? resetTypeEdit() : editType(o)">{{ (typeEditMode==='edit' && typeEdit.code===o.code) ? '取消' : t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delType(o.code)">{{ t('act.del') }}</button></td>
-                </tr>
-              </tbody>
-            </table>
-            <div id="type-edit-form" style="margin-top:10px;padding:10px;border:1px solid #eee;border-radius:6px">
-              <div class="form-row">
-                <div class="form-group"><label>{{ t('lbl.code') }}</label><input v-model="typeEdit.code" :disabled="typeEditMode==='edit'" :placeholder="t('type.codePh')"></div>
-                <div class="form-group"><label>{{ t('cat.zhName') }}</label><input v-model="typeEdit.names.zh" :placeholder="t('type.namePh')"></div>
-                <div class="form-group"><label>{{ t('cat.enName') }}</label><input v-model="typeEdit.names.en" placeholder="Ring"></div>
-                <div class="form-group"><label>Italiano</label><input v-model="typeEdit.names.it" placeholder="Anello"></div>
-                <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="typeEdit.sort_order" type="number"></div>
-                <div class="form-group"><label>{{ t('type.pricingMode') }}</label>
-                  <select v-model="typeEdit.pricing_mode">
-                    <option value="piece">{{ t('type.modePiece') }}</option>
-                    <option value="weight">{{ t('type.modeWeight') }}</option>
-                  </select>
-                </div>
-              </div>
-              <div style="display:flex;gap:8px">
-                <button class="btn btn-gold" @click="saveType">{{ typeEditMode==='edit' ? t('cat.saveEdit') : t('type.addNew') }}</button>
-                <button class="btn btn-outline" v-if="typeEditMode==='edit'" @click="resetTypeEdit">{{ t('act.cancel') }}</button>
-              </div>
-            </div>
-            <div class="card-title" style="margin-top:16px">{{ t('tpl.title') }} <button class="btn btn-sm btn-gold" style="margin-left:8px" @click="openTplDesigner(null)">{{ t('tpl.new') }}</button></div>
+            <div class="card-title">{{ t('tpl.title') }} <button class="btn btn-sm btn-gold" style="margin-left:8px" @click="openTplDesigner(null)">{{ t('tpl.new') }}</button></div>
             <table class="data-table" style="margin-bottom:12px" v-if="labelTemplates.length">
               <thead><tr><th>{{ t('tpl.name') }}</th><th>{{ t('tpl.size') }}</th><th>{{ t('common.op') }}</th></tr></thead>
               <tbody>
@@ -1876,7 +1854,7 @@ Content-Type: application/json
   </div>
 
   <div class="sheet-mask" :class="{show:sheetMode, pc:isPc}" @click.self="closeSheet">
-    <div class="sheet" :class="{'sheet-wide':sheetMode==='sale'}" @click.stop>
+    <div class="sheet" :class="{'sheet-wide':sheetMode==='sale'||sheetMode==='deposit'}" @click.stop>
       <div class="sheet-head"><span class="sheet-title">{{ sheetTitle }}</span><button class="sheet-close" @click="closeSheet">×</button></div>
       <div class="sheet-body">
         <template v-if="sheetMode==='sale'">
@@ -2084,17 +2062,24 @@ Content-Type: application/json
           <div class="check-row" v-if="sheetMode==='product'"><label><input type="checkbox" v-model="sheetData.high_value" :true-value="1" :false-value="0"> {{ t('form.hvHint') }}</label></div>
         </template>
         <template v-if="sheetMode==='deposit'">
-          <div class="form-row"><div class="form-group"><label>{{ t('lbl.customer') }}</label><input v-model="sheetData.customer"></div><div class="form-group"><label>{{ t('lbl.phone') }}</label><input v-model="sheetData.phone"></div></div>
-          <div class="form-group"><label>{{ t('dep.lockHint') }}</label>
-            <select v-model="sheetData.product_id" @change="onPickProduct"><option :value="null">{{ t('dep.noStock') }}</option>
-              <option v-for="p in stockOptions" :key="p.id" :value="p.id">{{ p.code }} {{ p.name }}</option></select>
-          </div>
-          <div class="form-group"><label>{{ t('lbl.product') }}</label><input v-model="sheetData.product"></div>
-          <div class="form-row"><div class="form-group"><label>{{ t('lbl.total') }}</label><input v-model.number="sheetData.total" type="number" @input="sheetData.balance=(sheetData.total||0)-(sheetData.deposit||0)"></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.customer') }}</label><input v-model="sheetData.customer"></div><div class="form-group"><label>{{ t('lbl.phone') }}</label><input v-model="sheetData.phone"></div>
+            <div class="form-group"><label>{{ t('dep.lockHint') }}</label>
+              <select v-model="sheetData.product_id" @change="onPickProduct"><option :value="null">{{ t('dep.noStock') }}</option>
+                <option v-for="p in stockOptions" :key="p.id" :value="p.id">{{ p.code }} {{ p.name }}</option></select>
+            </div></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.product') }}</label>
+            <div class="scan-anchor">
+              <input v-model="sheetData.product" @keyup.enter="applyDepositScan(sheetData.product)" :placeholder="t('dep.scanPh')">
+              <span class="scan-icons">
+                <button type="button" class="si-btn" :class="{on:anchorCoopActive('deposit')}" @click="anchorCoop('deposit',$event)" :title="t('anchor.coopTitle')">📱</button>
+                <button type="button" class="si-btn" @click="anchorCamera('deposit',$event)" :title="t('anchor.camTitle')">⤢</button>
+              </span>
+            </div></div>
+            <div class="form-group"><label>{{ t('lbl.total') }}</label><input v-model.number="sheetData.total" type="number" @input="sheetData.balance=(sheetData.total||0)-(sheetData.deposit||0)"></div>
             <div class="form-group"><label>{{ t('lbl.deposit') }}</label><input v-model.number="sheetData.deposit" type="number" @input="sheetData.balance=(sheetData.total||0)-(sheetData.deposit||0)"></div></div>
-          <div class="form-row"><div class="form-group"><label>{{ t('lbl.balance') }}</label><input :value="sheetData.balance" readonly></div><div class="form-group"><label>{{ t('lbl.promisedDate') }}</label><input v-model="sheetData.promised_date" type="date"></div></div>
-          <div class="form-row"><div class="form-group"><label>{{ t('dep.deliveryTime') }}</label><input v-model="sheetData.delivery_time" placeholder="{{ t('dep.deliveryTimePh') }}"></div><div class="form-group"><label>{{ t('dep.remindDays') }}</label><input v-model.number="sheetData.reminder_days" type="number" min="0" max="30"></div></div>
-          <div class="form-group"><label>{{ t('dep.requirements') }}</label><textarea v-model="sheetData.deliver_requirements" rows="2" placeholder="{{ t('dep.requirementsPh') }}"></textarea></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.balance') }}</label><input :value="sheetData.balance" readonly></div><div class="form-group"><label>{{ t('lbl.promisedDate') }}</label><input v-model="sheetData.promised_date" type="date"></div><div class="form-group"><label>{{ t('dep.remindDays') }}</label><input v-model.number="sheetData.reminder_days" type="number" min="0" max="30"></div></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('dep.deliveryTime') }}</label><input v-model="sheetData.delivery_time" :placeholder="t('dep.deliveryTimePh')"></div></div>
+          <div class="form-group"><label>{{ t('dep.requirements') }}</label><textarea v-model="sheetData.deliver_requirements" rows="2" :placeholder="t('dep.requirementsPh')"></textarea></div>
         </template>
         <template v-if="sheetMode==='loan'">
           <div class="form-group"><label>{{ t('lbl.direction') }}</label><select v-model="sheetData.direction"><option value="out">{{ t('lbl.out') }}</option><option value="in">{{ t('lbl.in') }}</option></select></div>
