@@ -2539,7 +2539,9 @@ def transfer_create(body: TransferIn, request: Request):
         for p in prods:
             _inv(conn, p["id"], p["rfid_epc"], "transfer_out", op["username"], store_id=sid)
         conn.commit()
-        _log(conn, op["username"], "调拨发出", f"{no}（{len(ids)}件）")
+        _names = [p["name"] or p["code"] for p in prods]
+        _detail = "、".join(_names[:10]) + ("…" if len(_names) > 10 else "")
+        _log(conn, op["username"], "调拨发出", f"{no}（{len(ids)}件：{_detail}）")
         return {"id": tid, "transfer_no": no}
 
 
@@ -2643,6 +2645,7 @@ def transfer_receive(tid: int, body: TransferReceiveIn, request: Request):
                 raise HTTPException(400, f"商品 {i['product_name']} 标记不符时必须填写原因")
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         matched = diff = 0
+        matched_names, diff_names = [], []
         for i in db_items:
             d = decisions[i["product_id"]]
             if d.ok:
@@ -2656,6 +2659,7 @@ def transfer_receive(tid: int, body: TransferReceiveIn, request: Request):
                     (now, i["id"]))
                 _inv(conn, i["product_id"], i["epc"], "transfer_in", op["username"])
                 matched += 1
+                matched_names.append(i["product_name"] or str(i["product_id"]))
             else:
                 cur = conn.execute(
                     "UPDATE products SET status='在库' WHERE id=? AND status='在途'",
@@ -2667,13 +2671,17 @@ def transfer_receive(tid: int, body: TransferReceiveIn, request: Request):
                     ((d.reason or "").strip()[:100], now, i["id"]))
                 _inv(conn, i["product_id"], i["epc"], "transfer_back", op["username"])
                 diff += 1
+                diff_names.append(i["product_name"] or str(i["product_id"]))
         new_status = "已完成" if diff == 0 else "部分完成"
         conn.execute(
             "UPDATE transfers SET status=?, matched_count=?, diff_count=?, received_by=?, received_at=? WHERE id=?",
             (new_status, matched, diff, op["username"], now, tid))
         conn.commit()
+        _m = "、".join(matched_names[:10]) + ("…" if len(matched_names) > 10 else "")
+        _d = "、".join(diff_names[:10]) + ("…" if len(diff_names) > 10 else "")
         _log(conn, op["username"], "调拨验收",
-             f"{t['transfer_no']} 相符{matched}件" + (f" 不符{diff}件" if diff else ""))
+             f"{t['transfer_no']} 相符{matched}件" + (f"（{_m}）" if _m else "")
+             + (f" 不符{diff}件（{_d}）" if diff else ""))
         return {"id": tid, "status": new_status, "matched": matched, "diff": diff}
 
 

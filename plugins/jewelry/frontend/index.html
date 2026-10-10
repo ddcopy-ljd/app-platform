@@ -137,7 +137,7 @@
             <div class="stat-card green clickable" @click="go('deposits')"><div class="stat-label">{{ t('dash.rangeDue') }}<span class="stat-hint">›</span></div><div class="stat-value">￥{{ fmt(dashData.rangeData.depositPending.amount) }}</div><div class="stat-sub">{{ dashData.rangeData.depositPending.count }} {{ t('dash.depBills') }}</div></div>
             <div class="stat-card blue clickable" @click="openSubView('customers')"><div class="stat-label">{{ t('dash.rangeCustDue') }}</div><div class="stat-value">￥{{ fmt(dashData.rangeData.customerDue.amount) }}</div></div>
           </div>
-          <div class="section">
+          <div class="section" v-if="!isPc">
             <div class="section-title"><span class="dot"></span>{{ t('kpi.quick') }}</div>
             <div class="quick-grid">
               <div class="quick-item" @click="go('products')"><div class="quick-icon wine">💎</div><div class="quick-label">{{ t('q.products') }}</div></div>
@@ -1299,10 +1299,14 @@
 
         <!-- ================= 系统管理子导航（始终置顶，先于各子视图内容渲染） ================= -->
         <section v-if="tab==='system'">
-          <div class="admin-subnav" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <div class="admin-subnav" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
             <button v-for="s in adminSubs" :key="s.key" class="btn btn-sm"
                     :class="adminSub===s.key ? 'btn-gold' : 'btn-outline'"
                     @click="switchAdminSub(s.key)">{{ s.icon }} {{ s.label }}</button>
+            <span style="margin-left:auto;display:flex;gap:14px">
+              <a class="login-dl-link" :href="dlUrl('/api/scan-app/download')" download>📱 {{ t('login.scanApp') }}</a>
+              <a class="login-dl-link" :href="dlUrl('/api/print-agent/download')" download>🖨 {{ t('login.printAgent') }}</a>
+            </span>
           </div>
         </section>
 

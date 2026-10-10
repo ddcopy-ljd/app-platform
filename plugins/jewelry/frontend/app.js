@@ -4269,6 +4269,8 @@ var app = Vue.createApp({
       if (!ST.secRawFilter) return ST.secEvents || [];
       return (ST.secEvents || []).filter(function (e) { return e.event_type === ST.secRawFilter; });
     },
+    // 详情面板字段表：依赖 ST.detailKind/ST.sheetData，必须是 computed（曾误注册进 methods，模板 v-for 取到函数导致内容恒为空）
+    detailRows: detailRows,
   },
   methods: {
     go: go, switchAdminSub: switchAdminSub, goInvStatus: goInvStatus, clearInvStatusFilter: clearInvStatusFilter,
@@ -4392,7 +4394,7 @@ var app = Vue.createApp({
     openCustomer: openCustomer, editCustomer: editCustomer, viewCustomer: viewCustomer, subBack: subBack,
     setAppt: setAppt, saveProfile: saveProfile, exportLogs: exportLogs,
     recordLines: recordLines, recordKind: recordKind, statusClass: statusClass, logText: logText,
-    openRecordDetail: openRecordDetail, detailRows: detailRows, editFromDetail: editFromDetail,
+    openRecordDetail: openRecordDetail, editFromDetail: editFromDetail,
     loadAppt: loadAppt, loadProfile: loadProfile,
     // 标签模板设计器
     openTplDesigner: openTplDesigner, closeTplDesigner: closeTplDesigner,

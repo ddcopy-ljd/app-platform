@@ -191,4 +191,18 @@
 - **实现**：`logText(list)` 把每条日志拼成一行（时间 · 操作人 · 动作 · 门店 · 对象 · 结果），整体渲染进 `.log-plain`（`white-space:pre-line; user-select:text`）。
 - **验证方法**：PC 系统管理-操作日志与移动端日志子页均无 `.rec-card`，`.log-plain` 存在且行数=日志数，computed `userSelect==='text'`。
 
+## TC-27 详情弹层字段表恒空：detailRows 误注册进 methods（1.2.15）
+
+- **问题现象**：维修管理等卡片点开详情只显示进度时间线，没有维修内容字段表（`.detail-row` 数量=0）。
+- **根因**：`detailRows` 是普通函数却注册在 `methods` 里，模板 `v-for="r in detailRows"`（无括号）取到的是函数本身而非返回值，v-for 遍历函数渲染 0 行。
+- **教训**：模板以属性方式使用的取值函数必须注册进 `computed`，不能放 `methods`（methods 必须 `()` 调用）。
+- **验证方法**：真实点击维修卡片，`.repair-steps .step`>0 且 `.detail-row`>=5，字段表含「维修物品/问题描述/技师/状态」等。
+
+## TC-28 调拨审计日志必须带商品明细（1.2.15）
+
+- **需求**：`调拨发出/调拨验收` 日志不能只记单号+件数，必须带商品名清单。
+- **实现**：`_log` target 改为 `单号（N件：名1、名2…）`，超 10 件截断加 `…`；验收分列相符/不符明细。
+- **验证方法**：走一次发出+验收 API，`operate_logs.target` 含商品名；前端 `.log-plain` 行内可见明细。
+
+
 
