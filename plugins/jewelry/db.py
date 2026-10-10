@@ -1400,6 +1400,9 @@ def ensure_new_seeds(conn: sqlite3.Connection) -> None:
                 ("分店门口EAS天线", 2, "门口", "EAS-GATE", 1),
             ],
         )
+    # —— sales / sale_items / sale_payments ——
+    # 幂等策略：COUNT=0 → 全新 seed；COUNT≤5 且无本月数据 → 视为老 seed 过旧，清掉重 seed；>5 条（真实业务数据）→ 不动
+    _ensure_sales_seed(conn)
     # —— sales 对应的 sale_items + sale_payments 明细 ——
     _ensure_sale_details(conn)
     # —— 销售相关的 inventory_logs（销售出库）——
@@ -1481,6 +1484,51 @@ def _ensure_user_store_grants(conn: sqlite3.Connection) -> None:
             "INSERT OR IGNORE INTO user_stores(user_id,store_id,granted_by) VALUES(?,?,?)",
             (staff["id"], stores[0]["id"], "init_seed"),
         )
+
+
+# sales 种子数据（seed_demo 和 ensure_new_seeds 共用，保证 dashboard 趋势图/品类占比有值）
+# 时间覆盖近 12 个月窗口，product_id 正确关联 products 表
+_SEED_SALES_ROWS = [
+    # 2025 年（同比基准，当前 2026-10 看正好 -1 年）
+    ("XS20251008001", "陈先生", "13700008888", "钻石耳钉", 2, 4280, 4280, "微信", "2025-10-08", "普通", "已完成"),
+    ("XS20251115001", "王晓丽", "13800001111", "足金手镯", 1, 21800, 21800, "现金", "2025-11-15", "普通", "已完成"),
+    ("XS20251220001", "赵女士", "13900007777", "翡翠吊坠", 3, 8600, 8600, "刷卡", "2025-12-20", "普通", "已完成"),
+    # 2026 年 1-9 月（趋势图 12 个月窗口内）
+    ("XS20260105001", "张美凤", "13700003333", "银质对戒", 7, 1280, 1280, "现金", "2026-01-05", "普通", "已完成"),
+    ("XS20260210001", "李强", "13900002222", "蓝宝石戒指", 9, 10800, 10800, "微信", "2026-02-10", "普通", "已完成"),
+    ("XS20260318001", "赵明辉", "13600004444", "古法金手串", 8, 32600, 32600, "刷卡", "2026-03-18", "普通", "已完成"),
+    ("XS20260422001", "刘女士", "13500009999", "祖母绿锁骨链", 9, 12800, 12800, "微信", "2026-04-22", "普通", "已完成"),
+    ("XS20260501001", "王晓丽", "13800001111", "铂金项链", 4, 8900, 8900, "现金", "2026-05-01", "普通", "已完成"),
+    ("XS20260618001", "孙先生", "13400006666", "红碧玺戒指", 5, 5600, 5600, "微信", "2026-06-18", "普通", "已完成"),
+    ("XS20260707001", "周女士", "13300005555", "和田玉平安扣", 10, 7800, 7800, "刷卡", "2026-07-07", "普通", "已完成"),
+    ("XS20260815001", "李强", "13900002222", "钻石耳钉", 2, 4280, 4280, "微信", "2026-08-15", "普通", "已完成"),
+    ("XS20260920001", "王晓丽", "13800001111", "足金手镯", 1, 21800, 21800, "现金", "2026-09-20", "普通", "已完成"),
+    # 本月（KPI 今日/本月/环比）
+    ("XS20261008001", "李雪", "13500005555", "翡翠吊坠", 3, 8600, 8600, "刷卡", "2026-10-08", "普通", "已完成"),
+    ("XS20261010001", "王女士", "13200004444", "古法金手串", 8, 32600, 32600, "微信", "2026-10-10", "普通", "已完成"),
+]
+
+
+def _ensure_sales_seed(conn: sqlite3.Connection) -> None:
+    """幂等 sales 种子：全新库直接 seed；老库若 COUNT≤5 且无本月数据 → 视为旧 seed 清掉重灌。"""
+    n = conn.execute("SELECT COUNT(*) c FROM sales").fetchone()["c"]
+    if n > 5:
+        return  # 已有较多真实销售数据，不动
+    # 检查本月数据
+    cur_month = conn.execute(
+        "SELECT COUNT(*) c FROM sales WHERE biz_date >= date('now','start of month','localtime')"
+    ).fetchone()["c"]
+    if n > 0 and cur_month > 0:
+        return  # 已有本月数据，视为真实，不动
+    # 清掉老 sales + 关联明细
+    conn.execute("DELETE FROM sale_payments WHERE sale_id IN (SELECT id FROM sales)")
+    conn.execute("DELETE FROM sale_items WHERE sale_id IN (SELECT id FROM sales)")
+    conn.execute("DELETE FROM sales")
+    # INSERT 新 seed
+    conn.executemany(
+        "INSERT INTO sales(bill_no,customer,phone,product,product_id,amount,paid,method,biz_date,type,status) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        _SEED_SALES_ROWS,
+    )
 
 
 def _ensure_sale_details(conn: sqlite3.Connection) -> None:
@@ -1645,16 +1693,8 @@ def seed_demo(conn: sqlite3.Connection) -> None:
     conn.executemany("INSERT INTO customers(name,phone,level,total_amount,due_amount,birthday,preference) VALUES(?,?,?,?,?,?,?)", customers)
 
     now = "date('now','localtime')"
-    sales = [
-        ("XS20260101001", "王晓丽", "13800001111", "足金手镯", None, 21800, 21800, "现金", "2026-01-01", "普通", "已完成"),
-        ("XS20260102001", "李强", "13900002222", "钻石耳钉", None, 4280, 4280, "微信", "2026-01-02", "普通", "已完成"),
-        ("XS20260103001", "张美凤", "13700003333", "翡翠吊坠", None, 8600, 8600, "刷卡", "2026-01-03", "普通", "已完成"),
-    ]
-    conn.executemany(
-        "INSERT INTO sales(bill_no,customer,phone,product,product_id,amount,paid,method,biz_date,type,status) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-        sales,
-    )
-    # —— sales 对应的 sale_items + sale_payments 明细 ——
+    # —— sales / sale_items / sale_payments（共用 _ensure_sales_seed，保证 dashboard 趋势图/品类占比全覆盖）——
+    _ensure_sales_seed(conn)
     _ensure_sale_details(conn)
     conn.commit()  # 让 products 插入在 SELECT sale_items 前可见
     # —— customers ——

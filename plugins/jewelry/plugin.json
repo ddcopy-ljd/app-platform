@@ -16,7 +16,7 @@
     "企业网站与到店预约",
     "智能安防（RFID/EAS 防盗设备接入与离店告警）"
   ],
-  "softwareVersion": "1.2.10.261010",
+  "softwareVersion": "1.2.11.261010",
   "dataVersion": "1.2.0",
   "scripts": {
     "init": "scripts/init.py",
