@@ -23,6 +23,7 @@ var ST = Vue.reactive({
   token: '', user: null, mode: 'NORMAL', tenant: '', version: '',
   softName: '懿臻珠宝云',   // 软件名：启动时从 /api/health 拉取（源自 plugin.json），此处仅为兜底
   tab: 'dashboard', subView: '', adminSub: 'epc',
+  custDetail: null,   // 客户档案详情（必须放 ST 内才响应式；曾是模块级 var 导致 PC 详情空白）
   isPc: isPcLayout(),
   // 列表排序状态：{ 表key: { key: 排序列, dir: 1升/-1降 } }
   tblSort: { products: { key: '', dir: 1 }, stock: { key: '', dir: 1 } },
@@ -561,6 +562,7 @@ function manageStores() {
 
 function subTitle() {
   var lang = ST.lang;
+  if (ST.subView === 'customer_detail') return (ST.custDetail && ST.custDetail.name) || '';
   return t(SUB_TITLES[ST.subView] || '');
 }
 
@@ -854,6 +856,15 @@ function recordLines(kind, d) {
     L.push(joinLine([d.want_date ? (t('appt.want') + ' ' + d.want_date + ' ' + (d.want_slot || '')) : '', d.remark]));
   }
   return L.filter(function (s) { return s && String(s).trim(); });
+}
+
+// 操作日志纯文本（一个可选段落，每条一行：时间 · 操作人 · 动作 · 对象 · 结果）
+function logText(list) {
+  return (list || []).map(function (d) {
+    return [d.time, d.operator, d.action, d.store, d.target, d.result]
+      .filter(function (x) { return x !== null && x !== undefined && String(x).trim() !== ''; })
+      .join(' · ');
+  }).join('\n');
 }
 
 // 当前列表类型（PC 走 tab，手机端子页走 subView）
@@ -2584,13 +2595,17 @@ function openCustomer() {
   openSheet('customer', t('sheet.customer'), { name: '', phone: '', level: '普通', birthday: '', preference: '', gold_discount: 1, points: 0 });
 }
 
-var ST_CUST_DETAIL = null;
 function editCustomer(d) { viewCustomer(d); }
+function subBack() {
+  // 客户详情返回到客户列表；其余子视图返回关闭覆盖层
+  if (ST.subView === 'customer_detail') { ST.subView = 'customers'; ST.custDetail = null; }
+  else ST.subView = '';
+}
 function viewCustomer(d) {
   ST.subView = 'customer_detail';
-  ST.subTitle = (d && d.name) || '';
+  ST.custDetail = null;
   api('GET', '/api/customers/' + d.id + '/detail').then(function (r) {
-    ST_CUST_DETAIL = r;
+    ST.custDetail = r;
   }).catch(function (e) { toast(e.message, 'error'); });
 }
 
@@ -4374,9 +4389,9 @@ var app = Vue.createApp({
     openRepair: openRepair, editRepair: editRepair,
     openPurchase: openPurchase, receivePurchase: receivePurchase,
     openOutsource: openOutsource, receiveOut: receiveOut,
-    openCustomer: openCustomer, editCustomer: editCustomer, viewCustomer: viewCustomer,
+    openCustomer: openCustomer, editCustomer: editCustomer, viewCustomer: viewCustomer, subBack: subBack,
     setAppt: setAppt, saveProfile: saveProfile, exportLogs: exportLogs,
-    recordLines: recordLines, recordKind: recordKind, statusClass: statusClass,
+    recordLines: recordLines, recordKind: recordKind, statusClass: statusClass, logText: logText,
     openRecordDetail: openRecordDetail, detailRows: detailRows, editFromDetail: editFromDetail,
     loadAppt: loadAppt, loadProfile: loadProfile,
     // 标签模板设计器

@@ -172,4 +172,23 @@
 - **根因**：`app.js saveDeposit()` 组装 POST /api/deposits 请求体时只带了 customer/phone/product/金额/日期/提醒天数，**漏传 `delivery_time`、`deliver_requirements`**（后端 DepositIn 与 deposits 表均有这两列）；且 `openDeposit()` 的 sheetData 初始对象也缺这两个键。
 - **验证方法**：沙箱写入链路——POST /api/deposits 带两字段 → GET 列表回显 `delivery_time`/`deliver_requirements` 原值 → 冲红清理。sqlite 直连 `PRAGMA table_info(deposits)` 确认列存在。
 
+## TC-24 PC 端看板快捷入口进入列表页空白 + 系统管理日志子页崩溃（1.2.15）
+
+- **问题现象**：PC 宽屏从经营看板点【客户管理】（快捷入口/KPI 卡）后内容区空白；系统管理切「操作日志」子页抛 `ReferenceError: loadLogs is not defined`。移动端正常。
+- **根因**：① PC 内容区 section 以 `tab==='customers'`（loans/repairs/purchases/outsourcings 同理）为渲染条件，而看板入口走 `openSubView()` 只设 `subView` 不设 `tab`，tab 停留 dashboard；移动端靠 `sub-page` 覆盖层（只看 subView）所以不受影响。② `go('system')` 的 logs 分支调用从未定义的 `loadLogs()`。
+- **验证方法**：浏览器控制台执行 `ST.isPc=true; openSubView('customers')` 后 `ST.tab` 应为 `'customers'` 且 `.card-list .cust-item` 数量 > 0；`openSubView('logs')` 应落到 `tab==='system' && adminSub==='logs'` 并渲染日志内容（1.2.15 起为 `.log-plain` 纯文本段落，见 TC-26）；移动端（isPc=false）`openSubView('customers')` 后 `ST.tab` 不应改变。
+
+## TC-25 客户详情空白：模块级 var 不是响应式（1.2.15）
+
+- **问题现象**：客户列表点开某个客户，整页空白（详情和列表都不显示）。
+- **根因**：详情数据存在模块级普通 `var ST_CUST_DETAIL`，不在 `Vue.reactive` 的 ST 内——模板编译为 `_ctx.ST_CUST_DETAIL` 取不到（恒 undefined），详情 section 的 `&& ST_CUST_DETAIL` 永不成立；同时列表 section 因 `subView==='customer_detail'` 被隐藏 → 双空。移动端 sub-page 内更是没有详情渲染块。
+- **教训**：凡被模板引用的状态必须放进 `ST`（Vue.reactive），模块级 var 模板读不到。
+- **验证方法**：真实点击客户卡片（不要只 evaluate 调函数）：PC 端 `.cust-profile` 数量=1 且显示客户名；移动端 `.sub-page .cust-profile`=1；点返回按钮回列表（`.cust-item`>0）。
+
+## TC-26 操作日志改纯文本段落（1.2.15）
+
+- **需求**：日志不用卡片，一个文本多选段落（可拖选复制）。
+- **实现**：`logText(list)` 把每条日志拼成一行（时间 · 操作人 · 动作 · 门店 · 对象 · 结果），整体渲染进 `.log-plain`（`white-space:pre-line; user-select:text`）。
+- **验证方法**：PC 系统管理-操作日志与移动端日志子页均无 `.rec-card`，`.log-plain` 存在且行数=日志数，computed `userSelect==='text'`。
+
 

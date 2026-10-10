@@ -258,6 +258,7 @@ a { text-decoration: none; color: inherit; }
 .deposit-card .dep-product { font-size: 14px; color: var(--text2); margin-top: 2px; }
 .deposit-card .dep-prod-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 .deposit-card .dep-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid #eee; flex-shrink: 0; }
+.log-plain { white-space: pre-line; font-size: 14px; line-height: 1.9; color: var(--text2); background: var(--cream); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; user-select: text; -webkit-user-select: text; max-height: 60vh; overflow-y: auto; font-family: Consolas, Menlo, monospace; }
 .deposit-card .dep-amounts { text-align: right; }
 .deposit-card .dep-total { font-size: 16px; font-weight: 700; color: var(--wine); }
 .deposit-card .dep-detail { font-size: 14px; color: var(--text2); }

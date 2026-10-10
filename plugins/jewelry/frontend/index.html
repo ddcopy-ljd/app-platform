@@ -804,48 +804,48 @@
         </section>
 
         <!-- 会员档案详情子视图 -->
-        <section v-if="tab==='customers' && subView==='customer_detail' && ST_CUST_DETAIL">
+        <section v-if="isPc && tab==='customers' && subView==='customer_detail' && custDetail">
           <div class="page-head">
-            <button class="btn btn-sm btn-ghost" @click="subView=''">← {{ t('nav.back') }}</button>
-            <div class="biz-actions"><button class="btn btn-sm btn-outline" @click="openSheet('customer', t('sheet.customer'), Object.assign({}, ST_CUST_DETAIL))">{{ t('act.edit') }}</button></div>
+            <button class="btn btn-sm btn-ghost" @click="subBack()">← {{ t('nav.back') }}</button>
+            <div class="biz-actions"><button class="btn btn-sm btn-outline" @click="openSheet('customer', t('sheet.customer'), Object.assign({}, custDetail))">{{ t('act.edit') }}</button></div>
           </div>
           <div class="cust-profile">
             <div class="cust-profile-head">
-              <div class="cust-avatar big">{{ (ST_CUST_DETAIL.name||'?')[0] }}</div>
+              <div class="cust-avatar big">{{ (custDetail.name||'?')[0] }}</div>
               <div class="cust-profile-info">
-                <div class="cust-profile-name">{{ ST_CUST_DETAIL.name }} · {{ levelText(ST_CUST_DETAIL.level) }}</div>
-                <div class="cust-profile-phone">{{ ST_CUST_DETAIL.phone }}</div>
+                <div class="cust-profile-name">{{ custDetail.name }} · {{ levelText(custDetail.level) }}</div>
+                <div class="cust-profile-phone">{{ custDetail.phone }}</div>
               </div>
             </div>
             <div class="cust-profile-stats">
-              <div class="cps-item"><div class="cps-val">⭐ {{ fmt(ST_CUST_DETAIL.points || 0) }}</div><div class="cps-lbl">{{ t('cust.points') }}</div></div>
-              <div class="cps-item"><div class="cps-val">￥{{ fmt(ST_CUST_DETAIL.total_amount) }}</div><div class="cps-lbl">{{ t('cust.totalSpent') }}</div></div>
-              <div class="cps-item" v-if="ST_CUST_DETAIL.due_amount"><div class="cps-val">￥{{ fmt(ST_CUST_DETAIL.due_amount) }}</div><div class="cps-lbl">{{ t('dash.due') }}</div></div>
-              <div class="cps-item" v-if="ST_CUST_DETAIL.lastSaleDate"><div class="cps-val">{{ ST_CUST_DETAIL.lastSaleDate }}</div><div class="cps-lbl">{{ t('cust.lastSale') }}</div></div>
+              <div class="cps-item"><div class="cps-val">⭐ {{ fmt(custDetail.points || 0) }}</div><div class="cps-lbl">{{ t('cust.points') }}</div></div>
+              <div class="cps-item"><div class="cps-val">￥{{ fmt(custDetail.total_amount) }}</div><div class="cps-lbl">{{ t('cust.totalSpent') }}</div></div>
+              <div class="cps-item" v-if="custDetail.due_amount"><div class="cps-val">￥{{ fmt(custDetail.due_amount) }}</div><div class="cps-lbl">{{ t('dash.due') }}</div></div>
+              <div class="cps-item" v-if="custDetail.lastSaleDate"><div class="cps-val">{{ custDetail.lastSaleDate }}</div><div class="cps-lbl">{{ t('cust.lastSale') }}</div></div>
             </div>
-            <div class="cust-profile-meta" v-if="ST_CUST_DETAIL.birthday || ST_CUST_DETAIL.preference || (ST_CUST_DETAIL.gold_discount && ST_CUST_DETAIL.gold_discount < 1)">
-              <span v-if="ST_CUST_DETAIL.birthday" class="tag tag-gold">{{ t('dash.birthday') }} {{ ST_CUST_DETAIL.birthday }}</span>
-              <span v-if="ST_CUST_DETAIL.preference" class="tag">{{ ST_CUST_DETAIL.preference }}</span>
-              <span v-if="ST_CUST_DETAIL.gold_discount && ST_CUST_DETAIL.gold_discount < 1" class="tag tag-blue">{{ t('cust.goldDiscount') }} {{ Math.round(ST_CUST_DETAIL.gold_discount*100) }}%</span>
+            <div class="cust-profile-meta" v-if="custDetail.birthday || custDetail.preference || (custDetail.gold_discount && custDetail.gold_discount < 1)">
+              <span v-if="custDetail.birthday" class="tag tag-gold">{{ t('dash.birthday') }} {{ custDetail.birthday }}</span>
+              <span v-if="custDetail.preference" class="tag">{{ custDetail.preference }}</span>
+              <span v-if="custDetail.gold_discount && custDetail.gold_discount < 1" class="tag tag-blue">{{ t('cust.goldDiscount') }} {{ Math.round(custDetail.gold_discount*100) }}%</span>
             </div>
           </div>
 
           <!-- 历史购买（倒序，最近在最上）-->
-          <div class="section-title">{{ t('cust.historySales') }}（{{ ST_CUST_DETAIL.salesCount || 0 }}）</div>
+          <div class="section-title">{{ t('cust.historySales') }}（{{ custDetail.salesCount || 0 }}）</div>
           <div class="card-list">
-            <div class="card-item" v-for="s in ST_CUST_DETAIL.sales" :key="'s'+s.id">
+            <div class="card-item" v-for="s in custDetail.sales" :key="'s'+s.id">
               <div class="history-row">
                 <div class="hr-main"><div class="hr-product">{{ s.product }}</div><div class="hr-meta">{{ s.biz_date }} · {{ s.status }} · {{ s.type || '普通' }}</div></div>
                 <div class="hr-amount">￥{{ fmt(s.amount) }}</div>
               </div>
             </div>
-            <div class="empty" v-if="!ST_CUST_DETAIL.sales.length">{{ t('cust.noSales') }}</div>
+            <div class="empty" v-if="!custDetail.sales.length">{{ t('cust.noSales') }}</div>
           </div>
 
           <!-- 历史定金预定 -->
-          <div class="section-title" v-if="ST_CUST_DETAIL.deposits && ST_CUST_DETAIL.deposits.length">{{ t('cust.historyDeposits') }}（{{ ST_CUST_DETAIL.depositCount }}）</div>
-          <div class="card-list" v-if="ST_CUST_DETAIL.deposits && ST_CUST_DETAIL.deposits.length">
-            <div class="card-item" v-for="d in ST_CUST_DETAIL.deposits" :key="'dep'+d.id">
+          <div class="section-title" v-if="custDetail.deposits && custDetail.deposits.length">{{ t('cust.historyDeposits') }}（{{ custDetail.depositCount }}）</div>
+          <div class="card-list" v-if="custDetail.deposits && custDetail.deposits.length">
+            <div class="card-item" v-for="d in custDetail.deposits" :key="'dep'+d.id">
               <div class="history-row">
                 <div class="hr-main"><div class="hr-product">💰 {{ d.product }}</div><div class="hr-meta">{{ d.promised_date }} · {{ d.status }}</div></div>
                 <div class="hr-amount">￥{{ fmt(d.total) }}</div>
@@ -1620,14 +1620,8 @@ Content-Type: application/json
             </details>
             <div class="biz-actions"><a class="btn btn-sm btn-outline" :href="exportHref" @click.prevent="exportLogs">{{ t('act.export') }}</a></div>
           </div>
-          <div class="card-grid card-grid-sm">
-            <div class="card-item rec-card" v-for="d in subList" :key="d.id" @click="openRecordDetail('logs', d)">
-              <div class="rec-lines">
-                <div class="rec-line" :class="{'rec-title': i===0}" v-for="(ln,i) in recordLines('logs', d)" :key="i">{{ ln }}</div>
-              </div>
-            </div>
-            <div class="empty" v-if="!subList.length">{{ t('empty.log') }}</div>
-          </div>
+          <div class="log-plain" v-if="subList.length">{{ logText(subList) }}</div>
+          <div class="empty" v-if="!subList.length">{{ t('empty.log') }}</div>
         </section>
         <section v-if="isPc && tab==='appointments'">
           <details class="biz-guide"><summary>📖 {{ t('biz.title') }}</summary><div class="biz-body">{{ t('biz.appointments') }}</div></details>
@@ -1745,7 +1739,7 @@ Content-Type: application/json
 
       <!-- mobile sub views -->
       <div class="sub-page" v-if="!isPc && subView">
-        <div class="sub-page-title"><button class="back-btn" @click="subView=''">←</button>{{ subTitle }}</div>
+        <div class="sub-page-title"><button class="back-btn" @click="subBack()">←</button>{{ subTitle }}</div>
         <div class="page-head">
           <details class="biz-guide">
             <summary>📖 {{ t('biz.title') }}</summary>
@@ -1795,6 +1789,35 @@ Content-Type: application/json
           </div>
           <div class="empty" v-if="!subList.length">{{ t('cust.emptyShort') }}</div>
         </div>
+        <div v-if="subView==='customer_detail' && custDetail">
+          <div class="cust-profile">
+            <div class="cust-profile-head">
+              <div class="cust-avatar big">{{ (custDetail.name||'?')[0] }}</div>
+              <div class="cust-profile-info">
+                <div class="cust-profile-name">{{ custDetail.name }} · {{ levelText(custDetail.level) }}</div>
+                <div class="cust-profile-phone">{{ custDetail.phone }}</div>
+              </div>
+            </div>
+            <div class="cust-profile-stats">
+              <div class="cps-item"><div class="cps-val">⭐ {{ fmt(custDetail.points || 0) }}</div><div class="cps-lbl">{{ t('cust.points') }}</div></div>
+              <div class="cps-item"><div class="cps-val">￥{{ fmt(custDetail.total_amount) }}</div><div class="cps-lbl">{{ t('cust.totalSpent') }}</div></div>
+              <div class="cps-item" v-if="custDetail.due_amount"><div class="cps-val">￥{{ fmt(custDetail.due_amount) }}</div><div class="cps-lbl">{{ t('dash.due') }}</div></div>
+            </div>
+            <div class="cust-profile-meta" v-if="custDetail.birthday || custDetail.preference">
+              <span v-if="custDetail.birthday" class="tag tag-gold">{{ t('dash.birthday') }} {{ custDetail.birthday }}</span>
+              <span v-if="custDetail.preference" class="tag">{{ custDetail.preference }}</span>
+            </div>
+            <div class="biz-actions"><button class="btn btn-sm btn-outline" @click="openSheet('customer', t('sheet.customer'), Object.assign({}, custDetail))">{{ t('act.edit') }}</button></div>
+            <div class="section-title">{{ t('cust.historySales') }}（{{ custDetail.salesCount || 0 }}）</div>
+            <div class="card-item rec-card" v-for="s in custDetail.sales" :key="'ms'+s.id">
+              <div class="rec-lines">
+                <div class="rec-line rec-title">{{ s.bill_no }} · {{ s.product }}</div>
+                <div class="rec-line">{{ s.biz_date }} · {{ methodText(s.method) }} · ￥{{ fmt(s.amount) }}</div>
+              </div>
+            </div>
+            <div class="empty" v-if="!custDetail.sales.length">{{ t('cust.noSales') }}</div>
+          </div>
+        </div>
         <div v-if="subView==='purchases'">
           <div class="card-item rec-card" v-for="d in subList" :key="d.id" @click="openRecordDetail('purchases', d)">
             <div class="rec-head">
@@ -1822,11 +1845,8 @@ Content-Type: application/json
           </div>
         </div>
         <div v-if="subView==='logs'">
-          <div class="card-item rec-card" v-for="d in subList" :key="d.id" @click="openRecordDetail('logs', d)">
-            <div class="rec-lines">
-              <div class="rec-line" :class="{'rec-title': i===0}" v-for="(ln,i) in recordLines('logs', d)" :key="i">{{ ln }}</div>
-            </div>
-          </div>
+          <div class="log-plain" v-if="subList.length">{{ logText(subList) }}</div>
+          <div class="empty" v-if="!subList.length">{{ t('empty.log') }}</div>
         </div>
       </div>
 
