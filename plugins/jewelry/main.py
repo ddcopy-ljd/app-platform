@@ -5421,6 +5421,42 @@ def customer_update(cid: int, body: CustomerIn, request: Request):
         return {"ok": True}
 
 
+@app.get("/api/customers/{cid}/detail")
+def customer_detail(cid: int, request: Request):
+    """会员档案：基本信息 + 历史销售倒序 + 历史定金预定倒序 + 最后消费时间。"""
+    _require_auth(request)
+    with _db(request) as conn:
+        cust = conn.execute("SELECT * FROM customers WHERE id=?", (cid,)).fetchone()
+        if not cust:
+            raise HTTPException(404, "会员不存在")
+        d = dict(cust)
+        # 历史销售（倒序，最近在最上）——匹配 customer_id 或 phone 或 name
+        sales = conn.execute(
+            """SELECT id,bill_no,product,amount,paid,biz_date,status,created,type,method
+               FROM sales WHERE customer_id=? OR phone=? OR customer=?
+               ORDER BY COALESCE(biz_date,created) DESC, id DESC LIMIT 50""",
+            (cid, cust["phone"] or "", cust["name"] or ""),
+        ).fetchall()
+        # 历史定金预定（倒序）
+        deposits = conn.execute(
+            """SELECT id,product,total,deposit,balance,promised_date,status,created
+               FROM deposits WHERE phone=? OR customer=?
+               ORDER BY COALESCE(promised_date,created) DESC, id DESC LIMIT 20""",
+            (cust["phone"] or "", cust["name"] or ""),
+        ).fetchall()
+        # 最后一次消费时间
+        last_sale = conn.execute(
+            "SELECT MAX(COALESCE(biz_date,date(created))) ld FROM sales WHERE customer_id=? OR phone=? OR customer=?",
+            (cid, cust["phone"] or "", cust["name"] or ""),
+        ).fetchone()["ld"]
+        d["salesCount"] = len(sales)
+        d["depositCount"] = len(deposits)
+        d["lastSaleDate"] = last_sale
+        d["sales"] = [dict(r) for r in sales]
+        d["deposits"] = [dict(r) for r in deposits]
+        return d
+
+
 # ---------------------------------------------------------------- 维修 / 采购 / 委外
 
 class RepairIn(BaseModel):

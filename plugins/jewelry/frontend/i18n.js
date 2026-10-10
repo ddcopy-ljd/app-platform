@@ -44,6 +44,10 @@ var I18N = {
     'kpi.due': '尾款待收', 'kpi.trend': '近6月销售趋势', 'kpi.todo': '待办提醒',
     'kpi.recent': '最近销售', 'kpi.quick': '快捷入口', 'kpi.catSales': '近6月品类销售占比',
     'kpi.stockCost': '成本', 'kpi.todayCount': '笔', 'kpi.unit': '元',
+    // reminder tags
+    'rem.payBalance': '交尾款取货', 'rem.pickupReady': '已付清可取',
+    'rem.outLoanDue': '外借逾期催还', 'rem.inLoanDue': '借入逾期归还', 'rem.loanDue': '借贷逾期',
+    'rem.repairPending': '待维修接单', 'rem.repairReady': '维修到期可取', 'rem.repairing': '维修中',
     // cats
     'cat.all': '全部', 'cat.gold': '黄金', 'cat.diamond': '钻石', 'cat.jade': '翡翠',
     'cat.platinum': '铂金', 'cat.gemstone': '彩宝', 'cat.other': '其他',
@@ -364,9 +368,11 @@ var I18N = {
     'loan.empty': '尚未扫码添加商品', 'loan.partyPh': '借出给 / 借自', 'loan.needScan': '请先扫码添加商品',
     // 客户
     'cust.normal': '普通', 'cust.silver': '银卡', 'cust.gold': '金卡',
-    'cust.goldDiscount': '金价折扣率', 'cust.goldDiscountHint': '0~1 之间，如 0.98 表示金价按 98% 计',
+    'cust.goldDiscount': '金价折扣', 'cust.goldDiscountHint': '0~1 之间，如 0.98 表示金价按 98% 计',
     'cust.goldDiscountRange': '金价折扣率需在 0~1 之间（如 0.98）', 'cust.points': '积分',
     'cust.empty': '暂无客户，可从销售/定金开单时自动建档', 'cust.emptyShort': '暂无客户',
+    'cust.totalSpent': '累计消费', 'cust.lastSale': '最后消费',
+    'cust.historySales': '历史购买', 'cust.historyDeposits': '历史定金预定', 'cust.noSales': '暂无购买记录',
     // 预约
     'appt.want': '期望：', 'appt.contacted': '已联系', 'appt.arrived': '已到店', 'appt.done': '已成交',
     'appt.pending': '待联系', 'appt.emptyM': '暂无预约，访客可从公开页 /site 自助提交',
@@ -599,6 +605,9 @@ var I18N = {
     'kpi.due': 'Pending Balance', 'kpi.trend': '6-Month Trend', 'kpi.todo': 'Reminders',
     'kpi.recent': 'Recent Sales', 'kpi.quick': 'Quick Actions', 'kpi.catSales': 'Category Sales Share (6M)',
     'kpi.stockCost': 'Cost', 'kpi.todayCount': 'orders', 'kpi.unit': '',
+    'rem.payBalance': 'Balance Due', 'rem.pickupReady': 'Ready for Pickup',
+    'rem.outLoanDue': 'Lent Overdue', 'rem.inLoanDue': 'Borrow Return', 'rem.loanDue': 'Loan Due',
+    'rem.repairPending': 'Repair Pending', 'rem.repairReady': 'Repair Ready', 'rem.repairing': 'Repairing',
     'dash.mom': 'MoM', 'dash.yoy': 'YoY', 'dash.curYear': 'Current', 'dash.prevYear': 'Last year',
     // cats
     'cat.all': 'All', 'cat.gold': 'Gold', 'cat.diamond': 'Diamond', 'cat.jade': 'Jade',
@@ -870,6 +879,9 @@ var I18N = {
     'common.yes': 'Yes',
     'cust.empty': 'No customers yet. Records are created automatically from sales/deposit orders.',
     'cust.emptyShort': 'No customers',
+    'cust.totalSpent': 'Total Spent', 'cust.lastSale': 'Last Visit',
+    'cust.historySales': 'Purchase History',
+    'cust.historyDeposits': 'Deposit Orders', 'cust.noSales': 'No purchase records yet',
     'cust.gold': 'Gold',
     'cust.normal': 'Regular',
     'cust.silver': 'Silver',
@@ -1198,6 +1210,9 @@ var I18N = {
     'kpi.due': 'Saldi in Sospeso', 'kpi.trend': 'Trend 6 Mesi', 'kpi.todo': 'Promemoria',
     'kpi.recent': 'Vendite Recenti', 'kpi.quick': 'Azioni Rapide', 'kpi.catSales': 'Vendite per Categoria (6 Mesi)',
     'kpi.stockCost': 'Costo', 'kpi.todayCount': 'ordini', 'kpi.unit': '€',
+    'rem.payBalance': 'Saldo Dovuto', 'rem.pickupReady': 'Pronto Ritiro',
+    'rem.outLoanDue': 'Prestato Scaduto', 'rem.inLoanDue': 'Rendere Prestato', 'rem.loanDue': 'Prestito Scaduto',
+    'rem.repairPending': 'Riparazione In Attesa', 'rem.repairReady': 'Riparazione Pronta', 'rem.repairing': 'In Riparazione',
     'dash.mom': 'MoM', 'dash.yoy': 'YoY', 'dash.curYear': 'Corrente', 'dash.prevYear': 'Anno scorso',
     // cats
     'cat.all': 'Tutti', 'cat.gold': 'Oro', 'cat.diamond': 'Diamante', 'cat.jade': 'Giada',
@@ -1469,6 +1484,9 @@ var I18N = {
     'common.yes': 'Sì',
     'cust.empty': 'Nessun cliente. Vengono creati automaticamente dagli ordini di vendita.',
     'cust.emptyShort': 'Nessun cliente',
+    'cust.totalSpent': 'Totale Speso', 'cust.lastSale': 'Ultima Visita',
+    'cust.historySales': 'Storico Acquisti',
+    'cust.historyDeposits': 'Ordini di Deposito', 'cust.noSales': 'Nessun acquisto ancora',
     'cust.gold': 'Oro',
     'cust.normal': 'Normale',
     'cust.silver': 'Argento',

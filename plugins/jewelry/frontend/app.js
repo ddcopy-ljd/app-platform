@@ -587,6 +587,32 @@ function methodText(m) { return METHOD_I18N_KEYS[m] ? t(METHOD_I18N_KEYS[m]) : (
 var LEVEL_I18N_KEYS = { '普通': 'cust.normal', '银卡': 'cust.silver', '金卡': 'cust.gold' };
 function levelText(l) { return LEVEL_I18N_KEYS[l] ? t(LEVEL_I18N_KEYS[l]) : (l || ''); }
 function directionText(d) { return d === 'out' ? t('lbl.out') : (d === 'in' ? t('lbl.in') : (d || '')); }
+// 待办事项语义标签 —— 让用户一眼看出"是什么事"
+function reminderHint(item, cat) {
+  var today = new Date(); today.setHours(0,0,0,0);
+  if (cat === 'deposit') {
+    // 客户定金预定：到期该交尾款取货
+    if ((item.balance || 0) > 0) return t('rem.payBalance');   // "交尾款取货"
+    return t('rem.pickupReady');  // "已付清可取"
+  }
+  if (cat === 'loan') {
+    if (item.direction === 'out') return t('rem.outLoanDue');   // "外借逾期催还"
+    if (item.direction === 'in')  return t('rem.inLoanDue');    // "借入逾期归还"
+    return t('rem.loanDue');
+  }
+  if (cat === 'repair') {
+    if (item.status === '待维修') return t('rem.repairPending');  // "待维修接单"
+    if (item.promised_date) {
+      var pd = new Date(item.promised_date); pd.setHours(0,0,0,0);
+      if (pd <= today) return t('rem.repairReady');  // "维修到期可取"
+    }
+    return t('rem.repairing');  // "维修中"
+  }
+  return '';
+}
+function reminderTagCls(cat) {
+  return 'rt-' + cat;  // rt-deposit / rt-loan / rt-repair
+}
 // 标签打印记录提示：🖨 图标悬停显示打印次数与最近时间
 function printedTip(p) {
   var tm = (p && p.label_printed_at || '').slice(5, 16);  // MM-DD HH:MM
@@ -2410,8 +2436,14 @@ function openCustomer() {
   openSheet('customer', t('sheet.customer'), { name: '', phone: '', level: '普通', birthday: '', preference: '', gold_discount: 1, points: 0 });
 }
 
-function editCustomer(d) {
-  openSheet('customer', t('sheet.customer'), Object.assign({}, d));
+var ST_CUST_DETAIL = null;
+function editCustomer(d) { viewCustomer(d); }
+function viewCustomer(d) {
+  ST.subView = 'customer_detail';
+  ST.subTitle = (d && d.name) || '';
+  api('GET', '/api/customers/' + d.id + '/detail').then(function (r) {
+    ST_CUST_DETAIL = r;
+  }).catch(function (e) { toast(e.message, 'error'); });
 }
 
 function openRfid() {
@@ -4084,6 +4116,7 @@ var app = Vue.createApp({
     statusClass: statusClass,
     statusText: statusText, methodText: methodText, levelText: levelText,
     directionText: directionText, printedTip: printedTip, coStatusText: coStatusText, resultText: resultText,
+    reminderHint: reminderHint, reminderTagCls: reminderTagCls,
     fieldLabelText: fieldLabelText, labelFieldText: labelFieldText,
     doLogin: doLogin, doLogout: doLogout,
     openHandheldLogin: openHandheldLogin, closeHandheldLogin: closeHandheldLogin,
@@ -4187,7 +4220,7 @@ var app = Vue.createApp({
     openRepair: openRepair, editRepair: editRepair,
     openPurchase: openPurchase, receivePurchase: receivePurchase,
     openOutsource: openOutsource, receiveOut: receiveOut,
-    openCustomer: openCustomer, editCustomer: editCustomer,
+    openCustomer: openCustomer, editCustomer: editCustomer, viewCustomer: viewCustomer,
     setAppt: setAppt, saveProfile: saveProfile, exportLogs: exportLogs,
     recordLines: recordLines, recordKind: recordKind, statusClass: statusClass,
     openRecordDetail: openRecordDetail, detailRows: detailRows, editFromDetail: editFromDetail,
