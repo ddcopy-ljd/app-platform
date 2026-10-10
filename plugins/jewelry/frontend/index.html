@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>懿臻珠宝云</title>
 <link rel="icon" href="/logo/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./app.css?v=20261010f125">
+<link rel="stylesheet" href="./app.css?v=20261010f128">
 </head>
 <body>
 <div id="app">
@@ -188,6 +188,9 @@
               <div class="biz-body">{{ t('biz.products') }}</div>
             </details>
             <div class="biz-actions">
+              <button v-if="printSelCount" class="btn btn-sm btn-outline" @click="batchEditProducts">✏️ {{ t('act.edit') }} ({{ printSelCount }})</button>
+              <button v-if="printSelCount" class="btn btn-sm btn-outline" @click="batchCopyProducts">📋 {{ t('act.copyNew') }} ({{ printSelCount }})</button>
+              <button v-if="printSelCount" class="btn btn-sm btn-danger" @click="batchDelProducts">🗑 {{ t('act.del') }} ({{ printSelCount }})</button>
               <button class="btn btn-sm btn-outline" @click="openImportDlg">📥 {{ t('act.importBatch') }}</button>
               <button class="btn btn-sm btn-outline" @click="onPrintLabelBtn">🏷 {{ t('act.print') }}<span v-if="printSelCount"> ({{ printSelCount }})</span></button>
               <button class="btn btn-primary btn-sm" :disabled="frozen" @click="addProduct">+ {{ t('act.add') }}</button>
@@ -246,8 +249,6 @@
                   <td class="cell-ico"><span v-if="p.high_value" :title="t('lbl.highValue')">⭐</span><span v-else class="dim">—</span></td>
                   <td class="cell-op nowrap">
                     <button class="link" :disabled="frozen" @click="editProduct(p)">{{ t('act.edit') }}</button>
-                    <button class="link" :disabled="frozen" @click="copyProduct(p)">{{ t('act.copyNew') }}</button>
-                    <button class="link danger" :disabled="frozen" @click="delProduct(p.id)">{{ t('act.del') }}</button>
                   </td>
                 </tr>
               </tbody>
@@ -264,10 +265,6 @@
                   <div class="prod-meta mono" v-if="p.barcode">🏷 {{ p.barcode }}</div>
                 </div>
                 <div class="prod-price2"><div class="pp">￥{{ fmt(p.price) }}</div></div>
-              </div>
-              <div class="row-actions">
-                <button class="btn btn-sm btn-outline" :disabled="frozen" @click="copyProduct(p)">{{ t('act.copyNew') }}</button>
-                <button class="btn btn-sm btn-outline" :disabled="frozen" @click="delProduct(p.id)" style="color:var(--danger);border-color:var(--danger)">{{ t('act.del') }}</button>
               </div>
             </div>
             <div class="empty" v-if="!filteredProducts.length"><div class="empty-icon">💎</div>{{ t('empty.prod') }}</div>
@@ -364,11 +361,17 @@
             </details>
           </div>
           <div class="stats-grid inv-stats-grid" v-if="invSum">
-            <div class="stat-card"><div class="stat-label">{{ t('inv.stock') }}</div><div class="stat-value">{{ invSum.inStock.count }}</div><div class="stat-sub" :class="{'cell-secret':!isCostVisible()}">{{ invSum.inStock.cost==null ? '***' : '￥'+fmt(invSum.inStock.cost) }}</div></div>
-            <div class="stat-card gold"><div class="stat-label">{{ t('inv.reservedLocked') }}</div><div class="stat-value">{{ invSum.reserved.count }}</div><div class="stat-sub" :class="{'cell-secret':!isCostVisible()}">{{ invSum.reserved.cost==null ? '***' : '￥'+fmt(invSum.reserved.cost) }}</div></div>
-            <div class="stat-card blue"><div class="stat-label">{{ t('inv.loaned') }}</div><div class="stat-value">{{ invSum.loaned.count }}</div><div class="stat-sub" :class="{'cell-secret':!isCostVisible()}">{{ invSum.loaned.cost==null ? '***' : '￥'+fmt(invSum.loaned.cost) }}</div></div>
-            <div class="stat-card orange"><div class="stat-label">{{ t('inv.sold') }}</div><div class="stat-value">{{ invSum.sold.count }}</div><div class="stat-sub" :class="{'cell-secret':!isCostVisible()}">{{ invSum.sold.cost==null ? '***' : '￥'+fmt(invSum.sold.cost) }}</div></div>
-            <div class="stat-card purple"><div class="stat-label">🚚 {{ t('inv.inTransit') }}</div><div class="stat-value">{{ invSum.inTransit.count }}</div></div>
+            <div class="stat-card clickable" @click="goInvStatus('在库')"><div class="stat-label">{{ t('inv.stock') }}</div><div class="stat-value">{{ invSum.inStock.count }}</div><div class="stat-sub" :class="{'cell-secret':!isCostVisible()}">{{ invSum.inStock.cost==null ? '***' : '￥'+fmt(invSum.inStock.cost) }}</div></div>
+            <div class="stat-card gold clickable" @click="goInvStatus('已定')"><div class="stat-label">{{ t('inv.reservedLocked') }}</div><div class="stat-value">{{ invSum.reserved.count }}</div><div class="stat-sub" :class="{'cell-secret':!isCostVisible()}">{{ invSum.reserved.cost==null ? '***' : '￥'+fmt(invSum.reserved.cost) }}</div></div>
+            <div class="stat-card blue clickable" @click="goInvStatus('借出')"><div class="stat-label">{{ t('inv.loaned') }}</div><div class="stat-value">{{ invSum.loaned.count }}</div><div class="stat-sub" :class="{'cell-secret':!isCostVisible()}">{{ invSum.loaned.cost==null ? '***' : '￥'+fmt(invSum.loaned.cost) }}</div></div>
+            <div class="stat-card orange clickable" @click="goInvStatus('已售')"><div class="stat-label">{{ t('inv.sold') }}</div><div class="stat-value">{{ invSum.sold.count }}</div><div class="stat-sub" :class="{'cell-secret':!isCostVisible()}">{{ invSum.sold.cost==null ? '***' : '￥'+fmt(invSum.sold.cost) }}</div></div>
+            <div class="stat-card purple clickable" @click="goInvStatus('在途')"><div class="stat-label">🚚 {{ t('inv.inTransit') }}</div><div class="stat-value">{{ invSum.inTransit.count }}</div></div>
+          </div>
+
+          <!-- 状态筛选清除条 -->
+          <div v-if="prodStatusFilter && tab==='inventory' && invSub==='stock'" class="filter-banner">
+            🔍 {{ t('inv.filteringByStatus') }}：<b>{{ prodStatusFilter }}</b>
+            <button class="link" @click="clearInvStatusFilter">{{ t('inv.clearFilter') }}</button>
           </div>
 
           <!-- 子页签：在库商品 / 库存盘点 -->
@@ -634,12 +637,17 @@
             </details>
             <div class="biz-actions"><button class="btn btn-primary btn-sm" :disabled="frozen" @click="openDeposit">+ {{ t('act.deposit') }}</button></div>
           </div>
-          <div class="card-list">
-            <div class="card-item deposit-card" v-for="d in deposits" :key="d.id">
-              <div class="dep-row"><div class="dep-customer">{{ d.customer }}</div><div class="dep-amounts"><div class="dep-total">￥{{ fmt(d.total) }}</div><div class="dep-detail">{{ t('dep.paid') }} ￥{{ fmt(d.deposit) }} / {{ t('lbl.balance') }} ￥{{ fmt(d.balance) }}</div></div></div>
+          <div class="card-grid">
+            <div class="card-item deposit-card clickable" v-for="d in deposits" :key="d.id" @click="openRecordDetail('deposits', d)">
+              <div class="dep-row"><div class="dep-customer">{{ d.customer }}<span class="dep-phone" v-if="d.phone">· {{ d.phone }}</span></div><div class="dep-amounts"><div class="dep-total">￥{{ fmt(d.total) }}</div><div class="dep-detail">{{ t('dep.paid') }} ￥{{ fmt(d.deposit) }} / {{ t('lbl.balance') }} ￥{{ fmt(d.balance) }}</div></div></div>
               <div class="dep-product">{{ d.product }} · {{ d.promised_date }}</div>
+              <div class="dep-req" v-if="d.delivery_time || d.deliver_requirements">
+                <span v-if="d.delivery_time" class="dep-req-item">⏰ {{ d.delivery_time }}</span>
+                <span v-if="d.deliver_requirements" class="dep-req-item">📝 {{ d.deliver_requirements }}</span>
+              </div>
+              <div class="dep-date">{{ t('dep.createdAt') }} {{ (d.created||'').slice(5,16) }}</div>
               <div class="dep-tags"><span class="tag tag-gold">{{ statusText(d.status) }}</span></div>
-              <div class="row-actions" v-if="d.status==='已定'">
+              <div class="row-actions" v-if="d.status==='已定'" @click.stop>
                 <button class="btn btn-sm btn-gold" :disabled="frozen" @click="payDeposit(d)">{{ t('act.payBal') }}</button>
                 <button class="btn btn-sm btn-outline" :disabled="frozen" @click="voidDeposit(d)">{{ t('act.void') }}</button>
               </div>
@@ -2085,6 +2093,8 @@ Content-Type: application/json
           <div class="form-row"><div class="form-group"><label>{{ t('lbl.total') }}</label><input v-model.number="sheetData.total" type="number" @input="sheetData.balance=(sheetData.total||0)-(sheetData.deposit||0)"></div>
             <div class="form-group"><label>{{ t('lbl.deposit') }}</label><input v-model.number="sheetData.deposit" type="number" @input="sheetData.balance=(sheetData.total||0)-(sheetData.deposit||0)"></div></div>
           <div class="form-row"><div class="form-group"><label>{{ t('lbl.balance') }}</label><input :value="sheetData.balance" readonly></div><div class="form-group"><label>{{ t('lbl.promisedDate') }}</label><input v-model="sheetData.promised_date" type="date"></div></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('dep.deliveryTime') }}</label><input v-model="sheetData.delivery_time" placeholder="{{ t('dep.deliveryTimePh') }}"></div><div class="form-group"><label>{{ t('dep.remindDays') }}</label><input v-model.number="sheetData.reminder_days" type="number" min="0" max="30"></div></div>
+          <div class="form-group"><label>{{ t('dep.requirements') }}</label><textarea v-model="sheetData.deliver_requirements" rows="2" placeholder="{{ t('dep.requirementsPh') }}"></textarea></div>
         </template>
         <template v-if="sheetMode==='loan'">
           <div class="form-group"><label>{{ t('lbl.direction') }}</label><select v-model="sheetData.direction"><option value="out">{{ t('lbl.out') }}</option><option value="in">{{ t('lbl.in') }}</option></select></div>
@@ -2163,6 +2173,116 @@ Content-Type: application/json
           </div>
         </template>
         <template v-if="sheetMode==='detail'">
+          <!-- 维修进度时间线（仅 repairs） -->
+          <div v-if="detailKind==='repairs'" class="detail-section">
+            <div class="ds-title">{{ t('rec.progress') }}</div>
+            <div class="repair-steps">
+              <div class="step" :class="{done: !!sheetData.receive_date, current: sheetData.status==='待维修'}">
+                <div class="step-dot">1</div>
+                <div class="step-lbl">{{ t('rec.receive') }}</div>
+                <div class="step-date">{{ sheetData.receive_date || '—' }}</div>
+              </div>
+              <div class="step" :class="{done: sheetData.status==='维修中'||sheetData.status==='待取货'||sheetData.status==='已完成', current: sheetData.status==='维修中'}">
+                <div class="step-dot">2</div>
+                <div class="step-lbl">{{ t('rep.working') }}</div>
+                <div class="step-date">{{ sheetData.status==='维修中' ? t('rec.onNow') : '—' }}</div>
+              </div>
+              <div class="step" :class="{done: sheetData.status==='待取货'||sheetData.status==='已完成', current: sheetData.status==='待取货', overdue: !!sheetData.promised_date && sheetData.promised_date < (new Date().toISOString().slice(0,10)) && sheetData.status!=='已完成'}">
+                <div class="step-dot">3</div>
+                <div class="step-lbl">{{ t('rec.promised') }}</div>
+                <div class="step-date">{{ sheetData.promised_date || '—' }}</div>
+              </div>
+              <div class="step" :class="{done: sheetData.status==='已完成', current: sheetData.status==='已完成'}">
+                <div class="step-dot">4</div>
+                <div class="step-lbl">{{ t('rec.done') }}</div>
+                <div class="step-date">{{ sheetData.done_date || '—' }}</div>
+              </div>
+            </div>
+          </div>
+          <!-- 采购进度时间线 -->
+          <div v-if="detailKind==='purchases'" class="detail-section">
+            <div class="ds-title">{{ t('rec.progress') }}</div>
+            <div class="repair-steps">
+              <div class="step" :class="{done: !!sheetData.order_date, current: sheetData.status==='待发货'}">
+                <div class="step-dot">1</div>
+                <div class="step-lbl">{{ t('rec.order') }}</div>
+                <div class="step-date">{{ sheetData.order_date || '—' }}</div>
+              </div>
+              <div class="step" :class="{done: sheetData.status==='运输中'||sheetData.status==='已入库', current: sheetData.status==='运输中'}">
+                <div class="step-dot">2</div>
+                <div class="step-lbl">{{ t('rec.transit') }}</div>
+                <div class="step-date">{{ sheetData.status==='运输中' ? t('rec.onNow') : '—' }}</div>
+              </div>
+              <div class="step" :class="{done: sheetData.status==='已入库', current: sheetData.status==='已入库', overdue: !!sheetData.expected_date && sheetData.expected_date < (new Date().toISOString().slice(0,10)) && sheetData.status!=='已入库'}">
+                <div class="step-dot">3</div>
+                <div class="step-lbl">{{ t('rec.received') }}</div>
+                <div class="step-date">{{ sheetData.received_date || '—' }}</div>
+              </div>
+            </div>
+          </div>
+          <!-- 借货进度时间线 -->
+          <div v-if="detailKind==='loans'" class="detail-section">
+            <div class="ds-title">{{ t('rec.progress') }}</div>
+            <div class="repair-steps">
+              <div class="step" :class="{done: !!sheetData.loan_date, current: sheetData.status==='借出中'||sheetData.status==='借入中'}">
+                <div class="step-dot">1</div>
+                <div class="step-lbl">{{ t('rec.loanDate') }}</div>
+                <div class="step-date">{{ sheetData.loan_date || '—' }}</div>
+              </div>
+              <div class="step" :class="{overdue: !!sheetData.due_date && sheetData.due_date < (new Date().toISOString().slice(0,10)) && sheetData.status!=='已归还' && sheetData.status!=='已归还'}">
+                <div class="step-dot">2</div>
+                <div class="step-lbl">{{ t('rec.due') }}</div>
+                <div class="step-date">{{ sheetData.due_date || '—' }}</div>
+              </div>
+              <div class="step" :class="{done: sheetData.status && sheetData.status.indexOf('归还')>=0, current: sheetData.status && sheetData.status.indexOf('归还')>=0}">
+                <div class="step-dot">3</div>
+                <div class="step-lbl">{{ t('rec.returned') }}</div>
+                <div class="step-date">{{ sheetData.status && sheetData.status.indexOf('归还')>=0 ? '✅' : '—' }}</div>
+              </div>
+            </div>
+          </div>
+          <!-- 委外加工进度时间线 -->
+          <div v-if="detailKind==='outsourcings'" class="detail-section">
+            <div class="ds-title">{{ t('rec.progress') }}</div>
+            <div class="repair-steps">
+              <div class="step" :class="{done: !!sheetData.send_date, current: sheetData.status==='加工中'}">
+                <div class="step-dot">1</div>
+                <div class="step-lbl">{{ t('rec.send') }}</div>
+                <div class="step-date">{{ sheetData.send_date || '—' }}</div>
+              </div>
+              <div class="step" :class="{done: sheetData.status==='加工中'||sheetData.status==='已收货', current: sheetData.status==='加工中', overdue: !!sheetData.expected_date && sheetData.expected_date < (new Date().toISOString().slice(0,10)) && sheetData.status!=='已收货'}">
+                <div class="step-dot">2</div>
+                <div class="step-lbl">{{ t('rep.working') }}</div>
+                <div class="step-date">{{ sheetData.expected_date || '—' }}</div>
+              </div>
+              <div class="step" :class="{done: sheetData.status==='已收货', current: sheetData.status==='已收货'}">
+                <div class="step-dot">3</div>
+                <div class="step-lbl">{{ t('rec.received') }}</div>
+                <div class="step-date">{{ sheetData.received_date || '—' }}</div>
+              </div>
+            </div>
+          </div>
+          <!-- 定金进度时间线 -->
+          <div v-if="detailKind==='deposits'" class="detail-section">
+            <div class="ds-title">{{ t('rec.progress') }}</div>
+            <div class="repair-steps">
+              <div class="step" :class="{done: !!sheetData.created, current: sheetData.status==='已定'}">
+                <div class="step-dot">1</div>
+                <div class="step-lbl">{{ t('dep.createdAt') }}</div>
+                <div class="step-date">{{ (sheetData.created||'').slice(0,10) || '—' }}</div>
+              </div>
+              <div class="step" :class="{done: sheetData.status==='已付尾款'||sheetData.status==='已完成', current: sheetData.status==='已定', overdue: !!sheetData.promised_date && sheetData.promised_date < (new Date().toISOString().slice(0,10)) && sheetData.status!=='已完成' && sheetData.status!=='已付尾款'}">
+                <div class="step-dot">2</div>
+                <div class="step-lbl">{{ t('lbl.promisedDate') }}</div>
+                <div class="step-date">{{ sheetData.promised_date || '—' }}</div>
+              </div>
+              <div class="step" :class="{done: sheetData.status==='已付尾款'||sheetData.status==='已完成', current: sheetData.status==='已付尾款'||sheetData.status==='已完成'}">
+                <div class="step-dot">3</div>
+                <div class="step-lbl">{{ t('dep.payBal') || t('act.payBal') }}</div>
+                <div class="step-date">{{ sheetData.status==='已定' ? '—' : '✅ ' + sheetData.status }}</div>
+              </div>
+            </div>
+          </div>
           <div class="detail-list">
             <div class="detail-row" v-for="r in detailRows" :key="r.k">
               <span class="detail-k">{{ r.k }}</span>

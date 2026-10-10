@@ -30,7 +30,7 @@ var ST = Vue.reactive({
   loginUser: 'admin', loginPwd: '123456',
   // data
   dashData: null, trendData: null, remindData: null, showRemind: true, catSales: null,
-  products: [], prodTotal: 0, prodCat: '', prodQ: '', prodHasCert: false, prodLoc: 0,
+  products: [], prodTotal: 0, prodCat: '', prodQ: '', prodHasCert: false, prodLoc: 0, prodStatusFilter: '',
   cats: [], bizConfig: { epc_prefix: 'E280', seq_bits: 8 }, languages: [],
   catEdit: { code: '', names: { zh: '', en: '' }, sort_order: 0 }, catEditMode: 'new',
   // 商品品类（戒指/项链…）
@@ -259,7 +259,7 @@ var ADMIN_SUBS = [
   { key: 'logs', icon: '📋', label: '操作日志' },
 ];
 
-var SUB_VIEWS = ['customers', 'loans', 'repairs', 'purchases', 'outsourcings'];
+var SUB_VIEWS = ['customers', 'loans', 'repairs', 'purchases', 'outsourcings', 'logs'];
 var SUB_KEYS = {
   customers: '/api/customers/list', loans: '/api/loans',
   repairs: '/api/repairs', purchases: '/api/purchases',
@@ -384,6 +384,9 @@ function langNameFilled(langKey) {
 // ---- computed-like getters ----
 function filteredProducts() {
   var list = ST.products || [];
+  if (ST.prodStatusFilter) {
+    list = list.filter(function (p) { return p.status === ST.prodStatusFilter; });
+  }
   if (ST.prodCat) list = list.filter(function (p) {
     // 按商品品类筛选
     return p.product_type_code === ST.prodCat;
@@ -669,6 +672,16 @@ function go(tab) {
   // PC 侧边栏直接进入子列表页（维修/采购/委外/借货/客户）时也要拉数据
   if (SUB_VIEWS.indexOf(ST.tab) >= 0) { ST.subView = ST.tab; ST.subPage = 1; loadSubList(); }
 }
+function goInvStatus(status) {
+  ST.prodStatusFilter = status;
+  ST.invSub = 'stock';
+  ST.subView = '';
+  ST.tab = 'inventory';
+  refreshAll();
+}
+function clearInvStatusFilter() {
+  ST.prodStatusFilter = '';
+}
 function switchAdminSub(key) {
   ST.adminSub = key;
   go('system');  // 统一走 go() 的 system 分支触发数据加载
@@ -762,12 +775,25 @@ function recordLines(kind, d) {
       d.received_date ? (t('rec.received') + ' ' + d.received_date) : ''
     ]));
   } else if (kind === 'loans') {
-    L.push(joinLine([d.product, d.code]));
-    L.push(joinLine([directionText(d.direction), d.party, d.qty ? '×' + d.qty : '']));
-    L.push(joinLine([
-      d.loan_date ? (t('rec.date') + ' ' + d.loan_date) : '',
-      d.due_date ? (t('rec.due') + ' ' + d.due_date) : ''
-    ]));
+    // 第一行：商品 + 货号 + 数量
+    L.push(joinLine([d.product, d.code, d.qty && d.qty > 1 ? ('×' + d.qty) : '']));
+    // 第二行：方向 + 对方
+    L.push(joinLine([directionText(d.direction), d.party]));
+    // 第三行：借出日期 + 到期日期（逾期标红，已归还标绿）
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var overdue = false;
+    if (d.status && d.status.indexOf('归还') < 0 && d.due_date) {
+      var due = new Date(d.due_date + 'T00:00:00');
+      if (!isNaN(due) && due < today) overdue = true;
+    }
+    var dateLine = joinLine([
+      d.loan_date ? (t('rec.loanDate') + ' ' + d.loan_date) : '',
+      d.due_date ? (overdue ? (t('rec.due') + ' ' + d.due_date + ' ' + t('rec.overdue'))
+                            : (t('rec.due') + ' ' + d.due_date)) : '',
+      d.status && d.status.indexOf('归还') >= 0 ? t('rec.returned') : ''
+    ]);
+    if (overdue) dateLine = '⚠ ' + dateLine;
+    L.push(dateLine);
   } else if (kind === 'customers') {
     L.push(joinLine([d.name, levelText(d.level)]));
     L.push(joinLine([d.phone, d.birthday ? (t('dash.birthday') + ' ' + d.birthday) : '']));
@@ -801,6 +827,10 @@ var DETAIL_FIELDS = {
                  ['预计回厂', 'expected_date'], ['收货日', 'received_date'], ['状态', 'status']],
   loans: [['商品', 'product'], ['货号', 'code'], ['往来方', 'party'], ['数量', 'qty'],
           ['方向', 'direction'], ['借出日', 'loan_date'], ['应还日', 'due_date'], ['状态', 'status']],
+  deposits: [['客户', 'customer'], ['电话', 'phone'], ['商品', 'product'], ['总额', 'total'],
+             ['已付定金', 'deposit'], ['尾款', 'balance'], ['承诺取货', 'promised_date'],
+             ['交付时间', 'delivery_time'], ['交付要求', 'deliver_requirements'],
+             ['提前提醒', 'reminder_days'], ['状态', 'status'], ['创建时间', 'created']],
   customers: [['姓名', 'name'], ['电话', 'phone'], ['等级', 'level'], ['累计消费', 'total_amount'],
               ['欠款', 'due_amount'], ['生日', 'birthday'], ['偏好', 'preference']],
   logs: [['时间', 'time'], ['操作人', 'operator'], ['门店', 'store'], ['动作', 'action'],
@@ -1411,8 +1441,51 @@ function copyProduct(p) {
 
 function delProduct(pid) {
   if (checkFrozen()) return;
-  if (!confirm('Delete?')) return;
+  var p = (ST.products || []).find(function (x) { return x.id === pid; });
+  var label = p ? (p.code + ' ' + p.name + '（' + statusText(p.status) + '）') : ('ID=' + pid);
+  if (!confirm('确认删除商品「' + label + '」？\n\n' +
+    '• 仅"在库"状态可删除，其他状态会被跳过\n' +
+    '• 删除后数据不可恢复，请确认该商品没有关联的销售/定金/调拨记录')) return;
   api('DELETE', '/api/products/' + pid).then(function () { toast(t('toast.delOk')); refreshAll(); }).catch(function (e) { toast(e.message, 'error'); });
+}
+
+// ---- 商品批量操作（复用 printSel 作为选择集） ----
+function selectedProducts() {
+  return ST.products.filter(function (p) { return ST.printSel[p.id]; });
+}
+function batchEditProducts() {
+  var sel = selectedProducts();
+  if (!sel.length) return;
+  // 选 1 个 → 直接打开单条编辑；选多个 → 取第一个打开，后续可再逐个改
+  if (sel.length === 1) { editProduct(sel[0]); return; }
+  editProduct(sel[0]);
+  toast(t('toast.batchEditHint', { n: sel.length - 1 }), 'info');
+}
+function batchCopyProducts() {
+  var sel = selectedProducts();
+  if (!sel.length) return;
+  var codes = sel.map(function (p) { return p.code + '×'; });
+  api('POST', '/api/products/batch-copy', { ids: sel.map(function (p) { return p.id; }) }).then(function (r) {
+    toast(t('toast.batchCopyOk', { n: r.count }));
+    refreshAll();
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+function batchDelProducts() {
+  if (checkFrozen()) return;
+  var ids = Object.keys(ST.printSel).filter(function (k) { return ST.printSel[k]; }).map(function (k) { return Number(k); });
+  if (!ids.length) return;
+  var labels = ST.products.filter(function (p) { return ids.indexOf(p.id) >= 0; }).map(function (p) { return '「' + p.code + ' ' + p.name + '」'; });
+  if (!confirm('确认删除选中的 ' + ids.length + ' 件商品？\n' + labels.slice(0, 5).join(' / ') + (labels.length > 5 ? ' 等...' : '') + '\n\n' +
+    '• 仅"在库"状态可删除，非在库会被跳过\n' +
+    '• 删除后数据不可恢复\n' +
+    '• 请确认这些商品没有关联的销售/定金/调拨记录')) return;
+  api('POST', '/api/products/batch-delete', { ids: ids }).then(function (r) {
+    var msg = t('toast.batchDelOk', { n: r.deleted });
+    if (r.skipped) msg += ' · ' + t('toast.batchDelSkipped', { n: r.skipped });
+    toast(msg);
+    ST.printSel = {};
+    refreshAll();
+  }).catch(function (e) { toast(e.message, 'error'); });
 }
 
 function printLabel(p) {
@@ -1467,7 +1540,9 @@ function saveCat() {
   }).catch(function (e) { toast(e.message, 'error'); });
 }
 function delCat(code) {
-  if (!confirm('Delete category ' + code + '?')) return;
+  if (!confirm('确认删除品类「' + code + '」？\n\n' +
+    '• 删除后该品类下所有商品的品类字段会清空\n' +
+    '• 请确认没有商品正在使用此品类')) return;
   api('DELETE', '/api/categories/' + code).then(function () {
     toast(t('toast.delOk'));
     api('GET', '/api/categories').then(function (r) { ST.cats = r || []; });
@@ -1513,7 +1588,9 @@ function saveType() {
   }).catch(function (e) { toast(e.message, 'error'); });
 }
 function delType(code) {
-  if (!confirm('Delete product type ' + code + '?')) return;
+  if (!confirm('确认删除商品类型「' + code + '」？\n\n' +
+    '• 删除后该类型下所有商品的类型字段会清空\n' +
+    '• 请确认没有商品正在使用此类型')) return;
   api('DELETE', '/api/product-types/' + code).then(function () {
     toast(t('toast.delOk'));
     loadProductTypes();
@@ -1591,7 +1668,9 @@ function saveLoc() {
   }).catch(function (err) { toast(err.message, 'error'); });
 }
 function delLoc(o) {
-  if (!confirm(t('loc.delConfirm') + ' ' + o.code + ' ?')) return;
+  if (!confirm('确认删除库位「' + o.code + '」？\n\n' +
+    '• 请确认该库位当前没有存放商品\n' +
+    '• 删除后不可恢复')) return;
   api('DELETE', '/api/locations/' + o.id).then(function () {
     toast(t('toast.delOk'));
     loadLocations();
@@ -3367,7 +3446,10 @@ function secRotateKey(s) {
 }
 
 function secDelete(s) {
-  if (!confirm(t('act.del') + ' ' + s.name + '?')) return;
+  if (!confirm('确认删除设备「' + s.name + '（' + s.device_type + '）」？\n\n' +
+    '• 删除后该设备的授权密钥会失效\n' +
+    '• 已绑定的手持机会立即掉线\n' +
+    '• 请确认设备已物理下线，否则会产生告警')) return;
   api('DELETE', '/api/sensors/' + s.id).then(function () { loadSecurity(); }).catch(function () {});
 }
 
@@ -4105,7 +4187,7 @@ var app = Vue.createApp({
     },
   },
   methods: {
-    go: go, switchAdminSub: switchAdminSub,
+    go: go, switchAdminSub: switchAdminSub, goInvStatus: goInvStatus, clearInvStatusFilter: clearInvStatusFilter,
     switchStore: switchStore,
     isHqStore: isHqStore,   // 总店/分店视图判定（模板以 isHqStore() 调用，故放 methods）
     isExecRole: isExecRole, // 高管只读标识（模板可用于只读角标）
@@ -4121,12 +4203,13 @@ var app = Vue.createApp({
     doLogin: doLogin, doLogout: doLogout,
     openHandheldLogin: openHandheldLogin, closeHandheldLogin: closeHandheldLogin,
     copyHqUrl: copyHqUrl, yzScan: yzScan,
-    go: go, openSubView: openSubView, setLang: setLang,
+    go: go, openSubView: openSubView, goInvStatus: goInvStatus, clearInvStatusFilter: clearInvStatusFilter, setLang: setLang,
     sortTbl: sortTbl, sortCls: sortCls,
     openSheet: openSheet, closeSheet: closeSheet, submitSheet: submitSheet,
     onPickProduct: onPickProduct,
     addProduct: addProduct, editProduct: editProduct, delProduct: delProduct, printLabel: printLabel,
     copyProduct: copyProduct, generateEpc: generateEpc,
+    batchEditProducts: batchEditProducts, batchCopyProducts: batchCopyProducts, batchDelProducts: batchDelProducts,
     catNameByCode: catNameByCode, catCodeByName: catCodeByName,
     catNameOf: catNameOf, productCatName: productCatName, catText: catText,
     typeNameByCode: typeNameByCode, productTypeName: productTypeName,

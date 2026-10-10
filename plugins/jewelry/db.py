@@ -219,6 +219,8 @@ CREATE TABLE IF NOT EXISTS deposits (
   deposit REAL DEFAULT 0,
   balance REAL DEFAULT 0,
   promised_date TEXT DEFAULT '',
+  delivery_time TEXT DEFAULT '',
+  deliver_requirements TEXT DEFAULT '',
   reminder_days INTEGER DEFAULT 7,
   status TEXT DEFAULT '已定',
   created TEXT DEFAULT (datetime('now','localtime'))
@@ -769,6 +771,9 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("sale_items", "subtotal", "REAL DEFAULT 0"),
         # 1.1.0 协同扫码：同店同功能任务序号（手持机/网页统一显示「功能名 #序号」）
         ("tasks", "type_seq", "INTEGER DEFAULT 0"),
+        # 1.2.0 定金增强：交付时间窗口 + 交付要求备注
+        ("deposits", "delivery_time", "TEXT DEFAULT ''"),
+        ("deposits", "deliver_requirements", "TEXT DEFAULT ''"),
     ]
     for table, col, decl in alters:
         if not _has_column(conn, table, col):

@@ -1255,8 +1255,9 @@ def dashboard_reminders(request: Request):
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, sess)
         deposits_urgent = conn.execute(
-            "SELECT * FROM deposits WHERE status='已定' AND promised_date <= date('now','+7 days') "
-            "AND (store_id=? OR store_id=0) ORDER BY promised_date LIMIT 8", (sid,)
+            "SELECT * FROM deposits WHERE status='已定' AND (store_id=? OR store_id=0) "
+            "ORDER BY CASE WHEN promised_date='' OR promised_date IS NULL THEN 1 ELSE 0 END, "
+            "promised_date ASC LIMIT 10", (sid,)
         ).fetchall()
         loans_overdue = conn.execute(
             "SELECT * FROM loans WHERE status IN ('借出中','借入中') AND due_date < date('now') "
@@ -2049,6 +2050,75 @@ def product_delete(pid: int, request: Request):
         conn.commit()
         _log(conn, op["username"], "删除商品", f"#{pid}")
         return {"ok": True}
+
+
+class ProductBatchIds(BaseModel):
+    ids: list[int]
+
+
+@app.post("/api/products/batch-delete")
+def product_batch_delete(body: ProductBatchIds, request: Request):
+    """批量删除在库商品（选了才能操作）。返回删除数量和跳过的不在库数量。"""
+    op = _require_auth(request)
+    if not body.ids:
+        raise HTTPException(400, "未选择商品")
+    if len(body.ids) > 100:
+        raise HTTPException(400, "单次最多删 100 件")
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
+        _assert_stock_unfrozen(conn)
+        placeholders = ",".join("?" * len(body.ids))
+        rows = conn.execute(
+            f"SELECT id, status FROM products WHERE id IN ({placeholders}) AND (store_id=? OR store_id=0)",
+            body.ids + [sid],
+        ).fetchall()
+        ids_ok = [r["id"] for r in rows if r["status"] == "在库"]
+        skipped = len(rows) - len(ids_ok) + (len(body.ids) - len(rows))
+        if ids_ok:
+            conn.execute(f"DELETE FROM products WHERE id IN ({','.join('?'*len(ids_ok))})", ids_ok)
+            conn.commit()
+            for pid in ids_ok:
+                _log(conn, op["username"], "删除商品", f"#{pid}")
+        return {"deleted": len(ids_ok), "skipped": skipped}
+
+
+@app.post("/api/products/batch-copy")
+def product_batch_copy(body: ProductBatchIds, request: Request):
+    """批量复制商品（不复制图片/EPC/标签打印次数，生成新货号后缀 -n）。"""
+    op = _require_auth(request)
+    if not body.ids:
+        raise HTTPException(400, "未选择商品")
+    if len(body.ids) > 50:
+        raise HTTPException(400, "单次最多复制 50 件")
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
+        _assert_stock_unfrozen(conn)
+        placeholders = ",".join("?" * len(body.ids))
+        rows = conn.execute(
+            f"SELECT * FROM products WHERE id IN ({placeholders}) AND (store_id=? OR store_id=0)",
+            body.ids + [sid],
+        ).fetchall()
+        count = 0
+        for r in rows:
+            new_code = r["code"] + "-" + str(count + 1)
+            # 货号可能撞，自动换
+            while conn.execute("SELECT 1 FROM products WHERE code=?", (new_code,)).fetchone():
+                count += 1
+                new_code = r["code"] + "-" + str(count + 1)
+            conn.execute(
+                """INSERT INTO products(code,barcode,name,category_id,category,type_id,type,material,
+                   weight,unit,price,cost,store_id,location_id,status,showcase_public,high_value,
+                   has_cert,remark)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (new_code, r["barcode"], r["name"], r["category_id"], r["category"],
+                 r["type_id"], r["type"], r["material"], r["weight"], r["unit"],
+                 r["price"], r["cost"], sid, r["location_id"] or 0, "在库",
+                 0, 0, r["has_cert"], r["remark"]),
+            )
+            count += 1
+        conn.commit()
+        _log(conn, op["username"], "批量复制商品", f"{count} 件")
+        return {"count": count}
 
 
 # ---------------------------------------------------------------- 商品图片（前端 Canvas 裁切后传 base64 JPEG）
@@ -5133,6 +5203,8 @@ class DepositIn(BaseModel):
     deposit: float = Field(ge=0)
     balance: float = Field(ge=0)
     promised_date: str = ""
+    delivery_time: str = ""
+    deliver_requirements: str = ""
     reminder_days: int = 7
 
 
@@ -5163,10 +5235,11 @@ def deposit_create(body: DepositIn, request: Request):
             conn.execute("UPDATE products SET status='已定' WHERE id=?", (p["id"],))
             name = name or p["name"]
         cur = conn.execute(
-            """INSERT INTO deposits(customer,phone,product_id,product,total,deposit,balance,promised_date,reminder_days,status,store_id)
-               VALUES(?,?,?,?,?,?,?,?,?,'已定',?)""",
+            """INSERT INTO deposits(customer,phone,product_id,product,total,deposit,balance,promised_date,delivery_time,deliver_requirements,reminder_days,status,store_id)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,'已定',?)""",
             (body.customer, body.phone, body.product_id, name, body.total, body.deposit, body.balance,
-             body.promised_date, body.reminder_days, sid),
+             body.promised_date, body.delivery_time, body.deliver_requirements,
+             body.reminder_days, sid),
         )
         _touch_customer(conn, body.customer, body.phone, body.deposit, body.balance)
         conn.commit()
