@@ -227,6 +227,41 @@ def _require_auth(request: Request) -> dict:
 
 # ---------------------------------------------------------------- 门店授权与当前工作门店
 
+def _ensure_seed_store(conn: sqlite3.Connection, user_id: int, username: str) -> list[sqlite3.Row]:
+    """新租户/沙箱首次进入：stores 表空 → 自动建一家「总店」(code=HQ) 并授权当前用户。
+    幂等：stores 非空时直接返回现有门店；仅当 stores 和 user_stores 都空时才 seed。"""
+    existing = conn.execute("SELECT COUNT(*) AS c FROM stores").fetchone()["c"]
+    if existing > 0:
+        # stores 存在但 user_stores 没授权 → 给当前用户补全授权（防历史遗漏）
+        all_stores = conn.execute("SELECT * FROM stores ORDER BY id").fetchall()
+        for s in all_stores:
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO user_stores(user_id,store_id,granted_by) VALUES(?,?,?)",
+                    (user_id, s["id"], "auto_seed"),
+                )
+            except sqlite3.IntegrityError:
+                pass
+        conn.commit()
+        return all_stores
+    # 全空 → 新建总店
+    cur = conn.execute(
+        "INSERT INTO stores(name,code,owner) VALUES(?,?,?)",
+        ("总店", "HQ", username),
+    )
+    store_id = cur.lastrowid
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO user_stores(user_id,store_id,granted_by) VALUES(?,?,?)",
+            (user_id, store_id, "auto_seed"),
+        )
+    except sqlite3.IntegrityError:
+        pass
+    conn.commit()
+    logger.warning("auto_seed: 新建沙箱总店 id=%s 并授权用户 %s", store_id, username)
+    return conn.execute("SELECT * FROM stores WHERE id=?", (store_id,)).fetchall()
+
+
 def _accessible_store_rows(conn: sqlite3.Connection, sess: dict) -> list[sqlite3.Row]:
     """当前会话可访问的门店：店长/高管=全部门店（高管可跨店巡查）；店员=user_stores 授权门店。"""
     if sess.get("role") in ("TENANT_ADMIN", "EXECUTIVE"):
@@ -943,6 +978,9 @@ def api_login(body: LoginReq, request: Request):
                 "can_view_cost": bool(user["can_view_cost"]) if "can_view_cost" in user.keys()
                 else user["role"] in _COST_FORCE_VISIBLE_ROLES}
         store_rows = _accessible_store_rows(conn, info)
+        # 新租户/沙箱首次登录：stores 为空 → 自动建「总店」并授权当前用户
+        if not store_rows:
+            store_rows = _ensure_seed_store(conn, user["id"], user["username"])
         stores = _store_payload(store_rows)
         info["store_id"] = stores[0]["id"] if stores else 0
         with _lock:
@@ -996,6 +1034,11 @@ def api_me(request: Request):
         # 列级权限实时读库：店长在用户管理里收回/授予后，店员下次刷新即生效，无需重登
         u["can_view_cost"] = _can_view_cost(conn, u)
         rows = _accessible_store_rows(conn, u)
+        if not rows:
+            # 极端兜底：已登录但 stores 空（被误删/全新沙箱）→ 自动 seed
+            urow = conn.execute("SELECT id FROM users WHERE username=?", (u["username"],)).fetchone()
+            if urow:
+                rows = _ensure_seed_store(conn, urow["id"], u["username"])
         stores = _store_payload(rows)
     cur = int(u.get("store_id") or 0)
     if cur not in [s["id"] for s in stores]:
