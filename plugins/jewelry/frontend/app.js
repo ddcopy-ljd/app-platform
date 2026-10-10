@@ -672,7 +672,7 @@ function go(tab) {
     loadProfile(); loadBizConfig(); loadClerkTypes(); loadProductTypes(); loadLocations();
     if (ST.adminSub === 'tpl') loadTemplates();
     if (ST.adminSub === 'security') loadSecurity();
-    if (ST.adminSub === 'logs') loadLogs();
+    if (ST.adminSub === 'logs') { ST.subView = 'logs'; loadSubList(); }
     if (ST.adminSub === 'users' && isAdminRole()) { loadAdminUsers(); loadStores(true); }
   }
   // PC 侧边栏直接进入子列表页（维修/采购/委外/借货/客户）时也要拉数据
@@ -694,6 +694,11 @@ function switchAdminSub(key) {
 }
 
 function openSubView(name) {
+  // PC 内容区按 tab 渲染列表；从看板快捷入口/KPI 卡进入时必须同步切 tab（移动端走 sub-page 覆盖层，不改 tab）
+  if (ST.isPc) {
+    if (['customers', 'loans', 'repairs', 'purchases', 'outsourcings'].indexOf(name) >= 0) ST.tab = name;
+    else if (name === 'logs') { ST.adminSub = 'logs'; go('system'); return; }
+  }
   ST.subView = name;
   ST.subPage = 1;
   loadSubList();
