@@ -1281,6 +1281,10 @@ def ensure_new_seeds(conn: sqlite3.Connection) -> None:
             "INSERT INTO shops(name,code,sale_item_limit) VALUES(?,?,?)",
             ("懿臻珠宝总店", "HQ", 20),
         )
+    # —— stores：保证至少 2 家（前端门店切换 select 只有 stores.length>1 才显示）——
+    _ensure_stores_seed(conn)
+    # —— user_stores：确保 admin 有权限看到所有门店（含新加的分店）——
+    _ensure_user_store_grants(conn)
     # —— categories ——
     if conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0] == 0:
         cats = [
@@ -1434,8 +1438,7 @@ def ensure_new_seeds(conn: sqlite3.Connection) -> None:
         ]
         conn.executemany("INSERT INTO outsourcings(factory,product,material,weight,gold_price,labor_fee,send_date,expected_date,received_date,status) VALUES(?,?,?,?,?,?,?,?,?,?)", outsourcings)
     # —— operate_logs ——
-    if conn.execute("SELECT COUNT(*) FROM operate_logs").fetchone()[0] == 0:
-        conn.execute("INSERT INTO operate_logs(operator,store,action,target,result) VALUES('admin','总店','初始化演示数据','jewelry','成功')")
+    _ensure_operate_logs_seed(conn)
     # —— customers ——
     if conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0] == 0:
         customers = [
@@ -1486,6 +1489,44 @@ def _ensure_user_store_grants(conn: sqlite3.Connection) -> None:
         )
 
 
+def _ensure_operate_logs_seed(conn: sqlite3.Connection) -> None:
+    """幂等模拟操作日志：COUNT≤1 时视为空，补 20+ 条覆盖全业务链。"""
+    from datetime import datetime, timedelta
+    n = conn.execute("SELECT COUNT(*) FROM operate_logs").fetchone()[0]
+    if n > 1:
+        return  # 已有真实操作日志，不动
+    if n > 0:
+        conn.execute("DELETE FROM operate_logs")
+    now = datetime.now()
+    logs = [
+        ("admin", "总店", "登录", "admin", "成功", now),
+        ("admin", "总店", "销售开单", "XS20261010001 古法金手串 1件", "成功", now - timedelta(minutes=10)),
+        ("admin", "总店", "切换门店", "分店A", "成功", now - timedelta(minutes=5)),
+        ("admin", "分店A", "销售开单", "XS20261008001 翡翠吊坠 1件", "成功", now - timedelta(hours=2)),
+        ("admin", "分店A", "收定金", "王晓丽 钻石耳钉 ￥2000", "成功", now - timedelta(hours=3)),
+        ("admin", "总店", "调拨发出", "TR20261008001 清老银饰 2件", "成功", now - timedelta(days=2)),
+        ("admin", "总店", "新增商品", "J011 珍珠项链", "成功", now - timedelta(days=2)),
+        ("admin", "分店A", "接维修", "张美凤 翡翠手镯裂纹修复", "成功", now - timedelta(days=3)),
+        ("staff", "总店", "借货", "同行老刘 足金手镯", "成功", now - timedelta(days=3)),
+        ("admin", "总店", "RFID隔空盘点", "感应12 盘亏1", "成功", now - timedelta(days=4)),
+        ("admin", "总店", "门店授权", "admin 全部门店", "成功", now - timedelta(days=5)),
+        ("admin", "总店", "定金冲红", "#1", "成功", now - timedelta(days=6)),
+        ("admin", "总店", "RFID标签打印", "J011 珍珠项链 E28.JQ.07.0001", "成功", now - timedelta(days=6)),
+        ("staff", "分店A", "预约跟进", "2:已确认", "成功", now - timedelta(days=7)),
+        ("admin", "总店", "销售冲红", "XS20261008001", "成功", now - timedelta(days=7)),
+        ("admin", "总店", "委外加工", "金艺加工厂 镶钻吊坠", "成功", now - timedelta(days=10)),
+        ("admin", "总店", "采购入库", "CG20260105001 足金金料 100g", "成功", now - timedelta(days=12)),
+        ("staff", "总店", "借货归还", "同行老刘 足金手镯", "成功", now - timedelta(days=14)),
+        ("admin", "总店", "安防布防", "定时计划", "成功", now - timedelta(days=15)),
+        ("admin", "分店A", "新增账号", "staff2", "成功", now - timedelta(days=20)),
+        ("admin", "总店", "初始化演示数据（含10件新品橱窗）", "jewelry", "成功", now - timedelta(days=30)),
+    ]
+    conn.executemany(
+        "INSERT INTO operate_logs(operator,store,action,target,result,time) VALUES(?,?,?,?,?,?)",
+        [(op, st, ac, tg, rs, t.strftime('%Y-%m-%d %H:%M:%S')) for (op, st, ac, tg, rs, t) in logs],
+    )
+
+
 # sales 种子数据（seed_demo 和 ensure_new_seeds 共用，保证 dashboard 趋势图/品类占比有值）
 # 时间覆盖近 12 个月窗口，product_id 正确关联 products 表
 _SEED_SALES_ROWS = [
@@ -1507,6 +1548,43 @@ _SEED_SALES_ROWS = [
     ("XS20261008001", "李雪", "13500005555", "翡翠吊坠", 3, 8600, 8600, "刷卡", "2026-10-08", "普通", "已完成"),
     ("XS20261010001", "王女士", "13200004444", "古法金手串", 8, 32600, 32600, "微信", "2026-10-10", "普通", "已完成"),
 ]
+
+
+def _ensure_stores_seed(conn: sqlite3.Connection) -> None:
+    """确保 stores 表至少有 2 家（前端门店切换 select 只有 length>1 才显示）。"""
+    n = conn.execute("SELECT COUNT(*) FROM stores").fetchone()[0]
+    if n == 0:
+        # 全空：seed 两家
+        conn.executemany(
+            "INSERT INTO stores(name,code,owner,shop_id) VALUES(?,?,?,?)",
+            [("总店", "HQ", "管理员", 1), ("分店A", "A001", "店长小张", 0)],
+        )
+    elif n == 1:
+        # 只有 1 家：补第二家分店
+        existing_code = conn.execute("SELECT code FROM stores LIMIT 1").fetchone()[0]
+        if existing_code == "HQ":
+            conn.execute("INSERT INTO stores(name,code,owner,shop_id) VALUES(?,?,?,?)",
+                         ("分店A", "A001", "店长小张", 0))
+        else:
+            conn.execute("INSERT INTO stores(name,code,owner,shop_id) VALUES(?,?,?,?)",
+                         ("总店", "HQ", "管理员", 1))
+
+
+def _ensure_user_store_grants(conn: sqlite3.Connection) -> None:
+    """确保所有 stores 在 user_stores 里对每个 user 都有授权（避免"暂无可访问门店"）。"""
+    store_ids = [r["id"] for r in conn.execute("SELECT id FROM stores").fetchall()]
+    user_ids = [r["id"] for r in conn.execute("SELECT id FROM users").fetchall()]
+    for uid in user_ids:
+        for sid in store_ids:
+            exists = conn.execute(
+                "SELECT 1 FROM user_stores WHERE user_id=? AND store_id=?",
+                (uid, sid),
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    "INSERT INTO user_stores(user_id,store_id,granted_by,granted) VALUES(?,?,?,datetime('now','localtime'))",
+                    (uid, sid, "ensure_seeds"),
+                )
 
 
 def _ensure_sales_seed(conn: sqlite3.Connection) -> None:
@@ -1841,8 +1919,7 @@ def seed_demo(conn: sqlite3.Connection) -> None:
     )
     # —— 销售出库 inventory_logs ——
     _ensure_sale_inventory_logs(conn)
+    # —— operate_logs（20+ 条模拟近期真实操作记录）——
+    _ensure_operate_logs_seed(conn)
 
-    conn.execute(
-        "INSERT INTO operate_logs(operator,store,action,target,result) VALUES('admin','总店','初始化演示数据（含10件新品橱窗）','jewelry','成功')"
-    )
     conn.commit()
