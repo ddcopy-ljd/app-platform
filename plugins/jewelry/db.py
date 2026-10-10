@@ -1259,53 +1259,267 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
 
 def ensure_new_seeds(conn: sqlite3.Connection) -> None:
-    """为已有数据库补充新模块种子数据（每表独立检测）。"""
+    """为已有数据库补充新模块种子数据（每表独立检测，幂等）。"""
+    # —— deposits：适配 1.2.0 新增 delivery_time / deliver_requirements 两列 ——
     if conn.execute("SELECT COUNT(*) FROM deposits").fetchone()[0] == 0:
         deposits = [
-            ("王晓丽", "13800001111", 2, "钻石耳钉", 4280, 2000, 2280, "2026-02-15", 7, "已定"),
-            ("赵明辉", "13600004444", 1, "足金手镯定制", 32000, 16000, 16000, "2026-02-28", 7, "已定"),
+            ("王晓丽", "13800001111", 2, "钻石耳钉", 4280, 2000, 2280,
+             "2026-10-20", "10月20日 下午2-4点", "证书用 GIA · 刻字 HAPPY", 7, "已定"),
+            ("赵明辉", "13600004444", 1, "足金手镯定制", 32000, 16000, 16000,
+             "2026-11-15", "", "", 7, "已定"),
+            ("李雪", "13500005555", 3, "翡翠观音吊坠", 9800, 4000, 5800,
+             "2026-10-18", "10月18日 上午10点前", "改款加配 3 颗小钻 · 国检证书", 7, "已定"),
         ]
-        conn.executemany("INSERT INTO deposits(customer,phone,product_id,product,total,deposit,balance,promised_date,reminder_days,status) VALUES(?,?,?,?,?,?,?,?,?,?)", deposits)
+        conn.executemany(
+            "INSERT INTO deposits(customer,phone,product_id,product,total,deposit,balance,"
+            "promised_date,delivery_time,deliver_requirements,reminder_days,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            deposits,
+        )
+    # —— shops（上层组织）——
+    if conn.execute("SELECT COUNT(*) FROM shops").fetchone()[0] == 0:
+        conn.execute(
+            "INSERT INTO shops(name,code,sale_item_limit) VALUES(?,?,?)",
+            ("懿臻珠宝总店", "HQ", 20),
+        )
+    # —— categories ——
+    if conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0] == 0:
+        cats = [
+            ("GOLD", '{"zh":"黄金","en":"Gold","it":"Oro"}'),
+            ("DIAMOND", '{"zh":"钻石","en":"Diamond","it":"Diamante"}'),
+            ("JADE", '{"zh":"翡翠","en":"Jade","it":"Giada"}'),
+            ("PT", '{"zh":"铂金","en":"Platinum","it":"Platino"}'),
+            ("COLORSTONE", '{"zh":"彩宝","en":"Color Stone","it":"Pietra Colore"}'),
+            ("SILVER", '{"zh":"银饰","en":"Silver","it":"Argento"}'),
+            ("PEARL", '{"zh":"珍珠","en":"Pearl","it":"Perla"}'),
+        ]
+        conn.executemany("INSERT INTO categories(code,names) VALUES(?,?)", cats)
+    # —— product_types ——
+    if conn.execute("SELECT COUNT(*) FROM product_types").fetchone()[0] == 0:
+        pts = [
+            ("RING", '{"zh":"戒指","en":"Ring","it":"Anello"}', 1, "piece"),
+            ("NECKLACE", '{"zh":"项链","en":"Necklace","it":"Collana"}', 2, "piece"),
+            ("BRACELET", '{"zh":"手镯","en":"Bracelet","it":"Bracciale"}', 3, "piece"),
+            ("EARRING", '{"zh":"耳饰","en":"Earring","it":"Orecchino"}', 4, "piece"),
+            ("PENDANT", '{"zh":"吊坠","en":"Pendant","it":"Ciondolo"}', 5, "piece"),
+            ("CHAIN", '{"zh":"链","en":"Chain","it":"Catena"}', 6, "piece"),
+            ("BEAD", '{"zh":"串珠","en":"Bead","it":"Perla"}', 7, "piece"),
+        ]
+        conn.executemany("INSERT INTO product_types(code,names,sort_order,pricing_mode) VALUES(?,?,?,?)", pts)
+    # —— locations（库位）——
+    if conn.execute("SELECT COUNT(*) FROM locations").fetchone()[0] == 0:
+        locs = [
+            (1, "A-01-01", "A区-01柜-01格", 1), (1, "A-01-02", "A区-01柜-02格", 2),
+            (1, "A-01-03", "A区-01柜-03格", 3), (1, "B-02-01", "B区-02柜-01格", 4),
+            (1, "B-02-02", "B区-02柜-02格", 5), (1, "C-03-01", "C区-03柜-01格", 6),
+            (1, "SAFE-01", "保险柜-01", 7),
+        ]
+        conn.executemany("INSERT INTO locations(store_id,code,name,sort_order) VALUES(?,?,?,?)", locs)
+    # —— clerk_types（员工类型字典）——
+    if conn.execute("SELECT COUNT(*) FROM clerk_types").fetchone()[0] == 0:
+        cts = [("店长", 1), ("珠宝顾问", 2), ("收银", 3), ("维修技师", 4), ("盘点员", 5)]
+        conn.executemany("INSERT INTO clerk_types(name,sort_order) VALUES(?,?)", cts)
+    # —— label_templates ——
+    if conn.execute("SELECT COUNT(*) FROM label_templates").fetchone()[0] == 0:
+        conn.execute(
+            "INSERT INTO label_templates(name,size_width,size_height,layout) VALUES(?,?,?,?)",
+            ("标准标签", 70, 35, "{}"),
+        )
+    # —— biz_config ——
+    if conn.execute("SELECT COUNT(*) FROM biz_config").fetchone()[0] == 0:
+        conn.execute(
+            "INSERT INTO biz_config(id,epc_prefix,seq_bits,gold_price) VALUES(1,'E28',8,520)",
+        )
+    # —— transfers + transfer_items ——
+    if conn.execute("SELECT COUNT(*) FROM transfers").fetchone()[0] == 0:
+        cur = conn.execute(
+            "INSERT INTO transfers(transfer_no,from_store_id,to_store_id,remark,status,created) "
+            "VALUES(?,?,?,?,?,datetime('now','localtime'))",
+            ("TR20261005001", 1, 2, "调新款钻戒到分店A做展", "已完成"),
+        )
+        tid = cur.lastrowid
+        conn.executemany(
+            "INSERT INTO transfer_items(transfer_id,product_id,product_name,epc) VALUES(?,?,?,?)",
+            [(tid, 2, "钻石耳钉", "E28.JQ.02.0001"), (tid, 5, "红碧玺彩宝戒指", "E28.JQ.05.0001")],
+        )
+        cur2 = conn.execute(
+            "INSERT INTO transfers(transfer_no,from_store_id,to_store_id,remark,status,created) "
+            "VALUES(?,?,?,?,?,datetime('now','localtime'))",
+            ("TR20261008001", 1, 2, "清库存老银饰", "在途"),
+        )
+        tid2 = cur2.lastrowid
+        conn.executemany(
+            "INSERT INTO transfer_items(transfer_id,product_id,product_name,epc) VALUES(?,?,?,?)",
+            [(tid2, 7, "银质一生一世对戒", "E28.JQ.06.0001"), (tid2, 11, "珍珠项链", "")],
+        )
+    # —— appointments ——
+    if conn.execute("SELECT COUNT(*) FROM appointments").fetchone()[0] == 0:
+        apps = [
+            ("王晓丽", "13800001111", "phone", "到店试戴钻戒", "2026-10-12", "14:00", "待确认"),
+            ("赵明辉", "13600004444", "phone", "定做足金手镯", "2026-10-13", "10:30", "已确认"),
+            ("李雪", "13500005555", "phone", "翡翠手镯保养", "2026-10-09", "15:00", "已到店"),
+        ]
+        conn.executemany(
+            "INSERT INTO appointments(name,contact,contact_type,category,want_date,want_slot,status) "
+            "VALUES(?,?,?,?,?,?,?)", apps,
+        )
+    # —— stocktakes + stocktake_items ——
+    if conn.execute("SELECT COUNT(*) FROM stocktakes").fetchone()[0] == 0:
+        cur = conn.execute(
+            "INSERT INTO stocktakes(batch_no,status,operator,created) "
+            "VALUES(?,?,?,datetime('now','localtime'))",
+            ("ST20261001001", "完成", "店长"),
+        )
+        stid = cur.lastrowid
+        conn.executemany(
+            "INSERT INTO stocktake_items(stocktake_id,result,epc,product_id,code,product) "
+            "VALUES(?,?,?,?,?,?)",
+            [
+                (stid, "相符", "E28.JQ.01.0001", 1, "J001", "足金手镯"),
+                (stid, "相符", "E28.JQ.02.0001", 2, "J002", "钻石耳钉"),
+                (stid, "相符", "E28.JQ.03.0001", 3, "J003", "翡翠观音吊坠"),
+                (stid, "不符", "", 8, "J008", "古法黄金传承手串"),
+            ],
+        )
+    # —— devices ——
+    if conn.execute("SELECT COUNT(*) FROM devices").fetchone()[0] == 0:
+        conn.executemany(
+            "INSERT INTO devices(code,name,bound_store_id,status,last_seen) VALUES(?,?,?,?,?)",
+            [
+                ("C72-000123", "主店-C72手持机", 1, "active", None),
+                ("C27-000456", "分店-C27手持机", 2, "active", None),
+                ("SC-998877", "主店-扫码枪", 1, "active", None),
+            ],
+        )
+    # —— sensors ——
+    if conn.execute("SELECT COUNT(*) FROM sensors").fetchone()[0] == 0:
+        conn.executemany(
+            "INSERT INTO sensors(name,store_id,location,driver_code,enabled) VALUES(?,?,?,?,?)",
+            [
+                ("主店门口EAS天线", 1, "门口", "EAS-GATE", 1),
+                ("柜台-RFID读写器", 1, "柜台中央", "UHF-RFID", 1),
+                ("分店门口EAS天线", 2, "门口", "EAS-GATE", 1),
+            ],
+        )
+    # —— sales 对应的 sale_items + sale_payments 明细 ——
+    _ensure_sale_details(conn)
+    # —— 销售相关的 inventory_logs（销售出库）——
+    _ensure_sale_inventory_logs(conn)
+    # —— loans（借货）——
     if conn.execute("SELECT COUNT(*) FROM loans").fetchone()[0] == 0:
         loans = [
             ("out", "足金手镯", "J001", "同行老刘", 1, "2026-01-20", "2026-02-20", "借出中"),
             ("in", "钻石戒指", "DR-8899", "供应商A", 1, "2026-01-25", "2026-02-15", "借入中"),
         ]
         conn.executemany("INSERT INTO loans(direction,product,code,party,qty,loan_date,due_date,status) VALUES(?,?,?,?,?,?,?,?)", loans)
+    # —— repairs（维修）——
     if conn.execute("SELECT COUNT(*) FROM repairs").fetchone()[0] == 0:
         repairs = [
             ("李强", "13900002222", "18K金链", "链扣断裂", 200, 180, "2026-01-18", "2026-01-25", "2026-01-24", "已完成", "王师傅", "配原装链扣"),
             ("张美凤", "13700003333", "翡翠手镯", "轻微裂纹修复", 500, 0, "2026-01-28", "2026-02-10", "", "维修中", "李师傅", ""),
         ]
         conn.executemany("INSERT INTO repairs(customer,phone,item,issue,est_fee,actual_fee,receive_date,promised_date,done_date,status,technician,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", repairs)
+    # —— purchases（采购）——
     if conn.execute("SELECT COUNT(*) FROM purchases").fetchone()[0] == 0:
         purchases = [
             ("深圳金料供应", "足金金料", 100, 45000, "2026-01-05", "2026-01-15", "2026-01-14", "已入库", 45000),
         ]
         conn.executemany("INSERT INTO purchases(supplier,product,qty,cost,order_date,expected_date,received_date,status,paid) VALUES(?,?,?,?,?,?,?,?,?)", purchases)
+    # —— outsourcings（委外）——
     if conn.execute("SELECT COUNT(*) FROM outsourcings").fetchone()[0] == 0:
         outsourcings = [
             ("金艺加工厂", "镶钻吊坠", "18K金", 5.6, 380, 1200, "2026-01-12", "2026-01-22", "", "加工中"),
         ]
         conn.executemany("INSERT INTO outsourcings(factory,product,material,weight,gold_price,labor_fee,send_date,expected_date,received_date,status) VALUES(?,?,?,?,?,?,?,?,?,?)", outsourcings)
+    # —— operate_logs ——
     if conn.execute("SELECT COUNT(*) FROM operate_logs").fetchone()[0] == 0:
         conn.execute("INSERT INTO operate_logs(operator,store,action,target,result) VALUES('admin','总店','初始化演示数据','jewelry','成功')")
+    # —— customers ——
     if conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0] == 0:
-        customers = [("王晓丽", "13800001111", "金卡", 43600, 0, "1990-05-12", "偏好足金手镯"),
-                     ("李强", "13900002222", "银卡", 12800, 21800, "1988-11-03", "钻石类"),
-                     ("张美凤", "13700003333", "普通", 5600, 0, "1995-02-20", "彩宝")]
-        conn.executemany("INSERT INTO customers(name,phone,level,total_amount,due_amount,birthday,preference) VALUES(?,?,?,?,?,?,?)", customers)
+        customers = [
+            ("王晓丽", "13800001111", "金卡", 43600, 0, "1990-05-12", "偏好足金手镯", 4360),
+            ("李强", "13900002222", "银卡", 12800, 21800, "1988-11-03", "钻石类", 1280),
+            ("张美凤", "13700003333", "普通", 5600, 0, "1995-02-20", "彩宝", 560),
+        ]
+        conn.executemany(
+            "INSERT INTO customers(name,phone,level,total_amount,due_amount,birthday,preference,points) "
+            "VALUES(?,?,?,?,?,?,?,?)", customers,
+        )
+    # —— tenant_profiles ——
     if conn.execute("SELECT COUNT(*) FROM tenant_profiles").fetchone()[0] == 0:
         conn.execute(
             """INSERT INTO tenant_profiles(tenant_id,name,short_name,slogan,intro,contact,phone,address,hours,categories,published)
                VALUES('tenant_trial','懿臻珠宝总店','懿臻','懿德 · 臻品 · 云智',
                       '面向中高端珠宝门店的数智化经营。','张店长','13800000000','上海市黄浦区南京东路 88 号','10:00-21:00','黄金,钻石,翡翠,铂金,彩宝',1)"""
         )
+    # —— users（管理员 + 店员）——
     if conn.execute("SELECT 1 FROM users WHERE username='admin'").fetchone() is None:
         conn.execute("INSERT INTO users(username,password,display_name,role) VALUES('admin','admin123456','店长','TENANT_ADMIN')")
     if conn.execute("SELECT 1 FROM users WHERE username='staff'").fetchone() is None:
         conn.execute("INSERT INTO users(username,password,display_name,role) VALUES('staff','123456','店员','EMPLOYEE')")
+    # —— user_stores 授权（init.py 也依赖这个，是"暂无可访问门店"的核心修复）——
+    _ensure_user_store_grants(conn)
     conn.commit()
+
+
+def _ensure_user_store_grants(conn: sqlite3.Connection) -> None:
+    """给 admin/staff 用户补 user_stores 授权；幂等，不重复。"""
+    stores = conn.execute("SELECT id FROM stores ORDER BY id").fetchall()
+    if not stores:
+        return
+    admin = conn.execute("SELECT id FROM users WHERE username='admin'").fetchone()
+    staff = conn.execute("SELECT id FROM users WHERE username='staff'").fetchone()
+    # admin 授权所有门店
+    if admin:
+        for s in stores:
+            conn.execute(
+                "INSERT OR IGNORE INTO user_stores(user_id,store_id,granted_by) VALUES(?,?,?)",
+                (admin["id"], s["id"], "init_seed"),
+            )
+    # staff 只授权 HQ（第一家门店）
+    if staff and stores:
+        conn.execute(
+            "INSERT OR IGNORE INTO user_stores(user_id,store_id,granted_by) VALUES(?,?,?)",
+            (staff["id"], stores[0]["id"], "init_seed"),
+        )
+
+
+def _ensure_sale_details(conn: sqlite3.Connection) -> None:
+    """为 sales 主单补 sale_items（明细）+ sale_payments（组合支付）。"""
+    if conn.execute("SELECT COUNT(*) FROM sale_items").fetchone()[0] > 0:
+        return
+    sales_rows = conn.execute("SELECT id, product, amount, method FROM sales ORDER BY id").fetchall()
+    if not sales_rows:
+        return
+    # 产品 id 映射：按 name LIKE 匹配（演示数据名唯一）
+    prod_map = {}
+    for r in conn.execute("SELECT id, name FROM products").fetchall():
+        prod_map[r["name"]] = r["id"]
+    for s in sales_rows:
+        pid = prod_map.get(s["product"])
+        # 明细：演示单都是单件
+        conn.execute(
+            "INSERT INTO sale_items(sale_id,product_id,name,price,subtotal,seq) VALUES(?,?,?,?,?,1)",
+            (s["id"], pid, s["product"], s["amount"], s["amount"]),
+        )
+        # 支付：单笔全额
+        conn.execute(
+            "INSERT INTO sale_payments(sale_id,method,amount,seq) VALUES(?,?,?,1)",
+            (s["id"], s["method"], s["amount"]),
+        )
+
+
+def _ensure_sale_inventory_logs(conn: sqlite3.Connection) -> None:
+    """为销售商品生成 inventory_logs 出库流水。"""
+    if conn.execute("SELECT COUNT(*) FROM inventory_logs WHERE type='out'").fetchone()[0] > 0:
+        return
+    for r in conn.execute(
+        "SELECT si.product_id, si.name, si.sale_id FROM sale_items si "
+        "JOIN sales s ON s.id=si.sale_id WHERE s.status='已完成'"
+    ).fetchall():
+        conn.execute(
+            "INSERT INTO inventory_logs(product_id, type, qty, operator) VALUES(?,'out',1,?)",
+            (r["product_id"], f"sale#{r['sale_id']}"),
+        )
 
 
 def seed_demo(conn: sqlite3.Connection) -> None:
@@ -1314,6 +1528,50 @@ def seed_demo(conn: sqlite3.Connection) -> None:
         return
     stores = [("总店", "HQ", "管理员"), ("分店A", "A001", "店长小张")]
     conn.executemany("INSERT INTO stores(name,code,owner) VALUES(?,?,?)", stores)
+    # —— shops（上层组织）——
+    conn.execute("INSERT INTO shops(name,code,sale_item_limit) VALUES(?,?,?)", ("懿臻珠宝总店", "HQ", 20))
+    conn.execute("UPDATE stores SET shop_id=1 WHERE code='HQ'")
+    # —— biz_config（EPC 规则）——
+    conn.execute("INSERT OR IGNORE INTO biz_config(id,epc_prefix,seq_bits,gold_price) VALUES(1,'E28',8,520)")
+    conn.execute("UPDATE biz_config SET epc_prefix='E28', seq_bits=8, gold_price=520 WHERE id=1")
+    # —— categories ——
+    cats = [
+        ("GOLD", '{"zh":"黄金","en":"Gold","it":"Oro"}'),
+        ("DIAMOND", '{"zh":"钻石","en":"Diamond","it":"Diamante"}'),
+        ("JADE", '{"zh":"翡翠","en":"Jade","it":"Giada"}'),
+        ("PT", '{"zh":"铂金","en":"Platinum","it":"Platino"}'),
+        ("COLORSTONE", '{"zh":"彩宝","en":"Color Stone","it":"Pietra Colore"}'),
+        ("SILVER", '{"zh":"银饰","en":"Silver","it":"Argento"}'),
+        ("PEARL", '{"zh":"珍珠","en":"Pearl","it":"Perla"}'),
+    ]
+    conn.executemany("INSERT INTO categories(code,names) VALUES(?,?)", cats)
+    # —— product_types ——
+    pts = [
+        ("RING", '{"zh":"戒指","en":"Ring","it":"Anello"}', 1, "piece"),
+        ("NECKLACE", '{"zh":"项链","en":"Necklace","it":"Collana"}', 2, "piece"),
+        ("BRACELET", '{"zh":"手镯","en":"Bracelet","it":"Bracciale"}', 3, "piece"),
+        ("EARRING", '{"zh":"耳饰","en":"Earring","it":"Orecchino"}', 4, "piece"),
+        ("PENDANT", '{"zh":"吊坠","en":"Pendant","it":"Ciondolo"}', 5, "piece"),
+        ("CHAIN", '{"zh":"链","en":"Chain","it":"Catena"}', 6, "piece"),
+        ("BEAD", '{"zh":"串珠","en":"Bead","it":"Perla"}', 7, "piece"),
+    ]
+    conn.executemany("INSERT INTO product_types(code,names,sort_order,pricing_mode) VALUES(?,?,?,?)", pts)
+    # —— locations（库位）——
+    locs = [
+        (1, "A-01-01", "A区-01柜-01格", 1), (1, "A-01-02", "A区-01柜-02格", 2),
+        (1, "A-01-03", "A区-01柜-03格", 3), (1, "B-02-01", "B区-02柜-01格", 4),
+        (1, "B-02-02", "B区-02柜-02格", 5), (1, "C-03-01", "C区-03柜-01格", 6),
+        (1, "SAFE-01", "保险柜-01", 7),
+    ]
+    conn.executemany("INSERT INTO locations(store_id,code,name,sort_order) VALUES(?,?,?,?)", locs)
+    # —— clerk_types ——
+    cts = [("店长", 1), ("珠宝顾问", 2), ("收银", 3), ("维修技师", 4), ("盘点员", 5)]
+    conn.executemany("INSERT INTO clerk_types(name,sort_order) VALUES(?,?)", cts)
+    # —— label_templates ——
+    conn.execute(
+        "INSERT INTO label_templates(name,size_width,size_height,layout) VALUES(?,?,?,?)",
+        ("标准标签", 70, 35, "{}"),
+    )
     seed_store_printers(conn)  # 演示门店也补齐每个打印业务的指派行
 
     products = [
@@ -1396,9 +1654,31 @@ def seed_demo(conn: sqlite3.Connection) -> None:
         "INSERT INTO sales(bill_no,customer,phone,product,product_id,amount,paid,method,biz_date,type,status) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
         sales,
     )
+    # —— sales 对应的 sale_items + sale_payments 明细 ——
+    _ensure_sale_details(conn)
+    conn.commit()  # 让 products 插入在 SELECT sale_items 前可见
+    # —— customers ——
+    customers = [
+        ("王晓丽", "13800001111", "金卡", 43600, 0, "1990-05-12", "偏好足金手镯", 4360),
+        ("李强", "13900002222", "银卡", 12800, 21800, "1988-11-03", "钻石类", 1280),
+        ("张美凤", "13700003333", "普通", 5600, 0, "1995-02-20", "彩宝", 560),
+    ]
+    conn.executemany(
+        "INSERT INTO customers(name,phone,level,total_amount,due_amount,birthday,preference,points) "
+        "VALUES(?,?,?,?,?,?,?,?)", customers,
+    )
 
     conn.execute("INSERT INTO users(username,password,display_name,role) VALUES('admin','123456','店长','TENANT_ADMIN')")
     conn.execute("INSERT INTO users(username,password,display_name,role) VALUES('staff','123456','店员','EMPLOYEE')")
+    # —— user_stores 授权（全新库 init 时必须 seed，否则 admin 登录被卡"暂无可访问门店"）——
+    admin_uid = conn.execute("SELECT id FROM users WHERE username='admin'").fetchone()["id"]
+    staff_uid = conn.execute("SELECT id FROM users WHERE username='staff'").fetchone()["id"]
+    store_ids = [r[0] for r in conn.execute("SELECT id FROM stores ORDER BY id").fetchall()]
+    for sid in store_ids:
+        conn.execute("INSERT OR IGNORE INTO user_stores(user_id,store_id,granted_by) VALUES(?,?,?)", (admin_uid, sid, "init_seed"))
+    if store_ids:
+        conn.execute("INSERT OR IGNORE INTO user_stores(user_id,store_id,granted_by) VALUES(?,?,?)", (staff_uid, store_ids[0], "init_seed"))
+
     conn.execute(
         """INSERT INTO tenant_profiles(tenant_id,name,short_name,slogan,intro,contact,phone,address,hours,categories,published,
                                        showcase_title,showcase_subtitle)
@@ -1409,10 +1689,18 @@ def seed_demo(conn: sqlite3.Connection) -> None:
     )
 
     deposits = [
-        ("王晓丽", "13800001111", 2, "钻石耳钉", 4280, 2000, 2280, "2026-02-15", 7, "已定"),
-        ("赵明辉", "13600004444", 1, "足金手镯定制", 32000, 16000, 16000, "2026-02-28", 7, "已定"),
+        ("王晓丽", "13800001111", 2, "钻石耳钉", 4280, 2000, 2280,
+         "2026-10-20", "10月20日 下午2-4点", "证书用 GIA · 刻字 HAPPY", 7, "已定"),
+        ("赵明辉", "13600004444", 1, "足金手镯定制", 32000, 16000, 16000,
+         "2026-11-15", "", "", 7, "已定"),
+        ("李雪", "13500005555", 3, "翡翠观音吊坠", 9800, 4000, 5800,
+         "2026-10-18", "10月18日 上午10点前", "改款加配 3 颗小钻 · 国检证书", 7, "已定"),
     ]
-    conn.executemany("INSERT INTO deposits(customer,phone,product_id,product,total,deposit,balance,promised_date,reminder_days,status) VALUES(?,?,?,?,?,?,?,?,?,?)", deposits)
+    conn.executemany(
+        "INSERT INTO deposits(customer,phone,product_id,product,total,deposit,balance,"
+        "promised_date,delivery_time,deliver_requirements,reminder_days,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+        deposits,
+    )
 
     loans = [
         ("out", "足金手镯", "J001", "同行老刘", 1, "2026-01-20", "2026-02-20", "借出中"),
@@ -1445,6 +1733,74 @@ def seed_demo(conn: sqlite3.Connection) -> None:
             "INSERT INTO inventory_logs(product_id, type, qty, operator) VALUES(?,'in',1,'init')",
             (pid,),
         )
+    # —— transfers + transfer_items ——
+    cur = conn.execute(
+        "INSERT INTO transfers(transfer_no,from_store_id,to_store_id,remark,status,created) "
+        "VALUES(?,?,?,?,?,datetime('now','localtime'))",
+        ("TR20261005001", 1, 2, "调新款钻戒到分店A做展", "已完成"),
+    )
+    tid = cur.lastrowid
+    conn.executemany(
+        "INSERT INTO transfer_items(transfer_id,product_id,product_name,epc) VALUES(?,?,?,?)",
+        [(tid, 2, "钻石耳钉", "E28.JQ.02.0001"), (tid, 5, "红碧玺彩宝戒指", "E28.JQ.05.0001")],
+    )
+    cur2 = conn.execute(
+        "INSERT INTO transfers(transfer_no,from_store_id,to_store_id,remark,status,created) "
+        "VALUES(?,?,?,?,?,datetime('now','localtime'))",
+        ("TR20261008001", 1, 2, "清库存老银饰", "在途"),
+    )
+    tid2 = cur2.lastrowid
+    conn.executemany(
+        "INSERT INTO transfer_items(transfer_id,product_id,product_name,epc) VALUES(?,?,?,?)",
+        [(tid2, 7, "银质一生一世对戒", "E28.JQ.06.0001"), (tid2, 11, "珍珠项链", "")],
+    )
+    # —— appointments ——
+    apps = [
+        ("王晓丽", "13800001111", "phone", "到店试戴钻戒", "2026-10-12", "14:00", "待确认"),
+        ("赵明辉", "13600004444", "phone", "定做足金手镯", "2026-10-13", "10:30", "已确认"),
+        ("李雪", "13500005555", "phone", "翡翠手镯保养", "2026-10-09", "15:00", "已到店"),
+    ]
+    conn.executemany(
+        "INSERT INTO appointments(name,contact,contact_type,category,want_date,want_slot,status) "
+        "VALUES(?,?,?,?,?,?,?)", apps,
+    )
+    # —— stocktakes + stocktake_items ——
+    cur = conn.execute(
+        "INSERT INTO stocktakes(batch_no,status,operator,created) "
+        "VALUES(?,?,?,datetime('now','localtime'))",
+        ("ST20261001001", "完成", "店长"),
+    )
+    stid = cur.lastrowid
+    conn.executemany(
+        "INSERT INTO stocktake_items(stocktake_id,result,epc,product_id,code,product) "
+        "VALUES(?,?,?,?,?,?)",
+        [
+            (stid, "相符", "E28.JQ.01.0001", 1, "J001", "足金手镯"),
+            (stid, "相符", "E28.JQ.02.0001", 2, "J002", "钻石耳钉"),
+            (stid, "相符", "E28.JQ.03.0001", 3, "J003", "翡翠观音吊坠"),
+            (stid, "不符", "", 8, "J008", "古法黄金传承手串"),
+        ],
+    )
+    # —— devices ——
+    conn.executemany(
+        "INSERT INTO devices(code,name,bound_store_id,status,last_seen) VALUES(?,?,?,?,?)",
+        [
+            ("C72-000123", "主店-C72手持机", 1, "active", None),
+            ("C27-000456", "分店-C27手持机", 2, "active", None),
+            ("SC-998877", "主店-扫码枪", 1, "active", None),
+        ],
+    )
+    # —— sensors（安防/RFID）——
+    conn.executemany(
+        "INSERT INTO sensors(name,store_id,location,driver_code,enabled) VALUES(?,?,?,?,?)",
+        [
+            ("主店门口EAS天线", 1, "门口", "EAS-GATE", 1),
+            ("柜台-RFID读写器", 1, "柜台中央", "UHF-RFID", 1),
+            ("分店门口EAS天线", 2, "门口", "EAS-GATE", 1),
+        ],
+    )
+    # —— 销售出库 inventory_logs ——
+    _ensure_sale_inventory_logs(conn)
 
     conn.execute(
         "INSERT INTO operate_logs(operator,store,action,target,result) VALUES('admin','总店','初始化演示数据（含10件新品橱窗）','jewelry','成功')"
