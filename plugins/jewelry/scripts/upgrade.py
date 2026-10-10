@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from db import SCHEMA, migrate_schema  # noqa: E402
+from db import SCHEMA, migrate_schema, ensure_new_seeds  # noqa: E402
 
 
 def _arg(name: str, fallback: str = "") -> str:
@@ -50,9 +50,12 @@ def main() -> None:
         conn.executescript(SCHEMA)
         migrate_schema(conn)  # 幂等补齐新增列（如 showcase_order、origin 等）
         conn.commit()
+        # 幂等补空表演示数据（ensure_new_seeds 对每张表独立 COUNT==0 才 seed，
+        # 已有数据的表不动，安全）
+        ensure_new_seeds(conn)
         conn.close()
         print(f"upgrade 完成：租户 {tenant_id} -> {new_db.name}"
-              f"（schema 已幂等迁移，dataVersion {old_dv} -> {new_dv}）")
+              f"（schema 已幂等迁移 + 空表演示数据已补齐，dataVersion {old_dv} -> {new_dv}）")
     else:
         print("警告：未传入 --new-db-path，跳过迁移", file=sys.stderr)
 
