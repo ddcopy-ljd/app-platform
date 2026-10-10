@@ -1333,6 +1333,8 @@ def ensure_new_seeds(conn: sqlite3.Connection) -> None:
         conn.execute(
             "INSERT INTO biz_config(id,epc_prefix,seq_bits,gold_price) VALUES(1,'E28',8,520)",
         )
+    # —— products（商品管理/库存管理的数据源，必须在 sales/stocktakes/transfers 引用前灌入）——
+    _ensure_products_seed(conn)
     # —— transfers + transfer_items ——
     if conn.execute("SELECT COUNT(*) FROM transfers").fetchone()[0] == 0:
         cur = conn.execute(
@@ -1648,58 +1650,19 @@ def _ensure_sale_inventory_logs(conn: sqlite3.Connection) -> None:
         )
 
 
-def seed_demo(conn: sqlite3.Connection) -> None:
-    """写入演示数据（幂等：仅在接近空库时执行）。"""
-    if conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] > 0:
-        return
-    stores = [("总店", "HQ", "管理员"), ("分店A", "A001", "店长小张")]
-    conn.executemany("INSERT INTO stores(name,code,owner) VALUES(?,?,?)", stores)
-    # —— shops（上层组织）——
-    conn.execute("INSERT INTO shops(name,code,sale_item_limit) VALUES(?,?,?)", ("懿臻珠宝总店", "HQ", 20))
-    conn.execute("UPDATE stores SET shop_id=1 WHERE code='HQ'")
-    # —— biz_config（EPC 规则）——
-    conn.execute("INSERT OR IGNORE INTO biz_config(id,epc_prefix,seq_bits,gold_price) VALUES(1,'E28',8,520)")
-    conn.execute("UPDATE biz_config SET epc_prefix='E28', seq_bits=8, gold_price=520 WHERE id=1")
-    # —— categories ——
-    cats = [
-        ("GOLD", '{"zh":"黄金","en":"Gold","it":"Oro"}'),
-        ("DIAMOND", '{"zh":"钻石","en":"Diamond","it":"Diamante"}'),
-        ("JADE", '{"zh":"翡翠","en":"Jade","it":"Giada"}'),
-        ("PT", '{"zh":"铂金","en":"Platinum","it":"Platino"}'),
-        ("COLORSTONE", '{"zh":"彩宝","en":"Color Stone","it":"Pietra Colore"}'),
-        ("SILVER", '{"zh":"银饰","en":"Silver","it":"Argento"}'),
-        ("PEARL", '{"zh":"珍珠","en":"Pearl","it":"Perla"}'),
-    ]
-    conn.executemany("INSERT INTO categories(code,names) VALUES(?,?)", cats)
-    # —— product_types ——
-    pts = [
-        ("RING", '{"zh":"戒指","en":"Ring","it":"Anello"}', 1, "piece"),
-        ("NECKLACE", '{"zh":"项链","en":"Necklace","it":"Collana"}', 2, "piece"),
-        ("BRACELET", '{"zh":"手镯","en":"Bracelet","it":"Bracciale"}', 3, "piece"),
-        ("EARRING", '{"zh":"耳饰","en":"Earring","it":"Orecchino"}', 4, "piece"),
-        ("PENDANT", '{"zh":"吊坠","en":"Pendant","it":"Ciondolo"}', 5, "piece"),
-        ("CHAIN", '{"zh":"链","en":"Chain","it":"Catena"}', 6, "piece"),
-        ("BEAD", '{"zh":"串珠","en":"Bead","it":"Perla"}', 7, "piece"),
-    ]
-    conn.executemany("INSERT INTO product_types(code,names,sort_order,pricing_mode) VALUES(?,?,?,?)", pts)
-    # —— locations（库位）——
-    locs = [
-        (1, "A-01-01", "A区-01柜-01格", 1), (1, "A-01-02", "A区-01柜-02格", 2),
-        (1, "A-01-03", "A区-01柜-03格", 3), (1, "B-02-01", "B区-02柜-01格", 4),
-        (1, "B-02-02", "B区-02柜-02格", 5), (1, "C-03-01", "C区-03柜-01格", 6),
-        (1, "SAFE-01", "保险柜-01", 7),
-    ]
-    conn.executemany("INSERT INTO locations(store_id,code,name,sort_order) VALUES(?,?,?,?)", locs)
-    # —— clerk_types ——
-    cts = [("店长", 1), ("珠宝顾问", 2), ("收银", 3), ("维修技师", 4), ("盘点员", 5)]
-    conn.executemany("INSERT INTO clerk_types(name,sort_order) VALUES(?,?)", cts)
-    # —— label_templates ——
-    conn.execute(
-        "INSERT INTO label_templates(name,size_width,size_height,layout) VALUES(?,?,?,?)",
-        ("标准标签", 70, 35, "{}"),
-    )
-    seed_store_printers(conn)  # 演示门店也补齐每个打印业务的指派行
+def _ensure_products_seed(conn: sqlite3.Connection) -> None:
+    """幂等商品演示数据：products 空表时灌 12 件（seed_demo 与 ensure_new_seeds 共用）。
 
+    外网沙箱走生产分支只调 ensure_new_seeds 不调 seed_demo，老库 products 一直为空，
+    导致商品管理/库存管理看不到数据——这里补齐同一份演示商品。
+    """
+    if conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] > 0:
+        # 防御：历史商品 store_id 为空 → 归到第一家门店（列表按门店过滤，NULL 永远查不到）
+        if conn.execute("SELECT COUNT(*) FROM products WHERE store_id IS NULL").fetchone()[0] > 0:
+            first = conn.execute("SELECT id FROM stores ORDER BY id LIMIT 1").fetchone()
+            if first:
+                conn.execute("UPDATE products SET store_id=? WHERE store_id IS NULL", (first["id"],))
+        return
     products = [
         # J001 - 足金手镯 (1)
         ("J001", "足金手镯", "黄金", "足金999", 28.6, "56号", "GDH-88231", 18500, 21800, "在库", 1, "", 1, 1,
@@ -1764,6 +1727,61 @@ def seed_demo(conn: sqlite3.Connection) -> None:
     # 种子 EPC 统一按现行规则生成（前缀+门店码+品类码+序号），幂等
     assign_rule_epcs(conn)
     conn.commit()
+
+
+def seed_demo(conn: sqlite3.Connection) -> None:
+    """写入演示数据（幂等：仅在接近空库时执行）。"""
+    if conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] > 0:
+        return
+    stores = [("总店", "HQ", "管理员"), ("分店A", "A001", "店长小张")]
+    conn.executemany("INSERT INTO stores(name,code,owner) VALUES(?,?,?)", stores)
+    # —— shops（上层组织）——
+    conn.execute("INSERT INTO shops(name,code,sale_item_limit) VALUES(?,?,?)", ("懿臻珠宝总店", "HQ", 20))
+    conn.execute("UPDATE stores SET shop_id=1 WHERE code='HQ'")
+    # —— biz_config（EPC 规则）——
+    conn.execute("INSERT OR IGNORE INTO biz_config(id,epc_prefix,seq_bits,gold_price) VALUES(1,'E28',8,520)")
+    conn.execute("UPDATE biz_config SET epc_prefix='E28', seq_bits=8, gold_price=520 WHERE id=1")
+    # —— categories ——
+    cats = [
+        ("GOLD", '{"zh":"黄金","en":"Gold","it":"Oro"}'),
+        ("DIAMOND", '{"zh":"钻石","en":"Diamond","it":"Diamante"}'),
+        ("JADE", '{"zh":"翡翠","en":"Jade","it":"Giada"}'),
+        ("PT", '{"zh":"铂金","en":"Platinum","it":"Platino"}'),
+        ("COLORSTONE", '{"zh":"彩宝","en":"Color Stone","it":"Pietra Colore"}'),
+        ("SILVER", '{"zh":"银饰","en":"Silver","it":"Argento"}'),
+        ("PEARL", '{"zh":"珍珠","en":"Pearl","it":"Perla"}'),
+    ]
+    conn.executemany("INSERT INTO categories(code,names) VALUES(?,?)", cats)
+    # —— product_types ——
+    pts = [
+        ("RING", '{"zh":"戒指","en":"Ring","it":"Anello"}', 1, "piece"),
+        ("NECKLACE", '{"zh":"项链","en":"Necklace","it":"Collana"}', 2, "piece"),
+        ("BRACELET", '{"zh":"手镯","en":"Bracelet","it":"Bracciale"}', 3, "piece"),
+        ("EARRING", '{"zh":"耳饰","en":"Earring","it":"Orecchino"}', 4, "piece"),
+        ("PENDANT", '{"zh":"吊坠","en":"Pendant","it":"Ciondolo"}', 5, "piece"),
+        ("CHAIN", '{"zh":"链","en":"Chain","it":"Catena"}', 6, "piece"),
+        ("BEAD", '{"zh":"串珠","en":"Bead","it":"Perla"}', 7, "piece"),
+    ]
+    conn.executemany("INSERT INTO product_types(code,names,sort_order,pricing_mode) VALUES(?,?,?,?)", pts)
+    # —— locations（库位）——
+    locs = [
+        (1, "A-01-01", "A区-01柜-01格", 1), (1, "A-01-02", "A区-01柜-02格", 2),
+        (1, "A-01-03", "A区-01柜-03格", 3), (1, "B-02-01", "B区-02柜-01格", 4),
+        (1, "B-02-02", "B区-02柜-02格", 5), (1, "C-03-01", "C区-03柜-01格", 6),
+        (1, "SAFE-01", "保险柜-01", 7),
+    ]
+    conn.executemany("INSERT INTO locations(store_id,code,name,sort_order) VALUES(?,?,?,?)", locs)
+    # —— clerk_types ——
+    cts = [("店长", 1), ("珠宝顾问", 2), ("收银", 3), ("维修技师", 4), ("盘点员", 5)]
+    conn.executemany("INSERT INTO clerk_types(name,sort_order) VALUES(?,?)", cts)
+    # —— label_templates ——
+    conn.execute(
+        "INSERT INTO label_templates(name,size_width,size_height,layout) VALUES(?,?,?,?)",
+        ("标准标签", 70, 35, "{}"),
+    )
+    seed_store_printers(conn)  # 演示门店也补齐每个打印业务的指派行
+
+    _ensure_products_seed(conn)
 
     customers = [("王晓丽", "13800001111", "金卡", 43600, 0, "1990-05-12", "偏好足金手镯"),
                  ("李强", "13900002222", "银卡", 12800, 21800, "1988-11-03", "钻石类"),

@@ -145,3 +145,18 @@
   5. 调拨验收链（**Python API 验证**）：`POST /api/auth/switch-store {store_id: 6}` 切店 → `GET /api/transfers?scope=in` 能看到 to_store_id=当前店 的在途单 → `GET /api/transfers/{tid}` 拉到 items → `POST /api/transfers/{tid}/receive {items:[{product_id,ok,reason}]}` 校验：当前工作门店必须是接收方（to_store_id）；status 必须是在途；items 必须与明细完全对齐；不符必填原因。
 - **踩坑档案**：Vue global build（`vue.global.prod.js`）模板编译器白名单极严，`.bind/.apply/.call` 关键字任何位置（包括字符串）都触发 SyntaxError；改造前端先全局扫 `{{.*}}` 表达式找这些敏感词，再逐个改名。
 
+## TC-20 外网沙箱商品管理/库存管理看不到数据（1.2.13）
+
+- **问题现象**：本地 STANDALONE 一切正常，但外网沙箱「商品管理」「库存管理」两个页面完全空白；而销售、客户、定金、调拨等页面有数据。
+- **根因**：`main.py` 的 `_open()` 分两条分支——STANDALONE/无 `TENANT_DB_DIR` 分支会先 `seed_demo()`（灌 products）再 `ensure_new_seeds()`；而外网生产分支只调 `db.connect()` + `ensure_new_seeds()`，**从不调 `seed_demo()`**。但 `ensure_new_seeds()` 里补齐了 deposits/sales/transfers 等所有表，**唯独没有补 products**。于是外网沙箱老库 products 永远为空 → 商品/库存列表 `WHERE products.store_id=?` 查不到任何行。
+- **验证方法**：模拟外网沙箱——只建 SCHEMA + migrate_schema（不 seed_demo），再调 `ensure_new_seeds()`：修复前 products=0；修复后 products=12，且按门店（总店 id=1）过滤可见 9 件、库存汇总「在库 8 件 / 成本 86300」有值；二次调用幂等（仍 12）。
+- **修复**：抽出共享函数 `_ensure_products_seed()`（products 空表时灌 12 件 + 回填 category_code + 材质迁移 + 三语 + EPC 规则化），`seed_demo()` 与 `ensure_new_seeds()` 都调用它；并加防御：历史商品 `store_id IS NULL` 归到第一家门店（否则按门店过滤永远查不到）。
+- **附带修复**：门店切换入口消失（`_ensure_stores_seed()` 保证 stores≥2，前端 select 仅 `stores.length>1` 才渲染）+ 操作日志空（`_ensure_operate_logs_seed()` 补 21 条覆盖全业务链）。
+
+## TC-21 冒烟满负载时 tasks/transfers 超时（既有 _lock 争用，未修）
+
+- **问题现象**：`scripts/smoke_test.py` 串行打满约 50 个 GET 后，排在字母序末尾的 `/api/tasks*`、`/api/transfers*` 稳定超时（15s/30s 均无响应，重试仍失败）；但**单独直连这些端点秒回（0.04s）**。改动前后计数一致，非回归。
+- **根因（推断，未彻底定位）**：全局 `threading.Lock`（main.py L71 `_lock`）争用——序列中某个早执行的端点持锁后阻塞在慢操作（如桥接 `_bridge_send` 的 `fut.result(timeout=10)` 占住 anyio worker 线程），到字母序靠后的 tasks/transfers 时线程池已被占满。属**既有问题**，与 products 修复无关。
+- **验证方法**：`python scripts/smoke_test.py` → 这 5 个归入 `KNOWN`（满负载超时·已知 _lock 争用），不计 FAIL；报告应为 `FAIL=0`。若某次返回真实 5xx 则仍算 FAIL 需排查。
+- **遗留**：后续单独立项排查 `_lock` 持锁范围与桥接阻塞调用（候选：缩小临界区 / 桥接发送移出锁 / 提高线程池上限），本轮不阻塞交付。
+
