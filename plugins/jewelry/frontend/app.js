@@ -357,6 +357,8 @@ function productImageUrl(p) {
   if (!p || !p.id) return '';
   return API + '/api/products/' + p.id + '/image' + (p.image_ts ? '?v=' + encodeURIComponent(p.image_ts) : '');
 }
+// 登录页下载链接：相对路径拼 API 前缀，网关模式下同样有效
+function dlUrl(path) { return API + path; }
 
 // ---- 商品名称多语言编辑（主名称列为中文，其它语言存 name_i18n JSON 串）----
 function parseNameI18n() {
@@ -4276,7 +4278,7 @@ var app = Vue.createApp({
     catNameByCode: catNameByCode, catCodeByName: catCodeByName,
     catNameOf: catNameOf, productCatName: productCatName, catText: catText,
     typeNameByCode: typeNameByCode, productTypeName: productTypeName,
-    materialText: materialText, productImageUrl: productImageUrl,
+    materialText: materialText, productImageUrl: productImageUrl, dlUrl: dlUrl,
     normLang: normLang,
     sheetNameGet: sheetNameGet, sheetNameSet: sheetNameSet, langNameFilled: langNameFilled,
     resetCatEdit: resetCatEdit, editCat: editCat, saveCat: saveCat, delCat: delCat,

@@ -23,6 +23,10 @@
       <input v-model="loginPwd" type="password" :placeholder="t('login.passPh')" @keyup.enter="doLogin">
       <button class="btn btn-primary btn-block" @click="doLogin">{{ t('login.submit') }}</button>
       <div class="login-hint">{{ t('login.hint') }}</div>
+      <div class="login-dl">
+        <a class="login-dl-link" :href="dlUrl('/api/scan-app/download')">📱 {{ t('login.scanApp') }}</a>
+        <a class="login-dl-link" :href="dlUrl('/api/print-agent/download')">🖨 {{ t('login.printAgent') }}</a>
+      </div>
       <div class="lang-row">
         <button v-for="k in langKeys" :key="k" class="lang-mini" :class="{on:lang===k}" @click="setLang(k)">{{ langLabels[k] }}</button>
       </div>

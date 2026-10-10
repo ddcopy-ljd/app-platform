@@ -26,6 +26,7 @@ var I18N = {
     // login
     'login.user': '用户名', 'login.userPh': '请输入用户名', 'login.pass': '密码',
     'login.passPh': '请输入密码', 'login.submit': '登 录', 'login.hint': '演示账号：admin / 123456',
+    'login.scanApp': '手持机扫描助手 App', 'login.printAgent': '打印代理 PrintBridge',
     'login.title': '懿臻珠宝云', 'login.sub': 'Jewelry Cloud · 独立工作台',
     'login.err': '用户名或密码错误', 'login.success': '登录成功',
     'login.handheld': '手持机绑定',
@@ -577,6 +578,7 @@ var I18N = {
     // login
     'login.user': 'Username', 'login.userPh': 'Enter username', 'login.pass': 'Password',
     'login.passPh': 'Enter password', 'login.submit': 'Sign In', 'login.hint': 'Demo: admin / 123456',
+    'login.scanApp': 'Scanner App (APK)', 'login.printAgent': 'Print Agent (PrintBridge)',
     'login.title': 'Jewelry Cloud', 'login.sub': 'Independent Workspace',
     'login.err': 'Invalid username or password', 'login.success': 'Signed in',
     'login.handheld': 'Bind Handheld',
@@ -1200,6 +1202,7 @@ var I18N = {
     // login
     'login.user': 'Nome Utente', 'login.userPh': 'Inserisci nome utente', 'login.pass': 'Password',
     'login.passPh': 'Inserisci password', 'login.submit': 'Accedi', 'login.hint': 'Account demo: admin / 123456',
+    'login.scanApp': 'App Scanner (APK)', 'login.printAgent': 'Agent di Stampa (PrintBridge)',
     'login.title': 'Jewelry Cloud', 'login.sub': 'Spazio di Lavoro Indipendente',
     'login.err': 'Nome utente o password non validi', 'login.success': 'Accesso effettuato',
     'login.handheld': 'Associa Palmare',

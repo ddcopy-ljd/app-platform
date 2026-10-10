@@ -160,3 +160,16 @@
 - **验证方法**：`python scripts/smoke_test.py` → 这 5 个归入 `KNOWN`（满负载超时·已知 _lock 争用），不计 FAIL；报告应为 `FAIL=0`。若某次返回真实 5xx 则仍算 FAIL 需排查。
 - **遗留**：后续单独立项排查 `_lock` 持锁范围与桥接阻塞调用（候选：缩小临界区 / 桥接发送移出锁 / 提高线程池上限），本轮不阻塞交付。
 
+## TC-22 收定金面板输入框显示 `{{ t(...) }}` 原始代码（1.2.15）
+
+- **问题现象**：【收定金】面板底部「交付时间」「交付要求」两个输入框内显示 `{{ t('dep.deliveryTimePh') }}` 等模板代码，而不是中文提示语。
+- **根因**：Vue 不解析 HTML **属性值**里的 mustache 插值，`placeholder="{{ t('...') }}"` 会原样输出；属性插值必须用绑定语法 `:placeholder="t('...')"`。
+- **验证方法**：浏览器打开收定金面板，读取两个输入框的 `placeholder` 属性应为中文文案；`document.body.innerText` 不含 `{{`。全局排查：`grep -n 'placeholder="{{' frontend/index.html` 应为 0 处。
+
+## TC-23 收定金提交漏传交付时间/交付要求导致不入库（1.2.15）
+
+- **问题现象**：收定金面板填写「交付时间」「交付要求」保存后，卡片与详情不显示，字段丢失。
+- **根因**：`app.js saveDeposit()` 组装 POST /api/deposits 请求体时只带了 customer/phone/product/金额/日期/提醒天数，**漏传 `delivery_time`、`deliver_requirements`**（后端 DepositIn 与 deposits 表均有这两列）；且 `openDeposit()` 的 sheetData 初始对象也缺这两个键。
+- **验证方法**：沙箱写入链路——POST /api/deposits 带两字段 → GET 列表回显 `delivery_time`/`deliver_requirements` 原值 → 冲红清理。sqlite 直连 `PRAGMA table_info(deposits)` 确认列存在。
+
+

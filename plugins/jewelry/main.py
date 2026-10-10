@@ -2961,13 +2961,28 @@ def print_agent_status(request: Request):
 
 @app.get("/api/print-agent/download")
 def print_agent_download():
-    """下载打印代理：优先返回已构建的单文件 exe，未构建时返回 py 源码（需门店电脑有 Python）。"""
-    exe = ROOT / "scripts" / "dist" / "PrintBridge.exe"
+    """下载打印代理：优先返回包内 downloads/PrintBridge.exe，缺失时回退构建产物 exe，再退 py 源码。"""
+    exe = ROOT / "downloads" / "PrintBridge.exe"
+    if not exe.is_file():
+        exe = ROOT / "scripts" / "dist" / "PrintBridge.exe"
     if exe.is_file():
         return FileResponse(exe, filename="PrintBridge.exe",
                             media_type="application/vnd.microsoft.portable-executable")
     src = ROOT / "scripts" / "print_agent.py"
     return FileResponse(src, filename="print_agent.py", media_type="text/x-python")
+
+
+@app.get("/api/scan-app/download")
+def scan_app_download():
+    """下载扫描助手 App（APK）：包内 downloads/ 优先，回退 scan-assistant 构建产物。"""
+    apk = ROOT / "downloads" / "scan-assistant-release.apk"
+    if not apk.is_file():
+        apk = (ROOT.parent.parent / "scan-assistant" / "app" / "build" / "outputs" / "apk"
+               / "release" / "app-release.apk")
+    if apk.is_file():
+        return FileResponse(str(apk), filename="scan-assistant-release.apk",
+                            media_type="application/vnd.android.package-archive")
+    raise HTTPException(404, "APK 尚未构建（scan-assistant 需先执行 Gradle release 构建）")
 
 
 _PA_BURN = None
