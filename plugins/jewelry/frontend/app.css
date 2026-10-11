@@ -190,9 +190,6 @@ a { text-decoration: none; color: inherit; }
 .pct-flat { color: var(--text3); }
 /* 趋势图图例 */
 .chart-legend { display: inline-flex; gap: 10px; align-items: center; margin-left: 8px; font-size: 14px; color: var(--text3); }
-.chart-legend .lg-cur, .chart-legend .lg-past { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
-.chart-legend .lg-cur { background: linear-gradient(180deg, var(--gold), #D4B76A); }
-.chart-legend .lg-past { background: linear-gradient(180deg, #2E6E7E, #4E97A8); }
 
 /* 看板图表行：趋势图与品类占比并排（移动端自动换行上下堆叠） */
 .dash-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: stretch; }
