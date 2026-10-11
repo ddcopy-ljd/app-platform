@@ -140,11 +140,6 @@
               <span class="gb-val gb-fail" v-else @click="loadGold()">{{ t('dash.goldFail') }}</span>
               <span class="gb-sub" v-if="goldData.intlUsd">${{ fmt(goldData.intlUsd) }}/oz · {{ goldData.intlTime }}</span>
             </div>
-            <div class="gb-item gb-click" @click="editGoldRetail()">
-              <span class="gb-label">🏪 {{ t('dash.goldRetail') }}<span class="stat-hint">✎</span></span>
-              <span class="gb-val" v-if="goldData.retailPrice">￥{{ fmt(goldData.retailPrice) }}/克</span>
-              <span class="gb-val gb-fail" v-else>{{ t('dash.notSet') }}</span>
-            </div>
           </div>
           <div class="stats-grid dash-kpi" v-if="dashData && dashData.rangeData">
             <div class="stat-card gold clickable" @click="go('sales')"><div class="stat-label">{{ t('dash.rangeSales') }}<span class="stat-hint">›</span></div><div class="stat-value">￥{{ fmt(dashData.rangeData.sales.amount) }}</div><div class="stat-sub">{{ dashData.rangeData.sales.count }} {{ t('dash.bills') }} · {{ t('dash.avg') }} ￥{{ fmt(dashData.rangeData.sales.avg) }}<span v-if="dashData.rangeData.sales.momPct != null" class="pct" :class="pctCls(dashData.rangeData.sales.momPct)"> · {{ t('dash.mom') }} {{ pctLabel(dashData.rangeData.sales.momPct) }}</span><span v-if="dashData.rangeData.sales.yoyPct != null" class="pct" :class="pctCls(dashData.rangeData.sales.yoyPct)"> · {{ t('dash.yoy') }} {{ pctLabel(dashData.rangeData.sales.yoyPct) }}</span></div></div>
@@ -179,20 +174,29 @@
             </div>
           </div>
           <div class="dash-row">
-          <div class="mini-chart" v-if="trendData && trendData.months && trendData.months.length">
+          <div class="mini-chart" v-if="trendData && trendData.labels && trendData.labels.length">
             <div class="mini-chart-title"><span>{{ t('kpi.trend') }}</span>
-              <span v-if="hasLastYear(trendData.amountsLastYear)" class="chart-legend">
-                <span class="lg-cur"></span>{{ t('dash.curYear') }}<span class="lg-past"></span>{{ t('dash.prevYear') }}
+              <span class="trend-head-right">
+                <span v-if="hasLastYear(trendData.amountsLastYear)" class="chart-legend">
+                  <span class="lg-line lg-cur"></span>{{ t('dash.curYear') }}<span class="lg-line lg-past"></span>{{ t('dash.prevYear') }}
+                </span>
+                <select class="trend-range-select" :value="trendRange" @change="setTrendRange($event.target.value)">
+                  <option value="15d">{{ t('dash.tr15d') }}</option>
+                  <option value="30d">{{ t('dash.tr30d') }}</option>
+                  <option value="6m">{{ t('dash.tr6m') }}</option>
+                  <option value="12m">{{ t('dash.tr12m') }}</option>
+                </select>
               </span>
             </div>
-            <div class="chart-bars">
-              <div class="chart-bar-wrap" v-for="(m,i) in trendData.months" :key="m">
-                <div class="chart-bar-pair">
-                  <div class="chart-bar" :style="{height: Math.max(4, trendData.amounts[i]/trendMax(trendData.amounts, trendData.amountsLastYear)*70)+'px'}"></div>
-                  <div v-if="trendData.amountsLastYear && trendData.amountsLastYear[i] != null" class="chart-bar chart-bar-lastyear" :style="{height: Math.max(4, trendData.amountsLastYear[i]/trendMax(trendData.amounts, trendData.amountsLastYear)*70)+'px'}"></div>
-                </div>
-                <div class="chart-bar-label">{{ m.slice(5) }}</div>
-              </div>
+            <svg class="trend-svg" viewBox="0 0 300 100" preserveAspectRatio="none">
+              <line x1="4" y1="96" x2="296" y2="96" class="trend-axis"></line>
+              <line x1="4" y1="52" x2="296" y2="52" class="trend-grid"></line>
+              <line x1="4" y1="8" x2="296" y2="8" class="trend-grid"></line>
+              <polyline v-if="hasLastYear(trendData.amountsLastYear)" :points="trendLinePoints(trendData.amountsLastYear, trendScaleMax())" class="trend-line-past" fill="none"></polyline>
+              <polyline :points="trendLinePoints(trendData.amounts, trendScaleMax())" class="trend-line-cur" fill="none"></polyline>
+            </svg>
+            <div class="trend-ticks">
+              <span v-for="tk in trendTicks()" :key="tk.i">{{ tk.text }}</span>
             </div>
           </div>
           <div class="mini-chart" v-if="catSales && catSales.items && catSales.items.length">
@@ -216,6 +220,66 @@
               </div>
             </div>
           </div>
+          </div>
+          <div class="section biz-analysis" v-if="bizAnalysis">
+            <div class="section-title"><span class="dot"></span>{{ t('ba.title') }}</div>
+            <div class="ba-group">
+              <div class="ba-group-title">💹 {{ t('ba.profitGrp') }}</div>
+              <div class="ba-cards">
+                <div class="ba-card"><div class="ba-val">￥{{ bizAnalysis.profit.cost==null ? '***' : fmt(bizAnalysis.profit.cost) }}</div><div class="ba-label">{{ t('ba.realCost') }}</div></div>
+                <div class="ba-card"><div class="ba-val">￥{{ bizAnalysis.profit.profit==null ? '***' : fmt(bizAnalysis.profit.profit) }}</div><div class="ba-label">{{ t('ba.profit') }}</div></div>
+                <div class="ba-card"><div class="ba-val">{{ bizAnalysis.profit.rate==null ? '***' : bizAnalysis.profit.rate + '%' }}</div><div class="ba-label">{{ t('ba.profitRate') }}</div></div>
+              </div>
+            </div>
+            <div class="ba-group">
+              <div class="ba-group-title">👥 {{ t('ba.member') }}</div>
+              <div class="ba-cards">
+                <div class="ba-card"><div class="ba-val">{{ bizAnalysis.member.newMembers }}</div><div class="ba-label">{{ t('ba.newMembers') }}</div></div>
+                <div class="ba-card"><div class="ba-val">￥{{ fmt(bizAnalysis.member.recharge) }}</div><div class="ba-label">{{ t('ba.recharge') }}</div></div>
+                <div class="ba-card"><div class="ba-val">￥{{ fmt(bizAnalysis.member.memberPay) }}</div><div class="ba-label">{{ t('ba.memberPay') }}</div></div>
+              </div>
+            </div>
+            <div class="ba-group">
+              <div class="ba-group-title">🧾 {{ t('ba.salesEff') }}</div>
+              <div class="ba-cards">
+                <div class="ba-card"><div class="ba-val">￥{{ fmt(bizAnalysis.sales.avgPerBill) }}</div><div class="ba-label">{{ t('ba.avgPerBill') }}</div></div>
+                <div class="ba-card"><div class="ba-val">{{ bizAnalysis.sales.attachment }}</div><div class="ba-label">{{ t('ba.attachment') }}</div></div>
+                <div class="ba-card"><div class="ba-val">￥{{ fmt(bizAnalysis.sales.avgPerItem) }}</div><div class="ba-label">{{ t('ba.avgPerItem') }}</div></div>
+                <div class="ba-card"><div class="ba-val">{{ bizAnalysis.sales.sellThrough }}%</div><div class="ba-label">{{ t('ba.sellThrough') }}</div></div>
+              </div>
+            </div>
+            <div class="ba-group" v-if="bizAnalysis.categories && bizAnalysis.categories.length">
+              <div class="ba-group-title">🥧 {{ t('ba.catShare') }}</div>
+              <div class="donut-wrap">
+                <svg class="donut-svg" viewBox="0 0 42 42">
+                  <circle cx="21" cy="21" r="15.9" fill="none" stroke="#eee" stroke-width="6"></circle>
+                  <circle v-for="s in baDonutSegments()" :key="s.key" cx="21" cy="21" r="15.9" fill="none"
+                          :stroke="donutColor(s.color)" stroke-width="6" pathLength="100"
+                          :stroke-dasharray="s.pct + ' ' + (100 - s.pct)" :stroke-dashoffset="s.offset"
+                          transform="rotate(-90 21 21)"></circle>
+                  <text x="21" y="20" class="donut-c1">{{ t('ba.top5') }}</text>
+                  <text x="21" y="24.5" class="donut-c2">￥{{ fmt(baTop5Sum()) }}</text>
+                </svg>
+                <div class="donut-legend">
+                  <div class="dl-row" v-for="(c,i) in bizAnalysis.categories.slice(0,5)" :key="c.category">
+                    <span class="dl-dot" :style="{background: donutColor(i%6)}"></span>
+                    <span class="dl-name">{{ catText(c.category) }}</span>
+                    <span class="dl-val">{{ c.pct }}%</span>
+                  </div>
+                </div>
+              </div>
+              <table class="ba-table">
+                <thead><tr><th>{{ t('ba.catName') }}</th><th class="r">{{ t('ba.realQty') }}</th><th class="r">{{ t('ba.realCost') }}</th><th class="r">{{ t('ba.realAmount') }}</th></tr></thead>
+                <tbody>
+                  <tr v-for="c in bizAnalysis.categories" :key="'t'+c.category">
+                    <td><span class="dl-dot" :style="{background: donutColor(bizAnalysis.categories.indexOf(c)%6)}"></span>{{ catText(c.category) }}</td>
+                    <td class="r">{{ c.qty }}</td>
+                    <td class="r">{{ c.cost==null ? '***' : '￥' + fmt(c.cost) }}</td>
+                    <td class="r">￥{{ fmt(c.amount) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
           <div class="dash-pair" v-if="remindData || (dashData && dashData.recentSales && dashData.recentSales.length)">
           <div class="reminder-section" v-if="remindData">

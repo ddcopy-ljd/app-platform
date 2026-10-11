@@ -1325,31 +1325,81 @@ def dashboard_overview(request: Request, start: str = Query(default=""), end: st
 
 
 @app.get("/api/dashboard/trend")
-def dashboard_trend(request: Request):
+def dashboard_trend(request: Request, trange: str = Query(default="30d", alias="range")):
+    """实销总额趋势：range=15d/30d（按日）、6m/12m（按月）。
+    返回今年/去年同期双序列（labels 为今年轴，去年轴同格式对齐）。"""
+    from datetime import timedelta as _td
     sess = _require_auth(request)
+    rng = trange if trange in ("15d", "30d", "6m", "12m") else "30d"
+    by_day = rng in ("15d", "30d")
+    n = 15 if rng == "15d" else 30 if rng == "30d" else 6 if rng == "6m" else 12
+    today = date.today()
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, sess)
-        rows = conn.execute("""
-            SELECT substr(biz_date,1,7) m, COALESCE(SUM(amount),0) a
-            FROM sales WHERE status!='已冲红' AND biz_date >= date('now','start of month','-11 months')
-              AND (store_id=? OR store_id=0)
-            GROUP BY m ORDER BY m
-        """, (sid,)).fetchall()
-        months = [r["m"] for r in rows]
-        amounts = [round(r["a"], 2) for r in rows]
-        # 去年同月：YYYY-MM → YYYY-1-MM
-        last_year_amounts = []
-        for m in months:
-            parts = m.split("-")
-            y = int(parts[0]) - 1
-            ym_last = f"{y}-{parts[1]}"
-            r2 = conn.execute(
-                "SELECT COALESCE(SUM(amount),0) a FROM sales WHERE status!='已冲红' "
-                "AND substr(biz_date,1,7)=? AND (store_id=? OR store_id=0)", (ym_last, sid)
-            ).fetchone()
-            v = round(r2["a"], 2) if r2 and r2["a"] else None
-            last_year_amounts.append(v)
-        return {"months": months, "amounts": amounts, "amountsLastYear": last_year_amounts}
+        if by_day:
+            start = (today - _td(days=n - 1)).isoformat()
+            rows = conn.execute(
+                "SELECT biz_date d, COALESCE(SUM(amount),0) a FROM sales "
+                "WHERE status!='已冲红' AND (store_id=? OR store_id=0) AND biz_date>=? "
+                "GROUP BY d", (sid, start)).fetchall()
+            m = {r["d"]: round(r["a"], 2) for r in rows}
+            labels, amounts = [], []
+            for i in list(range(n)):
+                d = (today - _td(days=n - 1 - i)).isoformat()
+                labels.append(d[5:].replace("-", "/"))
+                amounts.append(m.get(d, 0.0))
+            ly_dates = []
+            for i in list(range(n)):
+                d0 = today - _td(days=n - 1 - i)
+                try:
+                    ly_dates.append(d0.replace(year=d0.year - 1).isoformat())
+                except ValueError:
+                    ly_dates.append(d0.replace(year=d0.year - 1, day=28).isoformat())
+            marks = ",".join("?" * n)
+            rows2 = conn.execute(
+                "SELECT biz_date d, COALESCE(SUM(amount),0) a FROM sales "
+                "WHERE status!='已冲红' AND (store_id=? OR store_id=0) AND biz_date IN (%s) "
+                "GROUP BY d" % marks, [sid] + ly_dates).fetchall()
+            m2 = {r["d"]: round(r["a"], 2) for r in rows2}
+            last_year = [m2.get(d) for d in ly_dates]
+        else:
+            months_expr = "substr(biz_date,1,7)"
+            # 回溯 n-1 个月
+            y, mo = today.year, today.month
+            for _ in list(range(n - 1)):
+                mo -= 1
+                if mo == 0:
+                    mo, y = 12, y - 1
+            start = date(y, mo, 1).isoformat()[:7]
+            rows = conn.execute(
+                f"SELECT {months_expr} d, COALESCE(SUM(amount),0) a FROM sales "
+                "WHERE status!='已冲红' AND (store_id=? OR store_id=0) AND substr(biz_date,1,7)>=? "
+                "GROUP BY d ORDER BY d", (sid, start)).fetchall()
+            m = {r["d"]: round(r["a"], 2) for r in rows}
+            labels, amounts = [], []
+            y, mo = today.year, today.month
+            for _ in list(range(n - 1)):
+                mo -= 1
+                if mo == 0:
+                    mo, y = 12, y - 1
+            for _ in list(range(n)):
+                d = f"{y}-{mo:02d}"
+                labels.append(d)
+                amounts.append(m.get(d, 0.0))
+                mo += 1
+                if mo == 13:
+                    mo, y = 1, y + 1
+            rows2 = conn.execute(
+                f"SELECT {months_expr} d, COALESCE(SUM(amount),0) a FROM sales "
+                "WHERE status!='已冲红' AND (store_id=? OR store_id=0) "
+                f"AND substr(biz_date,1,4)=substr(?,1,4) GROUP BY d", (sid, str(today.year - 1))).fetchall()
+            m2 = {r["d"]: round(r["a"], 2) for r in rows2}
+            last_year = []
+            for lab in labels:
+                ly = f"{int(lab[:4]) - 1}-{lab[5:]}"
+                last_year.append(m2.get(ly))
+        return {"range": rng, "byDay": by_day, "labels": labels,
+                "amounts": amounts, "amountsLastYear": last_year}
 
 
 @app.get("/api/dashboard/category-sales")
@@ -1382,6 +1432,95 @@ def dashboard_category_sales(request: Request, start: str = Query(default=""), e
             {"category": r["cat"], "amount": round(r["a"], 2), "count": r["n"], "pct": round(r["a"] * 100 / total, 1)}
             for r in rows
         ]}
+
+
+@app.get("/api/dashboard/biz-analysis")
+def dashboard_biz_analysis(request: Request, start: str = Query(default=""), end: str = Query(default="")):
+    """经营分析（区间口径，缺省=本月）：利润 / 会员 / 销售效率 / 分类实销 TOP。
+    成本相关指标无 can_view_cost 权限时返回 None。"""
+    sess = _require_auth(request)
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
+        today = date.today().isoformat()
+        rs = (start or today[:8] + "01")[:10]
+        re_ = (end or today)[:10]
+        if rs > re_:
+            rs, re_ = re_, rs
+        cost_visible = _can_view_cost(conn, sess)
+        base = "s.status!='已冲红' AND (s.store_id=? OR s.store_id=0) AND s.biz_date BETWEEN ? AND ?"
+        args = [sid, rs, re_]
+        # 实销总额/单数/件数（件数取 sale_items 行数）
+        agg = conn.execute(
+            f"SELECT COALESCE(SUM(s.amount),0) amt, COUNT(DISTINCT s.id) bills FROM sales s WHERE {base}", args
+        ).fetchone()
+        items_cnt = conn.execute(
+            f"SELECT COUNT(*) n FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE {base}", args
+        ).fetchone()["n"]
+        # 实销成本（按成交明细快照件数 × 商品成本；无成本权限不查）
+        cost_amt = 0.0
+        cat_rows = []
+        if cost_visible:
+            c = conn.execute(
+                f"SELECT COALESCE(SUM(COALESCE(p.cost,0)),0) c "
+                f"FROM sale_items si JOIN sales s ON s.id=si.sale_id "
+                f"LEFT JOIN products p ON p.id=si.product_id WHERE {base}", args).fetchone()
+            cost_amt = round(c["c"], 2)
+            cat_rows = conn.execute(
+                f"SELECT COALESCE(NULLIF(p.product_type,''),'其他') cat, "
+                f"COUNT(*) qty, COALESCE(SUM(COALESCE(p.cost,0)),0) cost, COALESCE(SUM(si.subtotal),0) amt "
+                f"FROM sale_items si JOIN sales s ON s.id=si.sale_id "
+                f"LEFT JOIN products p ON p.id=si.product_id WHERE {base} "
+                f"GROUP BY cat ORDER BY amt DESC", args).fetchall()
+        else:
+            cat_rows = conn.execute(
+                f"SELECT COALESCE(NULLIF(p.product_type,''),'其他') cat, "
+                f"COUNT(*) qty, COALESCE(SUM(si.subtotal),0) amt "
+                f"FROM sale_items si JOIN sales s ON s.id=si.sale_id "
+                f"LEFT JOIN products p ON p.id=si.product_id WHERE {base} "
+                f"GROUP BY cat ORDER BY amt DESC", args).fetchall()
+        amt = round(agg["amt"], 2)
+        bills = agg["bills"]
+        profit = round(amt - cost_amt, 2)
+        profit_rate = round(profit * 100.0 / amt, 1) if amt else 0.0
+        # 会员：区间首购客户数（该客户在区间前无任何消费记录）
+        new_members = conn.execute(
+            f"SELECT COUNT(*) n FROM ("
+            f"  SELECT s.phone FROM sales s WHERE {base} AND s.phone!='' "
+            f"  AND NOT EXISTS (SELECT 1 FROM sales s2 WHERE s2.phone=s.phone AND s2.status!='已冲红' "
+            f"    AND s2.biz_date < ?) GROUP BY s.phone)", args + [rs]).fetchone()["n"]
+        # 充值总额：区间新增定金合计（近似储值口径）
+        recharge = conn.execute(
+            "SELECT COALESCE(SUM(deposit),0) a FROM deposits "
+            "WHERE substr(created,1,10) BETWEEN ? AND ? AND (store_id=? OR store_id=0)",
+            (rs, re_, sid)).fetchone()["a"]
+        # 会员卡支付：区间 method='转账' 实付合计
+        member_pay = conn.execute(
+            f"SELECT COALESCE(SUM(s.paid),0) a FROM sales s WHERE {base} AND s.method='转账'", args).fetchone()["a"]
+        # 售罄率：区间售出件数 /（售出件数 + 当前在库件数）
+        in_stock = conn.execute(
+            "SELECT COUNT(*) n FROM products WHERE status='在库' AND (store_id=? OR store_id=0)", (sid,)
+        ).fetchone()["n"]
+        sell_through = round(items_cnt * 100.0 / (items_cnt + in_stock), 1) if (items_cnt + in_stock) else 0.0
+        cat_total = sum(r["amt"] for r in cat_rows) or 1
+        categories = []
+        for r in cat_rows:
+            row = {"category": r["cat"], "qty": r["qty"],
+                   "amount": round(r["amt"], 2), "pct": round(r["amt"] * 100 / cat_total, 1)}
+            row["cost"] = round(r["cost"], 2) if cost_visible else None
+            categories.append(row)
+        return {
+            "range": {"start": rs, "end": re_},
+            "profit": {"revenue": amt, "cost": cost_amt if cost_visible else None,
+                       "profit": profit if cost_visible else None,
+                       "rate": profit_rate if cost_visible else None},
+            "member": {"newMembers": new_members, "recharge": round(recharge, 2),
+                       "memberPay": round(member_pay, 2)},
+            "sales": {"avgPerBill": round(amt / bills, 2) if bills else 0.0,
+                      "attachment": round(items_cnt / bills, 2) if bills else 0.0,
+                      "avgPerItem": round(amt / items_cnt, 2) if items_cnt else 0.0,
+                      "sellThrough": sell_through, "bills": bills, "items": items_cnt},
+            "categories": categories,
+        }
 
 
 # ---- 实时金价：新浪国际黄金（伦敦金 hf_XAU）+ 美元汇率，进程内缓存 5 分钟 ----

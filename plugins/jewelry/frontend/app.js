@@ -30,7 +30,7 @@ var ST = Vue.reactive({
   lang: currentLang, langKeys: LANG_KEYS, langLabels: LANG_LABELS,
   loginUser: 'admin', loginPwd: '123456',
   // data
-  dashData: null, trendData: null, remindData: null, showRemind: true, catSales: null,
+  dashData: null, trendData: null, trendRange: '30d', bizAnalysis: null, remindData: null, showRemind: true, catSales: null,
   goldData: null,   // 实时金价（国际+门店零售）
   riskData: null,   // 资产风控（滞销库龄+最近盘点）
   // 看板时间范围：mode=today|week|month|custom；custom 用 start/end（ISO 日期）
@@ -188,6 +188,41 @@ function hasLastYear(arr) {
   if (!Array.isArray(arr)) return false;
   for (var i = 0; i < arr.length; i++) { if (arr[i] != null) return true; }
   return false;
+}
+
+// 趋势折线：切换时间范围（15d/30d/6m/12m）
+function setTrendRange(r) {
+  ST.trendRange = r;
+  api('GET', '/api/dashboard/trend?range=' + r).then(function (d) { ST.trendData = d; }).catch(function () {});
+}
+// 生成 SVG 折线 points（viewBox 0 0 300 100，含去年虚线；null 断点跳过）
+function trendLinePoints(arr, maxV) {
+  if (!Array.isArray(arr) || !arr.length) return '';
+  var n = arr.length;
+  var pts = [];
+  for (var i = 0; i < n; i++) {
+    if (arr[i] == null) continue;
+    var x = n === 1 ? 150 : (i / (n - 1)) * 292 + 4;
+    var y = 96 - (Math.min(Number(arr[i]) || 0, maxV) / maxV) * 88;
+    pts.push(x.toFixed(1) + ',' + y.toFixed(1));
+  }
+  return pts.join(' ');
+}
+function trendScaleMax() {
+  var d = ST.trendData;
+  if (!d) return 1;
+  return Math.max(1, trendMax(d.amounts, d.amountsLastYear));
+}
+// 横轴刻度（最多 8 个，等间隔取标签文本）
+function trendTicks() {
+  var d = ST.trendData;
+  if (!d || !d.labels) return [];
+  var n = d.labels.length;
+  var step = Math.max(1, Math.ceil(n / 8));
+  var out = [];
+  for (var i = 0; i < n; i += step) out.push({ i: i, text: d.labels[i] });
+  if (out.length && out[out.length - 1].i !== n - 1) out.push({ i: n - 1, text: d.labels[n - 1] });
+  return out;
 }
 
 // i18n.js 已提供全局 t(key) 翻译函数（先于本文件加载）；
@@ -647,6 +682,24 @@ function catDonutSegments() {
     return seg;
   });
 }
+// 经营分析：分类实销 TOP5 环形（按 TOP5 金额重新归一化，环闭合）
+function baTop5() {
+  return ((ST.bizAnalysis && ST.bizAnalysis.categories) || []).slice(0, 5);
+}
+function baTop5Sum() {
+  return baTop5().reduce(function (s, c) { return s + (c.amount || 0); }, 0);
+}
+function baDonutSegments() {
+  var items = baTop5();
+  var sum = baTop5Sum() || 1;
+  var acc = 0;
+  return items.map(function (c, i) {
+    var pct = Math.round((c.amount || 0) * 1000 / sum) / 10;
+    var seg = { pct: pct, offset: -acc, color: i % 6, key: c.category };
+    acc += pct;
+    return seg;
+  });
+}
 // 标签打印记录提示：🖨 图标悬停显示打印次数与最近时间
 function printedTip(p) {
   var tm = (p && p.label_printed_at || '').slice(5, 16);  // MM-DD HH:MM
@@ -779,29 +832,16 @@ function loadDash() {
   var q = '?start=' + rg.start + '&end=' + rg.end;
   ST.dashRange.curStart = rg.start; ST.dashRange.curEnd = rg.end;
   api('GET', '/api/dashboard/overview' + q).then(function (r) { ST.dashData = r; }).catch(function () {});
-  api('GET', '/api/dashboard/trend').then(function (r) { ST.trendData = r; }).catch(function () {});
+  api('GET', '/api/dashboard/trend?range=' + (ST.trendRange || '30d')).then(function (r) { ST.trendData = r; }).catch(function () {});
   api('GET', '/api/dashboard/category-sales' + q).then(function (r) { ST.catSales = r; }).catch(function () {});
+  api('GET', '/api/dashboard/biz-analysis' + q).then(function (r) { ST.bizAnalysis = r; }).catch(function () {});
   api('GET', '/api/dashboard/reminders').then(function (r) { ST.remindData = r; }).catch(function () {});
   api('GET', '/api/dashboard/risk').then(function (r) { ST.riskData = r; }).catch(function () {});
   loadGold();
 }
 
 function loadGold() {
-  api('GET', '/api/dashboard/gold').then(function (r) { ST.goldData = r; }).catch(function () { ST.goldData = { intlUsd: null, intlPrice: null, retailPrice: 0 }; });
-}
-
-// 门店零售克价：点击直接改（与开单页「当日金价」同源 biz_config.gold_price）
-function editGoldRetail() {
-  var cur = (ST.goldData && ST.goldData.retailPrice) || '';
-  var v = prompt(t('dash.goldRetailPrompt'), cur);
-  if (v === null) return;
-  var n = round2(Number(v));
-  if (!(n >= 0)) { toast(t('sale.goldNeed'), 'error'); return; }
-  api('PUT', '/api/biz-config', { gold_price: n }).then(function () {
-    if (ST.goldData) ST.goldData.retailPrice = n;
-    if (ST.bizConfig) ST.bizConfig.gold_price = n;
-    toast(t('sale.goldSaved'));
-  }).catch(function (e) { toast(e.message, 'error'); });
+  api('GET', '/api/dashboard/gold').then(function (r) { ST.goldData = r; }).catch(function () { ST.goldData = { intlUsd: null, intlPrice: null }; });
 }
 
 // ===== 问题上报（内嵌 BugTracker 免登录上报页 /report） =====
@@ -809,14 +849,33 @@ function editGoldRetail() {
 //  - 平台网关模式：API(=__APP_BASE__，形如 /app/jewelry/{tenant}/) 非空 → 用同网关根拼
 //    /app/bugtracker/{tenant}/report?source=jewelry&user=<上报人>；
 //  - 本地直连模式：API 为空 → 回落 http://127.0.0.1:8003/report（bugtracker 默认端口）。
+// 主题参数：把本插件 CSS 变量（十六进制色）传给 BugTracker 上报页，使其主题跟随
+function reportThemeParams() {
+  var cs = getComputedStyle(document.documentElement);
+  var map = { accent: '--gold', hd_from: '--wine-dark', hd_to: '--wine', bg: '--bg', card: '--white', text: '--text', muted: '--text2', border: '--border' };
+  var out = [];
+  Object.keys(map).forEach(function (k) {
+    var v = (cs.getPropertyValue(map[k]) || '').trim();
+    if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v)) out.push(k + '=' + encodeURIComponent(v));
+  });
+  return out.length ? '&' + out.join('&') : '';
+}
+
 function reportPageUrl() {
   var user = encodeURIComponent((ST.user && (ST.user.display_name || ST.user.username)) || '');
-  var q = '?source=jewelry&user=' + user;
+  var q = '?source=jewelry&user=' + user + reportThemeParams();
   var base = (API || '').replace(/\/+$/, '');   // 例：/app/jewelry/tenant_trial
   if (!base) return 'http://127.0.0.1:8003/report' + q;
   var seg = base.split('/');                     // ['', 'app', 'jewelry', 'tenant_trial']
-  seg[seg.length - 2] = 'bugtracker';            // 替换插件段为 bugtracker，保留租户段
-  return seg.join('/') + '/report' + q;          // /app/bugtracker/tenant_trial/report?...
+  if (seg[1] === 'app') {
+    seg[seg.length - 2] = 'bugtracker';          // 替换插件段为 bugtracker，保留租户段
+    return seg.join('/') + '/report' + q;        // /app/bugtracker/tenant_trial/report?...
+  }
+  // /gw/{票据}/ 沙箱票证模式：票据不能换插件段，用平台注入的 BugTracker 票证地址
+  //（window.__BUGTRACKER_BASE__，平台对珠宝云 HTML 自动签发）；未注入时回落正式路由
+  var bt = (window.__BUGTRACKER_BASE__ || '').replace(/\/+$/, '');
+  if (bt) return bt + '/report' + q;
+  return '/app/bugtracker/' + (ST.tenant || 'tenant_trial') + '/report' + q;
 }
 
 function openReportWindow() {
@@ -4426,12 +4485,14 @@ var app = Vue.createApp({
     roleText: roleText,
     t: t, fmt: fmt, fmtY: fmtY, dateFmt: dateFmt,
     pctLabel: pctLabel, pctCls: pctCls, trendMax: trendMax, hasLastYear: hasLastYear,
+    setTrendRange: setTrendRange, trendLinePoints: trendLinePoints, trendScaleMax: trendScaleMax, trendTicks: trendTicks,
+    baDonutSegments: baDonutSegments, baTop5Sum: baTop5Sum,
     toggleHealth: toggleHealth,
     statusClass: statusClass,
     statusText: statusText, methodText: methodText, levelText: levelText,
     directionText: directionText, printedTip: printedTip, coStatusText: coStatusText, resultText: resultText,
     reminderHint: reminderHint, reminderTagCls: reminderTagCls, careHint: careHint,
-    catDonutSegments: catDonutSegments, donutColor: donutColor, loadGold: loadGold, editGoldRetail: editGoldRetail,
+    catDonutSegments: catDonutSegments, donutColor: donutColor, loadGold: loadGold,
     reportPageUrl: reportPageUrl, openReportWindow: openReportWindow,
     fieldLabelText: fieldLabelText, labelFieldText: labelFieldText,
     doLogin: doLogin, doLogout: doLogout,

@@ -120,8 +120,6 @@ a { text-decoration: none; color: inherit; }
 .gold-bar .gb-val { font-size: 17px; font-weight: 700; color: var(--wine); }
 .gold-bar .gb-sub { font-size: 14px; color: var(--text3); }
 .gold-bar .gb-fail { color: var(--text3); font-weight: 400; font-size: 14px; cursor: pointer; }
-.gold-bar .gb-click { cursor: pointer; }
-.gold-bar .gb-click:hover { border-color: var(--gold); }
 /* 资产风控条 */
 .risk-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
 .risk-bar .risk-card { flex: 1; min-width: 220px; background: #FFF7F0; border: 1px solid #F3D9C2; border-radius: 12px; padding: 8px 14px; display: flex; align-items: baseline; gap: 8px; font-size: 14px; }
@@ -131,6 +129,30 @@ a { text-decoration: none; color: inherit; }
 .risk-bar .rc-val { margin-left: auto; font-weight: 700; color: #C2410C; white-space: nowrap; }
 /* 问题上报内嵌页 */
 .report-frame { width: 100%; height: 78vh; min-height: 520px; border: 1px solid var(--border); border-radius: 12px; background: var(--white); }
+/* 实销趋势折线图 */
+.trend-head-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.trend-range-select { font-size: 14px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--white); color: var(--text1); }
+.trend-svg { width: 100%; height: 120px; display: block; }
+.trend-svg .trend-axis { stroke: var(--border); stroke-width: 1; }
+.trend-svg .trend-grid { stroke: var(--border); stroke-width: .5; stroke-dasharray: 3 3; opacity: .6; }
+.trend-svg .trend-line-cur { stroke: #3D6B99; stroke-width: 2; }
+.trend-svg .trend-line-past { stroke: #C9A227; stroke-width: 2; stroke-dasharray: 5 4; }
+.lg-line { display: inline-block; width: 16px; height: 0; border-top: 2px solid; margin: 0 4px 0 10px; vertical-align: middle; }
+.lg-line.lg-cur { border-color: #3D6B99; }
+.lg-line.lg-past { border-color: #C9A227; border-top-style: dashed; }
+.trend-ticks { display: flex; justify-content: space-between; font-size: 14px; color: var(--text3); padding: 2px 4px 0; }
+/* 经营分析区块 */
+.biz-analysis .ba-group { margin: 10px 0 14px; }
+.biz-analysis .ba-group-title { font-size: 14px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+.ba-cards { display: flex; gap: 10px; flex-wrap: wrap; }
+.ba-card { flex: 1; min-width: 120px; background: var(--bg, #faf8f2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; text-align: center; }
+.ba-card .ba-val { font-size: 17px; font-weight: 700; color: var(--wine); }
+.ba-card .ba-label { font-size: 14px; color: var(--text3); margin-top: 2px; }
+.ba-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+.ba-table th { text-align: left; color: var(--text3); font-weight: 600; border-bottom: 1px solid var(--border); padding: 6px 8px; }
+.ba-table td { border-bottom: 1px dashed var(--border); padding: 6px 8px; color: var(--text1); }
+.ba-table .r { text-align: right; }
+.ba-table .dl-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 /* 品类占比环形图 */
 .donut-wrap { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .donut-svg { width: 150px; height: 150px; flex-shrink: 0; }

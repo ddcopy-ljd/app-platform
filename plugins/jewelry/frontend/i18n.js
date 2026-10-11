@@ -15,9 +15,9 @@ var LANG_KEYS = ['zh-Hans', 'en', 'it'];
 var I18N = {
   zh: {
     // nav
-    'nav.dashboard': '经营看板', 'nav.products': '商品管理', 'nav.inventory': '库存管理', 'nav.transfers': '门店调拨',
-    'nav.sales': '销售开单', 'nav.deposits': '定金尾款', 'nav.loans': '借货管理',
-    'nav.customers': '客户管理', 'nav.repairs': '维修管理', 'nav.purchases': '采购管理',
+    'nav.dashboard': '经营看板', 'nav.products': '商品管理', 'nav.inventory': '库存分析', 'nav.transfers': '门店调拨',
+    'nav.sales': '销售分析', 'nav.deposits': '定金尾款', 'nav.loans': '借货管理',
+    'nav.customers': '会员管理', 'nav.repairs': '维修管理', 'nav.purchases': '采购管理',
     'nav.outsourcings': '委外加工', 'nav.logs': '操作日志', 'nav.appointments': '到店预约',
     'nav.profile': '系统设置', 'nav.site': '企业网站', 'nav.sale': '快速开单',
     'nav.logout': '退出登录', 'nav.more': '我的', 'nav.rfid': 'RFID盘点', 'nav.showcase': '橱窗展示',
@@ -42,7 +42,7 @@ var I18N = {
     'scan.unavailable': '当前环境不支持扫码（请在手持机 App 中使用）',
     // kpi
     'kpi.stock': '在库商品', 'kpi.today': '今日销售', 'kpi.month': '本月销售',
-    'kpi.due': '尾款待收', 'kpi.trend': '近6月销售趋势', 'kpi.todo': '待办提醒',
+    'kpi.due': '尾款待收', 'kpi.trend': '实销总额趋势', 'kpi.todo': '待办提醒',
     'kpi.recent': '最近销售', 'kpi.quick': '快捷入口', 'kpi.catSales': '近6月品类销售占比',
     'kpi.stockCost': '成本', 'kpi.todayCount': '笔', 'kpi.unit': '元',
     // reminder tags
@@ -284,8 +284,12 @@ var I18N = {
     'dash.query': '查询', 'dash.pickRange': '请选择起止日期', 'dash.avg': '客单价',
     'dash.onhand': '在库', 'dash.depBills': '单待收', 'dash.rangeMove': '区间出入库',
     'dash.rangeSales': '区间销售', 'dash.rangeDue': '区间待收定金', 'dash.rangeCustDue': '区间客户应收',
-    'dash.goldIntl': '国际金价', 'dash.goldRetail': '门店零售克价', 'dash.goldFail': '获取失败，点击重试',
-    'dash.notSet': '未设置', 'dash.goldRetailPrompt': '设置门店零售克价（元/克）',
+    'dash.goldIntl': '国际金价', 'dash.goldFail': '获取失败，点击重试',
+    'dash.tr15d': '近15日', 'dash.tr30d': '近30日', 'dash.tr6m': '近6个月', 'dash.tr12m': '近12个月',
+    'ba.title': '经营分析', 'ba.profitGrp': '利润分析', 'ba.realCost': '实销成本', 'ba.profit': '利润', 'ba.profitRate': '利润率',
+    'ba.member': '会员', 'ba.newMembers': '新增会员', 'ba.recharge': '充值总额', 'ba.memberPay': '会员卡支付',
+    'ba.salesEff': '销售分析', 'ba.avgPerBill': '客单价(元/单)', 'ba.attachment': '连带率(件/单)', 'ba.avgPerItem': '平均单价(元/件)', 'ba.sellThrough': '售罄率',
+    'ba.catShare': '分类实销总额占比', 'ba.top5': '销售TOP5', 'ba.catName': '分类名称', 'ba.realQty': '实销数量', 'ba.realAmount': '实销总额',
     'dash.donutTotal': '合计', 'dash.aging': '滞销超180天', 'dash.stocktakeRisk': '最近盘点',
     'dash.pieceUnit': '件', 'dash.anniversary': '纪念日',
     'care.birthday': '生日关怀', 'care.anniversary': '纪念日关怀', 'care.maintain': '保养清洗',
@@ -582,9 +586,9 @@ var I18N = {
 
   en: {
     // nav
-    'nav.dashboard': 'Dashboard', 'nav.products': 'Products', 'nav.inventory': 'Inventory', 'nav.transfers': 'Transfers',
-    'nav.sales': 'Sales', 'nav.deposits': 'Deposits', 'nav.loans': 'Loans',
-    'nav.customers': 'Customers', 'nav.repairs': 'Repairs', 'nav.purchases': 'Purchasing',
+    'nav.dashboard': 'Dashboard', 'nav.products': 'Products', 'nav.inventory': 'Inventory Analysis', 'nav.transfers': 'Transfers',
+    'nav.sales': 'Sales Analysis', 'nav.deposits': 'Deposits', 'nav.loans': 'Loans',
+    'nav.customers': 'Members', 'nav.repairs': 'Repairs', 'nav.purchases': 'Purchasing',
     'nav.outsourcings': 'Outsourcing', 'nav.logs': 'Audit Logs', 'nav.appointments': 'Appointments',
     'nav.profile': 'Store Management', 'nav.site': 'Website', 'nav.sale': 'New Sale',
     'nav.logout': 'Sign Out', 'nav.more': 'Me', 'nav.rfid': 'RFID Count', 'nav.showcase': 'Showcase',
@@ -635,7 +639,7 @@ var I18N = {
     'anchor.epcReceived': 'EPC received from handheld',
     // kpi
     'kpi.stock': 'In Stock', 'kpi.today': "Today's Sales", 'kpi.month': 'Monthly Sales',
-    'kpi.due': 'Pending Balance', 'kpi.trend': '6-Month Trend', 'kpi.todo': 'Reminders',
+    'kpi.due': 'Pending Balance', 'kpi.trend': 'Sales Trend', 'kpi.todo': 'Reminders',
     'kpi.recent': 'Recent Sales', 'kpi.quick': 'Quick Actions', 'kpi.catSales': 'Category Sales Share (6M)',
     'kpi.stockCost': 'Cost', 'kpi.todayCount': 'orders', 'kpi.unit': '',
     'rem.payBalance': 'Balance Due', 'rem.pickupReady': 'Ready for Pickup',
@@ -646,8 +650,12 @@ var I18N = {
     'dash.query': 'Query', 'dash.pickRange': 'Please pick start and end date', 'dash.avg': 'Avg Order',
     'dash.onhand': 'On hand', 'dash.depBills': 'pending', 'dash.rangeMove': 'Stock Movement',
     'dash.rangeSales': 'Sales in Range', 'dash.rangeDue': 'Deposits Due', 'dash.rangeCustDue': 'Customer Receivable',
-    'dash.goldIntl': 'Intl Gold Price', 'dash.goldRetail': 'Store Retail /g', 'dash.goldFail': 'Fetch failed, click to retry',
-    'dash.notSet': 'Not set', 'dash.goldRetailPrompt': 'Set store retail price (CNY/g)',
+    'dash.goldIntl': 'Intl Gold Price', 'dash.goldFail': 'Fetch failed, click to retry',
+    'dash.tr15d': '15 Days', 'dash.tr30d': '30 Days', 'dash.tr6m': '6 Months', 'dash.tr12m': '12 Months',
+    'ba.title': 'Business Analysis', 'ba.profitGrp': 'Profit', 'ba.realCost': 'COGS', 'ba.profit': 'Profit', 'ba.profitRate': 'Margin',
+    'ba.member': 'Members', 'ba.newMembers': 'New Members', 'ba.recharge': 'Recharged', 'ba.memberPay': 'Card Payment',
+    'ba.salesEff': 'Sales Metrics', 'ba.avgPerBill': 'Avg / Bill', 'ba.attachment': 'UPT (items/bill)', 'ba.avgPerItem': 'Avg / Item', 'ba.sellThrough': 'Sell-through',
+    'ba.catShare': 'Sales Share by Category', 'ba.top5': 'Top 5', 'ba.catName': 'Category', 'ba.realQty': 'Qty', 'ba.realAmount': 'Amount',
     'dash.donutTotal': 'Total', 'dash.aging': 'Slow-moving >180d', 'dash.stocktakeRisk': 'Last Stocktake',
     'dash.pieceUnit': 'pcs', 'dash.anniversary': 'Anniversary',
     'care.birthday': 'Birthday Care', 'care.anniversary': 'Anniversary Care', 'care.maintain': 'Cleaning Care',
@@ -1220,9 +1228,9 @@ var I18N = {
 
   it: {
     // nav
-    'nav.dashboard': 'Cruscotto', 'nav.products': 'Prodotti', 'nav.inventory': 'Inventario', 'nav.transfers': 'Trasferimenti',
-    'nav.sales': 'Vendite', 'nav.deposits': 'Acconti', 'nav.loans': 'Prestiti',
-    'nav.customers': 'Clienti', 'nav.repairs': 'Riparazioni', 'nav.purchases': 'Acquisti',
+    'nav.dashboard': 'Cruscotto', 'nav.products': 'Prodotti', 'nav.inventory': 'Analisi Scorte', 'nav.transfers': 'Trasferimenti',
+    'nav.sales': 'Analisi Vendite', 'nav.deposits': 'Acconti', 'nav.loans': 'Prestiti',
+    'nav.customers': 'Membri', 'nav.repairs': 'Riparazioni', 'nav.purchases': 'Acquisti',
     'nav.outsourcings': 'Lavorazioni Esterne', 'nav.logs': 'Log Operazioni', 'nav.appointments': 'Appuntamenti',
     'nav.profile': 'Gestione Negozio', 'nav.site': 'Sito Web', 'nav.sale': 'Nuova Vendita',
     'nav.logout': 'Esci', 'nav.more': 'Area Personale', 'nav.rfid': 'Inventario RFID', 'nav.showcase': 'Vetrina',
@@ -1272,7 +1280,7 @@ var I18N = {
     'anchor.epcReceived': 'EPC ricevuto dal palmare',
     // kpi
     'kpi.stock': 'In Magazzino', 'kpi.today': 'Vendite di Oggi', 'kpi.month': 'Vendite del Mese',
-    'kpi.due': 'Saldi in Sospeso', 'kpi.trend': 'Trend 6 Mesi', 'kpi.todo': 'Promemoria',
+    'kpi.due': 'Saldi in Sospeso', 'kpi.trend': 'Andamento Vendite', 'kpi.todo': 'Promemoria',
     'kpi.recent': 'Vendite Recenti', 'kpi.quick': 'Azioni Rapide', 'kpi.catSales': 'Vendite per Categoria (6 Mesi)',
     'kpi.stockCost': 'Costo', 'kpi.todayCount': 'ordini', 'kpi.unit': '€',
     'rem.payBalance': 'Saldo Dovuto', 'rem.pickupReady': 'Pronto Ritiro',
@@ -1283,8 +1291,12 @@ var I18N = {
     'dash.query': 'Consulta', 'dash.pickRange': 'Seleziona date di inizio e fine', 'dash.avg': 'Ordine medio',
     'dash.onhand': 'Disponibili', 'dash.depBills': 'in sospeso', 'dash.rangeMove': 'Movimento magazzino',
     'dash.rangeSales': 'Vendite nel periodo', 'dash.rangeDue': 'Acconti in sospeso', 'dash.rangeCustDue': 'Crediti clienti',
-    'dash.goldIntl': 'Prezzo Oro Intl', 'dash.goldRetail': 'Retail Negozio /g', 'dash.goldFail': 'Caricamento fallito, riprova',
-    'dash.notSet': 'Non impostato', 'dash.goldRetailPrompt': 'Imposta prezzo retail negozio (CNY/g)',
+    'dash.goldIntl': 'Prezzo Oro Intl', 'dash.goldFail': 'Caricamento fallito, riprova',
+    'dash.tr15d': '15 Giorni', 'dash.tr30d': '30 Giorni', 'dash.tr6m': '6 Mesi', 'dash.tr12m': '12 Mesi',
+    'ba.title': 'Analisi Business', 'ba.profitGrp': 'Profitto', 'ba.realCost': 'Costo Venduto', 'ba.profit': 'Profitto', 'ba.profitRate': 'Margine',
+    'ba.member': 'Membri', 'ba.newMembers': 'Nuovi Membri', 'ba.recharge': 'Ricariche', 'ba.memberPay': 'Pagamento Carta',
+    'ba.salesEff': 'Metriche Vendite', 'ba.avgPerBill': 'Medio / Scontrino', 'ba.attachment': 'UPT (pezzi/scontrino)', 'ba.avgPerItem': 'Medio / Pezzo', 'ba.sellThrough': 'Sell-through',
+    'ba.catShare': 'Quota per Categoria', 'ba.top5': 'Top 5', 'ba.catName': 'Categoria', 'ba.realQty': 'Q.tà', 'ba.realAmount': 'Importo',
     'dash.donutTotal': 'Totale', 'dash.aging': 'Fermo >180g', 'dash.stocktakeRisk': 'Ultimo Inventario',
     'dash.pieceUnit': 'pz', 'dash.anniversary': 'Anniversario',
     'care.birthday': 'Cura Compleanno', 'care.anniversary': 'Cura Anniversario', 'care.maintain': 'Cura Pulizia',
