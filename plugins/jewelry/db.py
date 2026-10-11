@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS customers (
   total_amount REAL DEFAULT 0,
   due_amount REAL DEFAULT 0,
   birthday TEXT DEFAULT '',
+  anniversary TEXT DEFAULT '',    -- 结婚纪念日（客情维护提醒用）
   preference TEXT DEFAULT '',
   points REAL DEFAULT 0,          -- 会员积分（开单按实付 1 元 = 1 分自动累计）
   gold_discount REAL DEFAULT 1.0  -- 金价折扣待遇：0.98=金价打98折，1=无折扣
@@ -774,6 +775,8 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         # 1.2.0 定金增强：交付时间窗口 + 交付要求备注
         ("deposits", "delivery_time", "TEXT DEFAULT ''"),
         ("deposits", "deliver_requirements", "TEXT DEFAULT ''"),
+        # 1.3.0 客情维护：结婚纪念日
+        ("customers", "anniversary", "TEXT DEFAULT ''"),
     ]
     for table, col, decl in alters:
         if not _has_column(conn, table, col):

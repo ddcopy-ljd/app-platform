@@ -20,6 +20,7 @@ import sqlite3
 import threading
 import time
 import urllib.parse
+import urllib.request
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
@@ -659,7 +660,7 @@ body {{ margin: 0; font-family: "PingFang SC","Microsoft YaHei","Hiragino Sans G
 .section-title .sub {{ color: #8A6F58; font-size: 13px; padding-bottom: 4px; }}
 .sc-grid {{
   display: grid; gap: 22px;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
 }}
 .sc-card {{
   background: #fff; border-radius: 18px; overflow: hidden;
@@ -669,7 +670,7 @@ body {{ margin: 0; font-family: "PingFang SC","Microsoft YaHei","Hiragino Sans G
 }}
 .sc-card:hover {{ transform: translateY(-4px); box-shadow: 0 8px 20px rgba(92,34,51,.10), 0 18px 46px rgba(201,169,97,.18); }}
 .sc-cover {{
-  position: relative; height: 190px;
+  position: relative; height: 240px;
   background:
     linear-gradient(135deg, rgba(255,255,255,.14), rgba(255,255,255,.02)),
     linear-gradient(155deg, #8C2B46 0%, #5C2233 55%, #3D1522 100%);
@@ -711,8 +712,7 @@ body {{ margin: 0; font-family: "PingFang SC","Microsoft YaHei","Hiragino Sans G
 }}
 .sc-code b {{ font-family: Consolas, Menlo, 'Courier New', monospace; font-weight: 700; letter-spacing: 1px; }}
 .sc-desc {{
-  margin: 0 0 16px; font-size: 12.5px; line-height: 1.7; color: #6A5546; min-height: 44px;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  margin: 0 0 16px; font-size: 13.5px; line-height: 1.8; color: #6A5546; min-height: 44px;
 }}
 .sc-foot {{ display: flex; align-items: center; justify-content: space-between; gap: 10px; }}
 .sc-price {{
@@ -1378,10 +1378,86 @@ def dashboard_category_sales(request: Request, start: str = Query(default=""), e
                 GROUP BY cat ORDER BY a DESC
             """, (sid,)).fetchall()
         total = sum(r["a"] for r in rows) or 1
-        return {"items": [
+        return {"total": round(sum(r["a"] for r in rows), 2), "items": [
             {"category": r["cat"], "amount": round(r["a"], 2), "count": r["n"], "pct": round(r["a"] * 100 / total, 1)}
             for r in rows
         ]}
+
+
+# ---- 实时金价：新浪国际黄金（伦敦金 hf_XAU）+ 美元汇率，进程内缓存 5 分钟 ----
+_GOLD_TTL = 300
+_gold_cache: dict = {"ts": 0.0, "data": None}
+
+
+def _sina_quotes() -> tuple[float | None, float | None]:
+    """拉新浪行情（GBK、须带 Referer），返回（伦敦金 USD/盎司, 美元汇率）。
+
+    hf_XAU 第 1 字段为现价；USDCNY 第 1 字段是时间、第 2 字段才是汇率。
+    """
+    req = urllib.request.Request(
+        "https://hq.sinajs.cn/list=hf_XAU,USDCNY",
+        headers={"Referer": "https://finance.sina.com.cn",
+                 "User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=8) as resp:
+        text = resp.read().decode("gbk", errors="replace")
+
+    def _pick(sym: str, idx: int) -> float | None:
+        m = re.search(r'hq_str_' + sym + r'="([^"]*)"', text)
+        if not m:
+            return None
+        parts = m.group(1).split(",")
+        try:
+            v = float(parts[idx])
+            return v if v > 0 else None
+        except (ValueError, IndexError):
+            return None
+
+    return _pick("hf_XAU", 0), _pick("USDCNY", 1)
+
+
+@app.get("/api/dashboard/gold")
+def dashboard_gold(request: Request):
+    """国际金价（伦敦金 USD/盎司 → 元/克）+ 门店零售克价（biz_config.gold_price）。"""
+    _require_auth(request)
+    now = time.time()
+    if _gold_cache["data"] is not None and now - _gold_cache["ts"] < _GOLD_TTL:
+        data = dict(_gold_cache["data"])
+    else:
+        intl_usd = intl_cny = None
+        try:
+            usd_oz, fx = _sina_quotes()
+            if usd_oz:
+                intl_usd = round(usd_oz, 2)
+                if fx:
+                    intl_cny = round(usd_oz * fx / 31.1035, 2)
+        except Exception as e:
+            logger.warning("金价行情获取失败: %s", e)
+        data = {"intlUsd": intl_usd, "intlPrice": intl_cny,
+                "intlTime": datetime.now().strftime("%H:%M") if intl_usd else ""}
+        if intl_usd:  # 成功才刷新缓存；失败时保留旧值继续降级返回
+            _gold_cache["ts"] = now
+            _gold_cache["data"] = dict(data)
+        elif _gold_cache["data"]:
+            data = dict(_gold_cache["data"])
+    with _db(request) as conn:
+        r = conn.execute("SELECT IFNULL(gold_price,0) g FROM biz_config WHERE id=1").fetchone()
+        data["retailPrice"] = round(r["g"], 2) if r and r["g"] else 0
+    return data
+
+
+def _next_anniversary(md: str, today: date, window_days: int) -> date | None:
+    """MM-DD 在未来 window_days 天内的下一次发生日期（跨年顺延），否则 None。"""
+    try:
+        m, d = int(md[0:2]), int(md[3:5])
+        dt = date(today.year, m, d)
+    except ValueError:
+        return None
+    if dt < today:
+        try:
+            dt = date(today.year + 1, m, d)
+        except ValueError:
+            return None
+    return dt if (dt - today).days <= window_days else None
 
 
 @app.get("/api/dashboard/reminders")
@@ -1402,10 +1478,56 @@ def dashboard_reminders(request: Request):
             "SELECT * FROM repairs WHERE status IN ('待维修','维修中') "
             "AND (store_id=? OR store_id=0) ORDER BY promised_date LIMIT 8", (sid,)
         ).fetchall()
+        # 客情维护提醒：生日 / 结婚纪念日（未来30天）+ 售出满一年保养（±30天窗口）
+        today = date.today()
+        care: list[dict] = []
+        for r in conn.execute(
+                "SELECT name,phone,birthday,anniversary FROM customers "
+                "WHERE IFNULL(birthday,'')!='' OR IFNULL(anniversary,'')!=''").fetchall():
+            for key, typ in (("birthday", "birthday"), ("anniversary", "anniversary")):
+                v = (r[key] or "").strip()
+                if len(v) >= 5:
+                    nxt = _next_anniversary(v[-5:], today, 30)
+                    if nxt:
+                        care.append({"type": typ, "customer": r["name"], "phone": r["phone"],
+                                     "date": nxt.isoformat(),
+                                     "days": (nxt - today).days})
+        for r in conn.execute(
+                "SELECT customer,phone,MIN(biz_date) d FROM sales "
+                "WHERE status!='已冲红' AND IFNULL(customer,'')!='' "
+                "AND biz_date BETWEEN date('now','localtime','-395 days') AND date('now','localtime','-335 days') "
+                "AND (store_id=? OR store_id=0) "
+                "GROUP BY COALESCE(NULLIF(phone,''),customer) ORDER BY d DESC LIMIT 8", (sid,)
+        ).fetchall():
+            care.append({"type": "maintain", "customer": r["customer"], "phone": r["phone"],
+                         "date": r["d"], "days": 365})
+        care.sort(key=lambda x: x["days"])
         return {
             "deposits": [dict(r) for r in deposits_urgent],
             "loansOverdue": [dict(r) for r in loans_overdue],
             "repairsPending": [dict(r) for r in repairs_pending],
+            "care": care[:12],
+        }
+
+
+@app.get("/api/dashboard/risk")
+def dashboard_risk(request: Request):
+    """资产风控：滞销库龄（在库>180天）+ 最近一次盘点异常。"""
+    sess = _require_auth(request)
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
+        r = conn.execute(
+            "SELECT COUNT(*) n, COALESCE(SUM(cost),0) c FROM products "
+            "WHERE status='在库' AND (store_id=? OR store_id=0) "
+            "AND julianday('now','localtime') - julianday(created) > 180", (sid,)
+        ).fetchone()
+        cost_visible = _can_view_cost(conn, sess)
+        st = conn.execute(
+            "SELECT batch_no,surplus_count,shortage_count,abnormal_count,created "
+            "FROM stocktakes ORDER BY id DESC LIMIT 1").fetchone()
+        return {
+            "aging": {"count": r["n"], "cost": round(r["c"], 2) if cost_visible else None},
+            "lastStocktake": dict(st) if st else None,
         }
 
 
@@ -2412,7 +2534,8 @@ def inventory_inbound(body: InboundIn, request: Request):
         )
         _inv(conn, cur.lastrowid, epc, "in", op["username"], store_id=store_id)
         conn.commit()
-        _log(conn, op["username"], "入库登记", f"{store['name']} {code}")
+        _log(conn, op["username"], "入库登记",
+             f"{store['name']} {code} {body.name} 重{(body.weight or 0):.2f}g 成本￥{body.cost or 0:,.2f} 售价￥{body.price or 0:,.2f} EPC{epc}")
         return {"id": cur.lastrowid, "code": code, "rfid_epc": epc}
 
 
@@ -2437,7 +2560,8 @@ def inventory_copy(pid: int, request: Request):
         )
         _inv(conn, cur.lastrowid, epc, "in", op["username"], store_id=sid)
         conn.commit()
-        _log(conn, op["username"], "复制入库", f"{src['code']}→{code}")
+        _log(conn, op["username"], "复制入库",
+             f"{src['code']}→{code} {src['name']} 重{(src['weight'] or 0):.2f}g 售价￥{src['price'] or 0:,.2f} EPC{epc}")
         return {"id": cur.lastrowid, "code": code, "rfid_epc": epc}
 
 
@@ -3718,8 +3842,11 @@ def task_start(body: TaskStartIn, request: Request):
         tid = cur.lastrowid
         _task_event(conn, tid, "create", op["username"])
         conn.commit()
+        _sname = conn.execute("SELECT name FROM stores WHERE id=?", (sid,)).fetchone()
         _log(conn, op["username"],
-             "开启盘点任务" if ttype == "stocktake" else "发起扫码任务", task_no)
+             "开启盘点任务" if ttype == "stocktake" else "发起扫码任务",
+             f"{task_no} 门店{_sname['name'] if _sname else sid}"
+             + (f" 标题「{title}」" if title else ""))
         host = (body.host or "").strip().rstrip("/")
         if not host:
             host = f"{_lan_ip()}:{PORT}"
@@ -3780,7 +3907,10 @@ def task_cancel(tid: int, request: Request):
         _free_task_devices(conn, tid)
         _task_event(conn, tid, "cancel", op["username"])
         conn.commit()
-        _log(conn, op["username"], "撤销盘点任务", t["task_no"])
+        _tst = conn.execute("SELECT name FROM stores WHERE id=?", (t["store_id"],)).fetchone()
+        _log(conn, op["username"], "撤销盘点任务",
+             f"{t['task_no']} 门店{(_tst['name'] if _tst else t['store_id'])}"
+             + (f" 标题「{t['title']}」" if t["title"] else ""))
         _push_task_closed(t, "已撤销")
         return {"ok": True}
 
@@ -3813,7 +3943,11 @@ def task_terminate(tid: int, request: Request):
         _task_event(conn, tid, "terminate", op["username"],
                     f"扫描{len(epcs)}条" + ("，已生成部分报告" if result else ""))
         conn.commit()
-        _log(conn, op["username"], "终止盘点任务", t["task_no"] + (f" 扫描{len(epcs)}" if epcs else ""))
+        _tst2 = conn.execute("SELECT name FROM stores WHERE id=?", (t["store_id"],)).fetchone()
+        _log(conn, op["username"], "终止盘点任务",
+             f"{t['task_no']} 门店{(_tst2['name'] if _tst2 else t['store_id'])}"
+             + (f" 扫描{len(epcs)}" if epcs else " 无扫描")
+             + ("，已生成部分报告" if result else ""))
         _push_task_closed(t, "已终止")
         return {"ok": True, "result": {"id": result["id"], "scannedCount": result["scannedCount"],
                                        "matchedCount": result["matchedCount"],
@@ -4161,7 +4295,9 @@ def _do_submit(conn: sqlite3.Connection, dev) -> dict:
     _free_task_devices(conn, tid)
     _task_event(conn, tid, "submit", f"device:{dev['code']}", f"扫描{len(epcs)}条")
     conn.commit()
-    _log(conn, actor, "提交完结任务", t["task_no"])
+    _st3 = conn.execute("SELECT name FROM stores WHERE id=?", (t["store_id"],)).fetchone()
+    _log(conn, actor, "提交完结任务",
+         f"{t['task_no']} 门店{(_st3['name'] if _st3 else t['store_id'])} 设备{dev['code']} 扫描{len(epcs)}条")
     _push_task_closed(t, "已完成")
     out = {"ok": True, "task_no": t["task_no"], "scanned_count": len(epcs),
            "server_time": int(time.time())}
@@ -4849,20 +4985,30 @@ def sale_create(body: SaleReq, request: Request):
             conn.execute("UPDATE sales SET customer_id=? WHERE id=?", (customer_id, sale_id))
             conn.execute("UPDATE customers SET points=IFNULL(points,0)+? WHERE id=?", (paid, customer_id))
         conn.commit()
-        _log(conn, op["username"], "销售开单", f"{bill} {len(resolved)}件")
+        _snames = [p["name"] for p, _s in resolved]
+        _log(conn, op["username"], "销售开单",
+             f"{bill} 客户{body.customer or '散客'} 应收￥{receivable:,.2f} 优惠￥{discount:,.2f} "
+             f"实收￥{paid:,.2f}（{main_method}）{len(resolved)}件："
+             f"{'、'.join(_snames[:10])}{'…' if len(_snames) > 10 else ''}")
         return {"bill_no": bill, "id": sale_id, "amount": payable, "receivable": receivable,
                 "discount": discount, "paid": paid, "points": paid, "count": len(resolved)}
 
 
 @app.get("/api/sales")
 def sale_list(request: Request, q: str = "", clerk_type: str = "", clerk_name: str = "",
-              page: int = 1, size: int = 50):
+              start: str = "", end: str = "", page: int = 1, size: int = 50):
     sess = _require_auth(request)
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, sess)
         where, args = [], []
         where.append("(s.store_id=? OR s.store_id=0)")
         args.append(sid)
+        if start:
+            where.append("s.biz_date>=?")
+            args.append(start)
+        if end:
+            where.append("s.biz_date<=?")
+            args.append(end)
         if q:
             where.append(
                 "(s.bill_no LIKE ? OR s.customer LIKE ? OR s.phone LIKE ? OR s.product LIKE ? "
@@ -4930,7 +5076,9 @@ def sale_void(sid: int, request: Request):
                 (row["amount"], max(0.0, row["amount"] - row["paid"]), row["paid"], row["phone"]),
             )
         conn.commit()
-        _log(conn, op["username"], "销售冲红", row["bill_no"])
+        _log(conn, op["username"], "销售冲红",
+             f"{row['bill_no']} 客户{row['customer'] or '散客'} 金额￥{row['amount']:,.2f} "
+             f"{row['product'] or ''}（已恢复在库）")
         return {"ok": True}
 
 
@@ -5403,7 +5551,9 @@ def deposit_create(body: DepositIn, request: Request):
         )
         _touch_customer(conn, body.customer, body.phone, body.deposit, body.balance)
         conn.commit()
-        _log(conn, op["username"], "收定金", body.customer)
+        _log(conn, op["username"], "收定金",
+             f"#{cur.lastrowid} 客户{body.customer} 商品{name or '未指定'} "
+             f"总价￥{body.total:,.2f} 定金￥{body.deposit:,.2f} 尾款￥{body.balance:,.2f}")
         return {"id": cur.lastrowid}
 
 
@@ -5438,7 +5588,9 @@ def deposit_pay(did: int, request: Request):
             conn.execute("UPDATE customers SET due_amount=MAX(due_amount-?,0) WHERE phone=?", (d["balance"], d["phone"]))
             conn.execute("UPDATE customers SET total_amount=total_amount+? WHERE phone=?", (d["balance"], d["phone"]))
         conn.commit()
-        _log(conn, op["username"], "尾款转正式单", bill)
+        _log(conn, op["username"], "尾款转正式单",
+             f"{bill} 定金单#{did} 客户{d['customer'] or '散客'} 商品{d['product'] or ''} "
+             f"总价￥{(d['total'] or 0):,.2f}（补尾款￥{(d['balance'] or 0):,.2f}）")
         return {"ok": True, "bill_no": bill}
 
 
@@ -5459,7 +5611,9 @@ def deposit_void(did: int, request: Request):
             conn.execute("UPDATE products SET status='在库' WHERE id=?", (d["product_id"],))
         conn.execute("UPDATE deposits SET status='已冲红' WHERE id=?", (did,))
         conn.commit()
-        _log(conn, op["username"], "定金冲红", str(did))
+        _log(conn, op["username"], "定金冲红",
+             f"#{did} 客户{d['customer'] or '散客'} 商品{d['product'] or ''} "
+             f"定金￥{(d['deposit'] or 0):,.2f}（已退回在库）")
         return {"ok": True}
 
 
@@ -5539,7 +5693,11 @@ def loan_create(body: LoanIn, request: Request):
              body.loan_date or date.today().isoformat(), body.due_date, st, sid),
         )
         conn.commit()
-        _log(conn, op["username"], "借货", product_str or body.code)
+        _lnames = [p["name"] for p in resolved]
+        _ldetail = "、".join(_lnames[:10]) + ("…" if len(_lnames) > 10 else "")
+        _log(conn, op["username"], "借货",
+             f"#{cur.lastrowid} {'借出' if body.direction == 'out' else '借入'} 对方{body.party or '未填'} "
+             f"{qty}件：{_ldetail or (body.product or body.code)}")
         return {"id": cur.lastrowid, "count": len(resolved)}
 
 
@@ -5565,7 +5723,9 @@ def loan_return(lid: int, request: Request):
         st = "已归还" if row["direction"] == "out" else "已核销"
         conn.execute("UPDATE loans SET status=? WHERE id=?", (st, lid))
         conn.commit()
-        _log(conn, op["username"], "借货归还", row["product"])
+        _log(conn, op["username"], "借货归还",
+             f"#{lid} {row['product'] or row['code'] or ''} 对方{row['party'] or '未填'} "
+             f"{row['qty'] or 1}件 → {st}")
         return {"ok": True}
 
 
@@ -5576,6 +5736,7 @@ class CustomerIn(BaseModel):
     phone: str = ""
     level: str = "普通"
     birthday: str = ""
+    anniversary: str = ""  # 结婚纪念日（客情维护提醒用）
     preference: str = ""
     gold_discount: float | None = None  # 金价折扣待遇（0<值<=1）；积分由开单自动累计，不在此手改
 
@@ -5623,8 +5784,8 @@ def customer_create(body: CustomerIn, request: Request):
         raise HTTPException(400, "金价折扣需在 0~1 之间（如 0.98）")
     with _db(request) as conn:
         cur = conn.execute(
-            "INSERT INTO customers(name,phone,level,birthday,preference,gold_discount) VALUES(?,?,?,?,?,?)",
-            (body.name, body.phone, body.level, body.birthday, body.preference,
+            "INSERT INTO customers(name,phone,level,birthday,anniversary,preference,gold_discount) VALUES(?,?,?,?,?,?,?)",
+            (body.name, body.phone, body.level, body.birthday, body.anniversary, body.preference,
              gd if gd is not None else 1.0),
         )
         conn.commit()
@@ -5641,13 +5802,13 @@ def customer_update(cid: int, body: CustomerIn, request: Request):
     with _db(request) as conn:
         if gd is not None:
             conn.execute(
-                "UPDATE customers SET name=?,phone=?,level=?,birthday=?,preference=?,gold_discount=? WHERE id=?",
-                (body.name, body.phone, body.level, body.birthday, body.preference, gd, cid),
+                "UPDATE customers SET name=?,phone=?,level=?,birthday=?,anniversary=?,preference=?,gold_discount=? WHERE id=?",
+                (body.name, body.phone, body.level, body.birthday, body.anniversary, body.preference, gd, cid),
             )
         else:
             conn.execute(
-                "UPDATE customers SET name=?,phone=?,level=?,birthday=?,preference=? WHERE id=?",
-                (body.name, body.phone, body.level, body.birthday, body.preference, cid),
+                "UPDATE customers SET name=?,phone=?,level=?,birthday=?,anniversary=?,preference=? WHERE id=?",
+                (body.name, body.phone, body.level, body.birthday, body.anniversary, body.preference, cid),
             )
         conn.commit()
         _log(conn, op["username"], "修改客户", body.name)
@@ -5731,7 +5892,9 @@ def repair_create(body: RepairIn, request: Request):
              body.receive_date, body.promised_date, body.status, body.technician, body.remark, sid),
         )
         conn.commit()
-        _log(conn, op["username"], "接维修", body.item)
+        _log(conn, op["username"], "接维修",
+             f"#{cur.lastrowid} {body.item} 客户{body.customer or '散客'} "
+             f"问题{(body.issue or '')[:30]} 预估￥{body.est_fee or 0:,.2f}")
         return {"id": cur.lastrowid}
 
 
@@ -5755,7 +5918,9 @@ def repair_update(rid: int, body: RepairIn, request: Request):
         if old and old["status"] != "已完成" and body.status == "已完成" and body.actual_fee:
             _touch_customer(conn, body.customer, body.phone, body.actual_fee, 0)
         conn.commit()
-        _log(conn, op["username"], "更新维修", str(rid))
+        _log(conn, op["username"], "更新维修",
+             f"#{rid} {body.item} 状态{old['status']}→{body.status}"
+             + (f" 实收￥{body.actual_fee:,.2f}" if body.status == "已完成" and body.actual_fee else ""))
         return {"ok": True}
 
 
@@ -5796,7 +5961,9 @@ def purchase_create(body: PurchaseIn, request: Request):
              body.received_date, body.status, body.paid, sid),
         )
         conn.commit()
-        _log(conn, op["username"], "采购", body.product)
+        _log(conn, op["username"], "采购",
+             f"#{cur.lastrowid} {body.product}×{body.qty} 供应商{body.supplier or '未填'} "
+             f"成本￥{body.cost:,.2f}")
         return {"id": cur.lastrowid}
 
 
@@ -5823,7 +5990,9 @@ def purchase_receive(pid: int, request: Request):
         )
         _inv(conn, cur.lastrowid, "", "in", op["username"], row["qty"] or 1, store_id=sid)
         conn.commit()
-        _log(conn, op["username"], "采购入库", code)
+        _log(conn, op["username"], "采购入库",
+             f"{code} {row['product']}×{row['qty']} 采购单#{pid} 供应商{row['supplier'] or '未填'} "
+             f"成本￥{row['cost']:,.2f}")
         return {"ok": True, "code": code}
 
 
@@ -5865,7 +6034,9 @@ def outsource_create(body: OutsourceIn, request: Request):
              body.send_date, body.expected_date, body.received_date, body.status, sid),
         )
         conn.commit()
-        _log(conn, op["username"], "委外加工", body.product)
+        _log(conn, op["username"], "委外加工",
+             f"#{cur.lastrowid} {body.product} 工厂{body.factory or '未填'} "
+             f"{body.material or ''}{(body.weight or 0):.2f}g 金价￥{body.gold_price or 0:,.2f}/g 工费￥{body.labor_fee or 0:,.2f}")
         return {"id": cur.lastrowid}
 
 
@@ -5892,7 +6063,8 @@ def outsource_receive(oid: int, request: Request):
         )
         _inv(conn, cur.lastrowid, "", "in", op["username"], store_id=sid)
         conn.commit()
-        _log(conn, op["username"], "委外收货入库", code)
+        _log(conn, op["username"], "委外收货入库",
+             f"{code} {row['product']} 加工单#{oid} 工厂{row['factory'] or '未填'} 成本￥{cost:,.2f}")
         # 成本照常按公式入库（业务流转），但不向无成本权限的账号回显金额
         return {"ok": True, "code": code, "cost": round(cost, 2) if _can_view_cost(conn, op) else None}
 
@@ -6463,6 +6635,28 @@ async def security_ws(websocket: WebSocket, token: str = ""):
         sensors.sec_clients().discard(websocket)
 
 
+def _purge_old_logs(conn: sqlite3.Connection) -> int:
+    """操作日志默认保存 20 天，过期删除，返回删除条数。"""
+    cur = conn.execute(
+        "DELETE FROM operate_logs WHERE time < datetime('now','localtime','-20 days')")
+    conn.commit()
+    return cur.rowcount
+
+
+async def _log_cleanup_loop():
+    """每小时检查一次，清理 20 天前的操作日志。"""
+    tenant = os.environ.get("TENANT_ID") or "tenant_trial"
+    while True:
+        try:
+            with _db_for_tenant(tenant) as conn:
+                n = _purge_old_logs(conn)
+                if n:
+                    logger.info("操作日志清理：删除 %d 条（>20天）", n)
+        except Exception as e:
+            logger.warning("日志清理异常: %s", e)
+        await asyncio.sleep(3600)
+
+
 async def _security_schedule_loop():
     """每日布防/撤防定时调度：30 秒检查一次，状态不符即切换（source=定时计划）。"""
     tenant = os.environ.get("TENANT_ID") or "tenant_trial"
@@ -6485,6 +6679,16 @@ async def _security_schedule_loop():
 async def _security_startup():
     sensors.bind_loop(asyncio.get_running_loop())
     asyncio.create_task(_security_schedule_loop())
+    # 操作日志默认保存 20 天：启动清一次 + 每小时定时清理
+    try:
+        tenant = os.environ.get("TENANT_ID") or "tenant_trial"
+        with _db_for_tenant(tenant) as conn:
+            n = _purge_old_logs(conn)
+            if n:
+                logger.info("操作日志清理：删除 %d 条（>20天）", n)
+    except Exception as e:
+        logger.warning("启动日志清理异常: %s", e)
+    asyncio.create_task(_log_cleanup_loop())
 
 
 # ---------------------------------------------------------------- 静态资源（最后注册）

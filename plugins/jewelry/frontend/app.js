@@ -31,8 +31,11 @@ var ST = Vue.reactive({
   loginUser: 'admin', loginPwd: '123456',
   // data
   dashData: null, trendData: null, remindData: null, showRemind: true, catSales: null,
+  goldData: null,   // 实时金价（国际+门店零售）
+  riskData: null,   // 资产风控（滞销库龄+最近盘点）
   // 看板时间范围：mode=today|week|month|custom；custom 用 start/end（ISO 日期）
   dashRange: { mode: 'today', start: '', end: '' },
+  saleRange: { mode: 'today', start: '', end: '' },   // 销售列表时间过滤（同看板工具栏）
   products: [], prodTotal: 0, prodCat: '', prodQ: '', prodHasCert: false, prodLoc: 0, prodStatusFilter: '',
   cats: [], bizConfig: { epc_prefix: 'E280', seq_bits: 8 }, languages: [],
   catEdit: { code: '', names: { zh: '', en: '' }, sort_order: 0 }, catEditMode: 'new',
@@ -420,7 +423,8 @@ function todoCount() {
   if (!ST.remindData) return 0;
   return (ST.remindData.deposits || []).length +
          (ST.remindData.loansOverdue || []).length +
-         (ST.remindData.repairsPending || []).length;
+         (ST.remindData.repairsPending || []).length +
+         (ST.remindData.care || []).length;
 }
 
 function printSelCount() {
@@ -621,7 +625,26 @@ function reminderHint(item, cat) {
   return '';
 }
 function reminderTagCls(cat) {
-  return 'rt-' + cat;  // rt-deposit / rt-loan / rt-repair
+  return 'rt-' + cat;  // rt-deposit / rt-loan / rt-repair / rt-care
+}
+// 客情维护提醒 tag 文案：生日 / 纪念日 / 保养
+function careHint(c) {
+  if (c.type === 'birthday') return t('care.birthday');
+  if (c.type === 'anniversary') return t('care.anniversary');
+  return t('care.maintain');
+}
+// 环形图配色（与 .catc0-5 一致）
+var DONUT_COLORS = ['#C9A227', '#8B2E3B', '#3D6B99', '#4E8A5A', '#B36A2E', '#7A5C9E'];
+function donutColor(i) { return DONUT_COLORS[i % DONUT_COLORS.length]; }
+// 品类占比环形图：按 pct 生成 SVG 圆弧段（pathLength=100，dasharray 直接用百分比）
+function catDonutSegments() {
+  var items = (ST.catSales && ST.catSales.items) || [];
+  var acc = 0;
+  return items.map(function (c, i) {
+    var seg = { pct: c.pct, offset: -acc, color: i % 6, key: c.category };
+    acc += c.pct;
+    return seg;
+  });
 }
 // 标签打印记录提示：🖨 图标悬停显示打印次数与最近时间
 function printedTip(p) {
@@ -665,6 +688,7 @@ function go(tab) {
   if (ST.tab === 'inventory') { loadInv(); loadStockBatches(); loadCoTask(); }
   if (ST.tab === 'transfers') loadTransfers();
   if (ST.tab === 'appointments') loadAppt();
+  if (ST.tab === 'showcase') loadShowcase();
   if (ST.tab === 'shops') { syncManageStore(); loadShops(); loadStores(true); loadBridgeList(); loadProfile(); loadProductTypes(); loadTemplates(); loadAllDevices(); }
   if (ST.tab === 'stores') { syncManageStore(); loadShops(); loadStores(true); loadBridgeList(); loadLocations(); loadAllDevices(); }
   if (ST.tab === 'system') {
@@ -708,8 +732,8 @@ function openSubView(name) {
 
 // ---- data loading ----
 // 计算看板时间区间 [start,end]（ISO 日期）；today/week/month 按当前日期推导，custom 用已存值
-function dashRangeCompute() {
-  var dr = ST.dashRange;
+function dashRangeCompute(dr) {
+  dr = dr || ST.dashRange;
   var now = new Date();
   var iso = function (d) {
     var y = d.getFullYear(), m = ('0' + (d.getMonth() + 1)).slice(-2), dd = ('0' + d.getDate()).slice(-2);
@@ -739,6 +763,16 @@ function applyDashCustomRange() {
   ST.dashRange.mode = 'custom';
   loadDash();
 }
+// 销售列表时间过滤（复用 dashRangeCompute 的区间推导）
+function setSaleRange(mode) {
+  ST.saleRange.mode = mode;
+  if (mode !== 'custom') loadSales();
+}
+function applySaleCustomRange() {
+  if (!ST.saleRange.start || !ST.saleRange.end) { toast(t('dash.pickRange'), 'error'); return; }
+  ST.saleRange.mode = 'custom';
+  loadSales();
+}
 function loadDash() {
   var rg = dashRangeCompute();
   var q = '?start=' + rg.start + '&end=' + rg.end;
@@ -747,6 +781,26 @@ function loadDash() {
   api('GET', '/api/dashboard/trend').then(function (r) { ST.trendData = r; }).catch(function () {});
   api('GET', '/api/dashboard/category-sales' + q).then(function (r) { ST.catSales = r; }).catch(function () {});
   api('GET', '/api/dashboard/reminders').then(function (r) { ST.remindData = r; }).catch(function () {});
+  api('GET', '/api/dashboard/risk').then(function (r) { ST.riskData = r; }).catch(function () {});
+  loadGold();
+}
+
+function loadGold() {
+  api('GET', '/api/dashboard/gold').then(function (r) { ST.goldData = r; }).catch(function () { ST.goldData = { intlUsd: null, intlPrice: null, retailPrice: 0 }; });
+}
+
+// 门店零售克价：点击直接改（与开单页「当日金价」同源 biz_config.gold_price）
+function editGoldRetail() {
+  var cur = (ST.goldData && ST.goldData.retailPrice) || '';
+  var v = prompt(t('dash.goldRetailPrompt'), cur);
+  if (v === null) return;
+  var n = round2(Number(v));
+  if (!(n >= 0)) { toast(t('sale.goldNeed'), 'error'); return; }
+  api('PUT', '/api/biz-config', { gold_price: n }).then(function () {
+    if (ST.goldData) ST.goldData.retailPrice = n;
+    if (ST.bizConfig) ST.bizConfig.gold_price = n;
+    toast(t('sale.goldSaved'));
+  }).catch(function (e) { toast(e.message, 'error'); });
 }
 
 function refreshAll() {
@@ -889,7 +943,7 @@ var DETAIL_FIELDS = {
              ['交付时间', 'delivery_time'], ['交付要求', 'deliver_requirements'],
              ['提前提醒', 'reminder_days'], ['状态', 'status'], ['创建时间', 'created']],
   customers: [['姓名', 'name'], ['电话', 'phone'], ['等级', 'level'], ['累计消费', 'total_amount'],
-              ['欠款', 'due_amount'], ['生日', 'birthday'], ['偏好', 'preference']],
+              ['欠款', 'due_amount'], ['生日', 'birthday'], ['纪念日', 'anniversary'], ['偏好', 'preference']],
   logs: [['时间', 'time'], ['操作人', 'operator'], ['门店', 'store'], ['动作', 'action'],
          ['对象', 'target'], ['结果', 'result']],
   appointments: [['姓名', 'name'], ['联系方式', 'contact'], ['类型', 'category'], ['意向商品', 'product'],
@@ -943,6 +997,72 @@ function loadAppt() {
 
 function loadProfile() {
   api('GET', '/api/profile').then(function (r) { ST.profile = r; }).catch(function () {});
+}
+
+// ---- 橱窗展示管理 ----
+var _scOrigIds = [];  // 进入页面/保存后橱窗内的商品 id（用于计算 remove）
+function loadShowcase() {
+  api('GET', '/api/showcase/list').then(function (r) {
+    ST.showcase = r;
+    _scOrigIds = (r.in_showcase || []).map(function (p) { return p.id; });
+    ST.showcaseDirty = false;
+    ST.showcasePoolQ = '';
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+function showcasePoolFiltered() {
+  var sc = ST.showcase;
+  if (!sc) return [];
+  var q = (ST.showcasePoolQ || '').trim().toLowerCase();
+  var inIds = {};
+  (sc.in_showcase || []).forEach(function (p) { inIds[p.id] = 1; });
+  return (sc.pool || []).filter(function (p) {
+    if (inIds[p.id]) return false;
+    if (!q) return true;
+    return (p.name || '').toLowerCase().indexOf(q) >= 0 || (p.code || '').toLowerCase().indexOf(q) >= 0;
+  });
+}
+function addShowcase(p) {
+  var sc = ST.showcase;
+  if (!sc) return;
+  if (sc.in_showcase.length >= (sc.max || 10)) { toast(t('sc.max', { n: sc.max || 10 }), 'error'); return; }
+  sc.in_showcase.push({ id: p.id, code: p.code, name: p.name, price: p.price, material: p.material,
+    weight: p.weight, origin: p.origin, image_ts: p.image_ts, showcase_order: 0, showcase_desc: '' });
+  sc.count = sc.in_showcase.length;
+  ST.showcaseDirty = true;
+}
+function removeShowcase(p) {
+  var sc = ST.showcase;
+  if (!sc) return;
+  var idx = sc.in_showcase.findIndex(function (x) { return x.id === p.id; });
+  if (idx >= 0) sc.in_showcase.splice(idx, 1);
+  sc.count = sc.in_showcase.length;
+  ST.showcaseDirty = true;
+}
+function moveShowcase(p, dir) {
+  var sc = ST.showcase;
+  if (!sc) return;
+  var arr = sc.in_showcase;
+  var i = arr.findIndex(function (x) { return x.id === p.id; });
+  var j = i + dir;
+  if (i < 0 || j < 0 || j >= arr.length) return;
+  var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+  ST.showcaseDirty = true;
+}
+function saveShowcase() {
+  var sc = ST.showcase;
+  if (!sc) return;
+  var curIds = sc.in_showcase.map(function (p) { return p.id; });
+  var curSet = {};
+  curIds.forEach(function (id) { curSet[id] = 1; });
+  var remove = _scOrigIds.filter(function (id) { return !curSet[id]; });
+  var items = sc.in_showcase.map(function (p, i) { return { id: p.id, order: i + 1, desc: p.showcase_desc || '' }; });
+  api('PUT', '/api/showcase/sync', { items: items, remove: remove }).then(function () {
+    toast(t('toast.saveOk'));
+    loadShowcase();
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+function pubShowcaseUrl() {
+  return location.origin + API + '/site#showcase';
 }
 
 function loadBizConfig() {
@@ -1851,7 +1971,10 @@ function defaultClerkTypeName() {
 }
 // 销售单加载（支持按经办人类别筛选）
 function loadSales() {
-  var q = ST.saleClerkType ? ('&clerk_type=' + encodeURIComponent(ST.saleClerkType)) : '';
+  var rg = dashRangeCompute(ST.saleRange);
+  ST.saleRange.curStart = rg.start; ST.saleRange.curEnd = rg.end;
+  var q = '&start=' + rg.start + '&end=' + rg.end;
+  if (ST.saleClerkType) q += '&clerk_type=' + encodeURIComponent(ST.saleClerkType);
   return api('GET', '/api/sales?page=1&size=100' + q).then(function (r) {
     ST.sales = r.items; ST.saleTotal = r.total;
   }).catch(function () {});
@@ -2592,7 +2715,7 @@ function openOutsource() {
 }
 
 function openCustomer() {
-  openSheet('customer', t('sheet.customer'), { name: '', phone: '', level: '普通', birthday: '', preference: '', gold_discount: 1, points: 0 });
+  openSheet('customer', t('sheet.customer'), { name: '', phone: '', level: '普通', birthday: '', anniversary: '', preference: '', gold_discount: 1, points: 0 });
 }
 
 function editCustomer(d) { viewCustomer(d); }
@@ -2742,7 +2865,7 @@ function submitSheet() {
     var cu = d.id ? '/api/customers/' + d.id : '/api/customers';
     var gd = Number(d.gold_discount);
     if (!(gd > 0 && gd <= 1)) { toast(t('cust.goldDiscountRange'), 'error'); return; }
-    api(cm, cu, { name: d.name, phone: d.phone || '', level: d.level || '普通', birthday: d.birthday || '', preference: d.preference || '', gold_discount: round2(gd) }).then(function () {
+    api(cm, cu, { name: d.name, phone: d.phone || '', level: d.level || '普通', birthday: d.birthday || '', anniversary: d.anniversary || '', preference: d.preference || '', gold_discount: round2(gd) }).then(function () {
       toast(t('toast.custSaveOk')); closeSheet(); loadSubList();
     }).catch(function (e) { toast(e.message, 'error'); });
   }
@@ -4189,6 +4312,7 @@ var app = Vue.createApp({
     printSelCount: printSelCount, printAllChecked: printAllChecked,
     invStockList: invStockList,
     invStockGroups: invStockGroups,
+    showcasePool: showcasePoolFiltered,
     todoCount: todoCount,
     frozen: isFrozen,
     currentTitle: currentTitle,
@@ -4275,6 +4399,7 @@ var app = Vue.createApp({
   methods: {
     go: go, switchAdminSub: switchAdminSub, goInvStatus: goInvStatus, clearInvStatusFilter: clearInvStatusFilter,
     setDashRange: setDashRange, applyDashCustomRange: applyDashCustomRange,
+    setSaleRange: setSaleRange, applySaleCustomRange: applySaleCustomRange,
     switchStore: switchStore,
     isHqStore: isHqStore,   // 总店/分店视图判定（模板以 isHqStore() 调用，故放 methods）
     isExecRole: isExecRole, // 高管只读标识（模板可用于只读角标）
@@ -4285,7 +4410,8 @@ var app = Vue.createApp({
     statusClass: statusClass,
     statusText: statusText, methodText: methodText, levelText: levelText,
     directionText: directionText, printedTip: printedTip, coStatusText: coStatusText, resultText: resultText,
-    reminderHint: reminderHint, reminderTagCls: reminderTagCls,
+    reminderHint: reminderHint, reminderTagCls: reminderTagCls, careHint: careHint,
+    catDonutSegments: catDonutSegments, donutColor: donutColor, loadGold: loadGold, editGoldRetail: editGoldRetail,
     fieldLabelText: fieldLabelText, labelFieldText: labelFieldText,
     doLogin: doLogin, doLogout: doLogout,
     openHandheldLogin: openHandheldLogin, closeHandheldLogin: closeHandheldLogin,
@@ -4396,6 +4522,8 @@ var app = Vue.createApp({
     recordLines: recordLines, recordKind: recordKind, statusClass: statusClass, logText: logText,
     openRecordDetail: openRecordDetail, editFromDetail: editFromDetail,
     loadAppt: loadAppt, loadProfile: loadProfile,
+    loadShowcase: loadShowcase, addShowcase: addShowcase, removeShowcase: removeShowcase,
+    moveShowcase: moveShowcase, saveShowcase: saveShowcase, pubShowcaseUrl: pubShowcaseUrl,
     // 标签模板设计器
     openTplDesigner: openTplDesigner, closeTplDesigner: closeTplDesigner,
     saveTemplate: saveTemplate, delTemplate: delTemplate, bindCatTemplate: bindCatTemplate,
