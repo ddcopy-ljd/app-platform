@@ -1,0 +1,1902 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BugPulse Pro - 敏捷缺陷与工程质量管理系统</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Phosphor Icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+  <!-- Inter Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              200: '#bfdbfe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #f8fafc; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    .kanban-column-container { min-height: calc(100vh - 350px); }
+    
+    /* Paste Target Active Indicator */
+    .paste-highlight-zone {
+      transition: all 0.2s ease-in-out;
+    }
+    .paste-highlight-zone.dragover {
+      border-color: #2563eb !important;
+      background-color: #eff6ff !important;
+      transform: scale(1.008);
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col font-sans select-none sm:select-auto">
+
+  <!-- Header / Navigation Bar -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16 gap-4">
+        
+        <!-- Brand & Project Switcher -->
+        <div class="flex items-center space-x-4 sm:space-x-6 min-w-0">
+          <div class="flex items-center space-x-2.5 shrink-0">
+            <div class="w-9 h-9 bg-brand-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-brand-500/20">
+              <i class="ph-bold ph-bug text-xl"></i>
+            </div>
+            <div class="hidden sm:block">
+              <span class="font-bold text-lg text-slate-900 tracking-tight flex items-center gap-1.5">
+                BugPulse <span class="text-[10px] px-1.5 py-0.5 rounded bg-brand-50 text-brand-600 border border-brand-200 uppercase font-semibold">Pro</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- Project Selector & Quick New Project Button -->
+          <div class="flex items-center space-x-2 min-w-0 border-l border-slate-200 pl-3 sm:pl-5">
+            <div class="flex flex-col">
+              <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider hidden md:block">当前空间 / 项目</span>
+              <div class="relative flex items-center">
+                <i class="ph-bold ph-folder-notch-open text-brand-600 absolute left-2.5 text-sm pointer-events-none"></i>
+                <select id="project-selector" onchange="handleProjectChange(this.value)" class="appearance-none bg-slate-100/80 hover:bg-slate-100 text-slate-800 text-xs sm:text-sm font-semibold rounded-lg pl-8 pr-8 py-1.5 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer max-w-[180px] sm:max-w-[260px] truncate">
+                  <!-- Populated by JS -->
+                </select>
+                <i class="ph-bold ph-caret-down text-xs text-slate-400 absolute right-2.5 pointer-events-none"></i>
+              </div>
+            </div>
+
+            <button onclick="openCreateProjectModal()" title="新建项目" class="p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg border border-dashed border-slate-300 hover:border-brand-500 hover:bg-brand-50 text-slate-600 hover:text-brand-600 text-xs font-medium flex items-center gap-1 transition">
+              <i class="ph-bold ph-folder-plus text-sm"></i>
+              <span class="hidden md:inline">新建项目</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Top Right Actions -->
+        <div class="flex items-center space-x-3 shrink-0">
+          <button onclick="openCreateBugModal()" class="inline-flex items-center space-x-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs sm:text-sm font-medium px-3 sm:px-4 py-2 rounded-lg transition shadow-sm active:scale-95">
+            <i class="ph-bold ph-plus text-base"></i>
+            <span>提交缺陷</span>
+          </button>
+          
+          <div class="h-6 w-px bg-slate-200 hidden sm:block"></div>
+
+          <!-- User Info -->
+          <div class="flex items-center space-x-2 pl-1">
+            <div class="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs ring-2 ring-white">
+              QA
+            </div>
+            <div class="hidden lg:block text-left text-xs leading-tight">
+              <div class="font-semibold text-slate-800">李工 (测试主管)</div>
+              <div class="text-[10px] text-slate-400">自动化与质量保障组</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
+
+    <!-- Active Project Banner & Quick Info -->
+    <section class="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div class="space-y-1">
+        <div class="flex items-center gap-2.5">
+          <span id="proj-badge-key" class="font-mono text-xs font-bold px-2.5 py-0.5 rounded-md bg-brand-100 text-brand-700 border border-brand-200">KEY</span>
+          <h1 id="proj-display-name" class="text-xl font-bold text-slate-900 tracking-tight">项目加载中...</h1>
+        </div>
+        <p id="proj-display-desc" class="text-xs sm:text-sm text-slate-500 max-w-3xl leading-relaxed">...</p>
+      </div>
+      
+      <!-- Compression Feature Tag Indicator -->
+      <div class="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 px-3.5 py-2 rounded-xl text-xs shrink-0 self-start md:self-auto">
+        <i class="ph-bold ph-image-square text-base text-emerald-600"></i>
+        <div>
+          <span class="font-bold">智能截图引擎就绪</span>
+          <p class="text-[11px] text-emerald-600">支持 Ctrl+V 粘贴 · 长边≤800px · 75%画质</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- KPI Metric Cards Grid -->
+    <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div onclick="filterByQuickStatus('open')" class="cursor-pointer bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:border-amber-400 hover:shadow-sm transition group">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">待处理 (Open)</span>
+          <span class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-105 transition">
+            <i class="ph-bold ph-hourglass-high text-lg"></i>
+          </span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="metric-open" class="text-2xl font-bold text-slate-900">0</span>
+          <span class="text-xs text-amber-600 font-medium">需分配/排查</span>
+        </div>
+      </div>
+
+      <div onclick="filterByQuickStatus('in_progress')" class="cursor-pointer bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:border-blue-400 hover:shadow-sm transition group">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">进行中 (In Progress)</span>
+          <span class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-105 transition">
+            <i class="ph-bold ph-gear-six text-lg"></i>
+          </span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="metric-in-progress" class="text-2xl font-bold text-slate-900">0</span>
+          <span class="text-xs text-blue-600 font-medium">研发代码修复中</span>
+        </div>
+      </div>
+
+      <div onclick="filterByQuickStatus('testing')" class="cursor-pointer bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:border-purple-400 hover:shadow-sm transition group">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">待验证 (Testing)</span>
+          <span class="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-105 transition">
+            <i class="ph-bold ph-shield-check text-lg"></i>
+          </span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="metric-testing" class="text-2xl font-bold text-slate-900">0</span>
+          <span class="text-xs text-purple-600 font-medium">QA联调验证中</span>
+        </div>
+      </div>
+
+      <div onclick="filterByQuickStatus('closed')" class="cursor-pointer bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:border-emerald-400 hover:shadow-sm transition group">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">已关闭 (Closed)</span>
+          <span class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-105 transition">
+            <i class="ph-bold ph-check-circle text-lg"></i>
+          </span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="metric-closed" class="text-2xl font-bold text-slate-900">0</span>
+          <span class="text-xs text-emerald-600 font-medium">已发布已归档</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+      <!-- Search & Filters -->
+      <div class="flex flex-wrap items-center gap-2.5 flex-1">
+        <!-- Search bar -->
+        <div class="relative min-w-[200px] flex-1 sm:flex-initial">
+          <i class="ph ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+          <input id="search-input" type="text" placeholder="搜索缺陷ID、标题、模块、责任人..." class="w-full text-xs sm:text-sm pl-9 pr-4 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+        </div>
+
+        <!-- Status Filter -->
+        <div class="relative">
+          <select id="filter-status" class="text-xs sm:text-sm font-medium bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 pr-7 appearance-none focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer">
+            <option value="all">所有状态</option>
+            <option value="open">待处理 (Open)</option>
+            <option value="in_progress">进行中 (In Progress)</option>
+            <option value="testing">待验证 (Testing)</option>
+            <option value="closed">已关闭 (Closed)</option>
+          </select>
+          <i class="ph-bold ph-caret-down text-[10px] text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+        </div>
+
+        <!-- Severity Filter -->
+        <div class="relative">
+          <select id="filter-severity" class="text-xs sm:text-sm font-medium bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 pr-7 appearance-none focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer">
+            <option value="all">所有严重程度</option>
+            <option value="blocker">致命 (Blocker)</option>
+            <option value="critical">严重 (Critical)</option>
+            <option value="major">一般 (Major)</option>
+            <option value="minor">轻微 (Minor)</option>
+          </select>
+          <i class="ph-bold ph-caret-down text-[10px] text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+        </div>
+
+        <!-- Priority Filter -->
+        <div class="relative">
+          <select id="filter-priority" class="text-xs sm:text-sm font-medium bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 pr-7 appearance-none focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer">
+            <option value="all">所有优先级</option>
+            <option value="p0">P0 - 紧急</option>
+            <option value="p1">P1 - 高</option>
+            <option value="p2">P2 - 中</option>
+            <option value="p3">P3 - 低</option>
+          </select>
+          <i class="ph-bold ph-caret-down text-[10px] text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+        </div>
+
+        <!-- Reset Button -->
+        <button id="btn-reset-filters" class="text-xs text-slate-500 hover:text-slate-800 p-2 hover:bg-slate-100 rounded-lg transition" title="重置筛选">
+          <i class="ph-bold ph-arrow-counter-clockwise text-sm"></i>
+        </button>
+      </div>
+
+      <!-- View Switcher -->
+      <div class="flex items-center space-x-1 border border-slate-200 bg-slate-100/70 p-1 rounded-lg self-end md:self-auto">
+        <button id="tab-kanban" onclick="switchView('kanban')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold rounded-md transition bg-white text-slate-800 shadow-2xs">
+          <i class="ph-bold ph-kanban text-sm"></i>
+          <span>看板视图</span>
+        </button>
+        <button id="tab-list" onclick="switchView('list')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold rounded-md transition text-slate-600 hover:text-slate-900">
+          <i class="ph-bold ph-table text-sm"></i>
+          <span>列表视图</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- View 1: Kanban Board -->
+    <div id="view-kanban" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+      
+      <!-- Lane: Open -->
+      <div class="bg-slate-100/90 rounded-2xl p-3.5 border border-slate-200/80 flex flex-col kanban-column-container" data-status="open" ondragover="handleDragOver(event)" ondrop="handleDrop(event, 'open')">
+        <div class="flex items-center justify-between pb-3 mb-2 border-b border-slate-200">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+            <span class="text-sm font-bold text-slate-800">待处理</span>
+            <span id="badge-count-open" class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-bold">0</span>
+          </div>
+          <button onclick="openCreateBugModal('open')" class="p-1 hover:bg-slate-200 rounded-md text-slate-500 hover:text-slate-800" title="在此状态下新建">
+            <i class="ph-bold ph-plus text-xs"></i>
+          </button>
+        </div>
+        <div id="lane-open" class="space-y-3 flex-1 overflow-y-auto"></div>
+      </div>
+
+      <!-- Lane: In Progress -->
+      <div class="bg-slate-100/90 rounded-2xl p-3.5 border border-slate-200/80 flex flex-col kanban-column-container" data-status="in_progress" ondragover="handleDragOver(event)" ondrop="handleDrop(event, 'in_progress')">
+        <div class="flex items-center justify-between pb-3 mb-2 border-b border-slate-200">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+            <span class="text-sm font-bold text-slate-800">进行中</span>
+            <span id="badge-count-in_progress" class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-bold">0</span>
+          </div>
+          <button onclick="openCreateBugModal('in_progress')" class="p-1 hover:bg-slate-200 rounded-md text-slate-500 hover:text-slate-800" title="在此状态下新建">
+            <i class="ph-bold ph-plus text-xs"></i>
+          </button>
+        </div>
+        <div id="lane-in_progress" class="space-y-3 flex-1 overflow-y-auto"></div>
+      </div>
+
+      <!-- Lane: Testing -->
+      <div class="bg-slate-100/90 rounded-2xl p-3.5 border border-slate-200/80 flex flex-col kanban-column-container" data-status="testing" ondragover="handleDragOver(event)" ondrop="handleDrop(event, 'testing')">
+        <div class="flex items-center justify-between pb-3 mb-2 border-b border-slate-200">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
+            <span class="text-sm font-bold text-slate-800">待验证</span>
+            <span id="badge-count-testing" class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-bold">0</span>
+          </div>
+          <button onclick="openCreateBugModal('testing')" class="p-1 hover:bg-slate-200 rounded-md text-slate-500 hover:text-slate-800" title="在此状态下新建">
+            <i class="ph-bold ph-plus text-xs"></i>
+          </button>
+        </div>
+        <div id="lane-testing" class="space-y-3 flex-1 overflow-y-auto"></div>
+      </div>
+
+      <!-- Lane: Closed -->
+      <div class="bg-slate-100/90 rounded-2xl p-3.5 border border-slate-200/80 flex flex-col kanban-column-container" data-status="closed" ondragover="handleDragOver(event)" ondrop="handleDrop(event, 'closed')">
+        <div class="flex items-center justify-between pb-3 mb-2 border-b border-slate-200">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+            <span class="text-sm font-bold text-slate-800">已关闭</span>
+            <span id="badge-count-closed" class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-bold">0</span>
+          </div>
+        </div>
+        <div id="lane-closed" class="space-y-3 flex-1 overflow-y-auto"></div>
+      </div>
+
+    </div>
+
+    <!-- View 2: Table List -->
+    <div id="view-list" class="hidden bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+              <th class="py-3.5 px-4 w-10 text-center">
+                <input id="check-all" type="checkbox" onchange="toggleSelectAll(this)" class="rounded border-slate-300 text-brand-600 focus:ring-brand-500">
+              </th>
+              <th class="py-3.5 px-3 w-28">编号</th>
+              <th class="py-3.5 px-4">缺陷描述</th>
+              <th class="py-3.5 px-3 w-28">状态</th>
+              <th class="py-3.5 px-3 w-24">严重度</th>
+              <th class="py-3.5 px-3 w-20">优先级</th>
+              <th class="py-3.5 px-3 w-24">截图附件</th>
+              <th class="py-3.5 px-4 w-32">指派人</th>
+              <th class="py-3.5 px-3 w-28">模块</th>
+              <th class="py-3.5 px-4 w-28 text-right">流转操作</th>
+            </tr>
+          </thead>
+          <tbody id="list-table-body" class="divide-y divide-slate-100 text-sm">
+            <!-- Dynamically populated rows -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination / Summary Footer -->
+      <div class="px-4 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
+        <div>
+          显示 <span id="pagination-visible-count" class="font-bold text-slate-700">0</span> 项，本项目共 <span id="pagination-total-count" class="font-bold text-slate-700">0</span> 条记录
+        </div>
+        <div class="text-[11px] text-slate-400">
+          支持全局双击与快捷切换状态
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Modal: Create New Project -->
+  <div id="modal-project" class="fixed inset-0 z-50 overflow-y-auto hidden" role="dialog" aria-modal="true">
+    <div class="flex items-center justify-center min-h-screen px-4 p-4 text-center">
+      <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity" onclick="closeCreateProjectModal()"></div>
+      <div class="relative bg-white rounded-2xl text-left overflow-hidden shadow-2xl w-full max-w-md p-6 border border-slate-100 z-10 animate-in fade-in zoom-in-95 duration-150">
+        
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+          <div class="flex items-center space-x-2.5">
+            <div class="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center font-bold">
+              <i class="ph-bold ph-folder-simple-plus text-lg"></i>
+            </div>
+            <h3 class="text-base font-bold text-slate-900">新建工程项目</h3>
+          </div>
+          <button onclick="closeCreateProjectModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+            <i class="ph-bold ph-x text-base"></i>
+          </button>
+        </div>
+
+        <form id="form-create-project" onsubmit="handleCreateProjectSubmit(event)" class="space-y-4 text-xs">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">项目名称 <span class="text-rose-500">*</span></label>
+            <input id="new-proj-name" type="text" required placeholder="例如：珠宝云 ERP 核心服务" oninput="autoGenerateProjectKey(this.value)" class="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">项目前缀 Key (标识符) <span class="text-rose-500">*</span></label>
+            <div class="flex items-center gap-2">
+              <input id="new-proj-key" type="text" required maxlength="8" placeholder="ERP" class="w-32 uppercase font-mono text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+              <span class="text-[11px] text-slate-400">生成的缺陷编号形如: <span id="sample-key-preview" class="font-mono font-bold text-slate-600">ERP-101</span></span>
+            </div>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">项目简述与定位</label>
+            <textarea id="new-proj-desc" rows="3" placeholder="描述此项目的职责范围与核心架构信息..." class="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50 resize-none"></textarea>
+          </div>
+
+          <div class="flex items-center justify-end space-x-2.5 pt-3 border-t border-slate-100">
+            <button type="button" onclick="closeCreateProjectModal()" class="px-3.5 py-1.5 border border-slate-200 text-slate-600 rounded-lg font-medium hover:bg-slate-50">取消</button>
+            <button type="submit" class="px-4 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-medium transition shadow-xs">立即创建并切换</button>
+          </div>
+        </form>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Create Bug -->
+  <div id="modal-create" class="fixed inset-0 z-50 overflow-y-auto hidden" role="dialog" aria-modal="true">
+    <div class="flex items-end sm:items-center justify-center min-h-screen px-4 pt-4 pb-12 text-center sm:p-0">
+      <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity" onclick="closeCreateBugModal()"></div>
+      <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+
+      <div class="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl w-full border border-slate-100 z-10">
+        
+        <div class="p-6">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+            <div class="flex items-center space-x-2">
+              <span class="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
+                <i class="ph-bold ph-plus-circle text-lg"></i>
+              </span>
+              <div>
+                <h3 class="text-base font-bold text-slate-900">提交新缺陷</h3>
+                <span class="text-[11px] text-slate-400">归属于当前项目: <strong id="modal-create-current-proj" class="text-brand-600">...</strong></span>
+              </div>
+            </div>
+            <button onclick="closeCreateBugModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+              <i class="ph-bold ph-x text-base"></i>
+            </button>
+          </div>
+
+          <form id="form-create-bug" onsubmit="handleCreateBugSubmit(event)" class="space-y-4 text-xs">
+            
+            <!-- Title -->
+            <div>
+              <label class="block font-semibold text-slate-700 mb-1">缺陷标题 <span class="text-rose-500">*</span></label>
+              <input id="create-title" type="text" required placeholder="请清晰简述异常场景与报错现象" class="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+            </div>
+
+            <!-- Module & Status -->
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">所属子模块 <span class="text-rose-500">*</span></label>
+                <input id="create-module" type="text" required placeholder="如：收银支付、鉴权网关、报表统计" class="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">初始状态</label>
+                <select id="create-status" class="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+                  <option value="open">待处理 (Open)</option>
+                  <option value="in_progress">进行中 (In Progress)</option>
+                  <option value="testing">待验证 (Testing)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Severity, Priority, Assignee -->
+            <div class="grid grid-cols-3 gap-3">
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">严重程度</label>
+                <select id="create-severity" class="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+                  <option value="blocker">致命 (Blocker)</option>
+                  <option value="critical">严重 (Critical)</option>
+                  <option value="major" selected>一般 (Major)</option>
+                  <option value="minor">轻微 (Minor)</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">优先级</label>
+                <select id="create-priority" class="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+                  <option value="p0">P0 - 紧急</option>
+                  <option value="p1">P1 - 高</option>
+                  <option value="p2" selected>P2 - 中</option>
+                  <option value="p3">P3 - 低</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">指派给</label>
+                <input id="create-assignee" type="text" value="张工 (服务端)" class="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+              </div>
+            </div>
+
+            <!-- Repro Steps -->
+            <div>
+              <label class="block font-semibold text-slate-700 mb-1">复现步骤 (Steps to Reproduce)</label>
+              <textarea id="create-steps" rows="3" placeholder="1. 打开指定页面...&#10;2. 触发特定交互...&#10;3. 复现报错..." class="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50"></textarea>
+            </div>
+
+            <!-- Actual vs Expected -->
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">实际结果</label>
+                <input id="create-actual" type="text" placeholder="例如：控制台抛出 500 空指针异常" class="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">预期结果</label>
+                <input id="create-expected" type="text" placeholder="例如：优雅降级并展示友好提示信息" class="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+              </div>
+            </div>
+
+            <!-- Smart Screenshot Uploader & Paste Target Area -->
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <label class="block font-semibold text-slate-700">缺陷截图附件 (可直接截图并在此按 Ctrl+V 粘贴)</label>
+                <span class="text-[10px] text-brand-600 font-medium bg-brand-50 px-2 py-0.5 rounded-full border border-brand-200">
+                  <i class="ph-bold ph-lightning"></i> 自动缩放到长边800px · 质量75%
+                </span>
+              </div>
+
+              <!-- Interactive Dropzone -->
+              <div id="create-dropzone" 
+                   tabindex="0"
+                   onclick="document.getElementById('create-file-input').click()"
+                   class="paste-highlight-zone border-2 border-dashed border-slate-300 hover:border-brand-500 rounded-xl p-4 text-center cursor-pointer bg-slate-50/60 hover:bg-brand-50/30 transition focus:outline-none focus:ring-2 focus:ring-brand-400">
+                <input id="create-file-input" type="file" accept="image/*" multiple class="hidden" onchange="handleFileInputSelect(event, 'create')">
+                <div class="flex flex-col items-center justify-center space-y-1.5">
+                  <div class="w-10 h-10 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center text-xl">
+                    <i class="ph-bold ph-clipboard-text"></i>
+                  </div>
+                  <div class="text-xs text-slate-700 font-semibold">
+                    点击选择图片，或在此窗口直接按 <kbd class="px-1.5 py-0.5 bg-white border border-slate-300 rounded shadow-2xs font-mono font-bold text-slate-800">Ctrl + V</kbd> 粘贴
+                  </div>
+                  <p class="text-[11px] text-slate-400">也支持将本地图片拖拽至此，自动等比压缩处理</p>
+                </div>
+              </div>
+
+              <!-- Attached Screenshots Preview Shelf -->
+              <div id="create-attachments-preview" class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-3">
+                <!-- Dynamically added preview cards -->
+              </div>
+            </div>
+
+            <!-- Submit Buttons -->
+            <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-100">
+              <button type="button" onclick="closeCreateBugModal()" class="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg font-medium hover:bg-slate-50">取消</button>
+              <button type="submit" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-medium transition shadow-sm">提交缺陷</button>
+            </div>
+          </form>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide-Over Drawer: Bug Details -->
+  <div id="modal-detail" class="fixed inset-0 z-50 overflow-hidden hidden" role="dialog" aria-modal="true">
+    <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity" onclick="closeDetailModal()"></div>
+
+    <div class="pointer-events-none fixed inset-y-0 right-0 flex max-w-full pl-10">
+      <div class="pointer-events-auto w-screen max-w-2xl bg-white shadow-2xl flex flex-col">
+        
+        <!-- Drawer Header -->
+        <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/70">
+          <div class="flex items-center space-x-3">
+            <span id="detail-id" class="text-xs font-mono font-bold px-2 py-1 rounded bg-slate-200 text-slate-800">BUG-000</span>
+            <div id="detail-status-badge"></div>
+          </div>
+          <button onclick="closeDetailModal()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition">
+            <i class="ph-bold ph-x text-lg"></i>
+          </button>
+        </div>
+
+        <!-- Scrollable Content -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-6" id="detail-drawer-scroll-body">
+          
+          <!-- Bug Title & Meta -->
+          <div>
+            <h2 id="detail-title" class="text-xl font-bold text-slate-900 leading-snug">缺陷标题</h2>
+            <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+              <span>报告人: <strong id="detail-reporter" class="text-slate-700 font-medium">李工</strong></span>
+              <span>•</span>
+              <span>创建时间: <span id="detail-created-at">2026-04-10</span></span>
+              <span>•</span>
+              <span>所属模块: <span id="detail-module" class="font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded">收银支付</span></span>
+            </div>
+          </div>
+
+          <!-- Quick State Transitions -->
+          <div class="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+            <span class="text-xs font-semibold text-slate-600">快速变更缺陷状态：</span>
+            <div id="detail-transition-buttons" class="flex flex-wrap items-center gap-2"></div>
+          </div>
+
+          <!-- Meta Grid: Assignee, Severity, Priority -->
+          <div class="grid grid-cols-3 gap-3 p-4 bg-slate-50/50 rounded-xl border border-slate-100 text-sm">
+            <div>
+              <div class="text-[11px] font-medium text-slate-400 mb-1">指派经办人</div>
+              <div id="detail-assignee" class="font-medium text-slate-800 flex items-center gap-1.5 text-xs">
+                <i class="ph ph-user text-slate-400"></i>
+                <span>未指定</span>
+              </div>
+            </div>
+            <div>
+              <div class="text-[11px] font-medium text-slate-400 mb-1">严重程度</div>
+              <div id="detail-severity-badge"></div>
+            </div>
+            <div>
+              <div class="text-[11px] font-medium text-slate-400 mb-1">优先级</div>
+              <div id="detail-priority-badge"></div>
+            </div>
+          </div>
+
+          <!-- Repro Steps -->
+          <div>
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <i class="ph-bold ph-list-numbers text-slate-400"></i>
+              复现步骤 (Steps to Reproduce)
+            </h3>
+            <div id="detail-steps" class="text-xs text-slate-700 bg-slate-50 p-3.5 rounded-lg border border-slate-200 leading-relaxed font-mono whitespace-pre-line"></div>
+          </div>
+
+          <!-- Expected vs Actual Result -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-rose-50/50 border border-rose-100 rounded-lg p-3">
+              <div class="text-xs font-bold text-rose-700 mb-1 flex items-center gap-1">
+                <i class="ph-bold ph-warning-circle text-rose-500"></i>
+                实际结果 (Actual)
+              </div>
+              <p id="detail-actual" class="text-xs text-slate-700 leading-relaxed"></p>
+            </div>
+            <div class="bg-emerald-50/50 border border-emerald-100 rounded-lg p-3">
+              <div class="text-xs font-bold text-emerald-700 mb-1 flex items-center gap-1">
+                <i class="ph-bold ph-check-circle text-emerald-500"></i>
+                预期结果 (Expected)
+              </div>
+              <p id="detail-expected" class="text-xs text-slate-700 leading-relaxed"></p>
+            </div>
+          </div>
+
+          <!-- Screenshots in Detail Drawer -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <i class="ph-bold ph-image text-slate-400"></i>
+                缺陷截图与现场凭据 (<span id="detail-attachments-count">0</span>)
+              </h3>
+              <button onclick="document.getElementById('detail-append-file-input').click()" class="text-xs text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-1">
+                <i class="ph-bold ph-plus"></i> 追加截图 (支持 Ctrl+V)
+              </button>
+              <input id="detail-append-file-input" type="file" accept="image/*" class="hidden" onchange="handleFileInputSelect(event, 'detail')">
+            </div>
+
+            <!-- Drop / Paste Zone for Detail -->
+            <div id="detail-paste-dropzone" 
+                 onclick="document.getElementById('detail-append-file-input').click()"
+                 class="paste-highlight-zone border border-dashed border-slate-300 hover:border-brand-500 rounded-xl p-3 text-center cursor-pointer bg-slate-50/50 hover:bg-brand-50/20 transition mb-3">
+              <p class="text-[11px] text-slate-500">
+                在打开抽屉时直接按 <kbd class="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono font-bold text-slate-700">Ctrl+V</kbd> 即可追加压缩截图
+              </p>
+            </div>
+
+            <!-- Screenshots Grid -->
+            <div id="detail-attachments-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <!-- Dynamically populated images -->
+            </div>
+          </div>
+
+          <hr class="border-slate-100">
+
+          <!-- Activity & Comments -->
+          <div>
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+              <i class="ph-bold ph-clock-counter-clockwise text-slate-400"></i>
+              活动时间线与讨论
+            </h3>
+
+            <div id="detail-timeline" class="space-y-3 mb-4"></div>
+
+            <!-- Comment Input -->
+            <div class="flex items-start space-x-2.5 pt-2">
+              <div class="w-7 h-7 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-bold shrink-0 mt-1">
+                QA
+              </div>
+              <div class="flex-1">
+                <textarea id="input-new-comment" rows="2" placeholder="填写排查进展、测试结论或 @相关研发..." class="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50 resize-none"></textarea>
+                <div class="flex justify-end mt-1.5">
+                  <button onclick="submitDetailComment()" class="px-3 py-1 bg-brand-600 hover:bg-brand-700 text-white rounded text-xs font-medium transition shadow-2xs">发表动态</button>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightbox: Full-Screen Image Viewer -->
+  <div id="lightbox-modal" class="fixed inset-0 z-60 hidden flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4" onclick="closeLightbox()">
+    <div class="relative max-w-4xl max-h-[90vh] flex flex-col items-center" onclick="event.stopPropagation()">
+      <div class="absolute -top-10 right-0 flex items-center gap-3">
+        <a id="lightbox-download-link" download="bug-screenshot.jpg" class="text-white/80 hover:text-white text-sm flex items-center gap-1 bg-white/10 hover:bg-white/20 px-3 py-1 rounded-lg backdrop-blur-sm transition">
+          <i class="ph-bold ph-download-simple"></i> 下载原图
+        </a>
+        <button onclick="closeLightbox()" class="text-white/80 hover:text-white p-1 text-xl">
+          <i class="ph-bold ph-x"></i>
+        </button>
+      </div>
+      <img id="lightbox-image" src="" alt="Screenshot" class="max-w-full max-h-[82vh] rounded-lg shadow-2xl object-contain border border-white/10">
+      <div id="lightbox-meta" class="mt-3 text-xs text-white/70 font-mono"></div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-70 flex flex-col gap-2 pointer-events-none"></div>
+
+  <script>
+    // LocalStorage Keys
+    const STORAGE_KEY_PROJECTS = "bugpulse_pro_projects_v1";
+    const STORAGE_KEY_BUGS = "bugpulse_pro_bugs_v1";
+    const STORAGE_KEY_CURRENT_PROJECT = "bugpulse_pro_current_proj_v1";
+
+    // Demo Canvas Generator for Initial Mock Screenshots (Long edge 800px, quality 0.75)
+    function generateDemoBugImage(tagText, detailText, colorHex) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 800;
+      canvas.height = 450;
+      const ctx = canvas.getContext('2d');
+
+      // Background
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, 800, 450);
+
+      // Gradient accent
+      const grad = ctx.createLinearGradient(0, 0, 800, 450);
+      grad.addColorStop(0, colorHex + '33');
+      grad.addColorStop(1, '#0f172a');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 800, 450);
+
+      // Terminal Header
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(20, 20, 760, 40);
+      // Window dots
+      ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(42, 40, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.arc(62, 40, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#10b981'; ctx.beginPath(); ctx.arc(82, 40, 6, 0, Math.PI * 2); ctx.fill();
+
+      // Window title
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '14px monospace';
+      ctx.fillText(`BUG REPRODUCTION CONSOLE [${tagText}]`, 110, 45);
+
+      // Body text / Trace
+      ctx.fillStyle = '#f43f5e';
+      ctx.font = 'bold 22px monospace';
+      ctx.fillText(`Error: ${detailText}`, 40, 110);
+
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = '15px monospace';
+      ctx.fillText('at /src/controllers/orderDispatcher.ts:142:19', 40, 150);
+      ctx.fillText('at TransactionRunner.executeInLock (redis_locker.ts:89)', 40, 180);
+      ctx.fillText('HTTP Response 500: Database Deadlock detected [state: HY000]', 40, 210);
+
+      // Long side label overlay
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = '13px monospace';
+      ctx.fillText('>> Auto Compressed Image: 800 x 450 (长边800 / 质量75%)', 40, 390);
+
+      return canvas.toDataURL('image/jpeg', 0.75);
+    }
+
+    // Default Demo Datasets
+    const DEFAULT_PROJECTS = [
+      {
+        id: "proj_cloud_erp",
+        key: "ERP",
+        name: "珠宝云 ERP 核心服务",
+        desc: "涵盖多门店库存进销存、智能定价、结算收银及财务对账核心业务中台"
+      },
+      {
+        id: "proj_air_traffic",
+        key: "AIR",
+        name: "空管智能运行调度平台",
+        desc: "提供航班动态航线防相撞雷达监控、空域容量评估与应急指挥调度"
+      },
+      {
+        id: "proj_mobile_app",
+        key: "APP",
+        name: "全渠道会员导购小程序",
+        desc: "面向前端消费者的电商小程序、积分商城、离线扫码购移动终端"
+      }
+    ];
+
+    const DEFAULT_BUGS = [
+      {
+        id: "ERP-101",
+        projectId: "proj_cloud_erp",
+        title: "高并发批量结算时库存流水行锁竞争导致死锁 (Deadlock)",
+        module: "收银结算",
+        status: "open",
+        severity: "blocker",
+        priority: "p0",
+        assignee: "王工 (后端开发)",
+        reporter: "李工 (QA)",
+        createdAt: "2026-04-10 09:30",
+        steps: "1. 开启100并发线程并发提交相同SKU的黄金首饰结算订单\n2. 监控数据库连接池及活跃事务",
+        actual: "MySQL 报 1213 错误: Deadlock found when trying to get lock; try restarting transaction",
+        expected: "通过分布式 Redis Key 排序加锁或乐观锁防重，保障库存原子性无死锁",
+        images: [
+          {
+            id: "img_1",
+            dataUrl: generateDemoBugImage("ERP-101", "Deadlock in inventory deduction", "#ef4444"),
+            origSize: "1920x1080 (1.4MB)",
+            compressedSize: "800x450 (48KB)",
+            width: 800,
+            height: 450,
+            timestamp: "2026-04-10 09:31"
+          }
+        ],
+        comments: [
+          { author: "李工 (QA)", time: "09:35", text: "已使用 JMeter 复现压测场景，现场截图已通过 Ctrl+V 自动压缩上传。" }
+        ]
+      },
+      {
+        id: "ERP-102",
+        projectId: "proj_cloud_erp",
+        title: "Safari 浏览器结算弹窗关闭时 CSS 关键帧动画白屏",
+        module: "收银前端",
+        status: "in_progress",
+        severity: "major",
+        priority: "p2",
+        assignee: "赵工 (前端UI)",
+        reporter: "周小文 (测试员)",
+        createdAt: "2026-04-09 14:15",
+        steps: "1. 在 iOS Safari 17.5 打开收银结账面板\n2. 点击右上角关闭并在未结束时轻扫页面",
+        actual: "视图层白屏，需手动刷新页面恢复",
+        expected: "淡出动画平稳过渡，不阻塞主线程绘制",
+        images: [],
+        comments: [
+          { author: "赵工 (前端UI)", time: "16:20", text: "正在修改 GPU 加速属性，排查 translate3d 内存抖动。" }
+        ]
+      },
+      {
+        id: "ERP-103",
+        projectId: "proj_cloud_erp",
+        title: "跨境商品税率报表导出缺少 BOM 头部导致 Excel 乱码",
+        module: "财务报表",
+        status: "testing",
+        severity: "minor",
+        priority: "p3",
+        assignee: "孙工 (报表组)",
+        reporter: "运营主管",
+        createdAt: "2026-04-08 11:00",
+        steps: "1. 财务结算后台选择带有繁体/外文名称商品导出报表\n2. Windows Excel 打开",
+        actual: "多语言编码失真呈现为乱码符号",
+        expected: "标准 UTF-8 附带 BOM 标记，各操作系统 Office 正确识别",
+        images: [],
+        comments: [
+          { author: "孙工 (报表组)", time: "昨天", text: "已在 CSV 流中补齐 \\ufeff 头部，已提测待验证。" }
+        ]
+      },
+      {
+        id: "AIR-201",
+        projectId: "proj_air_traffic",
+        title: "主副雷达信号切换突跳时雷达航迹追踪预测位置偏差",
+        module: "雷达融合计算",
+        status: "open",
+        severity: "blocker",
+        priority: "p0",
+        assignee: "陈博士 (算法工程师)",
+        reporter: "现场保障总监",
+        createdAt: "2026-04-10 08:20",
+        steps: "1. 接入 2 号二次雷达降级数据流\n2. 观察卡尔曼滤波输出的航迹外推坐标",
+        actual: "航迹出现横向跳变 3.2 海里，触发假告警",
+        expected: "平滑加权融合，偏离门限进行平滑滤波抑制",
+        images: [
+          {
+            id: "img_2",
+            dataUrl: generateDemoBugImage("AIR-201", "Kalman Filter Matrix Jump Exception", "#38bdf8"),
+            origSize: "2560x1440 (2.8MB)",
+            compressedSize: "800x450 (54KB)",
+            width: 800,
+            height: 450,
+            timestamp: "2026-04-10 08:25"
+          }
+        ],
+        comments: []
+      },
+      {
+        id: "APP-301",
+        projectId: "proj_mobile_app",
+        title: "无网络状态下扫码购离线缓存未限制大小引发内存溢出闪退",
+        module: "离线结账引擎",
+        status: "in_progress",
+        severity: "critical",
+        priority: "p1",
+        assignee: "钱工 (移动端)",
+        reporter: "李工 (QA)",
+        createdAt: "2026-04-09 17:00",
+        steps: "1. 断开手机网络\n2. 连续扫描 150 件测试条形码",
+        actual: "小程序内存占用突破 600MB 并崩溃退出",
+        expected: "设定 IndexedDB 分批持久化，单次常驻内存不超过 50MB",
+        images: [],
+        comments: []
+      }
+    ];
+
+    // Reactive State
+    let projects = [];
+    let bugs = [];
+    let currentProjectId = "";
+    let currentSelectedBugId = null;
+    let draggedBugId = null;
+
+    // Temporary image staging for Create Bug modal
+    let createBugStagedImages = [];
+
+    // Configuration Metas
+    const SEVERITY_CONFIG = {
+      blocker: { label: "致命 (Blocker)", bg: "bg-rose-100", text: "text-rose-700", border: "border-rose-200", dot: "bg-rose-600" },
+      critical: { label: "严重 (Critical)", bg: "bg-amber-100", text: "text-amber-800", border: "border-amber-200", dot: "bg-amber-600" },
+      major: { label: "一般 (Major)", bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-200", dot: "bg-blue-600" },
+      minor: { label: "轻微 (Minor)", bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-200", dot: "bg-slate-500" }
+    };
+
+    const PRIORITY_CONFIG = {
+      p0: { label: "P0", full: "P0 - 紧急", badge: "bg-red-500 text-white" },
+      p1: { label: "P1", full: "P1 - 高", badge: "bg-orange-500 text-white" },
+      p2: { label: "P2", full: "P2 - 中", badge: "bg-indigo-100 text-indigo-700" },
+      p3: { label: "P3", full: "P3 - 低", badge: "bg-slate-200 text-slate-700" }
+    };
+
+    const STATUS_CONFIG = {
+      open: { label: "待处理", badge: "bg-amber-50 text-amber-700 border-amber-200", dot: "bg-amber-500" },
+      in_progress: { label: "进行中", badge: "bg-blue-50 text-blue-700 border-blue-200", dot: "bg-blue-500" },
+      testing: { label: "待验证", badge: "bg-purple-50 text-purple-700 border-purple-200", dot: "bg-purple-500" },
+      closed: { label: "已关闭", badge: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" }
+    };
+
+    // Initialize State from Storage or Defaults
+    function initState() {
+      try {
+        const savedProjects = localStorage.getItem(STORAGE_KEY_PROJECTS);
+        projects = savedProjects ? JSON.parse(savedProjects) : DEFAULT_PROJECTS;
+
+        const savedBugs = localStorage.getItem(STORAGE_KEY_BUGS);
+        bugs = savedBugs ? JSON.parse(savedBugs) : DEFAULT_BUGS;
+
+        const savedCurrent = localStorage.getItem(STORAGE_KEY_CURRENT_PROJECT);
+        if (savedCurrent && projects.some(p => p.id === savedCurrent)) {
+          currentProjectId = savedCurrent;
+        } else {
+          currentProjectId = projects[0]?.id || "";
+        }
+      } catch (e) {
+        projects = DEFAULT_PROJECTS;
+        bugs = DEFAULT_BUGS;
+        currentProjectId = projects[0].id;
+      }
+      saveAllToStorage();
+    }
+
+    function saveAllToStorage() {
+      try {
+        localStorage.setItem(STORAGE_KEY_PROJECTS, JSON.stringify(projects));
+        localStorage.setItem(STORAGE_KEY_BUGS, JSON.stringify(bugs));
+        localStorage.setItem(STORAGE_KEY_CURRENT_PROJECT, currentProjectId);
+      } catch (err) {
+        console.warn("Storage quota or error:", err);
+      }
+    }
+
+    /**
+     * Core Image Compressor:
+     * - Reads image file/blob
+     * - Longest edge clamped to max 800px (aspect ratio strictly preserved)
+     * - Exports as JPEG with quality 0.75 (75%)
+     */
+    function compressImageFile(fileOrBlob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        const originalByteSize = (fileOrBlob.size / 1024).toFixed(1) + " KB";
+
+        reader.onload = function(e) {
+          const img = new Image();
+          img.onload = function() {
+            const origWidth = img.width;
+            const origHeight = img.height;
+            let targetWidth = origWidth;
+            let targetHeight = origHeight;
+
+            const MAX_EDGE = 800;
+
+            // Long edge calculation
+            if (origWidth > origHeight) {
+              if (origWidth > MAX_EDGE) {
+                targetWidth = MAX_EDGE;
+                targetHeight = Math.round((origHeight * MAX_EDGE) / origWidth);
+              }
+            } else {
+              if (origHeight > MAX_EDGE) {
+                targetHeight = MAX_EDGE;
+                targetWidth = Math.round((origWidth * MAX_EDGE) / origHeight);
+              }
+            }
+
+            // Canvas drawing
+            const canvas = document.createElement('canvas');
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            const ctx = canvas.getContext('2d');
+
+            // Draw white background in case of transparent PNG converted to JPEG
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, targetWidth, targetHeight);
+            ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+            // Export 75% quality JPEG
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.75);
+
+            // Estimate compressed byte size
+            const head = 'data:image/jpeg;base64,';
+            const base64Len = compressedDataUrl.length - head.length;
+            const approxBytes = (base64Len * 3) / 4;
+            const compressedByteSize = (approxBytes / 1024).toFixed(1) + " KB";
+
+            resolve({
+              id: "img_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+              dataUrl: compressedDataUrl,
+              origSize: `${origWidth}x${origHeight} (${originalByteSize})`,
+              compressedSize: `${targetWidth}x${targetHeight} (${compressedByteSize})`,
+              width: targetWidth,
+              height: targetHeight,
+              timestamp: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+            });
+          };
+          img.onerror = reject;
+          img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(fileOrBlob);
+      });
+    }
+
+    // Global Clipboard & Paste Listener
+    function setupClipboardListener() {
+      window.addEventListener('paste', async (event) => {
+        const clipboardItems = event.clipboardData && event.clipboardData.items;
+        if (!clipboardItems) return;
+
+        let foundImage = false;
+        for (let i = 0; i < clipboardItems.length; i++) {
+          const item = clipboardItems[i];
+          if (item.type.indexOf('image') !== -1) {
+            foundImage = true;
+            const blob = item.getAsFile();
+            if (blob) {
+              await processPastedImage(blob);
+            }
+          }
+        }
+
+        if (foundImage) {
+          event.preventDefault();
+        }
+      });
+    }
+
+    // Process pasted screenshot and route to appropriate view
+    async function processPastedImage(imageBlob) {
+      showToast("正在智能压缩剪贴板截图 (长边≤800, 质量75%)...", "info");
+      try {
+        const compressed = await compressImageFile(imageBlob);
+
+        const isCreateModalOpen = !document.getElementById('modal-create').classList.contains('hidden');
+        const isDetailModalOpen = !document.getElementById('modal-detail').classList.contains('hidden');
+
+        if (isCreateModalOpen) {
+          createBugStagedImages.push(compressed);
+          renderCreateStagedImages();
+          showToast(`已捕获截图并压缩至 ${compressed.compressedSize} (长边800 / 质量75%)`);
+        } else if (isDetailModalOpen && currentSelectedBugId) {
+          const bug = bugs.find(b => b.id === currentSelectedBugId);
+          if (bug) {
+            if (!bug.images) bug.images = [];
+            bug.images.push(compressed);
+            
+            // Add activity log
+            bug.comments.unshift({
+              author: "李工 (QA)",
+              time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+              text: `通过剪贴板追加了现场截图 (${compressed.compressedSize})`
+            });
+
+            saveAllToStorage();
+            renderDetailModalData(bug);
+            renderKanban();
+            renderList();
+            showToast(`已将压缩截图追加至 ${bug.id}`);
+          }
+        } else {
+          // If neither modal is open, auto open Create Bug Modal with this screenshot
+          openCreateBugModal('open');
+          createBugStagedImages.push(compressed);
+          renderCreateStagedImages();
+          showToast(`检测到截图粘贴，已为您开启新建缺陷窗口并挂载 (${compressed.compressedSize})`);
+        }
+      } catch (err) {
+        showToast("图片处理异常，请重试", "error");
+      }
+    }
+
+    // Handle File Input Selection
+    async function handleFileInputSelect(e, targetContext) {
+      const files = e.target.files;
+      if (!files || files.length === 0) return;
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file.type.startsWith('image/')) {
+          const compressed = await compressImageFile(file);
+          if (targetContext === 'create') {
+            createBugStagedImages.push(compressed);
+            renderCreateStagedImages();
+          } else if (targetContext === 'detail' && currentSelectedBugId) {
+            const bug = bugs.find(b => b.id === currentSelectedBugId);
+            if (bug) {
+              if (!bug.images) bug.images = [];
+              bug.images.push(compressed);
+              bug.comments.unshift({
+                author: "李工 (QA)",
+                time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+                text: `上传了新截图凭据 (${compressed.compressedSize})`
+              });
+              saveAllToStorage();
+              renderDetailModalData(bug);
+              renderKanban();
+              renderList();
+            }
+          }
+        }
+      }
+      e.target.value = '';
+      showToast("图片已等比压缩并挂载 (长边800 / 质量75%)");
+    }
+
+    // Render Preview Shelf in Create Modal
+    function renderCreateStagedImages() {
+      const container = document.getElementById('create-attachments-preview');
+      container.innerHTML = '';
+
+      createBugStagedImages.forEach((imgObj, idx) => {
+        const div = document.createElement('div');
+        div.className = "relative group bg-slate-100 rounded-xl overflow-hidden border border-slate-200 p-1 flex flex-col";
+        div.innerHTML = `
+          <div class="relative w-full h-24 overflow-hidden rounded-lg bg-slate-900 cursor-pointer" onclick="openLightbox('${imgObj.dataUrl}', '${imgObj.compressedSize}', '${imgObj.origSize}')">
+            <img src="${imgObj.dataUrl}" class="w-full h-full object-cover group-hover:scale-105 transition duration-200">
+            <span class="absolute bottom-1 right-1 text-[10px] bg-slate-900/80 text-emerald-400 font-mono px-1 rounded">75% JPG</span>
+          </div>
+          <div class="mt-1 px-1 flex items-center justify-between text-[10px] text-slate-500">
+            <span class="truncate font-mono">${imgObj.compressedSize}</span>
+            <button type="button" onclick="removeStagedCreateImage(${idx})" class="text-rose-500 hover:text-rose-700 p-0.5" title="移除此图">
+              <i class="ph-bold ph-trash text-xs"></i>
+            </button>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function removeStagedCreateImage(idx) {
+      createBugStagedImages.splice(idx, 1);
+      renderCreateStagedImages();
+    }
+
+    // Setup Drag and Drop onto dropzones
+    function setupDropzones() {
+      const zones = [document.getElementById('create-dropzone'), document.getElementById('detail-paste-dropzone')];
+      zones.forEach(zone => {
+        if (!zone) return;
+        ['dragenter', 'dragover'].forEach(name => {
+          zone.addEventListener(name, (e) => {
+            e.preventDefault();
+            zone.classList.add('dragover');
+          });
+        });
+        ['dragleave', 'drop'].forEach(name => {
+          zone.addEventListener(name, (e) => {
+            e.preventDefault();
+            zone.classList.remove('dragover');
+          });
+        });
+        zone.addEventListener('drop', async (e) => {
+          const files = e.dataTransfer.files;
+          if (files && files.length > 0) {
+            for (let f of files) {
+              if (f.type.startsWith('image/')) {
+                await processPastedImage(f);
+              }
+            }
+          }
+        });
+      });
+    }
+
+    function renderProjectHeaderAndSelector() {
+      const select = document.getElementById('project-selector');
+      select.innerHTML = '';
+
+      projects.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = `[${p.key}] ${p.name}`;
+        if (p.id === currentProjectId) opt.selected = true;
+        select.appendChild(opt);
+      });
+
+      const currentProj = projects.find(p => p.id === currentProjectId) || projects[0];
+      if (currentProj) {
+        document.getElementById('proj-badge-key').textContent = currentProj.key;
+        document.getElementById('proj-display-name').textContent = currentProj.name;
+        document.getElementById('proj-display-desc').textContent = currentProj.desc || "暂无项目描述";
+        document.getElementById('modal-create-current-proj').textContent = `[${currentProj.key}] ${currentProj.name}`;
+      }
+    }
+
+    function handleProjectChange(newProjId) {
+      currentProjectId = newProjId;
+      saveAllToStorage();
+      renderProjectHeaderAndSelector();
+      renderApp();
+      showToast(`已切换至项目：${projects.find(p => p.id === newProjId)?.name}`);
+    }
+
+    function openCreateProjectModal() {
+      document.getElementById('modal-project').classList.remove('hidden');
+      document.getElementById('new-proj-name').focus();
+    }
+
+    function closeCreateProjectModal() {
+      document.getElementById('modal-project').classList.add('hidden');
+      document.getElementById('form-create-project').reset();
+      document.getElementById('sample-key-preview').textContent = "KEY-101";
+    }
+
+    function autoGenerateProjectKey(val) {
+      if (!val) return;
+      // Auto suggest key based on first characters or pinyin
+      const clean = val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      const keyInput = document.getElementById('new-proj-key');
+      if (clean.length >= 2 && !keyInput.dataset.manualEdited) {
+        keyInput.value = clean.slice(0, 5);
+        document.getElementById('sample-key-preview').textContent = `${keyInput.value}-101`;
+      }
+    }
+
+    document.getElementById('new-proj-key').addEventListener('input', function() {
+      this.dataset.manualEdited = "true";
+      this.value = this.value.toUpperCase();
+      document.getElementById('sample-key-preview').textContent = `${this.value || 'KEY'}-101`;
+    });
+
+    function handleCreateProjectSubmit(e) {
+      e.preventDefault();
+      const name = document.getElementById('new-proj-name').value.trim();
+      const key = document.getElementById('new-proj-key').value.trim().toUpperCase();
+      const desc = document.getElementById('new-proj-desc').value.trim();
+
+      if (!name || !key) return;
+
+      const newProj = {
+        id: "proj_" + Date.now(),
+        key: key,
+        name: name,
+        desc: desc || "自定义工程项目"
+      };
+
+      projects.unshift(newProj);
+      currentProjectId = newProj.id;
+      saveAllToStorage();
+      closeCreateProjectModal();
+      renderProjectHeaderAndSelector();
+      renderApp();
+      showToast(`项目 [${key}] ${name} 已创建并激活！`);
+    }
+
+    function getCurrentProjectBugs() {
+      return bugs.filter(b => b.projectId === currentProjectId);
+    }
+
+    function getFilteredBugs() {
+      const projectBugs = getCurrentProjectBugs();
+      const search = document.getElementById('search-input').value.trim().toLowerCase();
+      const statusFilter = document.getElementById('filter-status').value;
+      const severityFilter = document.getElementById('filter-severity').value;
+      const priorityFilter = document.getElementById('filter-priority').value;
+
+      return projectBugs.filter(item => {
+        const matchesSearch = !search ||
+          item.id.toLowerCase().includes(search) ||
+          item.title.toLowerCase().includes(search) ||
+          item.assignee.toLowerCase().includes(search) ||
+          item.module.toLowerCase().includes(search);
+
+        const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
+        const matchesSeverity = severityFilter === 'all' || item.severity === severityFilter;
+        const matchesPriority = priorityFilter === 'all' || item.priority === priorityFilter;
+
+        return matchesSearch && matchesStatus && matchesSeverity && matchesPriority;
+      });
+    }
+
+    function renderApp() {
+      updateMetrics();
+      renderKanban();
+      renderList();
+    }
+
+    function updateMetrics() {
+      const projectBugs = getCurrentProjectBugs();
+      const counts = { open: 0, in_progress: 0, testing: 0, closed: 0 };
+      projectBugs.forEach(b => {
+        if (counts[b.status] !== undefined) counts[b.status]++;
+      });
+
+      document.getElementById('metric-open').textContent = counts.open;
+      document.getElementById('metric-in-progress').textContent = counts.in_progress;
+      document.getElementById('metric-testing').textContent = counts.testing;
+      document.getElementById('metric-closed').textContent = counts.closed;
+
+      document.getElementById('badge-count-open').textContent = counts.open;
+      document.getElementById('badge-count-in_progress').textContent = counts.in_progress;
+      document.getElementById('badge-count-testing').textContent = counts.testing;
+      document.getElementById('badge-count-closed').textContent = counts.closed;
+    }
+
+    function renderKanban() {
+      const lanes = {
+        open: document.getElementById('lane-open'),
+        in_progress: document.getElementById('lane-in_progress'),
+        testing: document.getElementById('lane-testing'),
+        closed: document.getElementById('lane-closed')
+      };
+
+      Object.values(lanes).forEach(lane => lane.innerHTML = '');
+      const filtered = getFilteredBugs();
+
+      filtered.forEach(bug => {
+        const sev = SEVERITY_CONFIG[bug.severity] || SEVERITY_CONFIG.major;
+        const pri = PRIORITY_CONFIG[bug.priority] || PRIORITY_CONFIG.p2;
+        const imageCount = (bug.images && bug.images.length) || 0;
+
+        const card = document.createElement('div');
+        card.className = "bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all cursor-pointer select-none group border-l-4";
+        
+        if (bug.severity === 'blocker') card.classList.add('border-l-rose-500');
+        else if (bug.severity === 'critical') card.classList.add('border-l-amber-500');
+        else if (bug.severity === 'major') card.classList.add('border-l-blue-500');
+        else card.classList.add('border-l-slate-300');
+
+        card.draggable = true;
+        card.id = `card-${bug.id}`;
+        card.ondragstart = (e) => handleDragStart(e, bug.id);
+        card.onclick = () => openDetailModal(bug.id);
+
+        card.innerHTML = `
+          <div class="flex items-center justify-between text-xs mb-2">
+            <span class="font-mono text-slate-500 font-bold group-hover:text-brand-600 transition">${bug.id}</span>
+            <div class="flex items-center space-x-1.5">
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${pri.badge}">${pri.label}</span>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-medium ${sev.bg} ${sev.text}">${sev.label.split(' ')[0]}</span>
+            </div>
+          </div>
+          <h4 class="text-sm font-semibold text-slate-800 line-clamp-2 mb-2 leading-snug group-hover:text-brand-600 transition">
+            ${bug.title}
+          </h4>
+          
+          ${imageCount > 0 ? `
+            <div class="mb-2 flex items-center gap-1.5 text-[11px] text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100">
+              <i class="ph-bold ph-image text-xs text-emerald-600"></i>
+              <span class="font-medium">含 ${imageCount} 张压缩截图 (长边800)</span>
+            </div>
+          ` : ''}
+
+          <div class="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
+            <span class="bg-slate-100 px-2 py-0.5 rounded text-[11px] text-slate-600 font-medium truncate max-w-[110px]">${bug.module}</span>
+            <div class="flex items-center space-x-1.5 text-slate-600 font-medium text-xs">
+              <i class="ph ph-user-circle text-sm text-slate-400"></i>
+              <span>${bug.assignee.split(' ')[0]}</span>
+            </div>
+          </div>
+        `;
+
+        if (lanes[bug.status]) lanes[bug.status].appendChild(card);
+      });
+
+      // Handle Empty States
+      Object.keys(lanes).forEach(status => {
+        if (lanes[status].children.length === 0) {
+          lanes[status].innerHTML = `
+            <div class="h-28 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center text-slate-400 text-xs">
+              <i class="ph ph-tray text-xl mb-1 text-slate-300"></i>
+              暂无匹配缺陷
+            </div>
+          `;
+        }
+      });
+    }
+
+    // Drag & Drop
+    function handleDragStart(e, bugId) {
+      draggedBugId = bugId;
+      e.dataTransfer.setData('text/plain', bugId);
+      e.dataTransfer.effectAllowed = 'move';
+    }
+
+    function handleDragOver(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    }
+
+    function handleDrop(e, targetStatus) {
+      e.preventDefault();
+      if (!draggedBugId) return;
+
+      const targetBug = bugs.find(b => b.id === draggedBugId);
+      if (targetBug && targetBug.status !== targetStatus) {
+        const oldStatus = targetBug.status;
+        targetBug.status = targetStatus;
+
+        targetBug.comments.unshift({
+          author: "李工 (QA)",
+          time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+          text: `将状态从 [${STATUS_CONFIG[oldStatus].label}] 拖拽移动至 [${STATUS_CONFIG[targetStatus].label}]`
+        });
+
+        saveAllToStorage();
+        renderApp();
+        showToast(`已更新 ${targetBug.id} 状态为：${STATUS_CONFIG[targetStatus].label}`);
+      }
+      draggedBugId = null;
+    }
+
+    function renderList() {
+      const tbody = document.getElementById('list-table-body');
+      tbody.innerHTML = '';
+      const filtered = getFilteredBugs();
+      const currentTotal = getCurrentProjectBugs().length;
+
+      document.getElementById('pagination-visible-count').textContent = filtered.length;
+      document.getElementById('pagination-total-count').textContent = currentTotal;
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="10" class="py-12 text-center text-slate-400 text-sm">
+              <i class="ph ph-folder-open text-3xl block mx-auto mb-2 text-slate-300"></i>
+              当前项目下无符合筛选条件的记录
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      filtered.forEach(bug => {
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-slate-50/80 transition-colors group cursor-pointer";
+
+        const sev = SEVERITY_CONFIG[bug.severity] || SEVERITY_CONFIG.major;
+        const pri = PRIORITY_CONFIG[bug.priority] || PRIORITY_CONFIG.p2;
+        const stat = STATUS_CONFIG[bug.status] || STATUS_CONFIG.open;
+        const imgCount = (bug.images && bug.images.length) || 0;
+
+        tr.innerHTML = `
+          <td class="py-3 px-4 text-center" onclick="event.stopPropagation()">
+            <input type="checkbox" class="row-checkbox rounded border-slate-300 text-brand-600 focus:ring-brand-500">
+          </td>
+          <td class="py-3 px-3 font-mono text-xs font-bold text-slate-700 group-hover:text-brand-600">
+            ${bug.id}
+          </td>
+          <td class="py-3 px-4 font-semibold text-slate-800 max-w-xs truncate" title="${bug.title}">
+            ${bug.title}
+          </td>
+          <td class="py-3 px-3">
+            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${stat.badge}">
+              <span class="w-1.5 h-1.5 rounded-full ${stat.dot}"></span>
+              ${stat.label}
+            </span>
+          </td>
+          <td class="py-3 px-3">
+            <span class="inline-flex items-center gap-1 text-xs font-semibold ${sev.text}">
+              <span class="w-2 h-2 rounded-full ${sev.dot}"></span>
+              ${sev.label.split(' ')[0]}
+            </span>
+          </td>
+          <td class="py-3 px-3">
+            <span class="px-2 py-0.5 rounded text-[11px] font-bold ${pri.badge}">${pri.label}</span>
+          </td>
+          <td class="py-3 px-3">
+            ${imgCount > 0 ? `
+              <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                <i class="ph-bold ph-image text-xs"></i> ${imgCount} 张
+              </span>
+            ` : '<span class="text-slate-300 text-xs">-</span>'}
+          </td>
+          <td class="py-3 px-4 text-xs font-medium text-slate-700">
+            ${bug.assignee}
+          </td>
+          <td class="py-3 px-3 text-xs text-slate-500">
+            <span class="bg-slate-100 px-2 py-0.5 rounded text-slate-600">${bug.module}</span>
+          </td>
+          <td class="py-3 px-4 text-right" onclick="event.stopPropagation()">
+            <div class="inline-flex items-center space-x-1">
+              <select onchange="changeBugStatus('${bug.id}', this.value)" class="text-xs bg-slate-100 border border-slate-200 rounded px-2 py-1 font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500 cursor-pointer">
+                <option value="open" ${bug.status==='open'?'selected':''}>待处理</option>
+                <option value="in_progress" ${bug.status==='in_progress'?'selected':''}>进行中</option>
+                <option value="testing" ${bug.status==='testing'?'selected':''}>待验证</option>
+                <option value="closed" ${bug.status==='closed'?'selected':''}>已关闭</option>
+              </select>
+            </div>
+          </td>
+        `;
+
+        tr.onclick = () => openDetailModal(bug.id);
+        tbody.appendChild(tr);
+      });
+    }
+
+    function toggleSelectAll(master) {
+      document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = master.checked);
+    }
+
+    function openDetailModal(bugId) {
+      const bug = bugs.find(b => b.id === bugId);
+      if (!bug) return;
+      currentSelectedBugId = bugId;
+      renderDetailModalData(bug);
+      document.getElementById('modal-detail').classList.remove('hidden');
+    }
+
+    function renderDetailModalData(bug) {
+      document.getElementById('detail-id').textContent = bug.id;
+      document.getElementById('detail-title').textContent = bug.title;
+      document.getElementById('detail-reporter').textContent = bug.reporter;
+      document.getElementById('detail-created-at').textContent = bug.createdAt;
+      document.getElementById('detail-module').textContent = bug.module;
+      document.getElementById('detail-assignee').innerHTML = `
+        <i class="ph-bold ph-user text-slate-400"></i>
+        <span>${bug.assignee}</span>
+      `;
+      document.getElementById('detail-steps').textContent = bug.steps || "无复现步骤";
+      document.getElementById('detail-actual').textContent = bug.actual || "未填写";
+      document.getElementById('detail-expected').textContent = bug.expected || "未填写";
+
+      // Status Badge
+      const stat = STATUS_CONFIG[bug.status];
+      document.getElementById('detail-status-badge').innerHTML = `
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${stat.badge}">
+          <span class="w-2 h-2 rounded-full ${stat.dot}"></span>
+          ${stat.label}
+        </span>
+      `;
+
+      // Severity Badge
+      const sev = SEVERITY_CONFIG[bug.severity];
+      document.getElementById('detail-severity-badge').innerHTML = `
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold ${sev.bg} ${sev.text}">
+          <span class="w-1.5 h-1.5 rounded-full ${sev.dot}"></span>
+          ${sev.label}
+        </span>
+      `;
+
+      // Priority Badge
+      const pri = PRIORITY_CONFIG[bug.priority];
+      document.getElementById('detail-priority-badge').innerHTML = `
+        <span class="px-2 py-0.5 rounded text-xs font-bold ${pri.badge}">
+          ${pri.full}
+        </span>
+      `;
+
+      // Render Transition Buttons
+      renderDetailTransitions(bug);
+
+      // Render Screenshots
+      renderDetailScreenshots(bug);
+
+      // Render Activity Timeline
+      renderDetailTimeline(bug);
+    }
+
+    function renderDetailTransitions(bug) {
+      const container = document.getElementById('detail-transition-buttons');
+      container.innerHTML = '';
+
+      if (bug.status === 'open') {
+        container.innerHTML = `
+          <button onclick="changeBugStatus('${bug.id}', 'in_progress')" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition shadow-2xs flex items-center gap-1">
+            <i class="ph-bold ph-play"></i> 开始排查修复
+          </button>
+        `;
+      } else if (bug.status === 'in_progress') {
+        container.innerHTML = `
+          <button onclick="changeBugStatus('${bug.id}', 'testing')" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-medium transition shadow-2xs flex items-center gap-1">
+            <i class="ph-bold ph-paper-plane-tilt"></i> 提测待验证
+          </button>
+        `;
+      } else if (bug.status === 'testing') {
+        container.innerHTML = `
+          <button onclick="changeBugStatus('${bug.id}', 'closed')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium transition shadow-2xs flex items-center gap-1">
+            <i class="ph-bold ph-check"></i> 验证通过关闭
+          </button>
+          <button onclick="changeBugStatus('${bug.id}', 'open')" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-medium transition shadow-2xs flex items-center gap-1">
+            <i class="ph-bold ph-arrow-counter-clockwise"></i> 未通过激活
+          </button>
+        `;
+      } else if (bug.status === 'closed') {
+        container.innerHTML = `
+          <button onclick="changeBugStatus('${bug.id}', 'open')" class="px-3 py-1.5 border border-slate-300 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-medium transition flex items-center gap-1">
+            <i class="ph-bold ph-arrow-counter-clockwise"></i> 重新激活缺陷
+          </button>
+        `;
+      }
+    }
+
+    function renderDetailScreenshots(bug) {
+      const container = document.getElementById('detail-attachments-grid');
+      const countEl = document.getElementById('detail-attachments-count');
+      container.innerHTML = '';
+
+      const images = bug.images || [];
+      countEl.textContent = images.length;
+
+      if (images.length === 0) {
+        container.innerHTML = `
+          <div class="col-span-full py-6 text-center border border-dashed border-slate-200 rounded-xl text-slate-400 text-xs">
+            暂无现场截图，可在此直接按 Ctrl+V 粘贴压缩上传
+          </div>
+        `;
+        return;
+      }
+
+      images.forEach((img, idx) => {
+        const card = document.createElement('div');
+        card.className = "group relative bg-white border border-slate-200 rounded-xl overflow-hidden p-1.5 shadow-2xs hover:shadow-md transition flex flex-col";
+        card.innerHTML = `
+          <div class="relative h-28 w-full bg-slate-900 rounded-lg overflow-hidden cursor-pointer" onclick="openLightbox('${img.dataUrl}', '${img.compressedSize}', '${img.origSize}')">
+            <img src="${img.dataUrl}" alt="Screenshot" class="w-full h-full object-cover group-hover:scale-105 transition duration-200">
+            <div class="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white">
+              <i class="ph-bold ph-magnifying-glass-plus text-xl"></i>
+            </div>
+            <span class="absolute top-1 left-1 bg-black/60 text-white text-[10px] font-mono px-1.5 py-0.5 rounded">长边800</span>
+          </div>
+          <div class="mt-2 flex items-center justify-between text-[11px] text-slate-600 px-0.5">
+            <span class="font-mono text-[10px] text-slate-500">${img.compressedSize}</span>
+            <button onclick="deleteDetailImage(${idx})" class="text-slate-400 hover:text-rose-600 p-0.5" title="删除此图">
+              <i class="ph-bold ph-trash text-xs"></i>
+            </button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function deleteDetailImage(idx) {
+      if (!currentSelectedBugId) return;
+      const bug = bugs.find(b => b.id === currentSelectedBugId);
+      if (bug && bug.images) {
+        bug.images.splice(idx, 1);
+        saveAllToStorage();
+        renderDetailScreenshots(bug);
+        renderKanban();
+        renderList();
+        showToast("已删除截图");
+      }
+    }
+
+    function renderDetailTimeline(bug) {
+      const container = document.getElementById('detail-timeline');
+      container.innerHTML = '';
+
+      if (!bug.comments || bug.comments.length === 0) {
+        container.innerHTML = `<div class="text-xs text-slate-400 italic">暂无流转历史与讨论</div>`;
+        return;
+      }
+
+      bug.comments.forEach(c => {
+        const item = document.createElement('div');
+        item.className = "flex items-start space-x-3 text-xs";
+        item.innerHTML = `
+          <div class="w-6 h-6 rounded-full bg-slate-200 text-slate-700 font-bold flex items-center justify-center shrink-0 text-[10px]">
+            ${c.author.slice(0, 1)}
+          </div>
+          <div class="flex-1 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-bold text-slate-800">${c.author}</span>
+              <span class="text-[10px] text-slate-400 font-mono">${c.time}</span>
+            </div>
+            <p class="text-slate-600 leading-relaxed">${c.text}</p>
+          </div>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    function submitDetailComment() {
+      if (!currentSelectedBugId) return;
+      const bug = bugs.find(b => b.id === currentSelectedBugId);
+      const input = document.getElementById('input-new-comment');
+      const text = input.value.trim();
+      if (!text) return;
+
+      bug.comments.unshift({
+        author: "李工 (QA)",
+        time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+        text: text
+      });
+
+      input.value = '';
+      saveAllToStorage();
+      renderDetailTimeline(bug);
+      showToast("动态已更新");
+    }
+
+    function closeDetailModal() {
+      document.getElementById('modal-detail').classList.add('hidden');
+      currentSelectedBugId = null;
+    }
+
+    function changeBugStatus(bugId, nextStatus) {
+      const bug = bugs.find(b => b.id === bugId);
+      if (!bug) return;
+
+      const prevStatus = bug.status;
+      bug.status = nextStatus;
+
+      bug.comments.unshift({
+        author: "李工 (QA)",
+        time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+        text: `将状态流转为：${STATUS_CONFIG[nextStatus].label}`
+      });
+
+      saveAllToStorage();
+      renderApp();
+
+      if (currentSelectedBugId === bugId) {
+        renderDetailModalData(bug);
+      }
+      showToast(`缺陷 ${bugId} 状态已流转为 [${STATUS_CONFIG[nextStatus].label}]`);
+    }
+
+    function openCreateBugModal(defaultStatus = 'open') {
+      const currentProj = projects.find(p => p.id === currentProjectId) || projects[0];
+      document.getElementById('modal-create-current-proj').textContent = `[${currentProj.key}] ${currentProj.name}`;
+      document.getElementById('create-status').value = defaultStatus;
+      createBugStagedImages = [];
+      renderCreateStagedImages();
+      document.getElementById('modal-create').classList.remove('hidden');
+      document.getElementById('create-title').focus();
+    }
+
+    function closeCreateBugModal() {
+      document.getElementById('modal-create').classList.add('hidden');
+      document.getElementById('form-create-bug').reset();
+      createBugStagedImages = [];
+      renderCreateStagedImages();
+    }
+
+    function handleCreateBugSubmit(e) {
+      e.preventDefault();
+      const currentProj = projects.find(p => p.id === currentProjectId);
+      const projectKey = currentProj ? currentProj.key : "BUG";
+
+      // Count existing in project to compute ID
+      const count = bugs.filter(b => b.projectId === currentProjectId).length + 101;
+      const newId = `${projectKey}-${count}`;
+
+      const newBug = {
+        id: newId,
+        projectId: currentProjectId,
+        title: document.getElementById('create-title').value.trim(),
+        module: document.getElementById('create-module').value.trim(),
+        status: document.getElementById('create-status').value,
+        severity: document.getElementById('create-severity').value,
+        priority: document.getElementById('create-priority').value,
+        assignee: document.getElementById('create-assignee').value.trim() || "未指派",
+        reporter: "李工 (QA)",
+        createdAt: new Date().toISOString().slice(0, 10),
+        steps: document.getElementById('create-steps').value.trim() || "未提供步骤",
+        actual: document.getElementById('create-actual').value.trim() || "未提供",
+        expected: document.getElementById('create-expected').value.trim() || "未提供",
+        images: [...createBugStagedImages],
+        comments: [
+          {
+            author: "李工 (QA)",
+            time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+            text: `创建了新缺陷，附带 ${createBugStagedImages.length} 张现场截图。`
+          }
+        ]
+      };
+
+      bugs.unshift(newBug);
+      saveAllToStorage();
+      closeCreateBugModal();
+      renderApp();
+      showToast(`已成功录入缺陷 ${newBug.id} 并隔离于当前项目`);
+    }
+
+    function openLightbox(imgUrl, compSize, origSize) {
+      const modal = document.getElementById('lightbox-modal');
+      const img = document.getElementById('lightbox-image');
+      const link = document.getElementById('lightbox-download-link');
+      const meta = document.getElementById('lightbox-meta');
+
+      img.src = imgUrl;
+      link.href = imgUrl;
+      meta.textContent = `客户端长边800压缩规格: ${compSize} · 原始来源: ${origSize || '剪贴板'}`;
+      modal.classList.remove('hidden');
+    }
+
+    function closeLightbox() {
+      document.getElementById('lightbox-modal').classList.add('hidden');
+      document.getElementById('lightbox-image').src = '';
+    }
+
+    function switchView(viewName) {
+      const kanbanView = document.getElementById('view-kanban');
+      const listView = document.getElementById('view-list');
+      const tabKanban = document.getElementById('tab-kanban');
+      const tabList = document.getElementById('tab-list');
+
+      if (viewName === 'kanban') {
+        kanbanView.classList.remove('hidden');
+        listView.classList.add('hidden');
+        tabKanban.className = "flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold rounded-md transition bg-white text-slate-800 shadow-2xs";
+        tabList.className = "flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold rounded-md transition text-slate-600 hover:text-slate-900";
+      } else {
+        kanbanView.classList.add('hidden');
+        listView.classList.remove('hidden');
+        tabList.className = "flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold rounded-md transition bg-white text-slate-800 shadow-2xs";
+        tabKanban.className = "flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold rounded-md transition text-slate-600 hover:text-slate-900";
+      }
+    }
+
+    function filterByQuickStatus(status) {
+      document.getElementById('filter-status').value = status;
+      renderApp();
+    }
+
+    function showToast(msg, type = "success") {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      
+      let icon = 'ph-bold ph-check-circle text-emerald-400';
+      if (type === 'info') icon = 'ph-bold ph-info text-blue-400';
+      if (type === 'error') icon = 'ph-bold ph-warning-circle text-rose-400';
+
+      toast.className = "bg-slate-900 text-white text-xs px-4 py-2.5 rounded-xl shadow-2xl flex items-center space-x-2.5 border border-slate-700/80 animate-in fade-in slide-in-from-bottom-2 duration-150 pointer-events-auto max-w-sm";
+      toast.innerHTML = `
+        <i class="${icon} text-base shrink-0"></i>
+        <span class="leading-snug">${msg}</span>
+      `;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        toast.style.transition = 'all 0.25s ease';
+        setTimeout(() => toast.remove(), 250);
+      }, 3000);
+    }
+
+    // Attach Lifecycles
+    window.addEventListener('DOMContentLoaded', () => {
+      initState();
+      setupClipboardListener();
+      setupDropzones();
+      renderProjectHeaderAndSelector();
+      renderApp();
+
+      // Live Search & Filters
+      document.getElementById('search-input').addEventListener('input', renderApp);
+      document.getElementById('filter-status').addEventListener('change', renderApp);
+      document.getElementById('filter-severity').addEventListener('change', renderApp);
+      document.getElementById('filter-priority').addEventListener('change', renderApp);
+
+      document.getElementById('btn-reset-filters').addEventListener('click', () => {
+        document.getElementById('search-input').value = '';
+        document.getElementById('filter-status').value = 'all';
+        document.getElementById('filter-severity').value = 'all';
+        document.getElementById('filter-priority').value = 'all';
+        renderApp();
+        showToast("已重置所有过滤条件");
+      });
+
+      // Escape key listeners
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeLightbox();
+          closeDetailModal();
+          closeCreateBugModal();
+          closeCreateProjectModal();
+        }
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BugPulse Pro - 敏捷缺陷与工程质量管理系统</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Phosphor Icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+  <!-- Inter Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              200: '#bfdbfe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #f8fafc; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    .kanban-column-container { min-height: calc(100vh - 350px); }
+    
+    /* Paste Target Active Indicator */
+    .paste-highlight-zone {
+      transition: all 0.2s ease-in-out;
+    }
+    .paste-highlight-zone.dragover {
+      border-color: #2563eb !important;
+      background-color: #eff6ff !important;
+      transform: scale(1.008);
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col font-sans select-none sm:select-auto">
+
+  <!-- Header / Navigation Bar -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16 gap-4">
+        
+        <!-- Brand & Project Switcher -->
+        <div class="flex items-center space-x-4 sm:space-x-6 min-w-0">
+          <div class="flex items-center space-x-2.5 shrink-0">
+            <div class="w-9 h-9 bg-brand-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-brand-500/20">
+              <i class="ph-bold ph-bug text-xl"></i>
+            </div>
+            <div class="hidden sm:block">
+              <span class="font-bold text-lg text-slate-900 tracking-tight flex items-center gap-1.5">
+                BugPulse <span class="text-[10px] px-1.5 py-0.5 rounded bg-brand-50 text-brand-600 border border-brand-200 uppercase font-semibold">Pro</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- Project Selector & Quick New Project Button -->
+          <div class="flex items-center space-x-2 min-w-0 border-l border-slate-200 pl-3 sm:pl-5">
+            <div class="flex flex-col">
+              <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider hidden md:block">当前空间 / 项目</span>
+              <div class="relative flex items-center">
+                <i class="ph-bold ph-folder-notch-open text-brand-600 absolute left-2.5 text-sm pointer-events-none"></i>
+                <select id="project-selector" onchange="handleProjectChange(this.value)" class="appearance-none bg-slate-100/80 hover:bg-slate-100 text-slate-800 text-xs sm:text-sm font-semibold rounded-lg pl-8 pr-8 py-1.5 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer max-w-[180px] sm:max-w-[260px] truncate">
+                  <!-- Populated by JS -->
+                </select>
+                <i class="ph-bold ph-caret-down text-xs text-slate-400 absolute right-2.5 pointer-events-none"></i>
+              </div>
+            </div>
+
+            <button onclick="openCreateProjectModal()" title="新建项目" class="p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg border border-dashed border-slate-300 hover:border-brand-500 hover:bg-brand-50 text-slate-600 hover:text-brand-600 text-xs font-medium flex items-center gap-1 transition">
+              <i class="ph-bold ph-folder-plus text-sm"></i>
+              <span class="hidden md:inline">新建项目</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Top Right Actions -->
+        <div class="flex items-center space-x-3 shrink-0">
+          <button onclick="openCreateBugModal()" class="inline-flex items-center space-x-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs sm:text-sm font-medium px-3 sm:px-4 py-2 rounded-lg transition shadow-sm active:scale-95">
+            <i class="ph-bold ph-plus text-base"></i>
+            <span>提交缺陷</span>
+          </button>
+          
+          <div class="h-6 w-px bg-slate-200 hidden sm:block"></div>
+
+          <!-- User Info -->
+          <div class="flex items-center space-x-2 pl-1">
+            <div id="header-avatar" class="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs ring-2 ring-white">
+              QA
+            </div>
+            <div class="hidden lg:block text-left text-xs leading-tight">
+              <div id="header-user-name" class="font-semibold text-slate-800">未登录</div>
+              <div id="header-user-sub" class="text-[10px] text-slate-400">—</div>
+            </div>
+            <button onclick="openUsersModal()" class="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100" title="成员与账号">
+              <i class="ph-bold ph-users text-base"></i>
+            </button>
+            <button onclick="handleLogout()" class="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100" title="退出登录">
+              <i class="ph-bold ph-signout text-base"></i>
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
+
+    <!-- Active Project Banner & Quick Info -->
+    <section class="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div class="space-y-1">
+        <div class="flex items-center gap-2.5">
+          <span id="proj-badge-key" class="font-mono text-xs font-bold px-2.5 py-0.5 rounded-md bg-brand-100 text-brand-700 border border-brand-200">KEY</span>
+          <h1 id="proj-display-name" class="text-xl font-bold text-slate-900 tracking-tight">项目加载中...</h1>
+        </div>
+        <p id="proj-display-desc" class="text-xs sm:text-sm text-slate-500 max-w-3xl leading-relaxed">...</p>
+      </div>
+      
+      <!-- Compression Feature Tag Indicator -->
+      <div class="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 px-3.5 py-2 rounded-xl text-xs shrink-0 self-start md:self-auto">
+        <i class="ph-bold ph-image-square text-base text-emerald-600"></i>
+        <div>
+          <span class="font-bold">智能截图引擎就绪</span>
+          <p class="text-[11px] text-emerald-600">支持 Ctrl+V 粘贴 · 长边≤800px · 75%画质</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- KPI Metric Cards Grid -->
+    <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div onclick="filterByQuickStatus('open')" class="cursor-pointer bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:border-amber-400 hover:shadow-sm transition group">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">待处理 (Open)</span>
+          <span class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-105 transition">
+            <i class="ph-bold ph-hourglass-high text-lg"></i>
+          </span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="metric-open" class="text-2xl font-bold text-slate-900">0</span>
+          <span class="text-xs text-amber-600 font-medium">需分配/排查</span>
+        </div>
+      </div>
+
+      <div onclick="filterByQuickStatus('in_progress')" class="cursor-pointer bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:border-blue-400 hover:shadow-sm transition group">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">进行中 (In Progress)</span>
+          <span class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-105 transition">
+            <i class="ph-bold ph-gear-six text-lg"></i>
+          </span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="metric-in-progress" class="text-2xl font-bold text-slate-900">0</span>
+          <span class="text-xs text-blue-600 font-medium">研发代码修复中</span>
+        </div>
+      </div>
+
+      <div onclick="filterByQuickStatus('testing')" class="cursor-pointer bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:border-purple-400 hover:shadow-sm transition group">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">待验证 (Testing)</span>
+          <span class="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-105 transition">
+            <i class="ph-bold ph-shield-check text-lg"></i>
+          </span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="metric-testing" class="text-2xl font-bold text-slate-900">0</span>
+          <span class="text-xs text-purple-600 font-medium">QA联调验证中</span>
+        </div>
+      </div>
+
+      <div onclick="filterByQuickStatus('closed')" class="cursor-pointer bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:border-emerald-400 hover:shadow-sm transition group">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">已关闭 (Closed)</span>
+          <span class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-105 transition">
+            <i class="ph-bold ph-check-circle text-lg"></i>
+          </span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="metric-closed" class="text-2xl font-bold text-slate-900">0</span>
+          <span class="text-xs text-emerald-600 font-medium">已发布已归档</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+      <!-- Search & Filters -->
+      <div class="flex flex-wrap items-center gap-2.5 flex-1">
+        <!-- Search bar -->
+        <div class="relative min-w-[200px] flex-1 sm:flex-initial">
+          <i class="ph ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+          <input id="search-input" type="text" placeholder="搜索缺陷ID、标题、模块、责任人..." class="w-full text-xs sm:text-sm pl-9 pr-4 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+        </div>
+
+        <!-- Status Filter -->
+        <div class="relative">
+          <select id="filter-status" class="text-xs sm:text-sm font-medium bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 pr-7 appearance-none focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer">
+            <option value="all">所有状态</option>
+            <option value="open">待处理 (Open)</option>
+            <option value="in_progress">进行中 (In Progress)</option>
+            <option value="testing">待验证 (Testing)</option>
+            <option value="closed">已关闭 (Closed)</option>
+          </select>
+          <i class="ph-bold ph-caret-down text-[10px] text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+        </div>
+
+        <!-- Severity Filter -->
+        <div class="relative">
+          <select id="filter-severity" class="text-xs sm:text-sm font-medium bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 pr-7 appearance-none focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer">
+            <option value="all">所有严重程度</option>
+            <option value="blocker">致命 (Blocker)</option>
+            <option value="critical">严重 (Critical)</option>
+            <option value="major">一般 (Major)</option>
+            <option value="minor">轻微 (Minor)</option>
+          </select>
+          <i class="ph-bold ph-caret-down text-[10px] text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+        </div>
+
+        <!-- Priority Filter -->
+        <div class="relative">
+          <select id="filter-priority" class="text-xs sm:text-sm font-medium bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 pr-7 appearance-none focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer">
+            <option value="all">所有优先级</option>
+            <option value="p0">P0 - 紧急</option>
+            <option value="p1">P1 - 高</option>
+            <option value="p2">P2 - 中</option>
+            <option value="p3">P3 - 低</option>
+          </select>
+          <i class="ph-bold ph-caret-down text-[10px] text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+        </div>
+
+        <!-- Reset Button -->
+        <button id="btn-reset-filters" class="text-xs text-slate-500 hover:text-slate-800 p-2 hover:bg-slate-100 rounded-lg transition" title="重置筛选">
+          <i class="ph-bold ph-arrow-counter-clockwise text-sm"></i>
+        </button>
+      </div>
+
+      <!-- View Switcher -->
+      <div class="flex items-center space-x-1 border border-slate-200 bg-slate-100/70 p-1 rounded-lg self-end md:self-auto">
+        <button id="tab-kanban" onclick="switchView('kanban')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold rounded-md transition bg-white text-slate-800 shadow-2xs">
+          <i class="ph-bold ph-kanban text-sm"></i>
+          <span>看板视图</span>
+        </button>
+        <button id="tab-list" onclick="switchView('list')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold rounded-md transition text-slate-600 hover:text-slate-900">
+          <i class="ph-bold ph-table text-sm"></i>
+          <span>列表视图</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- View 1: Kanban Board -->
+    <div id="view-kanban" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+      
+      <!-- Lane: Open -->
+      <div class="bg-slate-100/90 rounded-2xl p-3.5 border border-slate-200/80 flex flex-col kanban-column-container" data-status="open" ondragover="handleDragOver(event)" ondrop="handleDrop(event, 'open')">
+        <div class="flex items-center justify-between pb-3 mb-2 border-b border-slate-200">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+            <span class="text-sm font-bold text-slate-800">待处理</span>
+            <span id="badge-count-open" class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-bold">0</span>
+          </div>
+        </div>
+        <div id="lane-open" class="space-y-3 flex-1 overflow-y-auto"></div>
+      </div>
+
+      <!-- Lane: In Progress -->
+      <div class="bg-slate-100/90 rounded-2xl p-3.5 border border-slate-200/80 flex flex-col kanban-column-container" data-status="in_progress" ondragover="handleDragOver(event)" ondrop="handleDrop(event, 'in_progress')">
+        <div class="flex items-center justify-between pb-3 mb-2 border-b border-slate-200">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+            <span class="text-sm font-bold text-slate-800">进行中</span>
+            <span id="badge-count-in_progress" class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-bold">0</span>
+          </div>
+        </div>
+        <div id="lane-in_progress" class="space-y-3 flex-1 overflow-y-auto"></div>
+      </div>
+
+      <!-- Lane: Testing -->
+      <div class="bg-slate-100/90 rounded-2xl p-3.5 border border-slate-200/80 flex flex-col kanban-column-container" data-status="testing" ondragover="handleDragOver(event)" ondrop="handleDrop(event, 'testing')">
+        <div class="flex items-center justify-between pb-3 mb-2 border-b border-slate-200">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
+            <span class="text-sm font-bold text-slate-800">待验证</span>
+            <span id="badge-count-testing" class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-bold">0</span>
+          </div>
+        </div>
+        <div id="lane-testing" class="space-y-3 flex-1 overflow-y-auto"></div>
+      </div>
+
+      <!-- Lane: Closed -->
+      <div class="bg-slate-100/90 rounded-2xl p-3.5 border border-slate-200/80 flex flex-col kanban-column-container" data-status="closed" ondragover="handleDragOver(event)" ondrop="handleDrop(event, 'closed')">
+        <div class="flex items-center justify-between pb-3 mb-2 border-b border-slate-200">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+            <span class="text-sm font-bold text-slate-800">已关闭</span>
+            <span id="badge-count-closed" class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-bold">0</span>
+          </div>
+        </div>
+        <div id="lane-closed" class="space-y-3 flex-1 overflow-y-auto"></div>
+      </div>
+
+    </div>
+
+    <!-- View 2: Table List -->
+    <div id="view-list" class="hidden bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+              <th class="py-3.5 px-4 w-10 text-center">
+                <input id="check-all" type="checkbox" onchange="toggleSelectAll(this)" class="rounded border-slate-300 text-brand-600 focus:ring-brand-500">
+              </th>
+              <th class="py-3.5 px-3 w-28">编号</th>
+              <th class="py-3.5 px-4">缺陷描述</th>
+              <th class="py-3.5 px-3 w-28">状态</th>
+              <th class="py-3.5 px-3 w-24">严重度</th>
+              <th class="py-3.5 px-3 w-20">优先级</th>
+              <th class="py-3.5 px-3 w-24">截图附件</th>
+              <th class="py-3.5 px-4 w-32">指派人</th>
+              <th class="py-3.5 px-3 w-28">模块</th>
+              <th class="py-3.5 px-4 w-36 text-right">流转操作</th>
+            </tr>
+          </thead>
+          <tbody id="list-table-body" class="divide-y divide-slate-100 text-sm">
+            <!-- Dynamically populated rows -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination / Summary Footer -->
+      <div class="px-4 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
+        <div>
+          显示 <span id="pagination-visible-count" class="font-bold text-slate-700">0</span> 项，本项目共 <span id="pagination-total-count" class="font-bold text-slate-700">0</span> 条记录
+        </div>
+        <div class="text-[11px] text-slate-400">
+          支持全局双击与快捷切换状态
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Modal: Create New Project -->
+  <div id="modal-project" class="fixed inset-0 z-50 overflow-y-auto hidden" role="dialog" aria-modal="true">
+    <div class="flex items-center justify-center min-h-screen px-4 p-4 text-center">
+      <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity" onclick="closeCreateProjectModal()"></div>
+      <div class="relative bg-white rounded-2xl text-left overflow-hidden shadow-2xl w-full max-w-md p-6 border border-slate-100 z-10 animate-in fade-in zoom-in-95 duration-150">
+        
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+          <div class="flex items-center space-x-2.5">
+            <div class="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center font-bold">
+              <i class="ph-bold ph-folder-simple-plus text-lg"></i>
+            </div>
+            <h3 class="text-base font-bold text-slate-900">新建工程项目</h3>
+          </div>
+          <button onclick="closeCreateProjectModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+            <i class="ph-bold ph-x text-base"></i>
+          </button>
+        </div>
+
+        <form id="form-create-project" onsubmit="handleCreateProjectSubmit(event)" class="space-y-4 text-xs">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">项目名称 <span class="text-rose-500">*</span></label>
+            <input id="new-proj-name" type="text" required placeholder="例如：珠宝云 ERP 核心服务" oninput="autoGenerateProjectKey(this.value)" class="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">项目前缀 Key (标识符) <span class="text-rose-500">*</span></label>
+            <div class="flex items-center gap-2">
+              <input id="new-proj-key" type="text" required maxlength="8" placeholder="ERP" class="w-32 uppercase font-mono text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+              <span class="text-[11px] text-slate-400">生成的缺陷编号形如: <span id="sample-key-preview" class="font-mono font-bold text-slate-600">ERP-101</span></span>
+            </div>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">项目简述与定位</label>
+            <textarea id="new-proj-desc" rows="3" placeholder="描述此项目的职责范围与核心架构信息..." class="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50 resize-none"></textarea>
+          </div>
+
+          <div class="flex items-center justify-end space-x-2.5 pt-3 border-t border-slate-100">
+            <button type="button" onclick="closeCreateProjectModal()" class="px-3.5 py-1.5 border border-slate-200 text-slate-600 rounded-lg font-medium hover:bg-slate-50">取消</button>
+            <button type="submit" class="px-4 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-medium transition shadow-xs">立即创建并切换</button>
+          </div>
+        </form>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Create Bug -->
+  <div id="modal-create" class="fixed inset-0 z-50 overflow-y-auto hidden" role="dialog" aria-modal="true">
+    <div class="flex items-end sm:items-center justify-center min-h-screen px-4 pt-4 pb-12 text-center sm:p-0">
+      <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity" onclick="closeCreateBugModal()"></div>
+      <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+
+      <div class="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl w-full border border-slate-100 z-10">
+        
+        <div class="p-6">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+            <div class="flex items-center space-x-2">
+              <span class="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
+                <i class="ph-bold ph-plus-circle text-lg"></i>
+              </span>
+              <div>
+                <h3 class="text-base font-bold text-slate-900">提交新缺陷</h3>
+                <span class="text-[11px] text-slate-400">归属于当前项目: <strong id="modal-create-current-proj" class="text-brand-600">...</strong></span>
+              </div>
+            </div>
+            <button onclick="closeCreateBugModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+              <i class="ph-bold ph-x text-base"></i>
+            </button>
+          </div>
+
+          <form id="form-create-bug" onsubmit="handleCreateBugSubmit(event)" class="space-y-4 text-xs">
+            
+            <!-- Title -->
+            <div>
+              <label class="block font-semibold text-slate-700 mb-1">缺陷标题 <span class="text-rose-500">*</span></label>
+              <input id="create-title" type="text" required placeholder="请清晰简述异常场景与报错现象" class="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+            </div>
+
+            <!-- Module & Status -->
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">所属子模块 <span class="text-rose-500">*</span></label>
+                <input id="create-module" type="text" required placeholder="如：收银支付、鉴权网关、报表统计" class="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">初始状态</label>
+                <select id="create-status" class="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+                  <option value="open">待处理 (Open)</option>
+                  <option value="in_progress">进行中 (In Progress)</option>
+                  <option value="testing">待验证 (Testing)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Severity, Priority, Assignee -->
+            <div class="grid grid-cols-3 gap-3">
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">严重程度</label>
+                <select id="create-severity" class="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+                  <option value="blocker">致命 (Blocker)</option>
+                  <option value="critical">严重 (Critical)</option>
+                  <option value="major" selected>一般 (Major)</option>
+                  <option value="minor">轻微 (Minor)</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">优先级</label>
+                <select id="create-priority" class="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+                  <option value="p0">P0 - 紧急</option>
+                  <option value="p1">P1 - 高</option>
+                  <option value="p2" selected>P2 - 中</option>
+                  <option value="p3">P3 - 低</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">指派给</label>
+                <input id="create-assignee" type="text" value="张工 (服务端)" class="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+              </div>
+            </div>
+
+            <!-- Repro Steps -->
+            <div>
+              <label class="block font-semibold text-slate-700 mb-1">复现步骤或新的需求</label>
+              <textarea id="create-steps" rows="3" placeholder="1. 打开指定页面...&#10;2. 触发特定交互...&#10;3. 复现报错..." class="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50"></textarea>
+            </div>
+
+            <!-- Actual vs Expected -->
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">实际结果</label>
+                <input id="create-actual" type="text" placeholder="例如：控制台抛出 500 空指针异常" class="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">预期结果</label>
+                <input id="create-expected" type="text" placeholder="例如：优雅降级并展示友好提示信息" class="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+              </div>
+            </div>
+
+            <!-- Smart Screenshot Uploader & Paste Target Area -->
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <label class="block font-semibold text-slate-700">缺陷截图附件 (可直接截图并在此按 Ctrl+V 粘贴)</label>
+                <span class="text-[10px] text-brand-600 font-medium bg-brand-50 px-2 py-0.5 rounded-full border border-brand-200">
+                  <i class="ph-bold ph-lightning"></i> 自动缩放到长边800px · 质量75%
+                </span>
+              </div>
+
+              <!-- Interactive Dropzone -->
+              <div id="create-dropzone" 
+                   tabindex="0"
+                   onclick="document.getElementById('create-file-input').click()"
+                   class="paste-highlight-zone border-2 border-dashed border-slate-300 hover:border-brand-500 rounded-xl p-4 text-center cursor-pointer bg-slate-50/60 hover:bg-brand-50/30 transition focus:outline-none focus:ring-2 focus:ring-brand-400">
+                <input id="create-file-input" type="file" accept="image/*" multiple class="hidden" onchange="handleFileInputSelect(event, 'create')">
+                <div class="flex flex-col items-center justify-center space-y-1.5">
+                  <div class="w-10 h-10 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center text-xl">
+                    <i class="ph-bold ph-clipboard-text"></i>
+                  </div>
+                  <div class="text-xs text-slate-700 font-semibold">
+                    点击选择图片，或在此窗口直接按 <kbd class="px-1.5 py-0.5 bg-white border border-slate-300 rounded shadow-2xs font-mono font-bold text-slate-800">Ctrl + V</kbd> 粘贴
+                  </div>
+                  <p class="text-[11px] text-slate-400">也支持将本地图片拖拽至此，自动等比压缩处理</p>
+                </div>
+              </div>
+
+              <!-- Attached Screenshots Preview Shelf -->
+              <div id="create-attachments-preview" class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-3">
+                <!-- Dynamically added preview cards -->
+              </div>
+            </div>
+
+            <!-- Submit Buttons -->
+            <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-100">
+              <button type="button" onclick="closeCreateBugModal()" class="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg font-medium hover:bg-slate-50">取消</button>
+              <button type="submit" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-medium transition shadow-sm">提交缺陷</button>
+            </div>
+          </form>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide-Over Drawer: Bug Details -->
+  <div id="modal-detail" class="fixed inset-0 z-50 overflow-hidden hidden" role="dialog" aria-modal="true">
+    <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity" onclick="closeDetailModal()"></div>
+
+    <div class="pointer-events-none fixed inset-y-0 right-0 flex max-w-full pl-10">
+      <div class="pointer-events-auto w-screen max-w-2xl bg-white shadow-2xl flex flex-col">
+        
+        <!-- Drawer Header -->
+        <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/70">
+          <div class="flex items-center space-x-3">
+            <span id="detail-id" class="text-xs font-mono font-bold px-2 py-1 rounded bg-slate-200 text-slate-800">BUG-000</span>
+            <div id="detail-status-badge"></div>
+          </div>
+          <div class="flex items-center gap-1">
+            <button onclick="deleteCurrentBug()" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition" title="删除缺陷（含截图）">
+              <i class="ph-bold ph-trash text-lg"></i>
+            </button>
+            <button onclick="closeDetailModal()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition">
+              <i class="ph-bold ph-x text-lg"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Scrollable Content -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-6" id="detail-drawer-scroll-body">
+          
+          <!-- Bug Title & Meta -->
+          <div>
+            <h2 id="detail-title" class="text-xl font-bold text-slate-900 leading-snug">缺陷标题</h2>
+            <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+              <span>报告人: <strong id="detail-reporter" class="text-slate-700 font-medium">李工</strong></span>
+              <span>•</span>
+              <span>创建时间: <span id="detail-created-at">2026-04-10</span></span>
+              <span>•</span>
+              <span>所属模块: <span id="detail-module" class="font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded">收银支付</span></span>
+            </div>
+          </div>
+
+          <!-- Quick State Transitions -->
+          <div class="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+            <span class="text-xs font-semibold text-slate-600">快速变更缺陷状态：</span>
+            <div id="detail-transition-buttons" class="flex flex-wrap items-center gap-2"></div>
+          </div>
+
+          <!-- Meta Grid: Assignee, Severity, Priority -->
+          <div class="grid grid-cols-3 gap-3 p-4 bg-slate-50/50 rounded-xl border border-slate-100 text-sm">
+            <div>
+              <div class="text-[11px] font-medium text-slate-400 mb-1">指派经办人</div>
+              <div id="detail-assignee" class="font-medium text-slate-800 flex items-center gap-1.5 text-xs">
+                <i class="ph ph-user text-slate-400"></i>
+                <span>未指定</span>
+              </div>
+            </div>
+            <div>
+              <div class="text-[11px] font-medium text-slate-400 mb-1">严重程度</div>
+              <div id="detail-severity-badge"></div>
+            </div>
+            <div>
+              <div class="text-[11px] font-medium text-slate-400 mb-1">优先级</div>
+              <div id="detail-priority-badge"></div>
+            </div>
+          </div>
+
+          <!-- Repro Steps -->
+          <div>
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <i class="ph-bold ph-list-numbers text-slate-400"></i>
+              复现步骤或新的需求
+            </h3>
+            <div id="detail-steps" class="text-xs text-slate-700 bg-slate-50 p-3.5 rounded-lg border border-slate-200 leading-relaxed font-mono whitespace-pre-line"></div>
+          </div>
+
+          <!-- Expected vs Actual Result -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-rose-50/50 border border-rose-100 rounded-lg p-3">
+              <div class="text-xs font-bold text-rose-700 mb-1 flex items-center gap-1">
+                <i class="ph-bold ph-warning-circle text-rose-500"></i>
+                实际结果 (Actual)
+              </div>
+              <p id="detail-actual" class="text-xs text-slate-700 leading-relaxed"></p>
+            </div>
+            <div class="bg-emerald-50/50 border border-emerald-100 rounded-lg p-3">
+              <div class="text-xs font-bold text-emerald-700 mb-1 flex items-center gap-1">
+                <i class="ph-bold ph-check-circle text-emerald-500"></i>
+                预期结果 (Expected)
+              </div>
+              <p id="detail-expected" class="text-xs text-slate-700 leading-relaxed"></p>
+            </div>
+          </div>
+
+          <!-- Screenshots in Detail Drawer -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <i class="ph-bold ph-image text-slate-400"></i>
+                缺陷截图与现场凭据 (<span id="detail-attachments-count">0</span>)
+              </h3>
+              <button onclick="document.getElementById('detail-append-file-input').click()" class="text-xs text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-1">
+                <i class="ph-bold ph-plus"></i> 追加截图 (支持 Ctrl+V)
+              </button>
+              <input id="detail-append-file-input" type="file" accept="image/*" class="hidden" onchange="handleFileInputSelect(event, 'detail')">
+            </div>
+
+            <!-- Drop / Paste Zone for Detail -->
+            <div id="detail-paste-dropzone" 
+                 onclick="document.getElementById('detail-append-file-input').click()"
+                 class="paste-highlight-zone border border-dashed border-slate-300 hover:border-brand-500 rounded-xl p-3 text-center cursor-pointer bg-slate-50/50 hover:bg-brand-50/20 transition mb-3">
+              <p class="text-[11px] text-slate-500">
+                在打开抽屉时直接按 <kbd class="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono font-bold text-slate-700">Ctrl+V</kbd> 即可追加压缩截图
+              </p>
+            </div>
+
+            <!-- Screenshots Grid -->
+            <div id="detail-attachments-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <!-- Dynamically populated images -->
+            </div>
+          </div>
+
+          <hr class="border-slate-100">
+
+          <!-- Activity & Comments -->
+          <div>
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+              <i class="ph-bold ph-clock-counter-clockwise text-slate-400"></i>
+              活动时间线与讨论
+            </h3>
+
+            <div id="detail-timeline" class="space-y-3 mb-4"></div>
+
+            <!-- Comment Input -->
+            <div class="flex items-start space-x-2.5 pt-2">
+              <div class="w-7 h-7 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-bold shrink-0 mt-1">
+                QA
+              </div>
+              <div class="flex-1">
+                <textarea id="input-new-comment" rows="2" placeholder="填写排查进展、测试结论或 @相关研发..." class="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50 resize-none"></textarea>
+                <div class="flex justify-end mt-1.5">
+                  <button onclick="submitDetailComment()" class="px-3 py-1 bg-brand-600 hover:bg-brand-700 text-white rounded text-xs font-medium transition shadow-2xs">发表动态</button>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightbox: Full-Screen Image Viewer -->
+  <div id="lightbox-modal" class="fixed inset-0 z-60 hidden flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4" onclick="closeLightbox()">
+    <div class="relative max-w-4xl max-h-[90vh] flex flex-col items-center" onclick="event.stopPropagation()">
+      <div class="absolute -top-10 right-0 flex items-center gap-3">
+        <a id="lightbox-download-link" download="bug-screenshot.jpg" class="text-white/80 hover:text-white text-sm flex items-center gap-1 bg-white/10 hover:bg-white/20 px-3 py-1 rounded-lg backdrop-blur-sm transition">
+          <i class="ph-bold ph-download-simple"></i> 下载原图
+        </a>
+        <button onclick="closeLightbox()" class="text-white/80 hover:text-white p-1 text-xl">
+          <i class="ph-bold ph-x"></i>
+        </button>
+      </div>
+      <img id="lightbox-image" src="" alt="Screenshot" class="max-w-full max-h-[82vh] rounded-lg shadow-2xl object-contain border border-white/10">
+      <div id="lightbox-meta" class="mt-3 text-xs text-white/70 font-mono"></div>
+    </div>
+  </div>
+
+  <!-- Users Modal: 成员列表 + 修改自己的密码 -->
+  <div id="modal-users" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+        <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
+          <i class="ph-bold ph-users text-brand-600"></i> 成员与账号
+        </h3>
+        <button onclick="closeUsersModal()" class="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100">
+          <i class="ph-bold ph-x text-lg"></i>
+        </button>
+      </div>
+      <div class="px-6 py-4 overflow-y-auto space-y-5">
+        <div id="create-user-box" class="hidden">
+          <div class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">新建成员</div>
+          <form onsubmit="handleCreateUserSubmit(event)" class="space-y-3 text-xs p-3 rounded-xl border border-brand-100 bg-brand-50/40">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">用户名（小写字母/数字）</label>
+                <input id="nu-username" type="text" required minlength="2" maxlength="32" placeholder="zhangsan" autocomplete="off" class="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">显示名</label>
+                <input id="nu-display" type="text" required maxlength="64" placeholder="张三 (后端开发)" class="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">角色</label>
+                <select id="nu-role" class="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
+                  <option value="MEMBER">工作组成员</option>
+                  <option value="TENANT_ADMIN">系统管理员</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">初始密码（≥6 位）</label>
+                <input id="nu-password" type="text" required minlength="6" maxlength="128" placeholder="dev123456" autocomplete="off" class="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white font-mono">
+              </div>
+            </div>
+            <div id="nu-msg" class="text-rose-600 min-h-[16px]"></div>
+            <button type="submit" class="w-full py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold transition text-sm">创建成员</button>
+          </form>
+        </div>
+        <div>
+          <div class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">工作组成员</div>
+          <div id="users-list" class="space-y-2"></div>
+        </div>
+        <hr class="border-slate-100">
+        <div>
+          <div class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">修改我的密码</div>
+          <form onsubmit="handleChangePasswordSubmit(event)" class="space-y-3 text-xs">
+            <div>
+              <label class="block font-semibold text-slate-700 mb-1">旧密码</label>
+              <input id="pwd-old" type="password" required autocomplete="current-password" class="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-700 mb-1">新密码（至少 6 位）</label>
+              <input id="pwd-new" type="password" required minlength="6" autocomplete="new-password" class="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-700 mb-1">确认新密码</label>
+              <input id="pwd-confirm" type="password" required minlength="6" autocomplete="new-password" class="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+            </div>
+            <div id="pwd-msg" class="text-rose-600 text-xs min-h-[16px]"></div>
+            <button type="submit" class="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold transition text-sm">确认修改</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Login Overlay -->
+  <div id="login-overlay" class="fixed inset-0 z-80 hidden items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-7">
+      <div class="flex items-center gap-3 mb-6">
+        <div class="w-10 h-10 bg-brand-600 rounded-xl flex items-center justify-center text-white shadow-md">
+          <i class="ph-bold ph-bug text-xl"></i>
+        </div>
+        <div>
+          <div class="font-bold text-lg text-slate-900">BugPulse Pro</div>
+          <div class="text-[11px] text-slate-400">缺陷与工程质量管理系统</div>
+        </div>
+      </div>
+      <form onsubmit="handleLoginSubmit(event)" class="space-y-4 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">账号</label>
+          <input id="login-username" type="text" required value="admin" autocomplete="username" class="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">密码</label>
+          <input id="login-password" type="password" required value="admin123456" autocomplete="current-password" class="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-slate-50/50">
+        </div>
+        <div id="login-error" class="text-rose-600 text-xs min-h-[16px]"></div>
+        <button type="submit" class="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold transition text-sm">登录</button>
+        <p class="text-[11px] text-slate-400 text-center">演示账号 admin / admin123456</p>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-70 flex flex-col gap-2 pointer-events-none"></div>
+
+  <script src="app.js?v=1.0.2.261011"></script>
+</body>
+</html>
