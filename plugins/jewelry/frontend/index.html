@@ -1492,6 +1492,19 @@
           </div>
         </div>
 
+        <!-- ================= 问题上报（系统管理子视图，内嵌 BugTracker 上报页） ================= -->
+        <section v-if="tab==='system' && adminSub==='report'">
+          <div class="page-head">
+            <details class="biz-guide">
+              <summary>📖 {{ t('biz.title') }}</summary>
+              <div class="biz-body">{{ t('biz.report') }}</div>
+            </details>
+            <div class="biz-actions"><button class="btn btn-sm btn-outline" @click="openReportWindow">{{ t('report.openNew') }}</button></div>
+          </div>
+          <p class="prod-meta" style="margin-bottom:8px">{{ t('report.tip') }}</p>
+          <iframe class="report-frame" :src="reportPageUrl()" frameborder="0" title="report"></iframe>
+        </section>
+
         <!-- ================= 安防中心（系统管理子视图） ================= -->
         <section v-if="tab==='system' && adminSub==='security'">
           <details class="biz-guide"><summary>📖 {{ t('biz.title') }}</summary><div class="biz-body">{{ t('biz.security') }}</div></details>

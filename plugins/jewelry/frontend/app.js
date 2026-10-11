@@ -264,6 +264,7 @@ var ADMIN_SUBS = [
   { key: 'clerk', icon: '🧑‍💼', label: '经办人类别' },
   { key: 'security', icon: '🛡️', label: '安防中心' },
   { key: 'logs', icon: '📋', label: '操作日志' },
+  { key: 'report', icon: '🐞', label: '问题上报' },
 ];
 
 var SUB_VIEWS = ['customers', 'loans', 'repairs', 'purchases', 'outsourcings', 'logs'];
@@ -801,6 +802,25 @@ function editGoldRetail() {
     if (ST.bizConfig) ST.bizConfig.gold_price = n;
     toast(t('sale.goldSaved'));
   }).catch(function (e) { toast(e.message, 'error'); });
+}
+
+// ===== 问题上报（内嵌 BugTracker 免登录上报页 /report） =====
+// 上报页地址解析：
+//  - 平台网关模式：API(=__APP_BASE__，形如 /app/jewelry/{tenant}/) 非空 → 用同网关根拼
+//    /app/bugtracker/{tenant}/report?source=jewelry&user=<上报人>；
+//  - 本地直连模式：API 为空 → 回落 http://127.0.0.1:8003/report（bugtracker 默认端口）。
+function reportPageUrl() {
+  var user = encodeURIComponent((ST.user && (ST.user.display_name || ST.user.username)) || '');
+  var q = '?source=jewelry&user=' + user;
+  var base = (API || '').replace(/\/+$/, '');   // 例：/app/jewelry/tenant_trial
+  if (!base) return 'http://127.0.0.1:8003/report' + q;
+  var seg = base.split('/');                     // ['', 'app', 'jewelry', 'tenant_trial']
+  seg[seg.length - 2] = 'bugtracker';            // 替换插件段为 bugtracker，保留租户段
+  return seg.join('/') + '/report' + q;          // /app/bugtracker/tenant_trial/report?...
+}
+
+function openReportWindow() {
+  window.open(reportPageUrl(), '_blank');
 }
 
 function refreshAll() {
@@ -4412,6 +4432,7 @@ var app = Vue.createApp({
     directionText: directionText, printedTip: printedTip, coStatusText: coStatusText, resultText: resultText,
     reminderHint: reminderHint, reminderTagCls: reminderTagCls, careHint: careHint,
     catDonutSegments: catDonutSegments, donutColor: donutColor, loadGold: loadGold, editGoldRetail: editGoldRetail,
+    reportPageUrl: reportPageUrl, openReportWindow: openReportWindow,
     fieldLabelText: fieldLabelText, labelFieldText: labelFieldText,
     doLogin: doLogin, doLogout: doLogout,
     openHandheldLogin: openHandheldLogin, closeHandheldLogin: closeHandheldLogin,

@@ -200,6 +200,9 @@ var I18N = {
     'biz.logs': '全店关键操作自动留痕：谁、在什么时间、对什么做了什么。\n可按时间回溯业务变动，支持一键导出 CSV 备查。',
     'biz.more': '「我的」汇集个人中心入口：客户、借货、维修、采购、委外、日志等管理页，以及系统设置与企业网站预览。\n电脑端这些功能在左侧导航直达。',
     'biz.security': '接入 RFID 防盗通道门、EAS 门禁等防盗设备：设备通过 HTTP 或 WebSocket 上报，布防时段内检测到未放行商品经过即触发告警（界面弹窗+提示音，可配置 Webhook 外发）。\n已售/借出商品自动放行；委外、展览等场景可添加临时放行。\n布防/撤防可手动切换，也可设置每日定时自动布撤防。',
+    'biz.report': '使用 BugTracker 缺陷跟踪系统的免登录上报通道：填写类型（缺陷/需求）、标题与详细说明（可附最多 3 张截图）后提交，受理编号即时返回，由质量团队在 BugTracker 待处理箱统一跟进。',
+    'report.openNew': '🔗 新窗口打开',
+    'report.tip': '上报内容将提交到 BugTracker「外部上报箱」，来源与上报人已自动记录。',
 
     // 门店切换 / 用户与门店授权
     'store.switch': '切换工作门店',
@@ -785,6 +788,9 @@ var I18N = {
     'biz.logs': 'Key shop operations are automatically logged: who, when, what action, on which target.\nYou can trace business changes over time and export CSV with one click.',
     'biz.more': '"Me" gathers personal-center entries: customers, loans, repairs, purchases, outsourcing, logs, store profile and mini-site preview.\nOn PC these are accessible directly from the left sidebar.',
     'biz.security': 'Connect RFID anti-theft gates, EAS gates and other security devices: devices report via HTTP or WebSocket; during armed hours, any unauthorized product passing through triggers an alarm (popup + sound, optional outbound Webhook).\nSold/loaned products pass automatically; add temporary passes for outsourcing, exhibitions, etc.\nArm/disarm manually, or schedule daily automatic switching.',
+    'biz.report': 'Uses the BugTracker login-free reporting channel: fill in type (bug/request), title and details (up to 3 screenshots), submit to get a ticket code; the QA team follows up in the BugTracker inbox.',
+    'report.openNew': '🔗 Open in new window',
+    'report.tip': 'Reports go to the BugTracker "External Inbox"; source and reporter are recorded automatically.',
 
     // Store switching / user-store grants
     'store.switch': 'Switch working store',
@@ -1419,6 +1425,9 @@ var I18N = {
     'biz.logs': 'Le operazioni chiave vengono registrate automaticamente: chi, quando, cosa.\nPuoi tracciare i cambiamenti aziendali ed esportare CSV con un clic.',
     'biz.more': '"Area Personale" raccoglie gli accessi a: clienti, prestiti, riparazioni, acquisti, log, profilo del negozio e anteprima sito.',
     'biz.security': 'Collega varchi RFID antifurto, barriere EAS e altri dispositivi di sicurezza: i dispositivi inviano eventi via HTTP o WebSocket; durante l\'orario di attivazione, il passaggio di prodotti non autorizzati genera un allarme (popup + suono, Webhook opzionale).\nI prodotti venduti/prestati passano automaticamente; aggiungi pass temporanei per lavorazioni esterne, mostre, ecc.\nAttiva/disattiva manualmente o programma l\'orario giornaliero.',
+    'biz.report': 'Utilizza il canale di segnalazione senza login di BugTracker: compila tipo (bug/richiesta), titolo e dettagli (fino a 3 screenshot) e invia; il team qualità gestisce le segnalazioni nella casella esterna.',
+    'report.openNew': '🔗 Apri in nuova finestra',
+    'report.tip': 'Le segnalazioni vengono inviate alla "Casella esterna" di BugTracker; origine e segnalante registrati automaticamente.',
 
     // Cambio negozio / autorizzazioni utenti-negozi
     'store.switch': 'Cambia negozio di lavoro',
