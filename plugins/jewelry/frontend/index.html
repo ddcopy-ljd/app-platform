@@ -1109,10 +1109,6 @@
                 <span class="prod-meta">{{ (s.bridge_key || '').trim() ? t('sb.keySet') : t('sb.keyNone') }}</span>
                 <button class="btn-small" @click="rotateStoreKey(s.id)">{{ t('sb.genKey') }}</button>
               </div>
-              <div class="bridge-keybox" v-if="bridgeOfStore(s.id) && bridgeOfStore(s.id).newKey">
-                <code class="mono" style="flex:1;min-width:0;word-break:break-all">{{ bridgeOfStore(s.id).newKey }}</code>
-                <button class="btn-small" @click="copyStoreKey(s.id)">{{ t('common.copy') }}</button>
-              </div>
 
               <details class="bridge-biz" v-if="(s.bridge_key || '').trim()">
                 <summary>{{ t('sb.assignTitle') }}</summary>
@@ -1302,10 +1298,6 @@
                   <label>{{ t('pa.key') }}</label>
                   <span class="prod-meta">{{ curBridge.has_key ? t('sb.keySet') : t('sb.keyNone') }}</span>
                   <button class="btn-small" @click="rotateStoreKey(curBridge.store_id)">{{ t('sb.genKey') }}</button>
-                </div>
-                <div class="bridge-keybox" v-if="curBridge.newKey">
-                  <code class="mono" style="flex:1;min-width:0;word-break:break-all">{{ curBridge.newKey }}</code>
-                  <button class="btn-small" @click="copyStoreKey(curBridge.store_id)">{{ t('common.copy') }}</button>
                 </div>
                 <details class="bridge-biz">
                   <summary>{{ t('sb.assignTitle') }}</summary>

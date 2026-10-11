@@ -1332,6 +1332,11 @@ function saleItemLimit() {
   return shop ? (Number(shop.sale_item_limit) || 0) : 0;
 }
 function round2(x) { return Math.round((Number(x) || 0) * 100) / 100; }
+// 本地时区的今天（YYYY-MM-DD）：toISOString 是 UTC，上海 0-8 点会默认成昨天
+function localToday() {
+  var d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
 // 单件小计：计件=单价；计重=克重×金价+工费
 function itemSubtotal(it) {
   if (!it) return 0;
@@ -1661,7 +1666,7 @@ function openInbound(store) {
   if (checkFrozen()) return;
   var s = store || ST.stores[0] || { id: 1 };
   ST.inboundStore = s;
-  openSheet('inbound', t('shop.inboundAt', { n: s.name || '' }), { code: '', name: '', category: '', category_code: '', product_type: '', product_type_code: (ST.productTypes[0] && ST.productTypes[0].code) || '99', material: '', weight: 0, size: '', cert: '', cost: 0, price: 0, rfid_epc: '', store_id: s.id, location_id: 0, cert_location_id: 0, biz_date: new Date().toISOString().slice(0, 10) });
+  openSheet('inbound', t('shop.inboundAt', { n: s.name || '' }), { code: '', name: '', category: '', category_code: '', product_type: '', product_type_code: (ST.productTypes[0] && ST.productTypes[0].code) || '99', material: '', weight: 0, size: '', cert: '', cost: 0, price: 0, rfid_epc: '', store_id: s.id, location_id: 0, cert_location_id: 0, biz_date: localToday() });
 }
 
 function addProduct() {
@@ -2590,7 +2595,7 @@ function quickSale() {
     member: null, goldPrice: (ST.bizConfig && Number(ST.bizConfig.gold_price)) || 0,
     _kw: '', _suggest: [], _suggestOpen: false,
     _memList: [], _memOpen: false,
-    biz_date: new Date().toISOString().slice(0, 10),
+    biz_date: localToday(),
     clerk_type: defaultClerkTypeName(), clerk_name: '', _scanning: false,
   });
 }
@@ -2602,7 +2607,7 @@ function openDeposit() {
 
 function openLoan() {
   if (checkFrozen()) return;
-  openSheet('loan', t('sheet.loan'), { direction: 'out', codes: [], party: '', loan_date: new Date().toISOString().slice(0, 10), due_date: '', _rawInput: '' });
+  openSheet('loan', t('sheet.loan'), { direction: 'out', codes: [], party: '', loan_date: localToday(), due_date: '', _rawInput: '' });
 }
 
 // ---- 借货 sheet：扫码加件 ----
@@ -2778,7 +2783,7 @@ function applyCoopEpc(epc) {
 }
 
 function openRepair() {
-  openSheet('repair', t('sheet.repair'), { customer: '', phone: '', item: '', issue: '', est_fee: 0, actual_fee: 0, receive_date: new Date().toISOString().slice(0, 10), promised_date: '', status: '待维修', technician: '', remark: '' });
+  openSheet('repair', t('sheet.repair'), { customer: '', phone: '', item: '', issue: '', est_fee: 0, actual_fee: 0, receive_date: localToday(), promised_date: '', status: '待维修', technician: '', remark: '' });
 }
 
 function editRepair(d) {
@@ -2786,11 +2791,11 @@ function editRepair(d) {
 }
 
 function openPurchase() {
-  openSheet('purchase', t('sheet.purchase'), { supplier: '', product: '', qty: 1, cost: 0, order_date: new Date().toISOString().slice(0, 10), expected_date: '', received_date: '', status: '待发货', paid: 0 });
+  openSheet('purchase', t('sheet.purchase'), { supplier: '', product: '', qty: 1, cost: 0, order_date: localToday(), expected_date: '', received_date: '', status: '待发货', paid: 0 });
 }
 
 function openOutsource() {
-  openSheet('outsource', t('sheet.outsource'), { factory: '', product: '', material: '', weight: 0, gold_price: 0, labor_fee: 0, send_date: new Date().toISOString().slice(0, 10), expected_date: '', received_date: '' });
+  openSheet('outsource', t('sheet.outsource'), { factory: '', product: '', material: '', weight: 0, gold_price: 0, labor_fee: 0, send_date: localToday(), expected_date: '', received_date: '' });
 }
 
 function openCustomer() {
@@ -4134,15 +4139,12 @@ function shopOfStore(s) { return ST.shops.find(function (p) { return p.id === (s
 // 门店内入库：固定门店打开入库面板
 function inboundForStore(s) { openInbound(s); }
 function rotateStoreKey(sid) {
-  api('POST', '/api/stores/' + sid + '/bridge-key', {}).then(function (r) {
-    var b = ST.bridges.find(function (x) { return x.store_id === sid; });
-    if (b) b.newKey = r.key || '';
+  api('POST', '/api/stores/' + sid + '/bridge-key', {}).then(function () {
+    // 密钥只在服务端持有：重置后旧代理自动失效，不回显明文，提示重新下载（新 exe 内嵌新密钥）
+    var s = ST.stores.find(function (x) { return x.id === sid; });
+    if (s && !(s.bridge_key || '').trim()) s.bridge_key = 'set';
     toast(t('sb.keyGen'));
   }).catch(function (e) { toast(e.message, 'error'); });
-}
-function copyStoreKey(sid) {
-  var b = ST.bridges.find(function (x) { return x.store_id === sid; });
-  if (b && b.newKey) copyText(b.newKey);
 }
 function bindBizPrinter(sid, code, printer) {
   api('POST', '/api/stores/' + sid + '/bind-printer',
@@ -4554,7 +4556,7 @@ var app = Vue.createApp({
     startReceive: startReceive, cancelReceive: cancelReceive,
     setRecvOk: setRecvOk, quickReason: quickReason, submitReceive: submitReceive,
     loadBridgeList: loadBridgeList, createStore: createStore, rotateStoreKey: rotateStoreKey,
-    copyStoreKey: copyStoreKey, bindBizPrinter: bindBizPrinter, bizPrinterOf: bizPrinterOf,
+    bindBizPrinter: bindBizPrinter, bizPrinterOf: bizPrinterOf,
     storeControl: storeControl,
     loadShops: loadShops, loadStores: loadStores, storesByShop: storesByShop,
     selectStore: selectStore, bridgeOfStore: bridgeOfStore, storeSecStore: storeSecStore, shopOfStore: shopOfStore,

@@ -307,7 +307,17 @@ def embed_token(target, token):
 
 
 def _ensure_config():
+    # exe 尾部内嵌 Token 拥有最高优先级（下载即用场景）：
+    # 始终覆盖本地 config 中的旧值——密钥重置后重新下载 exe 即自动修正，无需人工清理
+    embedded = _read_embedded_token()
     if not os.path.exists(CONFIG_PATH):
+        if embedded:
+            cfg = dict(DEFAULT_CONFIG)
+            cfg["token"] = embedded
+            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=2)
+            print(f"[config] 已生成配置并写入 exe 内嵌门店 Token（{len(embedded)} 字符）")
+            return cfg
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(DEFAULT_CONFIG, f, ensure_ascii=False, indent=2)
         print(f"[config] 已生成配置 {CONFIG_PATH}，请填写云端地址与桥接密钥后重新运行")
@@ -318,15 +328,13 @@ def _ensure_config():
     merged = dict(DEFAULT_CONFIG)
     merged.update(cfg or {})
     changed = False
+    if embedded and embedded != str(merged.get("token") or "").strip():
+        merged["token"] = embedded
+        changed = True
+        print(f"[config] 使用 exe 内嵌门店 Token（{len(embedded)} 字符），已覆盖本地配置")
     if not str(merged.get("server") or "").strip():
         merged["server"] = input("云端地址（如 https://xxx.yourdomain.com）：").strip()
         changed = True
-    if not str(merged.get("token") or "").strip():
-        # 配置文件无 Token 时兜底读 exe 尾部内嵌值（burn 烧录的分发场景）
-        embedded = _read_embedded_token()
-        if embedded:
-            merged["token"] = embedded
-            print(f"[config] 使用 exe 内嵌门店 Token（{len(embedded)} 字符），跳过手工粘贴")
     if not str(merged.get("token") or "").strip():
         merged["token"] = input("门店Token（云端【店铺管理 → 门店与打印代理】生成）：").strip()
         changed = True
