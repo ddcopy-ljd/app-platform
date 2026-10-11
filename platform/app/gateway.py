@@ -1,14 +1,24 @@
-"""调试入口：签发短期访问票据，经平台网关反向代理到指定插件版本并注入上下文 Header。"""
+"""调试入口：签发访问票据，经平台网关反向代理到指定插件版本并注入上下文 Header。
 
+票证为确定性派生（HMAC）：同 插件+模式+租户+版本 永远得到同一地址，
+平台重启后依旧有效；票证与上下文持久化于 platform/data/gw_tickets.json。
+"""
+
+import hashlib
+import hmac
+import json
 import secrets
 import threading
 import time
 import urllib.error
 import urllib.request
 
+from .config import DATA_DIR
 from .plugin_service import PluginError, resolve_gateway
 
-TICKET_TTL_SECONDS = 30 * 60
+TICKET_TTL_SECONDS = 30 * 24 * 3600        # 30 天：稳定地址按版本生命周期滚动
+_TICKETS_PATH = DATA_DIR / "gw_tickets.json"
+_SECRET_PATH = DATA_DIR / "gw_secret.key"
 # 不转发给上游/下游的逐跳头与平台凭证
 # 注意：authorization 必须放行，插件应用自己的 Bearer 会话令牌靠它传递
 #（平台自身的登录凭证走 HttpOnly Cookie，已被下面的 cookie 规则拦掉，不会泄漏给插件）
@@ -21,17 +31,58 @@ _tickets: dict[str, dict] = {}
 _lock = threading.Lock()
 
 
+def _load_tickets() -> None:
+    global _tickets
+    try:
+        _tickets = {
+            k: v for k, v in
+            json.loads(_TICKETS_PATH.read_text(encoding="utf-8")).items()
+            if isinstance(v, dict) and v.get("expires", 0) > time.time()
+        }
+    except Exception:
+        _tickets = {}
+
+
+def _save_tickets() -> None:
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        _TICKETS_PATH.write_text(json.dumps(_tickets, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _secret() -> bytes:
+    """平台票证签名密钥：首次使用时生成并持久化。"""
+    try:
+        return _SECRET_PATH.read_bytes().strip()
+    except OSError:
+        s = secrets.token_hex(32).encode()
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            _SECRET_PATH.write_bytes(s)
+        except OSError:
+            pass
+        return s
+
+
+def _stable_ticket(plugin_id: str, mode: str, tenant_id: str | None) -> str:
+    # 版本不参与派生：同 插件+模式+租户 永远同一地址；重新签发时把该地址指向刷新到当前解析版本
+    msg = f"{plugin_id}|{mode}|{tenant_id or ''}"
+    return hmac.new(_secret(), msg.encode(), hashlib.sha256).hexdigest()[:20]
+
+
 def issue_ticket(plugin_id: str, mode: str, tenant_id: str | None, version: str | None, operator: str) -> dict:
     ctx = resolve_gateway(plugin_id, mode, tenant_id, version, operator)
-    ticket = secrets.token_urlsafe(24)
     with _lock:
         now = time.time()
         for k in [k for k, t in _tickets.items() if t["expires"] < now]:
             _tickets.pop(k, None)
+        ticket = _stable_ticket(plugin_id, mode, ctx["tenant_id"])
         _tickets[ticket] = {
             "plugin_id": plugin_id, "mode": mode, "tenant_id": ctx["tenant_id"],
             "version": ctx["target_version"], "operator": operator, "expires": now + TICKET_TTL_SECONDS,
         }
+        _save_tickets()
     return {**ctx, "url": f"/gw/{ticket}/"}
 
 
@@ -85,3 +136,6 @@ def _forward(ctx: dict, path: str, method: str, query: str, headers: dict[str, s
         content = resp.read()
         out_headers = {k: v for k, v in resp.headers.items() if k.lower() not in _HOP_HEADERS}
         return resp.status, out_headers, content
+
+
+_load_tickets()   # 模块加载即恢复持久化票证（平台重启后地址依旧有效）
