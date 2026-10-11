@@ -7,6 +7,19 @@ __pycache__/
 platform/data/
 plugins/jewelry/dev_data/
 
+# 平台升级/备份运行时目录
+platform/_backup/
+platform/_upgrade/
+
+# 插件运行时产物（本地调试数据、构建产物、存储、日志）
+plugins/jewelry/data/
+plugins/*/dev_data/
+plugins/*/dist/
+plugins/*/storage/
+plugins/*/__pycache__/
+plugins/*/server_*.log
+plugins/*/server_err.log
+
 # 生成的压缩包（样例包、示例包，可由 tools/build_samples.py 重新生成）
 *.zip
 
