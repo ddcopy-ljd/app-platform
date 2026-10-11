@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 import zipfile
+from datetime import date
 from pathlib import Path
 
 from .config import (
@@ -103,18 +104,38 @@ def _ensure_idle(conn, plugin_id: str) -> None:
 
 
 def _active_tenants(conn, plugin_id: str) -> list[str]:
+    """有有效授权的真实租户：授权生效，且试用未到期（免费/永久有效；欠费/停用/过期除外）。"""
     rows = conn.execute(
-        "SELECT t.id FROM tenant_apps ta JOIN tenants t ON t.id = ta.tenant_id "
-        "WHERE ta.plugin_id=? AND ta.status='active' AND t.status='active' AND t.is_sandbox=0 "
-        "ORDER BY t.id",
+        "SELECT g.tenant_id FROM plugin_grants g JOIN tenants t ON t.id = g.tenant_id "
+        "WHERE g.plugin_id=? AND g.status='active' AND t.status='active' AND t.is_sandbox=0 "
+        "AND (g.pay_status IN ('free','paid') "
+        "     OR (g.pay_status='trial' AND COALESCE(g.paid_until,'9999-12-31') >= date('now','localtime'))) "
+        "ORDER BY g.tenant_id",
         (plugin_id,),
     ).fetchall()
-    return [r["id"] for r in rows]
+    return [r["tenant_id"] for r in rows]
+
+
+def _require_grant(grant: sqlite3.Row | None) -> None:
+    """常规业务访问的授权校验：不满足时抛 403（/app/ 入口据此渲染内置拦截页）。"""
+    if grant is None:
+        raise PluginError("该租户未开通此应用，可在拦截页申请试用或联系服务商开通", 403)
+    if grant["status"] != "active":
+        raise PluginError("此应用的授权已被停用，请联系服务商恢复", 403)
+    if grant["pay_status"] == "arrears":
+        raise PluginError("此应用服务费欠费，已暂停服务，请联系服务商续费", 403)
+    if grant["pay_status"] == "trial" and (
+        not grant["paid_until"] or grant["paid_until"] < date.today().isoformat()
+    ):
+        raise PluginError("此应用的试用期已到期，如需继续使用请联系服务商开通正式服务", 403)
 
 
 def list_plugins() -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM plugins ORDER BY created_at").fetchall()
+        pending = {r["plugin_id"]: r["c"] for r in conn.execute(
+            "SELECT plugin_id, COUNT(*) AS c FROM plugin_trials WHERE status='pending' GROUP BY plugin_id"
+        ).fetchall()}
         result = []
         for p in rows:
             versions = _version_rows(conn, p["id"])
@@ -128,6 +149,7 @@ def list_plugins() -> list[dict]:
                 "running_count": sum(v["service_state"] == "running" for v in versions),
                 "version_count": len(versions),
                 "busy": any(v["status"] in BUSY_STATUSES for v in versions),
+                "pending_trials": pending.get(p["id"], 0),
             })
         return result
 
@@ -182,8 +204,9 @@ def get_plugin_detail(plugin_id: str) -> dict:
             })
             prev = v
         tenants = conn.execute(
-            "SELECT t.id, t.name, t.is_sandbox, COALESCE(ta.status, '') AS app_status "
-            "FROM tenants t LEFT JOIN tenant_apps ta ON ta.tenant_id=t.id AND ta.plugin_id=? "
+            "SELECT t.id, t.name, t.is_sandbox, COALESCE(t.level,'standard') AS level, "
+            "g.status AS grant_status, g.pay_status, g.paid_until, g.note AS grant_note "
+            "FROM tenants t LEFT JOIN plugin_grants g ON g.tenant_id=t.id AND g.plugin_id=? "
             "ORDER BY t.is_sandbox, t.id",
             (plugin_id,),
         ).fetchall()
@@ -370,12 +393,7 @@ def register_package(filename: str, content: bytes, operator: str) -> dict:
                     "VALUES (?,?,?,?,?,?,?,?)",
                     (*meta, m["id"], now_str()),
                 )
-                # 演示：订阅模块尚未实现，新插件默认为所有真实租户开通
-                conn.execute(
-                    "INSERT OR IGNORE INTO tenant_apps (tenant_id, plugin_id) "
-                    "SELECT id, ? FROM tenants WHERE is_sandbox=0",
-                    (m["id"],),
-                )
+                # 新插件不再默认对全租户开放：需管理员按租户授权（plugin_grants）后才可访问
             conn.execute(
                 "INSERT INTO plugin_versions (plugin_id, software_version, data_version, package_name, "
                 "package_size, manifest, uploaded_at) VALUES (?,?,?,?,?,?,?)",
@@ -595,6 +613,41 @@ def _init_worker(plugin_id: str, version_id: int, tenants: list[str]) -> None:
 
 
 # ---- 阶段 A：沙箱试运行准备
+
+def provision_tenant_db(plugin_id: str, tenant_id: str, operator: str) -> dict:
+    """为已授权但尚无数据副本的租户单独初始化数据库（后台运行当前正式版的 init.py）。"""
+    with get_conn() as conn:
+        p = _get_plugin(conn, plugin_id)
+        _ensure_idle(conn, plugin_id)
+        if not p["current_version"]:
+            raise PluginError("该插件尚无正式版本，无需单独初始化租户数据", 400)
+        ver = _find_version(conn, plugin_id, p["current_version"])
+        grant = conn.execute(
+            "SELECT * FROM plugin_grants WHERE plugin_id=? AND tenant_id=?", (plugin_id, tenant_id)
+        ).fetchone()
+        if not grant or grant["status"] != "active":
+            raise PluginError("请先开通该租户的授权，再初始化数据副本", 400)
+        if not conn.execute(
+            "SELECT 1 FROM tenants WHERE id=? AND is_sandbox=0", (tenant_id,)
+        ).fetchone():
+            raise PluginError("企业租户不存在", 404)
+        if db_path(plugin_id, tenant_id, p["current_version"]).exists():
+            raise PluginError("该租户已存在数据副本，无需重复初始化", 409)
+        audit(conn, operator, "初始化租户数据副本", plugin_id,
+              f"租户 {tenant_id} · v{p['current_version']}")
+
+    def _worker():
+        log = TaskLog(ver["id"])
+        try:
+            log.write(f"为授权租户 {tenant_id} 单独初始化数据副本（v{p['current_version']}）")
+            _init_tenant(plugin_id, tenant_id, ver, log)
+            log.write(f"租户 {tenant_id} 数据副本就绪，可访问 /app/{plugin_id}/{tenant_id}/", "ok")
+        except Exception as e:  # noqa: BLE001 - 后台任务需兜底记录
+            log.write(f"租户 {tenant_id} 初始化失败：{e}", "error")
+
+    _spawn(_worker)
+    return {"ok": True, "note": "已开始后台初始化，进度可在「任务日志」中查看"}
+
 
 def start_prepare(plugin_id: str, version_id: int, extra_tenants: list[str], operator: str) -> None:
     with get_conn() as conn:
@@ -824,6 +877,10 @@ def delete_version(plugin_id: str, version_id: int, operator: str) -> dict:
         shutil.rmtree(pkg, ignore_errors=True)
         pkg_gone = not pkg.exists()
 
+    # --- 4.5) 回收持久端口映射 ---
+    from . import runtime  # 局部导入避免循环依赖（runtime 顶层反向依赖本模块）
+    runtime.forget_ports(plugin_id, sw)
+
     # --- 5) 清该版本所有租户数据库快照（含 trial 沙箱库）---
     for f in (TENANT_DB_DIR / plugin_id).glob(f"db_{plugin_id}_*_v{sw}.sqlite*"):
         try:
@@ -892,10 +949,22 @@ def resolve_gateway(plugin_id: str, mode: str, tenant_id: str | None, version: s
             }
             behavior = ["鉴权中间件免密放行，赋予 SUPER_ADMIN", "连接独立沙箱库", "强制 Mock 拦截短信/邮件等外部副作用"]
         elif mode in ("NORMAL", "PRODUCTION_SUPPORT"):
-            if not tenant_id or tenant_id not in _active_tenants(conn, plugin_id):
-                raise PluginError("请选择已开通该应用的真实企业租户")
+            trow = conn.execute(
+                "SELECT id FROM tenants WHERE id=? AND is_sandbox=0 AND status='active'", (tenant_id,)
+            ).fetchone()
+            if not tenant_id or not trow:
+                raise PluginError("企业租户不存在或未激活", 404)
             if mode == "NORMAL":
-                headers = {"X-Resolved-Tenant-ID": tenant_id}
+                grant = conn.execute(
+                    "SELECT * FROM plugin_grants WHERE plugin_id=? AND tenant_id=?",
+                    (plugin_id, tenant_id),
+                ).fetchone()
+                _require_grant(grant)
+                headers = {"X-Resolved-Tenant-ID": tenant_id,
+                           "X-Grant-Pay-Status": grant["pay_status"]}
+                if grant["paid_until"]:
+                    headers["X-Grant-Days-Left"] = str(
+                        (date.fromisoformat(grant["paid_until"]) - date.today()).days)
                 behavior = ["连接真实租户库", "常规业务鉴权", "真实执行外部副作用"]
             else:
                 headers = {

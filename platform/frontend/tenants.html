@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>租户管理</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="frame-page">
+<div id="app" v-cloak>
+  <div class="workspace">
+    <main class="stage">
+      <div class="panel">
+        <div class="panel-title-bar">租户管理<span class="ver-tag">v{{ version }}</span></div>
+
+        <!-- ================= 租户列表 ================= -->
+        <section class="block">
+          <div class="block-head">
+            <h2 class="block-title">企业租户 <span class="count">{{ tenants.length }}</span></h2>
+            <button class="btn primary sm" @click="openCreate">＋ 新建租户</button>
+          </div>
+          <div class="tip" style="margin-bottom:10px">租户ID仅允许字母、数字、下划线，创建后不可修改；新建后需在各插件的「租户授权与付费」中开通授权（新租户还需初始化数据副本）方可访问。</div>
+          <table class="ver-table">
+            <thead><tr><th>租户</th><th>级别</th><th>状态</th><th>已授权插件</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr v-for="t in tenants" :key="t.id">
+                <td>
+                  <div class="cell-col">
+                    <b>{{ t.name }}</b>
+                    <span class="sub mono">{{ t.id }}<template v-if="t.is_sandbox"> · 沙箱</template></span>
+                  </div>
+                </td>
+                <td>
+                  <select v-if="!t.is_sandbox" class="fld" :value="t.level" :disabled="busy" @change="setLevel(t, $event)">
+                    <option value="standard">标准版</option>
+                    <option value="premium">高级版</option>
+                    <option value="enterprise">企业版</option>
+                  </select>
+                  <span v-else class="sub">—</span>
+                </td>
+                <td>
+                  <span class="badge" :class="t.is_sandbox ? 'b-gray' : (t.status === 'active' ? 'b-ok' : 'b-err')">
+                    {{ t.is_sandbox ? '沙箱' : (t.status === 'active' ? '正常' : '已停用') }}
+                  </span>
+                </td>
+                <td>
+                  <button class="btn ghost sm" @click="openGrants(t)">🧩 {{ t.granted_plugins }} 个插件</button>
+                </td>
+                <td>
+                  <div v-if="!t.is_sandbox" class="cell-col">
+                    <button class="btn ghost sm" @click="openRename(t)">✏ 改名</button>
+                    <button v-if="t.status === 'active'" class="btn danger-ghost sm" @click="toggleStatus(t, 'inactive')">⏸ 停用</button>
+                    <button v-else class="btn ghost sm" @click="toggleStatus(t, 'active')">▶ 启用</button>
+                  </div>
+                  <span v-else class="sub">系统内置</span>
+                </td>
+              </tr>
+              <tr v-if="!tenants.length"><td colspan="5" class="ver-empty">暂无租户，点击「新建租户」创建</td></tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+
+      <!-- ================= 新建 / 改名 ================= -->
+      <div v-if="modal === 'edit'" class="mask" @click.self="modal = null">
+        <div class="modal">
+          <h3>{{ form.isNew ? '🏢 新建租户' : '✏ 租户改名 · ' + form.oldName }}</h3>
+          <div v-if="form.isNew" class="grant-field">
+            <label>租户ID（字母 / 数字 / 下划线，创建后不可改）</label>
+            <input v-model.trim="form.id" class="fld" maxlength="32" placeholder="如 huanan01" autocomplete="off">
+          </div>
+          <div class="grant-field">
+            <label>租户名称</label>
+            <input v-model.trim="form.name" class="fld" maxlength="64" placeholder="如 华南分公司" autocomplete="off">
+          </div>
+          <div v-if="form.isNew" class="grant-field">
+            <label>租户级别</label>
+            <select v-model="form.level" class="fld">
+              <option value="standard">标准版</option>
+              <option value="premium">高级版</option>
+              <option value="enterprise">企业版</option>
+            </select>
+          </div>
+          <div class="modal-actions">
+            <button class="btn ghost" @click="modal = null">取消</button>
+            <button class="btn primary" :disabled="busy" @click="saveTenant">{{ busy ? '保存中…' : '保存' }}</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 授权明细 ================= -->
+      <div v-if="modal === 'grants'" class="mask" @click.self="modal = null">
+        <div class="modal">
+          <h3>🧩 {{ grantsTenant.name }}（{{ grantsTenant.id }}）的插件授权</h3>
+          <div v-if="!grantDetail.length" class="ver-empty">尚未授权任何插件<br>请到对应插件的「租户授权与付费」区块开通</div>
+          <table v-else class="ver-table">
+            <thead><tr><th>插件</th><th>付费状态</th><th>到期日</th><th>授权状态</th></tr></thead>
+            <tbody>
+              <tr v-for="g in grantDetail" :key="g.plugin_id">
+                <td>{{ g.icon }} {{ g.plugin_name }}<span class="sub" style="margin-left:6px">{{ g.plugin_id }}</span></td>
+                <td>{{ payLabel(g) }}</td>
+                <td>{{ g.paid_until ? g.paid_until + (g.days_left !== null && g.days_left >= 0 ? '（剩 ' + g.days_left + ' 天）' : '') : '—' }}</td>
+                <td><span class="badge" :class="g.status === 'active' ? 'b-ok' : 'b-err'">{{ g.status === 'active' ? '生效' : '已停用' }}</span></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="modal-actions">
+            <button class="btn ghost" @click="modal = null">关闭</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 通用确认 ================= -->
+      <div v-if="modal === 'confirm'" class="mask" @click.self="modal = null">
+        <div class="modal">
+          <h3>{{ confirmBox.title }}</h3>
+          <ul class="check-list"><li v-for="(l, i) in confirmBox.lines" :key="i">{{ l }}</li></ul>
+          <div class="modal-actions">
+            <button class="btn ghost" @click="modal = null">取消</button>
+            <button class="btn" :class="confirmBox.btnClass" @click="confirmBox.onOk">{{ confirmBox.okText }}</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="toastMsg" class="toast">{{ toastMsg }}</div>
+    </main>
+  </div>
+</div>
+<script src="/static/vendor/vue.global.prod.js"></script>
+<script src="/static/common.js"></script>
+<script src="/static/tenants.js"></script>
+</body>
+</html>

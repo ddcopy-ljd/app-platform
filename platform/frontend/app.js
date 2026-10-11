@@ -7,6 +7,7 @@ const { api, getToken, setToken, loadPlatformVersion } = Platform;
 const FRAME_VER = Date.now();
 const MENUS = [
   { key: 'plugins', icon: '🧩', label: '应用插件管理', src: `/static/plugins.html?v=${FRAME_VER}` },
+  { key: 'tenants', icon: '🏢', label: '租户管理', src: `/static/tenants.html?v=${FRAME_VER}` },
   { key: 'traffic', icon: '📊', label: '服务流量统计', src: `/static/traffic.html?v=${FRAME_VER}` },
 ];
 

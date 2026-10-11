@@ -6,19 +6,21 @@ import threading
 
 from fastapi import (Depends, FastAPI, File, HTTPException, Request, UploadFile,
                      WebSocket)
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
+                               RedirectResponse, Response)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.gzip import GZipMiddleware
 
 from . import gateway as gw
+from . import grants as grant_svc
 from . import platform_upgrade as pupgrade
 from . import plugin_service as svc
 from . import runtime
 from . import traffic
 from .config import AGENT_API_KEY, FRONTEND_DIR, MAX_PACKAGE_BYTES, PACKAGES_DIR, SESSION_TTL_SECONDS
-from .db import get_conn, init_db
+from .db import audit, get_conn, init_db
 from .security import (SESSION_COOKIE, cookie_user, create_session, current_user, drop_session,
                        verify_password)
 from .ws_relay import WSClient
@@ -56,6 +58,8 @@ def _startup() -> None:
     # 平台启动后自动拉起各插件的正式（及试运行）版本服务，便于调试入口开箱即用。
     # 放后台线程执行，避免多个服务逐个启动（含端口探测超时）拖慢平台就绪。
     threading.Thread(target=_auto_start_services, name="auto-start-services", daemon=True).start()
+    # 服务守护：每 15 秒巡检运行中的插件进程，意外退出自动拉起（120 秒内连崩 3 次放弃）。
+    runtime.start_watchdog()
 
 
 def _auto_start_services() -> None:
@@ -148,7 +152,10 @@ def maintenance(_: dict = Depends(current_user)):
 @app.get("/api/tenants")
 def tenants(_: dict = Depends(current_user)):
     with get_conn() as conn:
-        rows = conn.execute("SELECT id, name, is_sandbox FROM tenants ORDER BY is_sandbox, id").fetchall()
+        rows = conn.execute(
+            "SELECT t.id, t.name, t.is_sandbox, COALESCE(t.level,'standard') AS level, t.status, "
+            "(SELECT COUNT(*) FROM plugin_grants g WHERE g.tenant_id=t.id AND g.status='active') AS granted_plugins "
+            "FROM tenants t ORDER BY t.is_sandbox, t.id").fetchall()
     return [dict(r) for r in rows]
 
 
@@ -279,6 +286,184 @@ def delete_version(plugin_id: str, version_id: int, user: dict = Depends(current
 def gateway_ticket(plugin_id: str, body: GatewayIn, user: dict = Depends(current_user)):
     runtime.sync_states()
     return gw.issue_ticket(plugin_id, body.mode, body.tenant_id, body.version, user["username"])
+
+
+# ---------------------------------------------------------------- 租户管理
+
+TENANT_ID_RE = re.compile(r"^[A-Za-z0-9_]{1,32}$")
+
+
+class TenantCreateIn(BaseModel):
+    id: str = Field(max_length=32)
+    name: str = Field(max_length=64)
+    level: str = Field(default="standard", max_length=20)
+
+
+class TenantUpdateIn(BaseModel):
+    name: str | None = Field(default=None, max_length=64)
+    level: str | None = Field(default=None, max_length=20)
+
+
+class TenantStatusIn(BaseModel):
+    status: str = Field(max_length=20)
+
+
+@app.post("/api/tenants")
+def create_tenant(body: TenantCreateIn, user: dict = Depends(current_user)):
+    """新建企业租户（ID 仅字母/数字/下划线，用作库文件名片段）。"""
+    tid = body.id.strip()
+    name = body.name.strip()
+    if not TENANT_ID_RE.fullmatch(tid):
+        raise HTTPException(status_code=400, detail="租户ID仅允许字母、数字、下划线（1-32位）")
+    if not name:
+        raise HTTPException(status_code=400, detail="租户名称不能为空")
+    if body.level not in grant_svc.TENANT_LEVELS:
+        raise HTTPException(status_code=400, detail="未知租户级别")
+    with get_conn() as conn:
+        if conn.execute("SELECT 1 FROM tenants WHERE id=?", (tid,)).fetchone():
+            raise HTTPException(status_code=409, detail=f"租户 {tid} 已存在")
+        conn.execute("INSERT INTO tenants (id, name, level, is_sandbox, status) VALUES (?,?,?,0,'active')",
+                     (tid, name, body.level))
+        audit(conn, user["username"], "新建租户", tid, f"{name} · {grant_svc.LEVEL_LABELS[body.level]}")
+    return {"ok": True}
+
+
+@app.put("/api/tenants/{tenant_id}")
+def update_tenant(tenant_id: str, body: TenantUpdateIn, user: dict = Depends(current_user)):
+    """编辑租户名称 / 级别（standard/premium/enterprise）。"""
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM tenants WHERE id=?", (tenant_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="租户不存在")
+        if row["is_sandbox"]:
+            raise HTTPException(status_code=400, detail="沙箱租户不可编辑")
+        sets, params, details = [], [], []
+        if body.name is not None:
+            name = body.name.strip()
+            if not name:
+                raise HTTPException(status_code=400, detail="租户名称不能为空")
+            if name != row["name"]:
+                sets.append("name=?")
+                params.append(name)
+                details.append(f"名称「{row['name']}」→「{name}」")
+        if body.level is not None:
+            if body.level not in grant_svc.TENANT_LEVELS:
+                raise HTTPException(status_code=400, detail="未知租户级别")
+            if body.level != row["level"]:
+                sets.append("level=?")
+                params.append(body.level)
+                details.append(f"级别 {row['level']}→{body.level}")
+        if not sets:
+            return {"ok": True}
+        params.append(tenant_id)
+        conn.execute(f"UPDATE tenants SET {', '.join(sets)} WHERE id=?", params)
+        audit(conn, user["username"], "编辑租户", tenant_id, "；".join(details))
+    return {"ok": True}
+
+
+@app.post("/api/tenants/{tenant_id}/status")
+def tenant_status(tenant_id: str, body: TenantStatusIn, user: dict = Depends(current_user)):
+    """停用/启用租户：停用后该租户对所有插件的访问立即被网关拦截，数据保留。"""
+    if body.status not in ("active", "inactive"):
+        raise HTTPException(status_code=400, detail="状态仅支持 active / inactive")
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM tenants WHERE id=?", (tenant_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="租户不存在")
+        if row["is_sandbox"]:
+            raise HTTPException(status_code=400, detail="沙箱租户不可停用")
+        if row["status"] != body.status:
+            conn.execute("UPDATE tenants SET status=? WHERE id=?", (body.status, tenant_id))
+            audit(conn, user["username"], "停用租户" if body.status == "inactive" else "启用租户",
+                  tenant_id, row["name"])
+    return {"ok": True}
+
+
+@app.get("/api/tenants/{tenant_id}/grants")
+def tenant_grants_detail(tenant_id: str, _: dict = Depends(current_user)):
+    """该租户在各插件上的授权明细（租户管理页展开行）。"""
+    with get_conn() as conn:
+        if not conn.execute("SELECT 1 FROM tenants WHERE id=?", (tenant_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="租户不存在")
+        rows = conn.execute(
+            "SELECT g.plugin_id, p.name AS plugin_name, p.icon, g.pay_status, g.status, g.paid_until "
+            "FROM plugin_grants g JOIN plugins p ON p.id=g.plugin_id WHERE g.tenant_id=? "
+            "ORDER BY g.plugin_id", (tenant_id,)).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["days_left"] = grant_svc.days_left(r["paid_until"])
+        out.append(d)
+    return out
+
+
+# ---------------------------------------------------------------- 租户授权与试用付费
+
+class GrantIn(BaseModel):
+    tenant_id: str = Field(max_length=64)
+    pay_status: str = Field(max_length=20)
+    paid_until: str | None = Field(default=None, max_length=10)
+    note: str = Field(default="", max_length=200)
+
+
+class GrantStatusIn(BaseModel):
+    status: str = Field(max_length=20)
+
+
+class TrialReviewIn(BaseModel):
+    action: str = Field(max_length=10)
+
+
+class TrialApplyIn(BaseModel):
+    plugin_id: str = Field(max_length=64)
+    tenant_id: str = Field(max_length=64)
+    contact: str = Field(default="", max_length=120)
+
+
+@app.get("/api/plugins/{plugin_id}/grants")
+def grants_overview(plugin_id: str, _: dict = Depends(current_user)):
+    """授权台账 + 试用申请记录（授权管理区块数据源）。"""
+    return grant_svc.plugin_grants_overview(plugin_id)
+
+
+@app.post("/api/plugins/{plugin_id}/grants")
+def save_grant(plugin_id: str, body: GrantIn, user: dict = Depends(current_user)):
+    """开通/更新授权（trial 缺省到期日=今天起 30 天；free/arrears 忽略到期日）。"""
+    grant_svc.upsert_grant(plugin_id, body.tenant_id, body.pay_status,
+                           body.paid_until, body.note, user["username"])
+    return {"ok": True}
+
+
+@app.post("/api/plugins/{plugin_id}/grants/{tenant_id}/status")
+def grant_status_change(plugin_id: str, tenant_id: str, body: GrantStatusIn,
+                        user: dict = Depends(current_user)):
+    grant_svc.set_grant_status(plugin_id, tenant_id, body.status, user["username"])
+    return {"ok": True}
+
+
+@app.post("/api/plugins/{plugin_id}/grants/{tenant_id}/provision")
+def grant_provision(plugin_id: str, tenant_id: str, user: dict = Depends(current_user)):
+    """为已授权但尚无数据副本的租户后台初始化数据库。"""
+    return grant_svc.provision(plugin_id, tenant_id, user["username"])
+
+
+@app.delete("/api/plugins/{plugin_id}/grants/{tenant_id}")
+def grant_delete(plugin_id: str, tenant_id: str, user: dict = Depends(current_user)):
+    grant_svc.delete_grant(plugin_id, tenant_id, user["username"])
+    return {"ok": True}
+
+
+@app.post("/api/plugins/{plugin_id}/trials/{trial_id}/review")
+def trial_review(plugin_id: str, trial_id: int, body: TrialReviewIn,
+                 user: dict = Depends(current_user)):
+    """审批试用申请：approve 生成 30 天试用授权；reject 拒绝。"""
+    return grant_svc.review_trial(plugin_id, trial_id, body.action, user["username"])
+
+
+@app.post("/api/public/trial-apply")
+def public_trial_apply(body: TrialApplyIn):
+    """拦截页公开提交试用申请（无需平台登录态；插件库不直连平台库）。"""
+    return grant_svc.apply_trial(body.plugin_id, body.tenant_id, body.contact)
 
 
 # ---------------------------------------------------------------- AI Agent 升级流水线
@@ -489,6 +674,20 @@ _MACHINE_PATHS = {"api/stores/bridge-whoami", "api/print-agent/download"}
 # 插件 SPA 自管理登录：平台网关只做路由转发，不查平台 Cookie 登录态。
 # 插件前端自带独立登录页（v-if="!token" 渲染登录表单），插件后端各 API 端点自行校验 Bearer token。
 # operator 仅作审计标识，无平台会话时记为 "anonymous"。
+def _append_body(content: bytes, snippet: str) -> bytes:
+    """把注入片段插入 HTML 的 </body> 前（无 body 标签则追加到末尾）。"""
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        return content
+    idx = text.lower().rfind("</body>")
+    if idx >= 0:
+        text = text[:idx] + snippet + text[idx:]
+    else:
+        text += snippet
+    return text.encode("utf-8")
+
+
 @app.api_route("/app/{plugin_id}/{tenant_id}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def app_entry(plugin_id: str, tenant_id: str, path: str, request: Request):
     if path in _MACHINE_PATHS:
@@ -500,12 +699,22 @@ async def app_entry(plugin_id: str, tenant_id: str, path: str, request: Request)
         except HTTPException:
             operator = "anonymous"
     body = await request.body()
-    status, headers, content = await run_in_threadpool(
-        gw.proxy_app, plugin_id, tenant_id, operator,
-        path, request.method, request.url.query, dict(request.headers), body,
-    )
+    try:
+        status, headers, content = await run_in_threadpool(
+            gw.proxy_app, plugin_id, tenant_id, operator,
+            path, request.method, request.url.query, dict(request.headers), body
+        )
+    except svc.PluginError as e:
+        if e.status_code == 403:
+            # 未开通/试用到期/欠费/停用：返回内置拦截页（含试用申请表单），而非 JSON 报错
+            page = await run_in_threadpool(grant_svc.intercept_page, plugin_id, tenant_id, str(e))
+            return HTMLResponse(page, status_code=403)
+        raise
     if "text/html" in _content_type(headers).lower():
         content = _rewrite_app_base(content, f"/app/{plugin_id}/{tenant_id}/")
+        banner = await run_in_threadpool(grant_svc.tenant_banner, plugin_id, tenant_id)
+        if banner:
+            content = _append_body(content, banner)   # 试用/付费到期前 10 天顶部提示条
         _set_header(headers, "Cache-Control", "no-store")  # 注入页禁止缓存，避免浏览器复用未注入的旧副本
     return Response(content=content, status_code=status, headers=headers)
 

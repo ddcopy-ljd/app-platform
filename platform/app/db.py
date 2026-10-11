@@ -38,6 +38,28 @@ CREATE TABLE IF NOT EXISTS tenant_apps (
     status TEXT NOT NULL DEFAULT 'active',
     PRIMARY KEY (tenant_id, plugin_id)
 );
+CREATE TABLE IF NOT EXISTS plugin_grants (
+    plugin_id TEXT NOT NULL REFERENCES plugins(id),
+    tenant_id TEXT NOT NULL REFERENCES tenants(id),
+    pay_status TEXT NOT NULL DEFAULT 'trial',   -- trial 试用 | free 免费 | paid 已付费 | arrears 欠费
+    status TEXT NOT NULL DEFAULT 'active',      -- active | suspended
+    paid_until TEXT,                            -- 试用/付费到期日 YYYY-MM-DD；free 为空
+    note TEXT NOT NULL DEFAULT '',
+    granted_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (plugin_id, tenant_id)
+);
+CREATE TABLE IF NOT EXISTS plugin_trials (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plugin_id TEXT NOT NULL REFERENCES plugins(id),
+    tenant_id TEXT NOT NULL REFERENCES tenants(id),
+    contact TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',     -- pending | approved | rejected
+    requested_at TEXT NOT NULL,
+    reviewed_at TEXT,
+    reviewer TEXT,
+    trial_end TEXT
+);
 CREATE TABLE IF NOT EXISTS plugin_versions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     plugin_id TEXT NOT NULL REFERENCES plugins(id),
@@ -69,6 +91,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 
 # 可重复执行的字段升级：(表, 字段, 定义)
 COLUMN_MIGRATIONS = [
+    ("tenants", "level", "TEXT NOT NULL DEFAULT 'standard'"),   # 租户级别：standard | premium | enterprise
     ("plugins", "app_status", "TEXT NOT NULL DEFAULT 'OPEN'"),
     ("plugin_versions", "service_state", "TEXT NOT NULL DEFAULT 'stopped'"),
     ("plugin_versions", "service_port", "INTEGER"),
@@ -135,6 +158,13 @@ def init_db() -> None:
             conn.executemany(
                 "INSERT INTO tenants (id, name, is_sandbox) VALUES (?,?,?)", DEMO_TENANTS
             )
+        # 存量开通关系回填为授权台账（免费、生效），保证升级后既有租户访问不中断；幂等
+        ts = now_str()
+        conn.execute(
+            "INSERT OR IGNORE INTO plugin_grants (plugin_id, tenant_id, pay_status, status, granted_at, updated_at) "
+            "SELECT ta.plugin_id, ta.tenant_id, 'free', 'active', ?, ? FROM tenant_apps ta",
+            (ts, ts),
+        )
         # 服务重启时中断的后台任务回退到可重试状态
         conn.execute("UPDATE plugins SET gateway_state='NORMAL' WHERE gateway_state='MAINTENANCE'")
         conn.execute(

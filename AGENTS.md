@@ -44,6 +44,7 @@
    - `SANDBOX`：连沙箱库，**必须 Mock/拦截所有短信、邮件、Webhook、扣费等对外动作**；
    - `PRODUCTION_SUPPORT`：连真实库、最高权限，**每一笔修改强制审计日志**，前端红色边框防呆。
 5. 设备/代理的在线状态**只信其上报帧**刷新 `last_seen`，服务端严禁自己刷新（否则静默掉线会永远显示在线）。
+6. **插件访问按租户授权（plugin_grants）**：新插件上传**不再默认对全租户开通**，管理员在插件详情「租户授权与付费」逐租户开通；`/app/` 未开通/试用到期/欠费/停用一律 403 返回平台内置拦截页（含公开试用申请 `POST /api/public/trial-apply`，插件不得直连平台库写入申请）；`/gw/` 管理员调试不卡授权。试用=批准即 30 天（`plugin_trials` 审批）；付费=手动台账（trial/free/paid/arrears + paid_until）；试用到期自动拦截，付费到期仅黄色横幅提醒；到期前 10 天平台黄条 + 租户端网关注入顶部横幅。授权给「从未纳入数据任务」的租户时无数据副本，需在其行内点「初始化数据」（provision）建库。
 
 ---
 
@@ -161,7 +162,8 @@
 - **系统管理 adminSub 入口不能重复**：品类/标签模板/企业资料等"企业整体级"功能，如果已经搬移到 shops section（总部管理），必须从 `ADMIN_SUBS` 数组里移除对应 key；`normalizeAdminSub()` 自动校正但 UI 上仍会渲染空按钮，造成用户困惑。
 - **移动端死代码 section 及时清理**：旧 `v-if="!isPc && tab==='profile'"` 在 `go('profile')` 重定向后永远不渲染，是隐藏的 Vue 模板编译坑高发区（残留模板可能被动态组件编译）；改完导航后顺手删或改为跳转入口。
 - **refreshAll() 必须包含所有依赖 curStoreId 的 API**：切店后 `refreshAll()` 里漏了 `loadTransfers()` → 切到分店A看不到该店发起的调拨（还停留上一个门店的 transfersOut 数据）；判断一个状态对象是否依赖 curStoreId 很简单——后端 API 路径里有 store_id 过滤或 scope=out/in 这样的视角参数，就必须在 refreshAll 里刷新；同类漏刷新还会发生在：scope 化的列表（调拨/协同任务/扫码会话）、需要门店级鉴权的配置项、门店视角统计等。
-- **调拨 scan_codes 是"扫码额外商品"，不是"手动勾选商品的 EPC 再发一遍"**：前端 submitTransfer() 之前把同一批勾选商品同时塞进 product_ids 和 scan_codes → 后端 scan_codes 解析成 scan_pids 后与 product_ids 合并去重，`len(raw_ids) != len(ids)` 抛 400 "调拨商品存在重复选择"；scan_codes 真正用途是协同扫描面板扫进来的、不在 transferSel 里的额外商品；修法：前端当前无此场景直接砍 scan_codes（方案 B）；后端 `scan_pids` 解析时跳过已在 body.product_ids 里的 pid（方案 C 防御式）。
+- **dataVersion 不能大于 softwareVersion**（平台 `_validate_manifest` 按点分元组比较，如 1.3.0 > 1.2.16.x 直接 400 拒绝上传）；结构变更递增 dataVersion 时取「不高于当前 softwareVersion 前三段」的号（如 1.2.16.x 周期用 1.2.16）。
+- 调拨 scan_codes 是"扫码额外商品"，不是"手动勾选商品的 EPC 再发一遍"：前端 submitTransfer() 之前把同一批勾选商品同时塞进 product_ids 和 scan_codes → 后端 scan_codes 解析成 scan_pids 后与 product_ids 合并去重，`len(raw_ids) != len(ids)` 抛 400 "调拨商品存在重复选择"；scan_codes 真正用途是协同扫描面板扫进来的、不在 transferSel 里的额外商品；修法：前端当前无此场景直接砍 scan_codes（方案 B）；后端 `scan_pids` 解析时跳过已在 body.product_ids 里的 pid（方案 C 防御式）。
 
 ---
 
