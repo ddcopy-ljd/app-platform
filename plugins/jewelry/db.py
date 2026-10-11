@@ -775,7 +775,7 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         # 1.2.0 定金增强：交付时间窗口 + 交付要求备注
         ("deposits", "delivery_time", "TEXT DEFAULT ''"),
         ("deposits", "deliver_requirements", "TEXT DEFAULT ''"),
-        # 1.3.0 客情维护：结婚纪念日
+        # 1.2.16 客情维护：结婚纪念日
         ("customers", "anniversary", "TEXT DEFAULT ''"),
     ]
     for table, col, decl in alters:
