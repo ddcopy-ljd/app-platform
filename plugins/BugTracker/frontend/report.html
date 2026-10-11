@@ -7,73 +7,141 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { font-size: 16px; }
-    .seg-active { background: #2563eb; color: #fff; }
+    /* 主题合同：颜色全部走 CSS 变量，默认蓝主题；嵌入方可经 URL 参数覆盖（见 applyTheme） */
+    :root {
+      --c-bg: #f1f5f9; --c-card: #ffffff; --c-text: #1e293b; --c-muted: #475569;
+      --c-border: #cbd5e1; --c-accent: #2563eb; --c-accent-press: #1d4ed8;
+      --c-hd-from: #2563eb; --c-hd-to: #4f46e5;
+      --c-on-accent: #ffffff; --c-on-hd: #ffffff;
+      --c-on-hd-sub: rgba(255,255,255,.8); --c-hd-banner: rgba(255,255,255,.15);
+      --c-focus: rgba(37,99,235,.18); --c-soft: #f1f5f9;
+    }
+    body { background: var(--c-bg); color: var(--c-text); }
+    .th-header { background: linear-gradient(90deg, var(--c-hd-from), var(--c-hd-to)); color: var(--c-on-hd); }
+    .th-sub { color: var(--c-on-hd-sub); }
+    .th-banner { background: var(--c-hd-banner); }
+    .th-card { background: var(--c-card); }
+    .th-muted { color: var(--c-muted); }
+    .th-accent { color: var(--c-accent); }
+    .th-bd { border-color: var(--c-border); }
+    .th-input { border: 1px solid var(--c-border); background: var(--c-card); color: var(--c-text); }
+    .th-input:focus { border-color: var(--c-accent); box-shadow: 0 0 0 3px var(--c-focus); }
+    .th-dash { border-color: var(--c-border); color: var(--c-muted); }
+    .seg { border: 1px solid var(--c-border); }
+    .seg-active { background: var(--c-accent); color: var(--c-on-accent); border-color: var(--c-accent); }
+    .seg-off { color: var(--c-muted); }
+    .th-btn-primary { background: var(--c-accent); color: var(--c-on-accent); }
+    .th-btn-primary:active { background: var(--c-accent-press); }
+    .th-btn-soft { background: var(--c-soft); color: var(--c-text); }
   </style>
 </head>
-<body class="bg-slate-100 min-h-screen">
+<body class="min-h-screen">
   <script>
     /* 网关注入 window.__APP_BASE__（/app/bugtracker/{tenant}/）；直连为空串 */
     var API = (window.__APP_BASE__ || '').replace(/\/+$/, '');
     var Q = new URLSearchParams(location.search);
+
+    /* 主题适配：嵌入方通过 URL 参数传十六进制色（仅校验 #rgb/#rrggbb，防 CSS 注入）
+       accent 主色 | hd_from/hd_to 顶栏渐变 | bg 页面背景 | card 卡片背景
+       text 正文 | muted 次要文字 | border 描边；未传的参数保持默认蓝主题 */
+    (function applyTheme() {
+      var HEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+      function ok(v) { v = (v || '').trim(); return HEX.test(v) ? v : ''; }
+      function norm(h) { h = h.slice(1); return h.length === 3 ? h[0]+h[0]+h[1]+h[1]+h[2]+h[2] : h; }
+      function rgb(h) { h = norm(h); return [parseInt(h.substr(0,2),16), parseInt(h.substr(2,2),16), parseInt(h.substr(4,2),16)]; }
+      function lum(c) { var a = c.map(function (v) { v /= 255; return v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4); }); return 0.2126*a[0] + 0.7152*a[1] + 0.0722*a[2]; }
+      function toHex(c) { return '#' + c.map(function (v) { var s = Math.max(0, Math.min(255, Math.round(v))).toString(16); return s.length < 2 ? '0' + s : s; }).join(''); }
+      function shade(h, f) { return toHex(rgb(h).map(function (v) { return v * f; })); }
+      function rgba(h, a) { var c = rgb(h); return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')'; }
+      /* 按 WCAG 对比度交叉点（L≈0.25）自动选深/浅文字色 */
+      function onColor(l) { return l > 0.25 ? '#1f2937' : '#ffffff'; }
+      var R = document.documentElement.style;
+      var accent = ok(Q.get('accent')), hdF = ok(Q.get('hd_from')), hdT = ok(Q.get('hd_to'));
+      var bg = ok(Q.get('bg')), card = ok(Q.get('card')), txt = ok(Q.get('text'));
+      var mut = ok(Q.get('muted')), bd = ok(Q.get('border'));
+      if (accent) {
+        R.setProperty('--c-accent', accent);
+        R.setProperty('--c-accent-press', shade(accent, 0.82));
+        R.setProperty('--c-focus', rgba(accent, 0.18));
+        R.setProperty('--c-on-accent', onColor(lum(rgb(accent))));
+        if (!hdF) hdF = accent;
+      }
+      if (hdF) R.setProperty('--c-hd-from', hdF);
+      if (hdT) R.setProperty('--c-hd-to', hdT);
+      var onHd = onColor((lum(rgb(hdF || '#2563eb')) + lum(rgb(hdT || '#4f46e5'))) / 2);
+      R.setProperty('--c-on-hd', onHd);
+      R.setProperty('--c-on-hd-sub', rgba(onHd, 0.8));
+      R.setProperty('--c-hd-banner', rgba(onHd, 0.15));
+      if (bg) R.setProperty('--c-bg', bg);
+      if (card) R.setProperty('--c-card', card);
+      if (txt) R.setProperty('--c-text', txt);
+      if (mut) R.setProperty('--c-muted', mut);
+      if (bd) R.setProperty('--c-border', bd);
+      var cardL = lum(rgb(card || '#ffffff'));
+      if (!bd && cardL < 0.4) R.setProperty('--c-border', rgba(txt || '#e2e8f0', 0.35));
+      var soft = accent ? rgba(accent, 0.12) : '#f1f5f9';
+      if (cardL < 0.4) soft = rgba(txt || '#ffffff', 0.16);
+      R.setProperty('--c-soft', soft);
+    })();
   </script>
 
   <!-- 顶栏 -->
-  <header class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 pt-5 pb-6">
-    <div class="max-w-xl mx-auto">
+  <header class="th-header px-4 pt-5 pb-6">
+    <div class="w-full">
       <div class="flex items-center gap-2">
         <span class="text-2xl">🐞</span>
         <div>
           <h1 class="text-lg font-bold leading-tight">问题上报</h1>
-          <p class="text-blue-100" style="font-size:14px">提交后由质量团队跟进处理</p>
+          <p class="th-sub" style="font-size:14px">提交后由质量团队跟进处理</p>
         </div>
       </div>
-      <div id="srcBanner" class="hidden mt-3 bg-white/15 rounded-lg px-3 py-2" style="font-size:14px">
-        正在为 <span id="srcName" class="font-bold"></span> 上报
+      <div id="srcBanner" class="hidden th-banner mt-3 rounded-lg px-3 py-2" style="font-size:14px">
+        <span id="bannerSrc" class="font-bold"></span><span id="bannerUser" class="th-sub"></span>
       </div>
     </div>
   </header>
 
-  <main class="max-w-xl mx-auto px-4 py-5">
+  <main class="w-full px-4 py-5">
 
     <!-- 表单态 -->
     <div id="formBox" class="space-y-4">
-      <div class="bg-white rounded-xl shadow-sm p-4 space-y-4">
+      <div class="th-card rounded-xl shadow-sm p-4 space-y-4">
 
         <!-- 类型 -->
         <div>
-          <label class="block text-slate-600 font-medium mb-1.5" style="font-size:14px">类型 <span class="text-red-500">*</span></label>
+          <label class="block th-muted font-medium mb-1.5" style="font-size:14px">类型 <span class="text-red-500">*</span></label>
           <div class="grid grid-cols-2 gap-2" id="kindSeg">
-            <button type="button" data-kind="缺陷" class="seg-active rounded-lg border border-slate-300 py-2.5 font-medium">🐞 缺陷</button>
-            <button type="button" data-kind="需求" class="rounded-lg border border-slate-300 py-2.5 font-medium text-slate-600">✨ 需求</button>
+            <button type="button" data-kind="缺陷" class="seg seg-active rounded-lg py-2.5 font-medium">🐞 缺陷</button>
+            <button type="button" data-kind="需求" class="seg rounded-lg py-2.5 font-medium seg-off">✨ 需求</button>
           </div>
         </div>
 
-        <!-- 来源插件 -->
-        <div>
-          <label class="block text-slate-600 font-medium mb-1.5" style="font-size:14px">来源应用 <span class="text-red-500">*</span></label>
+        <!-- 来源插件：URL 带参时自动带入并隐藏，不可人工修改 -->
+        <div id="srcField">
+          <label class="block th-muted font-medium mb-1.5" style="font-size:14px">来源应用 <span class="text-red-500">*</span></label>
           <input id="fSource" maxlength="32" placeholder="如：jewelry"
-                 class="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500">
+                 class="th-input w-full rounded-lg px-3 py-2.5 outline-none">
         </div>
 
         <!-- 标题 -->
         <div>
-          <label class="block text-slate-600 font-medium mb-1.5" style="font-size:14px">标题 <span class="text-red-500">*</span></label>
+          <label class="block th-muted font-medium mb-1.5" style="font-size:14px">标题 <span class="text-red-500">*</span></label>
           <input id="fTitle" maxlength="120" placeholder="一句话描述问题"
-                 class="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500">
+                 class="th-input w-full rounded-lg px-3 py-2.5 outline-none">
         </div>
 
         <!-- 描述 -->
         <div>
-          <label class="block text-slate-600 font-medium mb-1.5" style="font-size:14px">详细说明</label>
+          <label class="block th-muted font-medium mb-1.5" style="font-size:14px">详细说明</label>
           <textarea id="fDetail" rows="4" maxlength="2000" placeholder="复现步骤 / 期望效果 / 出现时间等"
-                    class="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500 resize-y"></textarea>
+                    class="th-input w-full rounded-lg px-3 py-2.5 outline-none resize-y"></textarea>
         </div>
 
         <!-- 截图 -->
         <div>
-          <label class="block text-slate-600 font-medium mb-1.5" style="font-size:14px">现场截图（最多 3 张，自动压缩）</label>
+          <label class="block th-muted font-medium mb-1.5" style="font-size:14px">现场截图（最多 3 张，自动压缩）</label>
           <div class="flex flex-wrap gap-2" id="imgBox">
-            <label id="imgAdd" class="w-20 h-20 rounded-lg border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 cursor-pointer active:bg-slate-50">
+            <label id="imgAdd" class="th-dash w-20 h-20 rounded-lg border-2 border-dashed flex flex-col items-center justify-center cursor-pointer">
               <span class="text-2xl leading-none">＋</span>
               <span style="font-size:14px">添加</span>
               <input id="fImg" type="file" accept="image/*" multiple class="hidden">
@@ -81,32 +149,32 @@
           </div>
         </div>
 
-        <!-- 上报人 -->
-        <div>
-          <label class="block text-slate-600 font-medium mb-1.5" style="font-size:14px">您的姓名 <span class="text-red-500">*</span></label>
+        <!-- 上报人：URL 带参时自动带入并隐藏，不可人工修改 -->
+        <div id="repField">
+          <label class="block th-muted font-medium mb-1.5" style="font-size:14px">您的姓名 <span class="text-red-500">*</span></label>
           <input id="fReporter" maxlength="32" placeholder="便于跟进联系"
-                 class="w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-blue-500">
+                 class="th-input w-full rounded-lg px-3 py-2.5 outline-none">
         </div>
       </div>
 
       <div id="errBox" class="hidden bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2.5" style="font-size:14px"></div>
 
-      <button id="btnSubmit" class="w-full bg-blue-600 active:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-xl py-3.5 shadow">
+      <button id="btnSubmit" class="th-btn-primary w-full disabled:opacity-50 font-bold rounded-xl py-3.5 shadow">
         提交上报
       </button>
-      <p class="text-center text-slate-400" style="font-size:14px">提交即表示同意该信息被质量团队查看与跟进</p>
+      <p class="th-muted text-center" style="font-size:14px">提交即表示同意该信息被质量团队查看与跟进</p>
     </div>
 
     <!-- 成功态 -->
-    <div id="okBox" class="hidden bg-white rounded-xl shadow-sm p-8 text-center">
+    <div id="okBox" class="hidden th-card rounded-xl shadow-sm p-8 text-center">
       <div class="w-16 h-16 mx-auto rounded-full bg-green-100 flex items-center justify-center">
         <svg class="w-9 h-9 text-green-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
       </div>
-      <h2 class="mt-4 text-xl font-bold text-slate-800">上报成功</h2>
-      <p class="mt-2 text-slate-500" style="font-size:14px">受理编号</p>
-      <p id="okCode" class="text-2xl font-mono font-bold text-blue-600 mt-1"></p>
-      <p class="mt-3 text-slate-500" style="font-size:14px">我们已收到您的问题，会尽快跟进处理。</p>
-      <button id="btnAgain" class="mt-6 w-full bg-slate-100 active:bg-slate-200 text-slate-700 font-medium rounded-xl py-3">继续上报</button>
+      <h2 class="mt-4 text-xl font-bold">上报成功</h2>
+      <p class="mt-2 th-muted" style="font-size:14px">受理编号</p>
+      <p id="okCode" class="th-accent text-2xl font-mono font-bold mt-1"></p>
+      <p class="mt-3 th-muted" style="font-size:14px">我们已收到您的问题，会尽快跟进处理。</p>
+      <button id="btnAgain" class="th-btn-soft mt-6 w-full font-medium rounded-xl py-3">继续上报</button>
     </div>
   </main>
 
@@ -119,12 +187,23 @@
       });
     }
 
-    // URL 参数预填
+    // URL 参数自动带入：来源应用与上报人由嵌入方传入，带参即隐藏输入框、不可人工修改
     (function init() {
       var src = (Q.get('source') || '').trim();
-      if (src) { document.getElementById('fSource').value = src; }
       var user = (Q.get('user') || '').trim();
-      if (user) { document.getElementById('fReporter').value = user; }
+      if (src) {
+        document.getElementById('fSource').value = src;
+        document.getElementById('srcField').classList.add('hidden');
+      }
+      if (user) {
+        document.getElementById('fReporter').value = user;
+        document.getElementById('repField').classList.add('hidden');
+      }
+      if (src || user) {
+        document.getElementById('srcBanner').classList.remove('hidden');
+        document.getElementById('bannerSrc').textContent = src ? '正在为「' + src + '」上报' : '';
+        document.getElementById('bannerUser').textContent = user ? ' · 上报人：' + user : '';
+      }
     })();
 
     // 类型切换
@@ -135,7 +214,7 @@
       document.querySelectorAll('#kindSeg button').forEach(function (b) {
         var on = b === btn;
         b.classList.toggle('seg-active', on);
-        b.classList.toggle('text-slate-600', !on);
+        b.classList.toggle('seg-off', !on);
       });
     });
 
@@ -182,7 +261,7 @@
       ST.imgs.forEach(function (im, i) {
         var d = document.createElement('div');
         d.setAttribute('data-thumb', i);
-        d.className = 'relative w-20 h-20 rounded-lg overflow-hidden border border-slate-200';
+        d.className = 'th-bd relative w-20 h-20 rounded-lg overflow-hidden border';
         d.innerHTML = '<img src="' + im.dataUrl + '" class="w-full h-full object-cover">' +
           '<button type="button" data-del="' + i + '" class="absolute top-0 right-0 w-6 h-6 bg-black/60 text-white rounded-bl-lg leading-none">×</button>';
         box.insertBefore(d, add);

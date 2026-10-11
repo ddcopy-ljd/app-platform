@@ -51,3 +51,13 @@
 - **问题现象**：发新版后浏览器普通刷新仍执行旧 `app.js`（控制台报旧函数 `undefined`），走查结果与服务端实际伺服内容不一致。
 - **根因**：`<script src="app.js">` 无版本参数，浏览器 memory cache 在同会话内直接命中旧副本（no-cache 头未能完全拦住）。
 - **验证方法**：index.html 引用形如 `app.js?v={version}`，版本变更即穿透；走查前先 `localStorage.clear()` + 硬刷新，控制台历史日志与新报错分开判定。
+
+## TC-11 免登录外部上报的租户隔离与限频防刷
+- **问题现象**：`POST /api/report` 免鉴权，若不限流/不隔离，可被刷爆库或跨租户写入。
+- **根因**：免登录端点必须依赖网关注入的 `X-Resolved-Tenant-ID` 隔离租户，并自行限频（每租户每分钟 5 条）。
+- **验证方法**：带头上报返回 200 且落对应租户 `INBOX` 项目（status=open、reporter=`{姓名}（来自 {来源插件}）`、source_plugin/source_reporter 落列）；同租户第 6 条返回 429「上报太频繁」；非法类型 400、缺标题/来源过短 422（不占限频名额）；`GET /report` 返回 200 且带 no-cache。
+
+## TC-12 旧库升级必须补 INBOX 项目与来源列
+- **问题现象**：从 v1.0.0 升级后外部上报 500（`projects.key='INBOX'` 不存在）或写 bugs 报 `no such column: source_plugin`。
+- **根因**：upgrade.py 未幂等补列/补 INBOX 项目行。
+- **验证方法**：对 v1.0.0 库副本跑 `scripts/upgrade.py` 后：`PRAGMA table_info(bugs)` 含 source_plugin/source_reporter；`projects` 含 key='INBOX'（seq=900）；旧 bugs/users 数据条数不变；`POST /api/report` 返回 INBOX-900 起编号。
