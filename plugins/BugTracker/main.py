@@ -527,6 +527,7 @@ _report_rate_lock = threading.Lock()
 
 class ReportIn(BaseModel):
     source: str = Field(min_length=2, max_length=32, description="来源插件标识")
+    appname: str = Field(default="", max_length=64, description="来源插件应用名称（项目名）")
     reporter: str = Field(min_length=1, max_length=32, description="上报人姓名")
     title: str = Field(min_length=1, max_length=120)
     kind: str = "缺陷"
@@ -564,9 +565,18 @@ def api_external_report(body: ReportIn, request: Request):
     if not _report_allow(tenant):
         raise HTTPException(status_code=429, detail="上报太频繁，请 1 分钟后再试")
     with _db(request) as conn:
-        db.ensure_inbox(conn)
-        proj = conn.execute("SELECT * FROM projects WHERE key='INBOX'").fetchone()
-        code = f"INBOX-{proj['seq']}"
+        # 归属项目：以来源插件应用名称建/复用项目（key=插件ID大写）；
+        # key 不合法（非 2-8 位字母数字）时回落「外部上报箱」
+        key = source.upper()[:8]
+        if _KEY_RE.match(key):
+            name = body.appname.strip() or source
+            conn.execute("INSERT OR IGNORE INTO projects(key,name,descr) VALUES(?,?,?)",
+                         (key, name, f"来自插件应用 [{name}] 的外部上报"))
+            proj = conn.execute("SELECT * FROM projects WHERE key=?", (key,)).fetchone()
+        else:
+            db.ensure_inbox(conn)
+            proj = conn.execute("SELECT * FROM projects WHERE key='INBOX'").fetchone()
+        code = f"{proj['key']}-{proj['seq']}"
         conn.execute("UPDATE projects SET seq=seq+1 WHERE id=?", (proj["id"],))
         display = f"{reporter}（来自 {source}）"
         cur = conn.execute(

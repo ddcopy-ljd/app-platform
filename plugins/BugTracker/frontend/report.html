@@ -291,7 +291,7 @@
       fetch(API + '/api/report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: source, reporter: reporter, title: title, kind: ST.kind, detail: detail, images: ST.imgs })
+        body: JSON.stringify({ source: source, appname: (Q.get('appname') || '').trim(), reporter: reporter, title: title, kind: ST.kind, detail: detail, images: ST.imgs })
       }).then(function (r) {
         return r.json().then(function (j) { return { ok: r.ok, j: j }; });
       }).then(function (res) {

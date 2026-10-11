@@ -542,11 +542,11 @@
   </div>
 
   <!-- Slide-Over Drawer: Bug Details -->
-  <div id="modal-detail" class="fixed inset-0 z-50 overflow-hidden hidden" role="dialog" aria-modal="true">
-    <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity" onclick="closeDetailModal()"></div>
+  <div id="modal-detail" class="fixed inset-0 z-50 overflow-y-auto hidden" role="dialog" aria-modal="true">
+    <div class="flex items-center justify-center min-h-screen px-4 py-4">
+      <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity" onclick="closeDetailModal()"></div>
 
-    <div class="pointer-events-none fixed inset-y-0 right-0 flex max-w-full pl-10">
-      <div class="pointer-events-auto w-screen max-w-2xl bg-white shadow-2xl flex flex-col">
+      <div class="pointer-events-auto relative bg-white rounded-2xl shadow-2xl w-[80%] max-h-[92vh] flex flex-col z-10 animate-in fade-in zoom-in-95 duration-150">
         
         <!-- Drawer Header -->
         <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/70">
