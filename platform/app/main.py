@@ -813,10 +813,78 @@ async def app_gateway_ws(websocket: WebSocket, plugin_id: str, tenant_id: str, p
         await websocket.close(code=4403, reason=str(e)[:120])
         return
     query = websocket.url.query
+    # 注入公网原始 Host / 入口前缀 / 协议，插件据此还原公开服务地址（如打印桥地址自愈）
+    hdrs = dict(ctx["headers"])
+    orig_host = (websocket.headers.get("host") or "").strip()
+    if orig_host:
+        hdrs["Host"] = orig_host
+    hdrs["X-Forwarded-Proto"] = "https" if websocket.url.scheme == "wss" else "http"
+    hdrs["X-App-Base"] = f"/app/{plugin_id}/{tenant_id}/"
     upstream_url = f"ws://127.0.0.1:{ctx['port']}/ws/{path}" + (f"?{query}" if query else "")
     await websocket.accept()
     try:
-        upstream = await run_in_threadpool(WSClient, upstream_url, ctx["headers"])
+        upstream = await run_in_threadpool(WSClient, upstream_url, hdrs)
+    except Exception as e:
+        await websocket.close(code=4502, reason=str(e)[:120])
+        return
+
+    async def up_to_client():
+        while True:
+            msg = await run_in_threadpool(upstream.recv_text)
+            if msg is None:
+                return
+            await websocket.send_text(msg)
+
+    async def client_to_up():
+        while True:
+            msg = await websocket.receive_text()
+            await run_in_threadpool(upstream.send_text, msg)
+
+    tasks = [asyncio.create_task(up_to_client()), asyncio.create_task(client_to_up())]
+    await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    for t in tasks:
+        t.cancel()
+    upstream.close()
+    try:
+        await websocket.close()
+    except Exception:
+        pass
+
+
+@app.websocket("/gw/{ticket}/ws/{path:path}")
+async def gw_gateway_ws(websocket: WebSocket, ticket: str, path: str):
+    """WebSocket 透传（票据模式）：/gw/{票据}/ws/... → 插件 /ws/...。
+
+    与 /app/ 的 WS 透传对应：沙箱/试运行模式经票证地址下载的本地打印桥也要能
+    收到实时任务。票据为确定性派生且重复签发自动续期，适合代理长期连接。
+    平台层不鉴权，由插件应用自行校验（如珠宝云的桥接密钥）。
+    """
+    tctx = gw.ticket_context(ticket)
+    if not tctx:
+        await websocket.accept()
+        await websocket.close(code=4404, reason="调试入口已失效，请在插件版本调试中重新打开")
+        return
+    try:
+        ctx = await run_in_threadpool(
+            gw.resolve_gateway, tctx["plugin_id"], tctx["mode"], tctx["tenant_id"], None,
+            "gateway", record_audit=False
+        )
+    except Exception as e:
+        await websocket.accept()
+        await websocket.close(code=4403, reason=str(e)[:120])
+        return
+    query = websocket.url.query
+    # 注入公网原始 Host / 票据入口前缀 / 协议，插件据此还原公开服务地址（如打印桥地址自愈）
+    hdrs = dict(ctx["headers"])
+    orig_host = (websocket.headers.get("host") or "").strip()
+    if orig_host:
+        hdrs["Host"] = orig_host
+    hdrs["X-Forwarded-Proto"] = "https" if websocket.url.scheme == "wss" else "http"
+    hdrs["X-App-Base"] = f"/gw/{ticket}/"
+    upstream_url = f"ws://127.0.0.1:{ctx['port']}/ws/{path}" + (f"?{query}" if query else "")
+    await websocket.accept()
+    try:
+        upstream = await run_in_threadpool(WSClient, upstream_url, hdrs)
     except Exception as e:
         await websocket.close(code=4502, reason=str(e)[:120])
         return

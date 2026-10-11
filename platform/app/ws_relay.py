@@ -32,13 +32,16 @@ class WSClient:
             sock = ctx.wrap_socket(sock, server_hostname=host)
         self.sock = sock
         key = base64.b64encode(os.urandom(16)).decode()
-        lines = ["GET " + path + " HTTP/1.1",
-                 f"Host: {host}:{port}",
-                 "Upgrade: websocket",
-                 "Connection: Upgrade",
-                 "Sec-WebSocket-Key: " + key,
-                 "Sec-WebSocket-Version: 13"]
-        for k, v in (headers or {}).items():
+        custom = dict(headers or {})
+        lines = ["GET " + path + " HTTP/1.1"]
+        # 上游透传自带 Host（如网关保留的公网原始 Host）时不再写默认 Host，避免重复头
+        if not any(k.lower() == "host" for k in custom):
+            lines.append(f"Host: {host}:{port}")
+        lines += ["Upgrade: websocket",
+                  "Connection: Upgrade",
+                  "Sec-WebSocket-Key: " + key,
+                  "Sec-WebSocket-Version: 13"]
+        for k, v in custom.items():
             lines.append(f"{k}: {v}")
         self.sock.sendall(("\r\n".join(lines) + "\r\n\r\n").encode())
         resp = b""

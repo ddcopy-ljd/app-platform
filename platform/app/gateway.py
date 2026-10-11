@@ -146,6 +146,10 @@ def _forward(ctx: dict, path: str, method: str, query: str, headers: dict[str, s
            and not k.lower().startswith(_CONTEXT_PREFIX)
            and k.lower() != "accept-encoding"}
     fwd.update(ctx["headers"])
+    # 保留公网原始 Host（默认会被 _HOP_HEADERS 过滤）：插件还原公开服务地址依赖它
+    orig_host = next((v for k, v in headers.items() if k.lower() == "host"), "")
+    if orig_host:
+        fwd["Host"] = orig_host
     url = f"http://127.0.0.1:{ctx['port']}/{path}" + (f"?{query}" if query else "")
     req = urllib.request.Request(url, data=body or None, headers=fwd, method=method)
     try:
