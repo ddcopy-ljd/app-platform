@@ -37,150 +37,6 @@ createApp({
 
     const gw = reactive({ mode: 'NORMAL', tenant_id: '', version: '' });
 
-    // ------------------------------------------------ 授权与试用
-    const grantsData = ref({ grants: [], trials: [] });
-    const grantForm = reactive({ tenant_id: '', tenant_name: '', pay_status: 'trial', paid_until: '', note: '', isNew: true });
-
-    const grantRows = computed(() => grantsData.value.grants);
-    const pendingTrials = computed(() => grantsData.value.trials.filter(t => t.status === 'pending'));
-
-    const grantBadge = g => {
-      if (g.is_sandbox) return { text: '沙箱', cls: 'b-gray' };
-      if (!g.grant_status) return { text: '未开通', cls: 'b-gray' };
-      if (g.grant_status === 'suspended') return { text: '已停用', cls: 'b-err' };
-      if (g.pay_status === 'arrears') return { text: '欠费', cls: 'b-err' };
-      if (g.pay_status === 'trial' && g.days_left !== null && g.days_left < 0) return { text: '试用已到期', cls: 'b-err' };
-      if (g.pay_status === 'trial' && g.days_left !== null && g.days_left <= 10) return { text: '试用剩 ' + g.days_left + ' 天', cls: 'b-warn' };
-      if (g.pay_status === 'trial') return { text: '试用中', cls: 'b-doing' };
-      if (g.pay_status === 'paid' && g.days_left !== null && g.days_left < 0) return { text: '付费已过期', cls: 'b-err' };
-      if (g.pay_status === 'paid' && g.days_left !== null && g.days_left <= 10) return { text: '剩 ' + g.days_left + ' 天', cls: 'b-warn' };
-      if (g.pay_status === 'paid') return { text: '已付费', cls: 'b-ok' };
-      if (g.pay_status === 'free') return { text: '免费', cls: 'b-ok' };
-      return { text: g.pay_status, cls: 'b-gray' };
-    };
-
-    const payText = g => {
-      if (!g.grant_status) return '—';
-      if (g.pay_status === 'free') return '长期有效';
-      if (g.pay_status === 'arrears') return '欠费停服';
-      return '至 ' + (g.paid_until || '—');
-    };
-
-    const grantAlerts = computed(() => {
-      const out = [];
-      for (const g of grantsData.value.grants) {
-        if (g.is_sandbox || g.grant_status !== 'active' || g.days_left === null) continue;
-        const what = g.pay_status === 'trial' ? '试用' : '服务费';
-        if (g.days_left < 0) out.push(`⛔ ${g.name}（${g.id}）${what}已到期，访问已被拦截，请更新授权台账`);
-        else if (g.days_left <= 10) out.push(`⚠ ${g.name}（${g.id}）${what}剩 ${g.days_left} 天到期（${g.paid_until}）`);
-      }
-      return out;
-    });
-
-    async function loadGrants() {
-      if (!activeId.value) return;
-      try { grantsData.value = await api(`/api/plugins/${activeId.value}/grants`); }
-      catch (_) { /* 下次轮询重试 */ }
-    }
-
-    async function setLevel(g, ev) {
-      try {
-        await api('/api/tenants/' + g.id, { method: 'PUT', json: { level: ev.target.value } });
-        toast(`${g.name} 租户级别已更新`);
-      } catch (e) { toast(e.message, true); }
-    }
-
-    function openGrant(g) {
-      Object.assign(grantForm, {
-        tenant_id: g.id, tenant_name: g.name, isNew: !g.grant_status,
-        pay_status: g.pay_status || 'trial', paid_until: g.paid_until || '', note: g.note || '',
-      });
-      modal.value = 'grant';
-    }
-
-    async function saveGrant() {
-      try {
-        await api(`/api/plugins/${activeId.value}/grants`, { method: 'POST', json: {
-          tenant_id: grantForm.tenant_id, pay_status: grantForm.pay_status,
-          paid_until: grantForm.paid_until || null, note: grantForm.note,
-        } });
-        modal.value = null;
-        toast(`${grantForm.tenant_name} 授权台账已保存`);
-        await reload();
-      } catch (e) { toast(e.message, true); }
-    }
-
-    function toggleGrant(g, status) {
-      const suspend = status === 'suspended';
-      openConfirm({
-        title: suspend ? `⏸ 停用 ${g.name} 的授权` : `▶ 恢复 ${g.name} 的授权`,
-        lines: suspend
-          ? [`${g.name}（${g.id}）对该应用的访问将立即被拦截（显示试用申请页），数据副本保留。`]
-          : [`${g.name}（${g.id}）将恢复访问，按台账付费状态校验（欠费/试用过期仍会拦截）。`],
-        okText: '确认', btnClass: suspend ? 'danger' : 'primary',
-        onOk: async () => {
-          try {
-            await api(`/api/plugins/${activeId.value}/grants/${g.id}/status`, { method: 'POST', json: { status } });
-            modal.value = null; toast('授权状态已更新'); await reload();
-          } catch (e) { toast(e.message, true); }
-        },
-      });
-    }
-
-    function removeGrant(g) {
-      openConfirm({
-        title: `🗑 删除 ${g.name} 的授权`,
-        lines: [
-          `删除后 ${g.name}（${g.id}）访问该应用将立即被拦截并显示试用申请页。`,
-          '授权台账记录移除，租户数据副本保留；可随时重新开通。',
-        ],
-        okText: '确认删除', btnClass: 'danger',
-        onOk: async () => {
-          try {
-            await api(`/api/plugins/${activeId.value}/grants/${g.id}`, { method: 'DELETE' });
-            modal.value = null; toast('授权已删除'); await reload();
-          } catch (e) { toast(e.message, true); }
-        },
-      });
-    }
-
-    const trialEndDate = () => new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
-
-    function reviewTrial(t, action) {
-      const approve = action === 'approve';
-      openConfirm({
-        title: approve ? `🧪 批准 ${t.tenant_name} 的试用申请` : `🚫 拒绝 ${t.tenant_name} 的试用申请`,
-        lines: approve
-          ? [`将为 ${t.tenant_name}（${t.tenant_id}）开通 30 天试用授权（至 ${trialEndDate()}）。`,
-             `申请人：${t.contact || '未留联系方式'}`]
-          : ['拒绝后该租户仍无法访问；其可再次提交申请。'],
-        okText: '确认', btnClass: approve ? 'primary' : 'danger',
-        onOk: async () => {
-          try {
-            const r = await api(`/api/plugins/${activeId.value}/trials/${t.id}/review`, { method: 'POST', json: { action } });
-            modal.value = null; toast(r.message || '已处理'); await reload();
-          } catch (e) { toast(e.message, true); }
-        },
-      });
-    }
-
-    function provisionDb(g) {
-      openConfirm({
-        title: `💾 为 ${g.name} 初始化数据副本`,
-        lines: [
-          `将按当前正式版本 v${detail.value.current_version} 为该租户创建全新空白数据库（后台执行）。`,
-          '适用于已授权但此前未纳入数据任务的租户；已有数据副本的租户不可重复初始化。',
-        ],
-        okText: '开始初始化', btnClass: 'primary',
-        onOk: async () => {
-          try {
-            const r = await api(`/api/plugins/${activeId.value}/grants/${g.id}/provision`, { method: 'POST' });
-            modal.value = null; toast(r.note || '已开始初始化'); await reload();
-          } catch (e) { toast(e.message, true); }
-        },
-      });
-    }
-
     const toastMsg = ref('');
     const toastErr = ref(false);
     let toastTimer = null;
@@ -207,7 +63,6 @@ createApp({
       if (activeId.value) {
         try {
           detail.value = await api('/api/plugins/' + activeId.value);
-          await loadGrants();
         } catch (e) {
           if (e.status === 404) { activeId.value = null; detail.value = null; } else throw e;
         }
@@ -540,9 +395,6 @@ createApp({
       modal, modalVer, prepareTenants, confirmBox, logData, logBox, logLines,
       act, openPrepare, doPrepare, confirmSwitch, confirmFormal, confirmDelete, openLog, openServiceLog,
       gw, openEntry, fixedUrl,
-      grantsData, grantRows, pendingTrials, grantAlerts, grantForm,
-      setLevel, openGrant, saveGrant, toggleGrant, removeGrant, reviewTrial, provisionDb,
-      grantBadge, payText,
       statusMeta, rowClass, isNewer, fmtSize, toastMsg, toastErr, version: Platform.version,
     };
   },

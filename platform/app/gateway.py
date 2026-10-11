@@ -86,6 +86,28 @@ def issue_ticket(plugin_id: str, mode: str, tenant_id: str | None, version: str 
     return {**ctx, "url": f"/gw/{ticket}/"}
 
 
+def ensure_ticket(plugin_id: str, mode: str, tenant_id: str | None, operator: str) -> str | None:
+    """跨插件内嵌场景（如珠宝云沙箱票证页内嵌 BugTracker 上报页）：
+    签发同 模式+租户 的目标插件票证地址；插件不存在/无可用版本时返回 None 由前端回落。
+    票证为确定性派生，重复调用只刷新指向版本，不产生新地址。"""
+    try:
+        ctx = resolve_gateway(plugin_id, mode, tenant_id, None, operator, record_audit=False)
+    except PluginError:
+        return None
+    with _lock:
+        now = time.time()
+        ticket = _stable_ticket(plugin_id, mode, ctx["tenant_id"])
+        old = _tickets.get(ticket)
+        if old and old["expires"] > now and old["version"] == ctx["target_version"]:
+            return f"/gw/{ticket}/"
+        _tickets[ticket] = {
+            "plugin_id": plugin_id, "mode": mode, "tenant_id": ctx["tenant_id"],
+            "version": ctx["target_version"], "operator": operator, "expires": now + TICKET_TTL_SECONDS,
+        }
+        _save_tickets()
+    return f"/gw/{ticket}/"
+
+
 def ticket_context(ticket: str) -> dict | None:
     """读取票据对应的插件与租户（供流量归属使用），票据失效时返回 None。"""
     with _lock:

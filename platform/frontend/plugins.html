@@ -30,7 +30,6 @@
               <span v-if="p.app_status === 'MAINTENANCE'" class="badge b-warn">维护</span>
               <span v-if="p.gateway_state === 'MAINTENANCE'" class="badge b-err">切换中</span>
               <span v-else-if="p.busy" class="badge b-doing">处理中</span>
-              <span v-if="p.pending_trials" class="badge b-err">🧪 {{ p.pending_trials }} 条待审</span>
             </div>
           </div>
         </li>
@@ -47,7 +46,7 @@
 
       <div v-else class="panel">
         <div v-if="dragging" class="drop-overlay" @dragleave="dragging = false">⬆️ 松开鼠标，上传新版本插件包</div>
-        <div class="panel-title-bar">应用插件升级管理<span class="ver-tag">v{{ platformVersion }}</span></div>
+        <div class="panel-title-bar">应用插件升级管理<span class="ver-tag">v{{ platformVersion || version }}</span></div>
 
         <section class="guide">
           <div class="guide-head" @click="guideOpen = !guideOpen">
@@ -205,73 +204,6 @@
           </div>
         </section>
 
-        <!-- 租户授权与付费 -->
-        <section class="block">
-          <div class="block-head">
-            <h2 class="block-title">租户授权与付费 <span class="count">{{ grantRows.length }}</span></h2>
-            <span class="tip">按租户授权后才能访问；试用 30 天，到期前 10 天自动提示</span>
-          </div>
-
-          <div v-if="grantAlerts.length" class="warn-box" style="margin-bottom:12px">
-            <div v-for="(a, i) in grantAlerts" :key="i">{{ a }}</div>
-          </div>
-
-          <div v-if="pendingTrials.length" class="info-box" style="margin-bottom:12px">
-            <div style="font-weight:600;margin-bottom:4px">🧪 试用申请待审批（{{ pendingTrials.length }}）</div>
-            <div v-for="t in pendingTrials" :key="t.id" class="trial-row">
-              <span><b>{{ t.tenant_name }}</b>（{{ t.tenant_id }}）· 申请人：{{ t.contact || '未留联系方式' }} · {{ t.requested_at }}</span>
-              <span style="white-space:nowrap">
-                <button class="btn primary sm" :disabled="busy" @click="reviewTrial(t, 'approve')">批准 · 30天试用</button>
-                <button class="btn ghost sm" :disabled="busy" @click="reviewTrial(t, 'reject')">拒绝</button>
-              </span>
-            </div>
-          </div>
-
-          <table class="ver-table">
-            <thead><tr><th>租户</th><th>级别</th><th>授权状态</th><th>付费 / 到期</th><th>数据副本</th><th>操作</th></tr></thead>
-            <tbody>
-              <tr v-for="g in grantRows" :key="g.id">
-                <td><div class="cell-col"><b>{{ g.name }}</b><span class="sub">{{ g.id }}<template v-if="g.is_sandbox"> · 沙箱</template></span></div></td>
-                <td>
-                  <select v-if="!g.is_sandbox" class="fld" :value="g.level" @change="setLevel(g, $event)">
-                    <option value="standard">标准版</option>
-                    <option value="premium">高级版</option>
-                    <option value="enterprise">企业版</option>
-                  </select>
-                  <span v-else class="sub">—</span>
-                </td>
-                <td><span class="badge" :class="grantBadge(g).cls">{{ grantBadge(g).text }}</span></td>
-                <td>
-                  <div class="cell-col">
-                    <span v-if="!g.is_sandbox">{{ payText(g) }}</span><span v-else class="sub">—</span>
-                    <span v-if="g.note" class="sub">{{ g.note }}</span>
-                  </div>
-                </td>
-                <td>
-                  <span v-if="g.is_sandbox" class="sub">—</span>
-                  <span v-else-if="g.db_ready" class="badge b-ok">就绪</span>
-                  <div v-else class="cell-col">
-                    <span class="badge b-gray">未初始化</span>
-                    <button v-if="g.grant_status === 'active'" class="btn ghost sm" :disabled="busy" @click="provisionDb(g)">初始化数据</button>
-                  </div>
-                </td>
-                <td>
-                  <div v-if="!g.is_sandbox" class="cell-col">
-                    <button v-if="!g.grant_status" class="btn primary sm" @click="openGrant(g)">开通授权</button>
-                    <template v-else>
-                      <button class="btn ghost sm" @click="openGrant(g)">编辑台账</button>
-                      <button v-if="g.grant_status === 'active'" class="btn danger-ghost sm" @click="toggleGrant(g, 'suspended')">停用</button>
-                      <button v-else class="btn ghost sm" @click="toggleGrant(g, 'active')">恢复</button>
-                      <button class="btn danger-ghost sm" @click="removeGrant(g)">删除授权</button>
-                    </template>
-                  </div>
-                  <span v-else class="sub">沙箱无需授权</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </section>
-
         <!-- 审计 -->
         <section class="block">
           <h2 class="block-title" style="margin-bottom:10px">操作审计</h2>
@@ -305,34 +237,6 @@
       <div class="modal-actions">
         <button class="btn ghost" @click="modal = null">取消</button>
         <button class="btn primary" @click="doPrepare">开始准备</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 开通/编辑授权 -->
-  <div v-if="modal === 'grant'" class="mask" @click.self="modal = null">
-    <div class="modal">
-      <h3>{{ grantForm.isNew ? '🔓 开通授权' : '✏ 编辑授权台账' }} · {{ grantForm.tenant_name }}</h3>
-      <div class="grant-field">
-        <label>付费状态</label>
-        <select v-model="grantForm.pay_status" class="fld">
-          <option value="trial">试用（默认 30 天）</option>
-          <option value="free">免费</option>
-          <option value="paid">已付费</option>
-          <option value="arrears">欠费（暂停服务）</option>
-        </select>
-      </div>
-      <div v-if="grantForm.pay_status === 'trial' || grantForm.pay_status === 'paid'" class="grant-field">
-        <label>到期日{{ grantForm.pay_status === 'trial' ? '（留空 = 今天起 30 天）' : '' }}</label>
-        <input type="date" v-model="grantForm.paid_until" class="fld">
-      </div>
-      <div class="grant-field">
-        <label>备注</label>
-        <input v-model="grantForm.note" maxlength="200" class="fld" placeholder="如：合同编号、联系人">
-      </div>
-      <div class="modal-actions">
-        <button class="btn ghost" @click="modal = null">取消</button>
-        <button class="btn primary" @click="saveGrant">保存</button>
       </div>
     </div>
   </div>

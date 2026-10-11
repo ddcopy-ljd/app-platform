@@ -17,12 +17,11 @@ from . import gateway as gw
 from . import grants as grant_svc
 from . import platform_upgrade as pupgrade
 from . import plugin_service as svc
-from . import runtime
-from . import traffic
+from . import portal, runtime, traffic
 from .config import AGENT_API_KEY, FRONTEND_DIR, MAX_PACKAGE_BYTES, PACKAGES_DIR, SESSION_TTL_SECONDS
 from .db import audit, get_conn, init_db
 from .security import (SESSION_COOKIE, cookie_user, create_session, current_user, drop_session,
-                       verify_password)
+                       hash_password, verify_password)
 from .ws_relay import WSClient
 
 # 标签属性中的绝对路径（排除 // 协议相对与 http: 等 scheme），供应用挂载前缀重写
@@ -44,7 +43,7 @@ app.add_middleware(traffic.TrafficMiddleware)
 async def _static_no_cache(request: Request, call_next):
     """前端静态资源（html/js/css）禁用缓存，避免浏览器缓存旧页面导致改动不生效。"""
     response = await call_next(request)
-    if request.url.path == "/" or request.url.path.startswith("/static/"):
+    if request.url.path == "/" or request.url.path.startswith("/static/") or request.url.path.startswith("/portal"):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
@@ -153,8 +152,9 @@ def maintenance(_: dict = Depends(current_user)):
 def tenants(_: dict = Depends(current_user)):
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT t.id, t.name, t.is_sandbox, COALESCE(t.level,'standard') AS level, t.status, "
-            "(SELECT COUNT(*) FROM plugin_grants g WHERE g.tenant_id=t.id AND g.status='active') AS granted_plugins "
+            "SELECT t.id, t.name, t.is_sandbox, COALESCE(t.level,'vip1') AS level, t.status, "
+            "(SELECT COUNT(*) FROM plugin_grants g WHERE g.tenant_id=t.id AND g.status='active') AS granted_plugins, "
+            "(SELECT GROUP_CONCAT(tu.username) FROM tenant_users tu WHERE tu.tenant_id=t.id) AS portal_users "
             "FROM tenants t ORDER BY t.is_sandbox, t.id").fetchall()
     return [dict(r) for r in rows]
 
@@ -296,7 +296,7 @@ TENANT_ID_RE = re.compile(r"^[A-Za-z0-9_]{1,32}$")
 class TenantCreateIn(BaseModel):
     id: str = Field(max_length=32)
     name: str = Field(max_length=64)
-    level: str = Field(default="standard", max_length=20)
+    level: str = Field(default="vip1", max_length=20)
 
 
 class TenantUpdateIn(BaseModel):
@@ -379,22 +379,50 @@ def tenant_status(tenant_id: str, body: TenantStatusIn, user: dict = Depends(cur
     return {"ok": True}
 
 
+@app.get("/api/tenants/applications")
+def tenant_applications(_: dict = Depends(current_user)):
+    """全平台待办申请：试用申请 + 续费申请（pending 优先，各限 100 条）。"""
+    with get_conn() as conn:
+        trials = conn.execute(
+            "SELECT pt.*, t.name AS tenant_name, p.name AS plugin_name FROM plugin_trials pt "
+            "JOIN tenants t ON t.id=pt.tenant_id JOIN plugins p ON p.id=pt.plugin_id "
+            "ORDER BY pt.status='pending' DESC, pt.id DESC LIMIT 100").fetchall()
+        renewals = conn.execute(
+            "SELECT pr.*, t.name AS tenant_name, p.name AS plugin_name FROM plugin_renewals pr "
+            "JOIN tenants t ON t.id=pr.tenant_id JOIN plugins p ON p.id=pr.plugin_id "
+            "ORDER BY pr.status='pending' DESC, pr.id DESC LIMIT 100").fetchall()
+    return {"trials": [dict(r) for r in trials], "renewals": [dict(r) for r in renewals]}
+
+
 @app.get("/api/tenants/{tenant_id}/grants")
 def tenant_grants_detail(tenant_id: str, _: dict = Depends(current_user)):
-    """该租户在各插件上的授权明细（租户管理页展开行）。"""
+    """该租户授权明细 + 试用/续费申请记录 + 门户账号（租户管理台账弹窗数据源）。"""
     with get_conn() as conn:
         if not conn.execute("SELECT 1 FROM tenants WHERE id=?", (tenant_id,)).fetchone():
             raise HTTPException(status_code=404, detail="租户不存在")
         rows = conn.execute(
-            "SELECT g.plugin_id, p.name AS plugin_name, p.icon, g.pay_status, g.status, g.paid_until "
+            "SELECT g.plugin_id, p.name AS plugin_name, p.icon, p.current_version, "
+            "g.pay_status, g.status, g.paid_until, g.note, g.granted_at, g.updated_at "
             "FROM plugin_grants g JOIN plugins p ON p.id=g.plugin_id WHERE g.tenant_id=? "
             "ORDER BY g.plugin_id", (tenant_id,)).fetchall()
-    out = []
-    for r in rows:
-        d = dict(r)
-        d["days_left"] = grant_svc.days_left(r["paid_until"])
-        out.append(d)
-    return out
+        trials = conn.execute(
+            "SELECT pt.*, p.name AS plugin_name FROM plugin_trials pt JOIN plugins p ON p.id=pt.plugin_id "
+            "WHERE pt.tenant_id=? ORDER BY pt.id DESC LIMIT 50", (tenant_id,)).fetchall()
+        renewals = conn.execute(
+            "SELECT pr.*, p.name AS plugin_name FROM plugin_renewals pr JOIN plugins p ON p.id=pr.plugin_id "
+            "WHERE pr.tenant_id=? ORDER BY pr.id DESC LIMIT 50", (tenant_id,)).fetchall()
+        users = conn.execute(
+            "SELECT username, display_name, created_at FROM tenant_users WHERE tenant_id=? "
+            "ORDER BY username", (tenant_id,)).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["days_left"] = grant_svc.days_left(r["paid_until"])
+            d["db_ready"] = bool(r["current_version"]) and svc.db_path(
+                r["plugin_id"], tenant_id, r["current_version"]).exists()
+            out.append(d)
+    return {"grants": out, "trials": [dict(r) for r in trials],
+            "renewals": [dict(r) for r in renewals], "portal_users": [dict(r) for r in users]}
 
 
 # ---------------------------------------------------------------- 租户授权与试用付费
@@ -412,12 +440,6 @@ class GrantStatusIn(BaseModel):
 
 class TrialReviewIn(BaseModel):
     action: str = Field(max_length=10)
-
-
-class TrialApplyIn(BaseModel):
-    plugin_id: str = Field(max_length=64)
-    tenant_id: str = Field(max_length=64)
-    contact: str = Field(default="", max_length=120)
 
 
 @app.get("/api/plugins/{plugin_id}/grants")
@@ -460,10 +482,49 @@ def trial_review(plugin_id: str, trial_id: int, body: TrialReviewIn,
     return grant_svc.review_trial(plugin_id, trial_id, body.action, user["username"])
 
 
-@app.post("/api/public/trial-apply")
-def public_trial_apply(body: TrialApplyIn):
-    """拦截页公开提交试用申请（无需平台登录态；插件库不直连平台库）。"""
-    return grant_svc.apply_trial(body.plugin_id, body.tenant_id, body.contact)
+class RenewalConfirmIn(BaseModel):
+    action: str = Field(max_length=10)          # confirm | reject
+    paid_until: str | None = Field(default=None, max_length=10)
+
+
+@app.post("/api/plugins/{plugin_id}/renewals/{renewal_id}/confirm")
+def renewal_confirm(plugin_id: str, renewal_id: int, body: RenewalConfirmIn,
+                    user: dict = Depends(current_user)):
+    """确认续费：confirm 需填新到期日并更新授权台账；reject 拒绝。"""
+    return grant_svc.confirm_renewal(plugin_id, renewal_id, body.action,
+                                     body.paid_until, user["username"])
+
+
+# ---------------------------------------------------------------- 租户门户账号（管理端）
+
+class PortalAccountIn(BaseModel):
+    username: str = Field(max_length=64)
+    password: str = Field(min_length=6, max_length=128)
+
+
+@app.post("/api/tenants/{tenant_id}/portal-account")
+def portal_account(tenant_id: str, body: PortalAccountIn, user: dict = Depends(current_user)):
+    """为存量租户创建/重置门户账号（密码仅本次回显一次，列表接口永不回显）。"""
+    uname = body.username.strip()
+    if not uname:
+        raise HTTPException(status_code=400, detail="登录账号不能为空")
+    with get_conn() as conn:
+        t = conn.execute("SELECT name FROM tenants WHERE id=? AND is_sandbox=0", (tenant_id,)).fetchone()
+        if not t:
+            raise HTTPException(status_code=404, detail="企业租户不存在")
+        exist = conn.execute("SELECT tenant_id FROM tenant_users WHERE username=?", (uname,)).fetchone()
+        if exist and exist["tenant_id"] != tenant_id:
+            raise HTTPException(status_code=409, detail="该账号已归属其他企业")
+        if exist:
+            conn.execute("UPDATE tenant_users SET password_hash=?, display_name=? WHERE username=?",
+                         (hash_password(body.password), t["name"], uname))
+            audit(conn, user["username"], "重置门户账号", tenant_id, uname)
+            return {"ok": True, "action": "reset", "username": uname}
+        conn.execute(
+            "INSERT INTO tenant_users (tenant_id, username, password_hash, display_name, created_at) "
+            "VALUES (?,?,?,?,?)", (tenant_id, uname, hash_password(body.password), t["name"], now_str()))
+        audit(conn, user["username"], "创建门户账号", tenant_id, uname)
+    return {"ok": True, "action": "created", "username": uname}
 
 
 # ---------------------------------------------------------------- AI Agent 升级流水线
@@ -621,10 +682,18 @@ def _set_header(headers: dict, name: str, value: str) -> None:
     headers[name] = value
 
 
-def _rewrite_app_base(content: bytes, base: str) -> bytes:
+def _bugtracker_base(plugin_id: str, mode: str, tenant_id: str | None, operator: str) -> str | None:
+    """为珠宝云页面签发 BugTracker 沙箱票证地址（供上报页跨插件内嵌）；非珠宝云返回 None。"""
+    if plugin_id != "jewelry":
+        return None
+    return gw.ensure_ticket("bugtracker", mode, tenant_id, operator)
+
+
+def _rewrite_app_base(content: bytes, base: str, bt_base: str | None = None) -> bytes:
     """让插件页面在 /app/{插件}/{租户}/ 或 /gw/{票据}/ 前缀下正确加载：
     1) 把 <link src/href/action="/..."> 等标签绝对路径加挂载前缀；
-    2) 注入 window.__APP_BASE__ 供前端 JS 拼接 API 地址。
+    2) 注入 window.__APP_BASE__ 供前端 JS 拼接 API 地址；
+    3) bt_base 非空时追加注入 window.__BUGTRACKER_BASE__（跨插件内嵌 BugTracker 上报页用）。
     仅对 text/html 生效，其他内容原样返回。"""
     if not content:
         return content
@@ -636,7 +705,10 @@ def _rewrite_app_base(content: bytes, base: str) -> bytes:
     text = _APP_BASE_TAG_RE.sub(
         lambda m: f"{m.group(1)}={m.group(2)}{base}{m.group(3).lstrip('/')}{m.group(4)}", text
     )
-    script = f"<script>window.__APP_BASE__={json.dumps(base)};</script>"
+    script = f"<script>window.__APP_BASE__={json.dumps(base)};"
+    if bt_base:
+        script += f"window.__BUGTRACKER_BASE__={json.dumps(bt_base)};"
+    script += "</script>"
     low = text.lower()
     if "</head>" in low:
         text = text.replace("</head>", script + "</head>", 1)
@@ -661,7 +733,12 @@ async def gateway_proxy(ticket: str, path: str, request: Request):
         gw.proxy, ticket, path, request.method, request.url.query, dict(request.headers), body
     )
     if "text/html" in _content_type(headers).lower():
-        content = _rewrite_app_base(content, f"/gw/{ticket}/")
+        bt_base = None
+        if tctx:
+            bt_base = await run_in_threadpool(
+                _bugtracker_base, tctx["plugin_id"], tctx["mode"], tctx["tenant_id"], "gateway"
+            )
+        content = _rewrite_app_base(content, f"/gw/{ticket}/", bt_base)
         _set_header(headers, "Cache-Control", "no-store")  # 注入页禁止缓存，避免浏览器复用未注入的旧副本
     return Response(content=content, status_code=status, headers=headers)
 
@@ -785,6 +862,9 @@ def promo_preview(plugin_id: str, version: str, path: str, request: Request):
     return FileResponse(svc.promo_file(plugin_id, version, path), headers=PROMO_HEADERS)
 
 
+app.include_router(portal.router)
+
+
 # ---------------------------------------------------------------- 前端
 
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
@@ -793,6 +873,13 @@ app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 @app.get("/")
 def index():
     return FileResponse(FRONTEND_DIR / "index.html")
+
+
+@app.get("/portal")
+@app.get("/portal/")
+def portal_page():
+    """租户门户（企业自助注册/登录、我的应用、申请与续费）。"""
+    return FileResponse(FRONTEND_DIR / "portal.html")
 
 
 @app.get("/logo/logo.svg")

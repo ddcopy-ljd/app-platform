@@ -60,6 +60,26 @@ CREATE TABLE IF NOT EXISTS plugin_trials (
     reviewer TEXT,
     trial_end TEXT
 );
+CREATE TABLE IF NOT EXISTS tenant_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id TEXT NOT NULL REFERENCES tenants(id),
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS plugin_renewals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plugin_id TEXT NOT NULL REFERENCES plugins(id),
+    tenant_id TEXT NOT NULL REFERENCES tenants(id),
+    months INTEGER NOT NULL DEFAULT 12,         -- 申请续期月数
+    note TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',     -- pending | confirmed | rejected
+    requested_at TEXT NOT NULL,
+    reviewed_at TEXT,
+    reviewer TEXT,
+    new_paid_until TEXT                         -- 确认续费后的新到期日
+);
 CREATE TABLE IF NOT EXISTS plugin_versions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     plugin_id TEXT NOT NULL REFERENCES plugins(id),
@@ -91,7 +111,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 
 # 可重复执行的字段升级：(表, 字段, 定义)
 COLUMN_MIGRATIONS = [
-    ("tenants", "level", "TEXT NOT NULL DEFAULT 'standard'"),   # 租户级别：standard | premium | enterprise
+    ("tenants", "level", "TEXT NOT NULL DEFAULT 'vip1'"),       # 租户级别：vip1 | vip2 | vip3
     ("plugins", "app_status", "TEXT NOT NULL DEFAULT 'OPEN'"),
     ("plugin_versions", "service_state", "TEXT NOT NULL DEFAULT 'stopped'"),
     ("plugin_versions", "service_port", "INTEGER"),
@@ -158,6 +178,13 @@ def init_db() -> None:
             conn.executemany(
                 "INSERT INTO tenants (id, name, is_sandbox) VALUES (?,?,?)", DEMO_TENANTS
             )
+        # 存量租户级别迁移为 vip 体系（幂等：旧值映射，未知值兜底 vip1）
+        conn.execute(
+            "UPDATE tenants SET level='vip1' WHERE level='standard' OR level IS NULL OR level=''"
+        )
+        conn.execute("UPDATE tenants SET level='vip2' WHERE level='premium'")
+        conn.execute("UPDATE tenants SET level='vip3' WHERE level='enterprise'")
+        conn.execute("UPDATE tenants SET level='vip1' WHERE level NOT IN ('vip1','vip2','vip3')")
         # 存量开通关系回填为授权台账（免费、生效），保证升级后既有租户访问不中断；幂等
         ts = now_str()
         conn.execute(

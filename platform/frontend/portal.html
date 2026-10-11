@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>租户门户 · 综合业务应用服务平台</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app" v-cloak>
+
+  <!-- ==================== 未登录：登录 / 注册 ==================== -->
+  <div v-if="!user" class="login-wrap">
+    <form class="login-card" @submit.prevent="mode === 'login' ? doLogin() : doRegister()">
+      <div class="login-logo">◆</div>
+      <h1>租户门户</h1>
+      <p class="sub">企业自助服务 · 应用申请 / 使用情况 / 续费</p>
+
+      <div class="seg" style="margin-bottom:18px">
+        <button type="button" :class="{on: mode === 'login'}" @click="mode = 'login'">登 录</button>
+        <button type="button" :class="{on: mode === 'register'}" @click="mode = 'register'">注册企业</button>
+      </div>
+
+      <template v-if="mode === 'login'">
+        <label class="field"><span>账号</span><input v-model.trim="loginForm.username" autocomplete="username" required></label>
+        <label class="field"><span>密码</span><input v-model="loginForm.password" type="password" autocomplete="current-password" required></label>
+      </template>
+      <template v-else>
+        <label class="field"><span>企业ID（字母/数字/下划线，注册后不可改）</span>
+          <input v-model.trim="regForm.tenant_id" maxlength="32" placeholder="如 huanan01" autocomplete="off" required></label>
+        <label class="field"><span>企业名称</span><input v-model.trim="regForm.tenant_name" maxlength="64" placeholder="如 华南分公司" required></label>
+        <label class="field"><span>登录账号</span><input v-model.trim="regForm.username" maxlength="64" autocomplete="username" required></label>
+        <label class="field"><span>密码（至少 6 位）</span><input v-model="regForm.password" type="password" minlength="6" autocomplete="new-password" required></label>
+        <label class="field"><span>联系人 / 电话（选填）</span><input v-model.trim="regForm.contact" maxlength="120" placeholder="如 王经理 138xxxxxxxx"></label>
+        <div v-if="regForm.plugin_id" class="reg-src">来源应用：<b>{{ regPluginName }}</b> —— 注册即开通 {{ regPluginName }} 30 天免费试用</div>
+      </template>
+
+      <div class="login-err">{{ authError }}</div>
+      <button class="btn primary block" :disabled="submitting">{{ submitting ? '提交中…' : (mode === 'login' ? '登 录' : '注 册') }}</button>
+      <div class="login-hint">忘记密码？请联系平台管理员在「租户管理」中重置。</div>
+    </form>
+  </div>
+
+  <!-- ==================== 已登录：门户主界面 ==================== -->
+  <div v-else class="layout">
+    <header class="topbar">
+      <div class="brand"><i>◆</i>租户门户<span class="ver-tag">{{ user.tenant_name }}</span></div>
+      <div class="spacer"></div>
+      <span class="user">{{ user.username }} · 级别 {{ user.level }}</span>
+      <button class="btn sm" @click="doLogout">退出</button>
+    </header>
+
+    <div class="body" style="display:block;overflow:auto">
+      <main class="portal-main">
+
+        <!-- 我的应用 -->
+        <section class="block">
+          <div class="block-head">
+            <h2 class="block-title">我的应用 <span class="count">{{ ov.apps.length }}</span></h2>
+            <button class="btn ghost sm" @click="loadOverview">↻ 刷新</button>
+          </div>
+          <div v-if="!ov.apps.length" class="tip">尚无已开通的应用，可在下方「可申请的应用」中申请试用。</div>
+          <table v-else class="ver-table">
+            <thead><tr><th>应用</th><th>状态</th><th>付费 / 到期</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr v-for="a in ov.apps" :key="a.plugin_id">
+                <td><div class="cell-col"><b>{{ a.icon }} {{ a.plugin_name }}</b><span class="sub mono">{{ a.plugin_id }}</span></div></td>
+                <td><span class="badge" :class="stateMeta(a).cls">{{ stateMeta(a).text }}</span></td>
+                <td>
+                  <div class="cell-col">
+                    <span>{{ payText(a) }}</span>
+                    <span v-if="a.paid_until" class="sub">{{ a.paid_until }}<template v-if="a.days_left !== null && a.days_left >= 0">（剩 {{ a.days_left }} 天）</template></span>
+                    <span v-if="a.pending_trial" class="sub">试用申请待审批</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="cell-col">
+                    <a v-if="a.state === 'ok' && a.current_version" class="btn primary sm" :href="'/app/' + a.plugin_id + '/' + user.tenant_id + '/'" target="_blank" rel="noopener">↗ 进入应用</a>
+                    <button v-if="a.state === 'ok' || a.state === 'trial_expired'" class="btn ghost sm" :disabled="busy" @click="openRenew(a)">申请续费</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <!-- 可申请的应用 -->
+        <section class="block" v-if="ov.catalog.length">
+          <h2 class="block-title" style="margin-bottom:10px">可申请的应用</h2>
+          <div class="catalog-grid">
+            <div v-for="c in ov.catalog" :key="c.id" class="catalog-card">
+              <div class="cc-head"><span class="cc-icon">{{ c.icon }}</span><b>{{ c.name }}</b><span v-if="c.category" class="tag">{{ c.category }}</span></div>
+              <p class="cc-desc">{{ c.description || '暂无描述' }}</p>
+              <div class="cc-actions">
+                <button class="btn primary sm" :disabled="busy" @click="applyTrial(c)">申请试用</button>
+                <a class="btn ghost sm" :href="'/market/' + c.id + '/'" target="_blank" rel="noopener">了解详情</a>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 申请与续费记录 -->
+        <section class="block">
+          <h2 class="block-title" style="margin-bottom:10px">申请记录</h2>
+          <div v-if="!ov.trials.length && !ov.renewals.length" class="tip">暂无申请记录。</div>
+          <div v-for="t in ov.trials" :key="'t' + t.id" class="trial-row">
+            <span>🧪 试用申请《{{ t.plugin_name }}》 · {{ trialStatusText(t) }} · 提交于 {{ t.requested_at }}</span>
+          </div>
+          <div v-for="r in ov.renewals" :key="'r' + r.id" class="trial-row">
+            <span>💰 续费申请《{{ r.plugin_name }}》 {{ r.months }} 个月 · {{ renewalStatusText(r) }} · 提交于 {{ r.requested_at }}</span>
+          </div>
+        </section>
+
+        <!-- 我的权限 -->
+        <section class="block">
+          <h2 class="block-title" style="margin-bottom:10px">企业信息与权限</h2>
+          <div class="perm-box">
+            <div class="row"><span>企业名称</span><b>{{ user.tenant_name }}</b></div>
+            <div class="row"><span>企业ID</span><b class="mono">{{ user.tenant_id }}</b></div>
+            <div class="row"><span>租户级别</span><b>{{ levelLabel }}</b></div>
+            <div class="row"><span>级别权限</span><b class="sub">按级别开通的功能范围陆续上线中，当前所有已授权应用均可正常使用。</b></div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- ==================== 续费申请弹窗 ==================== -->
+  <div v-if="renewOpen" class="mask" @click.self="renewOpen = false">
+    <div class="modal">
+      <h3>💰 申请续费 · {{ renewTarget && renewTarget.plugin_name }}</h3>
+      <div class="grant-field">
+        <label>续费时长（月）</label>
+        <select v-model.number="renewMonths" class="fld">
+          <option :value="6">6 个月</option>
+          <option :value="12">12 个月</option>
+          <option :value="24">24 个月</option>
+          <option :value="36">36 个月</option>
+        </select>
+      </div>
+      <div class="grant-field">
+        <label>备注（选填，如合同号、发票信息）</label>
+        <input v-model="renewNote" maxlength="200" class="fld">
+      </div>
+      <div class="tip">提交后由平台管理员确认并登记新到期日，结果可在「申请记录」查看。</div>
+      <div class="modal-actions">
+        <button class="btn ghost" @click="renewOpen = false">取消</button>
+        <button class="btn primary" :disabled="busy" @click="submitRenew">提交申请</button>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="toastMsg" id="toast" :class="{err: toastErr}">{{ toastMsg }}</div>
+</div>
+
+<script src="/static/vendor/vue.global.prod.js"></script>
+<script src="/static/portal.js"></script>
+</body>
+</html>

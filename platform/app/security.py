@@ -120,7 +120,12 @@ def session_user(token: str) -> dict:
 
 
 def current_user(authorization: str = Header(default="")) -> dict:
-    return session_user(authorization.removeprefix("Bearer ").strip())
+    user = session_user(authorization.removeprefix("Bearer ").strip())
+    if user.get("role") == "tenant":
+        # 租户门户账号只能访问 /api/portal/*，不得调用平台管理接口；
+        # /app/ 网关走 cookie_user，不受此限制。
+        raise HTTPException(status_code=403, detail="租户门户账号无权访问平台管理接口")
+    return user
 
 
 def cookie_user(request: Request) -> dict:

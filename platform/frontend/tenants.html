@@ -11,7 +11,32 @@
   <div class="workspace">
     <main class="stage">
       <div class="panel">
-        <div class="panel-title-bar">租户管理<span class="ver-tag">v{{ version }}</span></div>
+        <div class="panel-title-bar">租户管理<span class="ver-tag">v{{ platformVersion || version }}</span></div>
+
+        <!-- ================= 待办申请 ================= -->
+        <section class="block">
+          <div class="block-head">
+            <h2 class="block-title">待办申请 <span class="count">{{ pendingCount }}</span></h2>
+            <button class="btn ghost sm" @click="loadApps">↻ 刷新</button>
+          </div>
+          <div v-if="!pendingCount" class="tip">暂无待审批的试用 / 续费申请。</div>
+          <div v-else class="app-list">
+            <div v-for="t in pendingTrials" :key="'t' + t.id" class="trial-row">
+              <span>🧪 <b>{{ t.tenant_name }}</b>（{{ t.tenant_id }}）申请试用《{{ t.plugin_name }}》 · 联系人：{{ t.contact || '—' }} · {{ t.requested_at }}</span>
+              <span style="white-space:nowrap">
+                <button class="btn primary sm" :disabled="busy" @click="reviewTrial(t, 'approve')">批准 · 30天试用</button>
+                <button class="btn ghost sm" :disabled="busy" @click="reviewTrial(t, 'reject')">拒绝</button>
+              </span>
+            </div>
+            <div v-for="r in pendingRenewals" :key="'r' + r.id" class="trial-row">
+              <span>💰 <b>{{ r.tenant_name }}</b>（{{ r.tenant_id }}）申请续费《{{ r.plugin_name }}》 {{ r.months }} 个月<span v-if="r.note"> · 备注：{{ r.note }}</span> · {{ r.requested_at }}</span>
+              <span style="white-space:nowrap">
+                <button class="btn primary sm" :disabled="busy" @click="openRenewal(r)">确认续费</button>
+                <button class="btn ghost sm" :disabled="busy" @click="confirmRenewal(r, 'reject', '')">拒绝</button>
+              </span>
+            </div>
+          </div>
+        </section>
 
         <!-- ================= 租户列表 ================= -->
         <section class="block">
@@ -19,9 +44,9 @@
             <h2 class="block-title">企业租户 <span class="count">{{ tenants.length }}</span></h2>
             <button class="btn primary sm" @click="openCreate">＋ 新建租户</button>
           </div>
-          <div class="tip" style="margin-bottom:10px">租户ID仅允许字母、数字、下划线，创建后不可修改；新建后需在各插件的「租户授权与付费」中开通授权（新租户还需初始化数据副本）方可访问。</div>
+          <div class="tip" style="margin-bottom:10px">租户ID仅允许字母、数字、下划线，创建后不可修改；授权、审批、门户账号均在本页「授权台账」中管理。企业也可通过租户门户自助注册（来源插件免审批直开 30 天试用）。</div>
           <table class="ver-table">
-            <thead><tr><th>租户</th><th>级别</th><th>状态</th><th>已授权插件</th><th>操作</th></tr></thead>
+            <thead><tr><th>租户</th><th>级别</th><th>状态</th><th>已授权插件</th><th>门户账号</th><th>操作</th></tr></thead>
             <tbody>
               <tr v-for="t in tenants" :key="t.id">
                 <td>
@@ -32,9 +57,9 @@
                 </td>
                 <td>
                   <select v-if="!t.is_sandbox" class="fld" :value="t.level" :disabled="busy" @change="setLevel(t, $event)">
-                    <option value="standard">标准版</option>
-                    <option value="premium">高级版</option>
-                    <option value="enterprise">企业版</option>
+                    <option value="vip1">VIP1</option>
+                    <option value="vip2">VIP2</option>
+                    <option value="vip3">VIP3</option>
                   </select>
                   <span v-else class="sub">—</span>
                 </td>
@@ -46,16 +71,18 @@
                 <td>
                   <button class="btn ghost sm" @click="openGrants(t)">🧩 {{ t.granted_plugins }} 个插件</button>
                 </td>
+                <td><span class="sub">{{ t.portal_users || '—' }}</span></td>
                 <td>
                   <div v-if="!t.is_sandbox" class="cell-col">
                     <button class="btn ghost sm" @click="openRename(t)">✏ 改名</button>
+                    <button class="btn ghost sm" @click="openAccount(t)">🔑 门户账号</button>
                     <button v-if="t.status === 'active'" class="btn danger-ghost sm" @click="toggleStatus(t, 'inactive')">⏸ 停用</button>
                     <button v-else class="btn ghost sm" @click="toggleStatus(t, 'active')">▶ 启用</button>
                   </div>
                   <span v-else class="sub">系统内置</span>
                 </td>
               </tr>
-              <tr v-if="!tenants.length"><td colspan="5" class="ver-empty">暂无租户，点击「新建租户」创建</td></tr>
+              <tr v-if="!tenants.length"><td colspan="6" class="ver-empty">暂无租户，点击「新建租户」创建</td></tr>
             </tbody>
           </table>
         </section>
@@ -76,9 +103,9 @@
           <div v-if="form.isNew" class="grant-field">
             <label>租户级别</label>
             <select v-model="form.level" class="fld">
-              <option value="standard">标准版</option>
-              <option value="premium">高级版</option>
-              <option value="enterprise">企业版</option>
+              <option value="vip1">VIP1</option>
+              <option value="vip2">VIP2</option>
+              <option value="vip3">VIP3</option>
             </select>
           </div>
           <div class="modal-actions">
@@ -88,24 +115,148 @@
         </div>
       </div>
 
-      <!-- ================= 授权明细 ================= -->
+      <!-- ================= 授权台账（可操作） ================= -->
       <div v-if="modal === 'grants'" class="mask" @click.self="modal = null">
-        <div class="modal">
-          <h3>🧩 {{ grantsTenant.name }}（{{ grantsTenant.id }}）的插件授权</h3>
-          <div v-if="!grantDetail.length" class="ver-empty">尚未授权任何插件<br>请到对应插件的「租户授权与付费」区块开通</div>
-          <table v-else class="ver-table">
-            <thead><tr><th>插件</th><th>付费状态</th><th>到期日</th><th>授权状态</th></tr></thead>
-            <tbody>
-              <tr v-for="g in grantDetail" :key="g.plugin_id">
-                <td>{{ g.icon }} {{ g.plugin_name }}<span class="sub" style="margin-left:6px">{{ g.plugin_id }}</span></td>
-                <td>{{ payLabel(g) }}</td>
-                <td>{{ g.paid_until ? g.paid_until + (g.days_left !== null && g.days_left >= 0 ? '（剩 ' + g.days_left + ' 天）' : '') : '—' }}</td>
-                <td><span class="badge" :class="g.status === 'active' ? 'b-ok' : 'b-err'">{{ g.status === 'active' ? '生效' : '已停用' }}</span></td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="modal wide">
+          <h3>🧩 {{ grantsTenant.name }}（{{ grantsTenant.id }}）· 授权台账</h3>
+
+          <div class="ledger-sec">
+            <div class="ledger-title">插件授权</div>
+            <div v-if="!ledger.grants.length" class="ver-empty">尚未授权任何插件，可在下方「可申请插件」中开通</div>
+            <table v-else class="ver-table">
+              <thead><tr><th>插件</th><th>付费 / 到期</th><th>授权状态</th><th>数据副本</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr v-for="g in ledger.grants" :key="g.plugin_id">
+                  <td><div class="cell-col"><span>{{ g.icon }} {{ g.plugin_name }}</span><span class="sub mono">{{ g.plugin_id }}</span><span v-if="g.note" class="sub">{{ g.note }}</span></div></td>
+                  <td>
+                    <div class="cell-col">
+                      <span>{{ payLabel(g) }}</span>
+                      <span v-if="g.paid_until" class="sub">{{ g.paid_until }}<template v-if="g.days_left !== null">（{{ g.days_left >= 0 ? '剩 ' + g.days_left + ' 天' : '已过期' }}）</template></span>
+                    </div>
+                  </td>
+                  <td><span class="badge" :class="g.status === 'active' ? 'b-ok' : 'b-err'">{{ g.status === 'active' ? '生效' : '已停用' }}</span></td>
+                  <td>
+                    <span v-if="g.db_ready" class="badge b-ok">就绪</span>
+                    <button v-else-if="g.status === 'active'" class="btn ghost sm" :disabled="busy" @click="provisionDb(g)">初始化数据</button>
+                    <span v-else class="sub">—</span>
+                  </td>
+                  <td>
+                    <div class="cell-col">
+                      <button class="btn ghost sm" @click="openGrant(g)">编辑台账</button>
+                      <button v-if="g.status === 'active'" class="btn danger-ghost sm" :disabled="busy" @click="toggleGrant(g, 'suspended')">停用</button>
+                      <button v-else class="btn ghost sm" :disabled="busy" @click="toggleGrant(g, 'active')">恢复</button>
+                      <button class="btn danger-ghost sm" :disabled="busy" @click="removeGrant(g)">删除</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="cell-row" style="margin-top:8px;gap:8px">
+              <select v-model="newGrantPlugin" class="fld" style="max-width:220px">
+                <option value="">开通新授权：选择插件…</option>
+                <option v-for="p in openablePlugins" :key="p.id" :value="p.id">{{ p.icon }} {{ p.name }}</option>
+              </select>
+              <button class="btn primary sm" :disabled="!newGrantPlugin" @click="openNewGrant">＋ 开通授权</button>
+            </div>
+          </div>
+
+          <div class="ledger-sec" v-if="ledger.trials.length">
+            <div class="ledger-title">试用申请</div>
+            <div v-for="t in ledger.trials" :key="t.id" class="trial-row">
+              <span>《{{ t.plugin_name }}》 · {{ t.status === 'pending' ? '待审批' : (t.status === 'approved' ? '已批准' + (t.trial_end ? '（至 ' + t.trial_end + '）' : '') : '已拒绝') }} · {{ t.requested_at }}</span>
+              <span v-if="t.status === 'pending'" style="white-space:nowrap">
+                <button class="btn primary sm" :disabled="busy" @click="reviewTrial(t, 'approve')">批准</button>
+                <button class="btn ghost sm" :disabled="busy" @click="reviewTrial(t, 'reject')">拒绝</button>
+              </span>
+            </div>
+          </div>
+
+          <div class="ledger-sec" v-if="ledger.renewals.length">
+            <div class="ledger-title">续费申请</div>
+            <div v-for="r in ledger.renewals" :key="r.id" class="trial-row">
+              <span>《{{ r.plugin_name }}》 {{ r.months }} 个月 · {{ r.status === 'pending' ? '待确认' : (r.status === 'confirmed' ? '已确认（至 ' + (r.new_paid_until || '—') + '）' : '已拒绝') }} · {{ r.requested_at }}</span>
+              <span v-if="r.status === 'pending'" style="white-space:nowrap">
+                <button class="btn primary sm" :disabled="busy" @click="openRenewal(r)">确认</button>
+                <button class="btn ghost sm" :disabled="busy" @click="confirmRenewal(r, 'reject', '')">拒绝</button>
+              </span>
+            </div>
+          </div>
+
+          <div class="ledger-sec">
+            <div class="ledger-title">门户账号</div>
+            <div v-if="!ledger.portal_users.length" class="tip">该企业尚无门户账号，可在租户列表点「🔑 门户账号」创建。</div>
+            <div v-for="u in ledger.portal_users" :key="u.username" class="trial-row">
+              <span>👤 {{ u.username }}<span class="sub" style="margin-left:8px">创建于 {{ u.created_at }}</span></span>
+              <button class="btn ghost sm" @click="openAccount(grantsTenant, u.username)">重置密码</button>
+            </div>
+          </div>
+
           <div class="modal-actions">
             <button class="btn ghost" @click="modal = null">关闭</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 开通/编辑授权 ================= -->
+      <div v-if="modal === 'grant'" class="mask" @click.self="modal = null">
+        <div class="modal">
+          <h3>{{ grantForm.isNew ? '🔓 开通授权' : '✏ 编辑授权台账' }} · {{ grantsTenant.name }} × {{ grantForm.plugin_name }}</h3>
+          <div class="grant-field">
+            <label>付费状态</label>
+            <select v-model="grantForm.pay_status" class="fld">
+              <option value="trial">试用（默认 30 天）</option>
+              <option value="free">免费</option>
+              <option value="paid">已付费</option>
+              <option value="arrears">欠费（暂停服务）</option>
+            </select>
+          </div>
+          <div v-if="grantForm.pay_status === 'trial' || grantForm.pay_status === 'paid'" class="grant-field">
+            <label>到期日{{ grantForm.pay_status === 'trial' ? '（留空 = 今天起 30 天）' : '' }}</label>
+            <input type="date" v-model="grantForm.paid_until" class="fld">
+          </div>
+          <div class="grant-field">
+            <label>备注</label>
+            <input v-model="grantForm.note" maxlength="200" class="fld" placeholder="如：合同编号、联系人">
+          </div>
+          <div class="modal-actions">
+            <button class="btn ghost" @click="modal = null">取消</button>
+            <button class="btn primary" :disabled="busy" @click="saveGrant">保存</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 确认续费 ================= -->
+      <div v-if="modal === 'renewal'" class="mask" @click.self="modal = null">
+        <div class="modal">
+          <h3>💰 确认续费 · {{ renewalItem && renewalItem.tenant_name || grantsTenant.name }}《{{ renewalItem && renewalItem.plugin_name }}》</h3>
+          <div class="grant-field">
+            <label>新到期日（YYYY-MM-DD，写入授权台账并置为已付费）</label>
+            <input type="date" v-model="renewalPaidUntil" class="fld">
+          </div>
+          <div class="tip">申请 {{ renewalItem && renewalItem.months }} 个月<span v-if="renewalItem && renewalItem.note"> · 备注：{{ renewalItem.note }}</span></div>
+          <div class="modal-actions">
+            <button class="btn ghost" @click="modal = null">取消</button>
+            <button class="btn primary" :disabled="busy || !renewalPaidUntil" @click="confirmRenewal(renewalItem, 'confirm', renewalPaidUntil)">确认续费</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 门户账号 ================= -->
+      <div v-if="modal === 'account'" class="mask" @click.self="modal = null">
+        <div class="modal">
+          <h3>🔑 门户账号 · {{ accountTenant.name }}（{{ accountTenant.id }}）</h3>
+          <div class="grant-field">
+            <label>登录账号（全局唯一；已存在则视为重置该企业下的密码）</label>
+            <input v-model.trim="accountForm.username" class="fld" maxlength="64" autocomplete="off">
+          </div>
+          <div class="grant-field">
+            <label>密码（至少 6 位，仅本次提交，平台不保存明文）</label>
+            <input v-model="accountForm.password" type="password" class="fld" maxlength="128" autocomplete="new-password">
+          </div>
+          <div class="tip">租户凭此账号登录门户 /portal/ 查看申请、使用情况并自助申请续费。</div>
+          <div class="modal-actions">
+            <button class="btn ghost" @click="modal = null">取消</button>
+            <button class="btn primary" :disabled="busy || !accountForm.username || accountForm.password.length < 6" @click="saveAccount">{{ busy ? '保存中…' : '保存' }}</button>
           </div>
         </div>
       </div>

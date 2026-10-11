@@ -181,7 +181,12 @@ createApp({
       granularity.value === 'month' ? '月份' : granularity.value === 'day' ? '日期' : '时段'
     ));
 
-    onMounted(() => { loadSummary(); loadFilters(); load(); });
+    const platformVersion = ref('');
+
+    onMounted(() => {
+      loadSummary(); loadFilters(); load();
+      Platform.loadPlatformVersion().then(v => (platformVersion.value = v));
+    });
 
     return {
       summary, rows, total, plugins, tenants, dim, granularity, rangeMode, startDate, endDate,
@@ -189,7 +194,7 @@ createApp({
       crossRows, hourRows, detailLabel, activeSeries, bucketTitle,
       topRows, topTotal, topRange, topWidth,
       fmt, num, rawOut, savedPct, labelOf, load, toggleDetail, switchDim, switchGranularity, switchRange,
-      barWidth, hourHeight, version: Platform.version,
+      barWidth, hourHeight, platformVersion, version: Platform.version,
     };
   },
 }).mount('#app');

@@ -2,8 +2,10 @@
 
 数据流：
 - 授权(plugin_grants)是插件访问的唯一依据，resolve_gateway 常规模式据此放行；
-- 试用(plugin_trials)由租户在拦截页自助申请，平台管理员批准后生成 30 天试用授权；
-- 付费为手动台账（免费/已付费/欠费 + 到期日），不做在线支付。
+- 试用(plugin_trials)由租户在门户注册/登录后申请：推广页来源免审批直接开通 30 天试用，
+  其余插件申请由平台管理员在「租户管理」审批后生成试用授权；
+- 续费(plugin_renewals)由租户在门户发起申请，管理员确认并手动填写新到期日；
+- 付费为手动台账（试用/免费/已付费/欠费 + 到期日），不做在线支付。
 """
 
 import html
@@ -13,11 +15,11 @@ from .db import audit, get_conn, now_str
 from .plugin_service import PluginError, db_path
 
 PAY_STATUSES = ("trial", "free", "paid", "arrears")
-TENANT_LEVELS = ("standard", "premium", "enterprise")
+TENANT_LEVELS = ("vip1", "vip2", "vip3")
 TRIAL_DAYS = 30       # 试用时长（天）
 WARN_DAYS = 10        # 到期前提示阈值（天）
 PAY_LABELS = {"trial": "试用中", "free": "免费", "paid": "已付费", "arrears": "欠费"}
-LEVEL_LABELS = {"standard": "标准版", "premium": "高级版", "enterprise": "企业版"}
+LEVEL_LABELS = {"vip1": "VIP1", "vip2": "VIP2", "vip3": "VIP3"}
 
 
 def days_left(paid_until: str | None) -> int | None:
@@ -64,7 +66,7 @@ def plugin_grants_overview(plugin_id: str) -> dict:
         if not p:
             raise PluginError("插件不存在", 404)
         rows = conn.execute(
-            "SELECT t.id, t.name, t.is_sandbox, COALESCE(t.level,'standard') AS level, "
+            "SELECT t.id, t.name, t.is_sandbox, COALESCE(t.level,'vip1') AS level, "
             "g.pay_status, g.status AS grant_status, g.paid_until, g.note, g.granted_at, g.updated_at "
             "FROM tenants t LEFT JOIN plugin_grants g ON g.tenant_id=t.id AND g.plugin_id=? "
             "ORDER BY t.is_sandbox, t.id", (plugin_id,),
@@ -152,7 +154,7 @@ def provision(plugin_id: str, tenant_id: str, operator: str) -> dict:
 # ---------------------------------------------------------------- 试用申请
 
 def apply_trial(plugin_id: str, tenant_id: str, contact: str) -> dict:
-    """拦截页公开提交的试用申请（无需平台登录态）。"""
+    """租户在门户申请试用其他插件（需平台登录态），生成待审批记录。"""
     contact = contact.strip()[:120]
     with get_conn() as conn:
         p = conn.execute("SELECT name FROM plugins WHERE id=?", (plugin_id,)).fetchone()
@@ -211,6 +213,78 @@ def review_trial(plugin_id: str, trial_id: int, action: str, operator: str) -> d
         return {"ok": True, "message": "已拒绝该申请"}
 
 
+# ---------------------------------------------------------------- 续费申请
+
+def apply_renewal(plugin_id: str, tenant_id: str, months: int, note: str) -> dict:
+    """租户在门户发起续费申请（同一插件仅允许一条待处理申请）。"""
+    months = max(1, min(int(months or 12), 60))
+    note = (note or "").strip()[:200]
+    with get_conn() as conn:
+        p = conn.execute("SELECT name FROM plugins WHERE id=?", (plugin_id,)).fetchone()
+        if not p:
+            raise PluginError("应用不存在", 404)
+        g = conn.execute(
+            "SELECT plugin_id FROM plugin_grants WHERE plugin_id=? AND tenant_id=? AND status='active'",
+            (plugin_id, tenant_id),
+        ).fetchone()
+        if not g:
+            raise PluginError("当前无生效授权，无法申请续费", 409)
+        pending = conn.execute(
+            "SELECT id FROM plugin_renewals WHERE plugin_id=? AND tenant_id=? AND status='pending' LIMIT 1",
+            (plugin_id, tenant_id),
+        ).fetchone()
+        if pending:
+            raise PluginError("续费申请已提交，请等待管理员处理", 409)
+        conn.execute(
+            "INSERT INTO plugin_renewals (plugin_id, tenant_id, months, note, status, requested_at) "
+            "VALUES (?,?,?,?,'pending',?)", (plugin_id, tenant_id, months, note, now_str()),
+        )
+    return {"ok": True, "message": "续费申请已提交，请等待平台管理员确认"}
+
+
+def confirm_renewal(plugin_id: str, renewal_id: int, action: str,
+                    paid_until: str | None, operator: str) -> dict:
+    """管理员确认续费：confirm 时按新到期日更新授权台账（pay_status=paid）。"""
+    if action not in ("confirm", "reject"):
+        raise PluginError("操作仅支持 confirm / reject", 400)
+    with get_conn() as conn:
+        r = conn.execute("SELECT * FROM plugin_renewals WHERE id=? AND plugin_id=?",
+                         (renewal_id, plugin_id)).fetchone()
+        if not r:
+            raise PluginError("续费申请不存在", 404)
+        if r["status"] != "pending":
+            raise PluginError("该申请已处理过", 409)
+        ts = now_str()
+        if action == "reject":
+            conn.execute(
+                "UPDATE plugin_renewals SET status='rejected', reviewed_at=?, reviewer=? WHERE id=?",
+                (ts, operator, renewal_id),
+            )
+            audit(conn, operator, "拒绝续费申请", plugin_id, f"租户 {r['tenant_id']}")
+            return {"ok": True, "message": "已拒绝该续费申请"}
+        if not paid_until:
+            raise PluginError("请填写新的到期日（YYYY-MM-DD）", 400)
+        try:
+            paid_until = date.fromisoformat(paid_until).isoformat()
+        except ValueError:
+            raise PluginError("到期日格式应为 YYYY-MM-DD", 400)
+        conn.execute(
+            "UPDATE plugin_renewals SET status='confirmed', reviewed_at=?, reviewer=?, new_paid_until=? WHERE id=?",
+            (ts, operator, paid_until, renewal_id),
+        )
+        conn.execute(
+            "INSERT INTO plugin_grants (plugin_id, tenant_id, pay_status, status, paid_until, note, "
+            "granted_at, updated_at) VALUES (?,?,'paid','active',?,?,?,?) "
+            "ON CONFLICT(plugin_id, tenant_id) DO UPDATE SET pay_status='paid', status='active', "
+            "paid_until=excluded.paid_until, updated_at=excluded.updated_at",
+            (plugin_id, r["tenant_id"], paid_until,
+             f"续费确认（申请 {r['months']} 个月）", ts, ts),
+        )
+        audit(conn, operator, "确认续费", plugin_id,
+              f"租户 {r['tenant_id']} 付费至 {paid_until}")
+        return {"ok": True, "message": f"已确认续费（付费至 {paid_until}）"}
+
+
 # ---------------------------------------------------------------- 拦截页与到期横幅
 
 def tenant_banner(plugin_id: str, tenant_id: str) -> str | None:
@@ -227,7 +301,7 @@ def tenant_banner(plugin_id: str, tenant_id: str) -> str | None:
 
 
 def intercept_page(plugin_id: str, tenant_id: str, reason: str) -> str:
-    """未授权访问 /app/ 的内置拦截页：说明原因并提供试用申请表单。"""
+    """未授权访问 /app/ 的内置拦截页：说明原因并引导前往租户门户注册/申请。"""
     with get_conn() as conn:
         p = conn.execute("SELECT name FROM plugins WHERE id=?", (plugin_id,)).fetchone()
         t = conn.execute("SELECT name FROM tenants WHERE id=?", (tenant_id,)).fetchone()
@@ -244,38 +318,14 @@ def intercept_page(plugin_id: str, tenant_id: str, reason: str) -> str:
         rows += f'<div class="row"><span>到期日</span><b>{html.escape(g["paid_until"])}</b>{extra}</div>'
     pending_tip = ('<div class="pending-tip">✅ 已有试用申请待审核，请耐心等待管理员处理，无需重复提交。</div>'
                    if state.get("pending_trial") else "")
+    portal_url = f"/portal/?plugin={html.escape(plugin_id, quote=True)}"
     form_block = f"""
-    <div class="apply-box" id="applyBox">
-      <h3>申请免费试用 {TRIAL_DAYS} 天</h3>
-      <div class="field"><label>您的称呼 / 联系方式</label>
-        <input id="contact" maxlength="120" placeholder="如：王经理 138xxxxxxxx" autocomplete="off"></div>
-      <button id="applyBtn" class="apply-btn">提交试用申请</button>
-      <div class="apply-msg" id="applyMsg"></div>
+    <div class="apply-box">
+      <h3>开通方式</h3>
+      <p class="tip">请前往<b>租户门户</b>注册企业账号并登录：通过应用推广页注册可直接开始
+      {TRIAL_DAYS} 天免费试用；已注册租户登录后可查看申请进度、使用情况并自助申请续费。</p>
+      <a class="apply-btn" href="{portal_url}">前往租户门户</a>
     </div>""" if not state.get("pending_trial") else ""
-    script = "" if state.get("pending_trial") else """
-document.getElementById('applyBtn').addEventListener('click', function () {
-  var btn = this, contact = document.getElementById('contact').value.trim();
-  var msg = document.getElementById('applyMsg');
-  if (!contact) { msg.textContent = '请先填写称呼或联系方式'; msg.className = 'apply-msg err'; return; }
-  btn.disabled = true; msg.textContent = '提交中…'; msg.className = 'apply-msg';
-  fetch('/api/public/trial-apply', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ plugin_id: PID, tenant_id: TID, contact: contact })
-  }).then(function (r) {
-    return r.json().then(function (d) { return { ok: r.ok, d: d }; });
-  }).then(function (r) {
-    if (r.ok) {
-      msg.textContent = r.d.message || '申请已提交'; msg.className = 'apply-msg ok';
-      setTimeout(function () { location.reload(); }, 1800);
-    } else {
-      msg.textContent = r.d.detail || '提交失败'; msg.className = 'apply-msg err'; btn.disabled = false;
-    }
-  }).catch(function () {
-    msg.textContent = '网络异常，请稍后重试'; msg.className = 'apply-msg err'; btn.disabled = false;
-  });
-});"""
-    script = (f"var PID={plugin_id!r},TID={tenant_id!r};" + script) if script else ""
     return f"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -295,14 +345,9 @@ h1{{font-size:19px;text-align:center;margin:12px 0 6px;color:#0f172a}}
 .pending-tip{{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;border-radius:12px;
   padding:12px 14px;font-size:13.5px;line-height:1.7;margin:14px 0}}
 .apply-box h3{{font-size:14.5px;margin:18px 0 10px;color:#0f172a}}
-.field label{{display:block;font-size:13px;color:#475569;margin-bottom:6px}}
-.field input{{width:100%;border:1px solid #cbd5e1;border-radius:10px;padding:10px 12px;font-size:14px;outline:none}}
-.field input:focus{{border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.15)}}
-.apply-btn{{width:100%;margin-top:14px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:0;
-  border-radius:10px;padding:11px;font-size:14.5px;font-weight:600;cursor:pointer}}
-.apply-btn:disabled{{opacity:.6;cursor:not-allowed}}
-.apply-msg{{font-size:13px;margin-top:10px;line-height:1.6;min-height:18px}}
-.apply-msg.ok{{color:#059669}}.apply-msg.err{{color:#dc2626}}
+.apply-box .tip{{font-size:13.5px;color:#475569;line-height:1.8}}
+.apply-btn{{display:block;width:100%;margin-top:14px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;
+  border:0;border-radius:10px;padding:11px;font-size:14.5px;font-weight:600;text-align:center;text-decoration:none}}
 .foot{{text-align:center;font-size:12px;color:#94a3b8;margin-top:18px}}
 </style></head><body><div class="card">
   <div class="icon">🔒</div>
@@ -315,8 +360,7 @@ h1{{font-size:19px;text-align:center;margin:12px 0 6px;color:#0f172a}}
   </div>
   {pending_tip}{form_block}
   <div class="foot">如需购买正式服务，请联系平台服务商</div>
-</div>
-<script>{script}</script></body></html>"""
+</div></body></html>"""
 
 
 def banner_html(pay_status: str, paid_until: str | None, left: int | None) -> str | None:
