@@ -148,6 +148,16 @@ a { text-decoration: none; color: inherit; }
 .ba-card { flex: 1; min-width: 120px; background: var(--bg, #faf8f2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; text-align: center; }
 .ba-card .ba-val { font-size: 17px; font-weight: 700; color: var(--wine); }
 .ba-card .ba-label { font-size: 14px; color: var(--text3); margin-top: 2px; }
+/* 经营分析：PC 端三组指标并排、组内双列小卡，消除横向大片留白 */
+.app-shell.pc .ba-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.app-shell.pc .ba-metrics .ba-group { margin: 0; }
+.app-shell.pc .ba-metrics .ba-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.app-shell.pc .ba-metrics .ba-card { flex: none; min-width: 0; padding: 8px 10px; }
+.app-shell.pc .ba-metrics .ba-card .ba-val { font-size: 16px; white-space: nowrap; }
+@media (max-width: 1199px) {
+  .app-shell.pc .ba-metrics { grid-template-columns: 1fr; }
+  .app-shell.pc .ba-metrics .ba-group { margin: 10px 0 14px; }
+}
 .ba-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
 .ba-table th { text-align: left; color: var(--text3); font-weight: 600; border-bottom: 1px solid var(--border); padding: 6px 8px; }
 .ba-table td { border-bottom: 1px dashed var(--border); padding: 6px 8px; color: var(--text1); }
@@ -494,6 +504,12 @@ a { text-decoration: none; color: inherit; }
 .search-input { flex: 1; padding: 10px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; outline: none; background: var(--white); transition: .2s; }
 .search-input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201,169,97,.1); }
 
+/* ---------- 会员统计条 ---------- */
+.cust-stats-bar { display: flex; gap: 10px; margin-bottom: 12px; }
+.cust-stats-bar .csb-item { flex: 1; background: var(--white); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; text-align: center; }
+.cust-stats-bar .csb-val { display: block; font-size: 20px; font-weight: 700; color: var(--gold); }
+.cust-stats-bar .csb-lbl { display: block; font-size: 14px; color: var(--text-2, #888); margin-top: 2px; }
+
 /* ---------- sub page ---------- */
 .sub-page { padding: 0 14px calc(78px + var(--safe-bottom)); }
 .sub-page-title { font-size: 18px; font-weight: 700; padding: 18px 0 10px; display: flex; align-items: center; gap: 8px; }
@@ -636,17 +652,35 @@ body.mt-dragging { cursor: col-resize !important; user-select: none !important; 
 /* PC section layout：内容区占满全屏宽度并自适应 */
 .app-shell.pc section { max-width: none; width: 100%; min-width: 0; }
 .app-shell.pc .stats-grid { grid-template-columns: repeat(4, 1fr); }
-/* 库存管理 5 张统计卡：电脑版一行排满（移动端仍 2 列） */
-.app-shell.pc .stats-grid.inv-stats-grid { grid-template-columns: repeat(5, 1fr); gap: 8px; }
-.app-shell.pc .inv-stats-grid .stat-card { padding: 10px 12px; }
-.app-shell.pc .inv-stats-grid .stat-label { white-space: nowrap; }
-.app-shell.pc .inv-stats-grid .stat-value { font-size: clamp(15px, 1.7vw, 24px); white-space: nowrap; }
-@media (min-width: 1400px) {
-  .app-shell.pc .stats-grid.inv-stats-grid { gap: 12px; }
-  .app-shell.pc .inv-stats-grid .stat-card { padding: 14px; }
-  .app-shell.pc .inv-stats-grid .stat-value { font-size: 24px; }
-}
+/* 库存分析 6 张统计卡：电脑版一行排满（移动端 3 列） */
 .app-shell.pc .mini-chart { max-width: none; }
+
+/* ---- 库存分析页改造（两栏布局 / 6 小卡 / 公式 / 指标条 / 占比 / 进销存） ---- */
+.data-table th.r, .data-table td.r { text-align: right; }
+.stats-grid.inv-stats-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stats-grid.inv-stats-grid .stat-card { padding: 8px 10px; }
+.stats-grid.inv-stats-grid .stat-value { font-size: clamp(16px, 2.4vw, 22px); }
+.app-shell.pc .stats-grid.inv-stats-grid { grid-template-columns: repeat(6, 1fr); gap: 10px; }
+.inv-formula { margin: 8px 0; padding: 8px 12px; background: var(--bg); border: 1px dashed var(--border); border-radius: 8px; font-size: 14px; color: var(--text2); cursor: pointer; }
+.inv-formula b { color: var(--wine); font-size: 16px; }
+.inv-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 8px 0 12px; }
+.app-shell.pc .inv-metrics { grid-template-columns: repeat(4, 1fr); }
+.inv-metric { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; text-align: center; box-shadow: var(--shadow); }
+.inv-metric .im-val { font-size: clamp(15px, 1.5vw, 20px); font-weight: 700; color: var(--wine); white-space: nowrap; }
+.inv-metric .im-label { font-size: 14px; color: var(--text3); margin-top: 2px; }
+.inv-layout { display: block; }
+.app-shell.pc .inv-layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+.app-shell.pc .inv-side { position: sticky; top: 12px; }
+@media (max-width: 1199px) {
+  .app-shell.pc .inv-layout { grid-template-columns: 1fr; }
+  .app-shell.pc .inv-side { position: static; }
+}
+.inv-tools { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.inv-cols-panel { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 10px 12px; margin-bottom: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+.inv-col-check { font-size: 14px; color: var(--text1); display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.psi-bar { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.psi-bar label { font-size: 14px; color: var(--text2); display: inline-flex; align-items: center; gap: 6px; }
+.psi-bar input[type=date] { width: auto; padding: 6px 8px; }
 
 /* language mini buttons (login) */
 .lang-row { display: flex; gap: 6px; justify-content: center; margin-top: 12px; }

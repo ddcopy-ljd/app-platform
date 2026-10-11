@@ -3,7 +3,7 @@
 
 a = Analysis(
     ['print_agent.py'],
-    pathex=['.'],
+    pathex=[],
     binaries=[],
     datas=[],
     hiddenimports=[],

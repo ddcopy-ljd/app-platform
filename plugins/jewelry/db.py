@@ -138,7 +138,8 @@ CREATE TABLE IF NOT EXISTS customers (
   anniversary TEXT DEFAULT '',    -- 结婚纪念日（客情维护提醒用）
   preference TEXT DEFAULT '',
   points REAL DEFAULT 0,          -- 会员积分（开单按实付 1 元 = 1 分自动累计）
-  gold_discount REAL DEFAULT 1.0  -- 金价折扣待遇：0.98=金价打98折，1=无折扣
+  gold_discount REAL DEFAULT 1.0, -- 金价折扣待遇：0.98=金价打98折，1=无折扣
+  created TEXT DEFAULT ''  -- 建档时间（后端 INSERT 显式写 datetime；旧库迁移列默认空，历史会员不计新增统计）
 );
 
 CREATE TABLE IF NOT EXISTS sales (
@@ -777,6 +778,9 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("deposits", "deliver_requirements", "TEXT DEFAULT ''"),
         # 1.2.16 客情维护：结婚纪念日
         ("customers", "anniversary", "TEXT DEFAULT ''"),
+        # 会员管理：建档时间（今日/本月新增统计）。旧库 ADD COLUMN 不能用非常量默认，
+        # 故迁移列用常量 ''（历史会员不计入今日/本月新增）；新建档由后端 INSERT 显式写 datetime。
+        ("customers", "created", "TEXT DEFAULT ''"),
     ]
     for table, col, decl in alters:
         if not _has_column(conn, table, col):

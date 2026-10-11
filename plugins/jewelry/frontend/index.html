@@ -223,6 +223,7 @@
           </div>
           <div class="section biz-analysis" v-if="bizAnalysis">
             <div class="section-title"><span class="dot"></span>{{ t('ba.title') }}</div>
+            <div class="ba-metrics">
             <div class="ba-group">
               <div class="ba-group-title">💹 {{ t('ba.profitGrp') }}</div>
               <div class="ba-cards">
@@ -248,6 +249,7 @@
                 <div class="ba-card"><div class="ba-val">{{ bizAnalysis.sales.sellThrough }}%</div><div class="ba-label">{{ t('ba.sellThrough') }}</div></div>
               </div>
             </div>
+            </div><!-- /ba-metrics -->
             <div class="ba-group" v-if="bizAnalysis.categories && bizAnalysis.categories.length">
               <div class="ba-group-title">🥧 {{ t('ba.catShare') }}</div>
               <div class="donut-wrap">
@@ -492,14 +494,6 @@
               <div class="biz-body">{{ t('biz.inventory') }}</div>
             </details>
           </div>
-          <div class="stats-grid inv-stats-grid" v-if="invSum">
-            <div class="stat-card clickable" @click="goInvStatus('在库')"><div class="stat-label">{{ t('inv.stock') }}</div><div class="stat-value">{{ invSum.inStock.count }}</div><div class="stat-sub" :class="{'cell-secret':!isCostVisible()}">{{ invSum.inStock.cost==null ? '***' : '￥'+fmt(invSum.inStock.cost) }}</div></div>
-            <div class="stat-card gold clickable" @click="goInvStatus('已定')"><div class="stat-label">{{ t('inv.reservedLocked') }}</div><div class="stat-value">{{ invSum.reserved.count }}</div><div class="stat-sub" :class="{'cell-secret':!isCostVisible()}">{{ invSum.reserved.cost==null ? '***' : '￥'+fmt(invSum.reserved.cost) }}</div></div>
-            <div class="stat-card blue clickable" @click="goInvStatus('借出')"><div class="stat-label">{{ t('inv.loaned') }}</div><div class="stat-value">{{ invSum.loaned.count }}</div><div class="stat-sub" :class="{'cell-secret':!isCostVisible()}">{{ invSum.loaned.cost==null ? '***' : '￥'+fmt(invSum.loaned.cost) }}</div></div>
-            <div class="stat-card orange clickable" @click="goInvStatus('已售')"><div class="stat-label">{{ t('inv.sold') }}</div><div class="stat-value">{{ invSum.sold.count }}</div><div class="stat-sub" :class="{'cell-secret':!isCostVisible()}">{{ invSum.sold.cost==null ? '***' : '￥'+fmt(invSum.sold.cost) }}</div></div>
-            <div class="stat-card purple clickable" @click="goInvStatus('在途')"><div class="stat-label">🚚 {{ t('inv.inTransit') }}</div><div class="stat-value">{{ invSum.inTransit.count }}</div></div>
-          </div>
-
           <!-- 状态筛选清除条 -->
           <div v-if="prodStatusFilter && tab==='inventory' && invSub==='stock'" class="filter-banner">
             🔍 {{ t('inv.filteringByStatus') }}：<b>{{ prodStatusFilter }}</b>
@@ -510,6 +504,7 @@
           <div class="inv-tabs">
             <button class="inv-tab" :class="{active:invSub==='stock'}" @click="invSub='stock'">📦 {{ t('inv.tabStock') }}</button>
             <button class="inv-tab" :class="{active:invSub==='count'}" @click="invSub='count'">🧭 {{ t('inv.tabCount') }}<span v-if="coTask" class="tab-dot"></span></button>
+            <button class="inv-tab" :class="{active:invSub==='psi'}" @click="openPsiTab()">📊 {{ t('inv.tabPsi') }}</button>
           </div>
 
           <!-- 盘点进行中：在库页签顶部冻结提示 -->
@@ -597,7 +592,39 @@
           </div>
           </div>
           <div v-if="invSub==='stock'">
-          <div class="section"><div class="section-title"><span class="dot"></span>{{ t('inv.tabStock') }}</div>
+          <div class="inv-layout">
+          <div class="inv-main">
+            <!-- ② 6 张状态小卡 + 公式行 -->
+            <div class="stats-grid inv-stats-grid" v-if="invSum">
+              <div class="stat-card inv-mini clickable" @click="goInvStatus('在库')"><div class="stat-label">{{ t('inv.stock') }}</div><div class="stat-value">{{ invSum.inStock.count }}</div></div>
+              <div class="stat-card gold inv-mini clickable" @click="openLockedItems()"><div class="stat-label">{{ t('inv.reservedLocked') }}</div><div class="stat-value">{{ invSum.reserved.count }}</div></div>
+              <div class="stat-card blue inv-mini clickable" @click="goInvStatus('借出')"><div class="stat-label">{{ t('inv.loaned') }}</div><div class="stat-value">{{ invSum.loaned.count }}</div></div>
+              <div class="stat-card orange inv-mini clickable" @click="goInvStatus('已售')"><div class="stat-label">{{ t('inv.sold') }}</div><div class="stat-value">{{ invSum.sold.count }}</div></div>
+              <div class="stat-card purple inv-mini clickable" @click="goInvStatus('在途')"><div class="stat-label">🚚 {{ t('inv.inTransit') }}</div><div class="stat-value">{{ invSum.inTransit.count }}</div></div>
+              <div class="stat-card inv-mini clickable" @click="openSubView('repairs')"><div class="stat-label">🔧 {{ t('inv.repairing') }}</div><div class="stat-value">{{ invSum.repairing }}</div></div>
+            </div>
+            <div class="inv-formula" v-if="invSum" @click="clearInvStatusFilter">
+              {{ t('inv.onHandFormula') }} = {{ t('inv.stock') }}（{{ invSum.inStock.count }}）+ {{ t('inv.reservedLocked') }}（{{ invSum.reserved.count }}）= <b>{{ invSum.metrics.onHand }}</b>
+            </div>
+            <!-- ① 4 个金额指标 -->
+            <div class="inv-metrics" v-if="invSum && invSum.metrics">
+              <div class="inv-metric"><div class="im-val" :class="{'cell-secret':invSum.metrics.stockCost==null}">{{ invSum.metrics.stockCost==null ? '***' : '￥'+fmt(invSum.metrics.stockCost) }}</div><div class="im-label">{{ t('inv.metricCost') }}</div></div>
+              <div class="inv-metric"><div class="im-val">￥{{ fmt(invSum.metrics.stockPrice) }}</div><div class="im-label">{{ t('inv.metricPrice') }}</div></div>
+              <div class="inv-metric"><div class="im-val" :class="{'cell-secret':invSum.metrics.profit==null}">{{ invSum.metrics.profit==null ? '***' : '￥'+fmt(invSum.metrics.profit) }}</div><div class="im-label">{{ t('inv.metricProfit') }}</div></div>
+              <div class="inv-metric"><div class="im-val" :class="{'cell-secret':invSum.metrics.profitRate==null}">{{ invSum.metrics.profitRate==null ? '***' : invSum.metrics.profitRate+'%' }}</div><div class="im-label">{{ t('inv.metricRate') }}</div></div>
+            </div>
+            <div class="section">
+            <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+              <span><span class="dot"></span>{{ t('inv.tabStock') }}</span>
+              <span class="inv-tools">
+                <button class="btn btn-sm btn-outline" @click="invColsPanel=!invColsPanel">☰ {{ t('inv.pickCols') }}</button>
+                <button class="btn btn-sm btn-outline" @click="exportInvCSV()">⬇ {{ t('inv.export') }}</button>
+                <button class="btn btn-sm btn-outline" @click="printInv()">🖨 {{ t('inv.print') }}</button>
+              </span>
+            </div>
+            <div class="inv-cols-panel" v-if="invColsPanel">
+              <label v-for="c in invCols" :key="c.k" class="inv-col-check"><input type="checkbox" :value="c.k" v-model="invExportCols"> {{ t(c.label) }}</label>
+            </div>
             <div class="search-wrap mt-sm" style="margin-bottom:10px">
               <input class="search-input" v-model="invQ" :placeholder="t('ph.searchProd')">
               <button class="btn btn-sm btn-outline" @click="invQ=''">{{ t('act.clear') }}</button>
@@ -718,7 +745,89 @@
               </template>
               <div class="empty" v-if="!invStockGroups.length"><div class="empty-icon">📦</div>{{ t('empty.prod') }}</div>
             </div>
-          </div>
+            </div><!-- /section -->
+          </div><!-- /inv-main -->
+          <!-- ③⑥ 右栏：分类库存占比（PC 两栏右列；移动端排在表格后） -->
+          <div class="inv-side" v-if="invSum && invSum.categories && invSum.categories.length">
+            <div class="section">
+              <div class="section-title"><span class="dot"></span>🥧 {{ t('inv.catShare') }}</div>
+              <div class="donut-wrap">
+                <svg class="donut-svg" viewBox="0 0 42 42">
+                  <circle cx="21" cy="21" r="15.9" fill="none" stroke="#eee" stroke-width="6"></circle>
+                  <circle v-for="s in invCatDonut()" :key="s.key" cx="21" cy="21" r="15.9" fill="none"
+                          :stroke="donutColor(s.color)" stroke-width="6" pathLength="100"
+                          :stroke-dasharray="s.pct + ' ' + (100 - s.pct)" :stroke-dashoffset="s.offset"
+                          transform="rotate(-90 21 21)"></circle>
+                  <text x="21" y="20" class="donut-c1">{{ t('ba.top5') }}</text>
+                  <text x="21" y="24.5" class="donut-c2">{{ invSum.metrics.onHand }}</text>
+                </svg>
+                <div class="donut-legend">
+                  <div class="dl-row" v-for="(c,i) in invSum.categories.slice(0,5)" :key="c.cat">
+                    <span class="dl-dot" :style="{background: donutColor(i%6)}"></span>
+                    <span class="dl-name">{{ c.cat }}</span>
+                    <span class="dl-val">{{ c.count }} · {{ invCatPct(c) }}%</span>
+                  </div>
+                </div>
+              </div>
+              <table class="ba-table" style="margin-top:10px">
+                <thead><tr><th>{{ t('lbl.category') }}</th><th class="r">{{ t('inv.count') }}</th><th class="r">{{ t('inv.metricCost') }}</th><th class="r">{{ t('inv.metricPrice') }}</th></tr></thead>
+                <tbody>
+                  <tr v-for="c in invSum.categories" :key="'t'+c.cat">
+                    <td>{{ c.cat }}</td><td class="r">{{ c.count }}</td>
+                    <td class="r" :class="{'cell-secret':c.cost==null}">{{ c.cost==null ? '***' : '￥'+fmt(c.cost) }}</td>
+                    <td class="r">￥{{ fmt(c.price) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div><!-- /inv-side -->
+          </div><!-- /inv-layout -->
+          </div><!-- /invSub stock -->
+
+          <!-- ⑤ 进销存查询 -->
+          <div v-if="invSub==='psi'">
+            <div class="section">
+              <div class="section-title"><span class="dot"></span>📊 {{ t('inv.tabPsi') }}</div>
+              <div class="psi-bar">
+                <label>{{ t('inv.psiStart') }}<input type="date" v-model="psi.start" class="search-input"></label>
+                <label>{{ t('inv.psiEnd') }}<input type="date" v-model="psi.end" class="search-input"></label>
+                <button class="btn btn-gold btn-sm" :disabled="psi.loading" @click="loadPsi()">{{ psi.loading ? '⏳' : '🔍' }} {{ t('inv.psiQuery') }}</button>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead><tr>
+                    <th>{{ t('lbl.category') }}</th>
+                    <th class="r">{{ t('inv.psiInQty') }}</th><th class="r">{{ t('inv.psiIn') }}</th>
+                    <th class="r">{{ t('inv.psiOutQty') }}</th><th class="r">{{ t('inv.psiOut') }}</th>
+                    <th class="r">{{ t('inv.psiEndQty') }}</th><th class="r">{{ t('inv.psiEndCost') }}</th><th class="r">{{ t('inv.psiEnd') }}</th>
+                  </tr></thead>
+                  <tbody>
+                    <tr v-for="r in psi.rows" :key="r.cat">
+                      <td>{{ r.cat }}</td>
+                      <td class="r">{{ r.inQty }}</td>
+                      <td class="r" :class="{'cell-secret':r.inAmount==null}">{{ r.inAmount==null ? '***' : '￥'+fmt(r.inAmount) }}</td>
+                      <td class="r">{{ r.outQty }}</td>
+                      <td class="r">￥{{ fmt(r.outAmount) }}</td>
+                      <td class="r">{{ r.endQty }}</td>
+                      <td class="r" :class="{'cell-secret':r.endCost==null}">{{ r.endCost==null ? '***' : '￥'+fmt(r.endCost) }}</td>
+                      <td class="r">￥{{ fmt(r.endPrice) }}</td>
+                    </tr>
+                    <tr class="grp-row" v-if="psi.total">
+                      <td><b>{{ t('inv.psiTotal') }}</b></td>
+                      <td class="r"><b>{{ psi.total.inQty }}</b></td>
+                      <td class="r" :class="{'cell-secret':psi.total.inAmount==null}"><b>{{ psi.total.inAmount==null ? '***' : '￥'+fmt(psi.total.inAmount) }}</b></td>
+                      <td class="r"><b>{{ psi.total.outQty }}</b></td>
+                      <td class="r"><b>￥{{ fmt(psi.total.outAmount) }}</b></td>
+                      <td class="r"><b>{{ psi.total.endQty }}</b></td>
+                      <td class="r" :class="{'cell-secret':psi.total.endCost==null}"><b>{{ psi.total.endCost==null ? '***' : '￥'+fmt(psi.total.endCost) }}</b></td>
+                      <td class="r"><b>￥{{ fmt(psi.total.endPrice) }}</b></td>
+                    </tr>
+                    <tr v-if="!psi.rows.length && !psi.loading"><td colspan="8" class="small">{{ t('inv.psiEmpty') }}</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <p class="prod-meta" style="margin-top:8px">{{ t('inv.psiEndHint') }}</p>
+            </div>
           </div>
         </section>
 
@@ -905,6 +1014,17 @@
             </details>
             <div class="biz-actions"><button class="btn btn-primary btn-sm" @click="openCustomer">+ {{ t('act.addCustomer') }}</button></div>
           </div>
+          <!-- 会员统计条 -->
+          <div class="cust-stats-bar" v-if="custStats">
+            <div class="csb-item"><span class="csb-val">{{ custStats.total }}</span><span class="csb-lbl">{{ t('cust.statTotal') }}</span></div>
+            <div class="csb-item"><span class="csb-val">{{ custStats.today }}</span><span class="csb-lbl">{{ t('cust.statToday') }}</span></div>
+            <div class="csb-item"><span class="csb-val">{{ custStats.month }}</span><span class="csb-lbl">{{ t('cust.statMonth') }}</span></div>
+          </div>
+          <!-- 会员搜索 -->
+          <div class="search-wrap" style="margin-bottom:12px">
+            <input class="search-input" v-model="custQ" :placeholder="t('cust.searchPh')" @input="onCustSearch">
+            <button class="btn btn-sm btn-outline" v-if="custQ" @click="custQ='';onCustSearch()">{{ t('act.clear') }}</button>
+          </div>
           <div class="card-list">
             <div class="card-item" v-for="d in subList" :key="d.id">
               <div class="cust-item" @click="viewCustomer(d)">
@@ -1077,113 +1197,6 @@
             </div>
           </div>
 
-          <!-- 门店设备：按门店分组管理打印机 / 手持机 / 安防设备（谁用谁管） -->
-          <div class="card-item">
-            <div class="card-title">{{ t('sb.title') }}</div>
-            <div class="hint">{{ t('sb.hint') }}</div>
-            <div v-if="!anyAgentOnline" class="agent-warn">⚠ {{ t('sb.agentDownPc') }}</div>
-            <div class="bridge-row" style="margin:8px 0">
-              <select v-model="agentDlStore" style="flex:1;min-width:0" :disabled="!keyedStores.length">
-                <option v-if="!keyedStores.length" :value="0">{{ t('sb.noKeyStore') }}</option>
-                <option v-for="b in keyedStores" :key="b.store_id" :value="b.store_id">{{ b.store_name }}</option>
-              </select>
-              <a class="btn btn-sm btn-outline" :href="agentDlUrl" download
-                 :style="agentDlStore ? '' : 'pointer-events:none;opacity:.5'"
-                 style="text-decoration:none;white-space:nowrap">⬇ {{ t('sb.getAgent') }}</a>
-            </div>
-            <div class="hint" style="margin-bottom:8px">{{ t('sb.dlHint') }}</div>
-
-            <div class="bridge-store" v-for="s in stores" :key="s.id">
-              <div class="flex-between">
-                <b>{{ s.name }} <span class="mono" style="font-size:14px;color:#999">#{{ s.code }}</span></b>
-                <span class="bridge-state" v-if="bridgeOfStore(s.id)"
-                      :class="bridgeOfStore(s.id).online ? 'st-on' : 'st-off'">
-                  ● {{ bridgeOfStore(s.id).online ? t('sb.online') : t('sb.offline') }}
-                </span>
-                <span class="bridge-state st-idle" v-else>○ {{ (s.bridge_key || '').trim() ? t('sb.notConnected') : t('sb.noKey') }}</span>
-              </div>
-              <div class="prod-meta" v-if="bridgeOfStore(s.id) && bridgeOfStore(s.id).online">🖥 {{ bridgeOfStore(s.id).agent_name }}</div>
-
-              <div class="bridge-row">
-                <label>{{ t('pa.key') }}</label>
-                <span class="prod-meta">{{ (s.bridge_key || '').trim() ? t('sb.keySet') : t('sb.keyNone') }}</span>
-                <button class="btn-small" @click="rotateStoreKey(s.id)">{{ t('sb.genKey') }}</button>
-              </div>
-
-              <details class="bridge-biz" v-if="(s.bridge_key || '').trim()">
-                <summary>{{ t('sb.assignTitle') }}</summary>
-                <div v-for="g in bizGroups" :key="g.group" class="biz-grp">
-                  <div class="biz-grp-title">{{ t('pbizg.' + g.group) }}</div>
-                  <div class="biz-line" v-for="code in g.items" :key="code">
-                    <span class="biz-line-name">{{ t('pbiz.' + code) }}</span>
-                    <select class="biz-line-sel" :value="bizPrinterOf(bridgeOfStore(s.id), code)"
-                            @change="bindBizPrinter(s.id, code, $event.target.value)">
-                      <option value="">{{ bridgeOfStore(s.id) && bridgeOfStore(s.id).online ? t('sb.notAssigned') : t('sb.waitOnline') }}</option>
-                      <option v-if="bizPrinterOf(bridgeOfStore(s.id),code) && bridgeOfStore(s.id) && bridgeOfStore(s.id).printers.indexOf(bizPrinterOf(bridgeOfStore(s.id),code)) < 0"
-                              disabled :value="bizPrinterOf(bridgeOfStore(s.id),code)">{{ bizPrinterOf(bridgeOfStore(s.id),code) }}</option>
-                      <option v-for="n in (bridgeOfStore(s.id) ? bridgeOfStore(s.id).printers : [])" :key="n" :value="n">{{ n }}</option>
-                    </select>
-                    <button class="btn-small biz-test" :disabled="!bridgeOfStore(s.id) || !bridgeOfStore(s.id).online || !bizPrinterOf(bridgeOfStore(s.id),code)"
-                            @click="storeControl(s.id,'test',code)" :title="t('sb.test')">T</button>
-                  </div>
-                </div>
-              </details>
-
-              <div class="bridge-actions" v-if="bridgeOfStore(s.id)">
-                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online" @click="storeControl(s.id,'test')">{{ t('sb.test') }}</button>
-                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online" @click="storeControl(s.id,'feed')">{{ t('sb.feed') }}</button>
-                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online" @click="storeControl(s.id,'backfeed')">{{ t('sb.backfeed') }}</button>
-                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online" @click="storeControl(s.id,'refresh')">⟳ {{ t('sb.refresh') }}</button>
-              </div>
-              <div class="prod-meta" v-if="bridgeOfStore(s.id) && bridgeOfStore(s.id).last_job" style="margin-top:4px">
-                {{ bridgeOfStore(s.id).last_job.ok ? '✔' : '✘' }} {{ bridgeOfStore(s.id).last_job.ts }} · {{ bridgeOfStore(s.id).last_job.ok ? t('sb.jobQueued') : bridgeOfStore(s.id).last_job.message }}
-              </div>
-
-              <details class="bridge-biz">
-                <summary>{{ t('sb.secPanel') }} <span class="prod-meta" v-if="storeSecStore(s.id).length">({{ storeSecStore(s.id).length }})</span></summary>
-                <div v-if="storeSecStore(s.id).length" style="margin-top:6px">
-                  <div class="sec-dev" v-for="dv in storeSecStore(s.id)" :key="dv.id" style="padding:4px 0;border-bottom:1px dashed #eee">
-                    <div class="flex-between" style="font-size:14px">
-                      <span><b>{{ dv.name }}</b> <span class="prod-meta">{{ dv.driver_name }}<template v-if="dv.location"> · {{ dv.location }}</template></span></span>
-                      <span class="bridge-state" :class="dv.online ? 'st-on' : 'st-off'" style="font-size:12px">●</span>
-                    </div>
-                  </div>
-                </div>
-                <div class="hint" v-else style="margin:4px 0">{{ t('sb.noSecDev') }}</div>
-                <button class="btn-small" @click="go('security')">{{ t('sb.gotoSec') }}</button>
-              </details>
-
-              <div class="sb-handheld">
-                <div class="flex-between">
-                  <span>📱 {{ t('sb.handheld') }} <span class="prod-meta">({{ devicesOfStore(s.id).length }})</span></span>
-                  <span>
-                    <button class="btn-small" @click="openHandheldLogin(s.id)">＋ {{ t('sb.bindNew') }}</button>
-                    <button class="btn-small" @click="openDevices(s.id)">{{ t('sb.handheldMgr') }}</button>
-                  </span>
-                </div>
-                <div v-if="devicesOfStore(s.id).length" style="margin-top:4px">
-                  <div class="sec-dev" v-for="dv in devicesOfStore(s.id)" :key="dv.id"
-                       style="padding:4px 0;border-bottom:1px dashed #eee">
-                    <div class="flex-between" style="font-size:14px">
-                      <span>
-                        <b>{{ dv.name || t('dev.code') }}</b>
-                        <span class="prod-meta mono">{{ dv.code }}</span>
-                        <template v-if="deviceTaskLabel(dv)">
-                          · <span class="coop-task-label">{{ deviceTaskLabel(dv) }}</span>
-                        </template>
-                      </span>
-                      <span>
-                        <span class="bridge-state" :class="dv.online ? 'st-on' : 'st-off'" style="font-size:12px">●</span>
-                        <span class="prod-meta">{{ dv.status==='active' ? t('dev.active') : t('dev.disabled') }}</span>
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div class="hint" v-else style="margin:4px 0">{{ t('sb.noHandheld') }}</div>
-              </div>
-            </div>
-          </div>
-
           <!-- 商品品类与标签模板（企业整体级） -->
           <div class="card-item">
             <div class="card-title">{{ t('type.mgrTitle') }}</div>
@@ -1225,7 +1238,7 @@
           </div>
         </section>
 
-        <!-- ================= 门店管理（店铺下门店：入库/扫描设备/库位/打印代理） ================= -->
+        <!-- ================= 门店管理（店铺下门店：入库/扫描设备/库位；打印代理已集中到系统管理） ================= -->
         <section v-if="tab==='stores'">
           <div class="card-item">
             <div class="flex-between" style="margin-bottom:8px">
@@ -1282,51 +1295,6 @@
                 <div class="form-group"><label>{{ t('store.belongShop') }}</label><input :value="curShop ? curShop.name : ''" disabled></div>
               </div>
               <button class="btn btn-outline" v-if="isHqStore()" @click="editStore(curStore)">{{ t('store.editInfo') }}</button>
-            </div>
-
-            <!-- 打印代理 -->
-            <div class="card-item" v-if="curBridge">
-              <div class="card-title">{{ t('sb.title') }}</div>
-              <div v-if="!curBridge.online" class="agent-warn">⚠ {{ t('sb.agentDownMobile') }}</div>
-              <div class="bridge-store">
-                <div class="flex-between">
-                  <b>{{ curBridge.store_name }} <span class="mono" style="font-size:14px;color:#999">#{{ curBridge.code }}</span></b>
-                  <span class="bridge-state" :class="curBridge.online ? 'st-on' : 'st-off'">● {{ curBridge.online ? t('sb.online') : t('sb.offline') }}</span>
-                </div>
-                <div class="prod-meta" v-if="curBridge.online">🖥 {{ curBridge.agent_name }}</div>
-                <div class="bridge-row">
-                  <label>{{ t('pa.key') }}</label>
-                  <span class="prod-meta">{{ curBridge.has_key ? t('sb.keySet') : t('sb.keyNone') }}</span>
-                  <button class="btn-small" @click="rotateStoreKey(curBridge.store_id)">{{ t('sb.genKey') }}</button>
-                </div>
-                <details class="bridge-biz">
-                  <summary>{{ t('sb.assignTitle') }}</summary>
-                  <div v-for="g in bizGroups" :key="g.group" class="biz-grp">
-                    <div class="biz-grp-title">{{ t('pbizg.' + g.group) }}</div>
-                    <div class="biz-line" v-for="code in g.items" :key="code">
-                      <span class="biz-line-name">{{ t('pbiz.' + code) }}</span>
-                      <select class="biz-line-sel" :value="bizPrinterOf(curBridge, code)"
-                              @change="bindBizPrinter(curBridge.store_id, code, $event.target.value)">
-                        <option value="">{{ curBridge.online ? t('sb.notAssigned') : t('sb.waitOnline') }}</option>
-                        <option v-if="bizPrinterOf(curBridge,code) && curBridge.printers.indexOf(bizPrinterOf(curBridge,code)) < 0"
-                                disabled :value="bizPrinterOf(curBridge,code)">{{ bizPrinterOf(curBridge,code) }}</option>
-                        <option v-for="n in curBridge.printers" :key="n" :value="n">{{ n }}</option>
-                      </select>
-                      <button class="btn-small biz-test" :disabled="!curBridge.online || !bizPrinterOf(curBridge,code)"
-                              @click="storeControl(curBridge.store_id,'test',code)" :title="t('sb.test')">T</button>
-                    </div>
-                  </div>
-                </details>
-                <div class="bridge-actions">
-                  <button class="btn-small" :disabled="!curBridge.online" @click="storeControl(curBridge.store_id,'test')">{{ t('sb.test') }}</button>
-                  <button class="btn-small" :disabled="!curBridge.online" @click="storeControl(curBridge.store_id,'feed')">{{ t('sb.feed') }}</button>
-                  <button class="btn-small" :disabled="!curBridge.online" @click="storeControl(curBridge.store_id,'backfeed')">{{ t('sb.backfeed') }}</button>
-                  <button class="btn-small" :disabled="!curBridge.online" @click="storeControl(curBridge.store_id,'refresh')">⟳ {{ t('sb.refresh') }}</button>
-                </div>
-                <div class="prod-meta" v-if="curBridge.last_job" style="margin-top:4px">
-                  {{ curBridge.last_job.ok ? '✔' : '✘' }} {{ curBridge.last_job.ts }} · {{ curBridge.last_job.ok ? t('sb.jobQueued') : curBridge.last_job.message }}
-                </div>
-              </div>
             </div>
 
             <!-- 安防设备 -->
@@ -1422,6 +1390,119 @@
           </div>
         </section>
 
+        <!-- ================= 打印代理（系统管理子视图：门店设备/密钥/代理下载集中管理） ================= -->
+        <section v-if="tab==='system' && adminSub==='bridge'">
+          <!-- 门店设备：按门店分组管理打印机 / 手持机 / 安防设备（谁用谁管） -->
+          <div class="card-item">
+            <div class="card-title">{{ t('sb.title') }}</div>
+            <div class="hint">{{ t('sb.hint') }}</div>
+            <div v-if="!anyAgentOnline" class="agent-warn">⚠ {{ t('sb.agentDownPc') }}</div>
+            <div class="bridge-row" style="margin:8px 0">
+              <select v-model="agentDlStore" style="flex:1;min-width:0" :disabled="!keyedStores.length">
+                <option v-if="!keyedStores.length" :value="0">{{ t('sb.noKeyStore') }}</option>
+                <option v-for="b in keyedStores" :key="b.store_id" :value="b.store_id">{{ b.store_name }}</option>
+              </select>
+              <a class="btn btn-sm btn-outline" :href="agentDlUrl" download
+                 style="text-decoration:none;white-space:nowrap">⬇ {{ t('sb.getAgent') }}</a>
+              <button class="btn btn-sm btn-outline" :disabled="!agentDlStore"
+                      @click="connectLocalAgent(agentDlStore)"
+                      style="white-space:nowrap">🔗 {{ t('sb.connectAgent') }}</button>
+            </div>
+            <div class="hint" style="margin-bottom:8px">{{ t('sb.dlHint') }}</div>
+            <div class="hint" style="margin-bottom:8px" v-if="localAgentText">🖥 {{ t('sb.localAgent') }}：{{ localAgentText }}</div>
+
+            <div class="bridge-store" v-for="s in stores" :key="s.id">
+              <div class="flex-between">
+                <b>{{ s.name }} <span class="mono" style="font-size:14px;color:#999">#{{ s.code }}</span></b>
+                <span class="bridge-state" v-if="bridgeOfStore(s.id)"
+                      :class="bridgeOfStore(s.id).online ? 'st-on' : 'st-off'">
+                  ● {{ bridgeOfStore(s.id).online ? t('sb.online') : t('sb.offline') }}
+                </span>
+                <span class="bridge-state st-idle" v-else>○ {{ (s.bridge_key || '').trim() ? t('sb.notConnected') : t('sb.noKey') }}</span>
+              </div>
+              <div class="prod-meta" v-if="bridgeOfStore(s.id) && bridgeOfStore(s.id).online">🖥 {{ bridgeOfStore(s.id).agent_name }}</div>
+
+              <div class="bridge-row">
+                <label>{{ t('pa.key') }}</label>
+                <span class="prod-meta">{{ (s.bridge_key || '').trim() ? t('sb.keySet') : t('sb.keyNone') }}</span>
+                <button class="btn-small" @click="rotateStoreKey(s.id)">{{ t('sb.genKey') }}</button>
+              </div>
+
+              <details class="bridge-biz" v-if="(s.bridge_key || '').trim()">
+                <summary>{{ t('sb.assignTitle') }}</summary>
+                <div v-for="g in bizGroups" :key="g.group" class="biz-grp">
+                  <div class="biz-grp-title">{{ t('pbizg.' + g.group) }}</div>
+                  <div class="biz-line" v-for="code in g.items" :key="code">
+                    <span class="biz-line-name">{{ t('pbiz.' + code) }}</span>
+                    <select class="biz-line-sel" :value="bizPrinterOf(bridgeOfStore(s.id), code)"
+                            @change="bindBizPrinter(s.id, code, $event.target.value)">
+                      <option value="">{{ bridgeOfStore(s.id) && bridgeOfStore(s.id).online ? t('sb.notAssigned') : t('sb.waitOnline') }}</option>
+                      <option v-if="bizPrinterOf(bridgeOfStore(s.id),code) && bridgeOfStore(s.id) && bridgeOfStore(s.id).printers.indexOf(bizPrinterOf(bridgeOfStore(s.id),code)) < 0"
+                              disabled :value="bizPrinterOf(bridgeOfStore(s.id),code)">{{ bizPrinterOf(bridgeOfStore(s.id),code) }}</option>
+                      <option v-for="n in (bridgeOfStore(s.id) ? bridgeOfStore(s.id).printers : [])" :key="n" :value="n">{{ n }}</option>
+                    </select>
+                    <button class="btn-small biz-test" :disabled="!bridgeOfStore(s.id) || !bridgeOfStore(s.id).online || !bizPrinterOf(bridgeOfStore(s.id),code)"
+                            @click="storeControl(s.id,'test',code)" :title="t('sb.test')">T</button>
+                  </div>
+                </div>
+              </details>
+
+              <div class="bridge-actions" v-if="bridgeOfStore(s.id)">
+                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online" @click="storeControl(s.id,'test')">{{ t('sb.test') }}</button>
+                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online" @click="storeControl(s.id,'feed')">{{ t('sb.feed') }}</button>
+                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online" @click="storeControl(s.id,'backfeed')">{{ t('sb.backfeed') }}</button>
+                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online" @click="storeControl(s.id,'refresh')">⟳ {{ t('sb.refresh') }}</button>
+              </div>
+              <div class="prod-meta" v-if="bridgeOfStore(s.id) && bridgeOfStore(s.id).last_job" style="margin-top:4px">
+                {{ bridgeOfStore(s.id).last_job.ok ? '✔' : '✘' }} {{ bridgeOfStore(s.id).last_job.ts }} · {{ bridgeOfStore(s.id).last_job.ok ? t('sb.jobQueued') : bridgeOfStore(s.id).last_job.message }}
+              </div>
+
+              <details class="bridge-biz">
+                <summary>{{ t('sb.secPanel') }} <span class="prod-meta" v-if="storeSecStore(s.id).length">({{ storeSecStore(s.id).length }})</span></summary>
+                <div v-if="storeSecStore(s.id).length" style="margin-top:6px">
+                  <div class="sec-dev" v-for="dv in storeSecStore(s.id)" :key="dv.id" style="padding:4px 0;border-bottom:1px dashed #eee">
+                    <div class="flex-between" style="font-size:14px">
+                      <span><b>{{ dv.name }}</b> <span class="prod-meta">{{ dv.driver_name }}<template v-if="dv.location"> · {{ dv.location }}</template></span></span>
+                      <span class="bridge-state" :class="dv.online ? 'st-on' : 'st-off'" style="font-size:12px">●</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="hint" v-else style="margin:4px 0">{{ t('sb.noSecDev') }}</div>
+                <button class="btn-small" @click="go('security')">{{ t('sb.gotoSec') }}</button>
+              </details>
+
+              <div class="sb-handheld">
+                <div class="flex-between">
+                  <span>📱 {{ t('sb.handheld') }} <span class="prod-meta">({{ devicesOfStore(s.id).length }})</span></span>
+                  <span>
+                    <button class="btn-small" @click="openHandheldLogin(s.id)">＋ {{ t('sb.bindNew') }}</button>
+                    <button class="btn-small" @click="openDevices(s.id)">{{ t('sb.handheldMgr') }}</button>
+                  </span>
+                </div>
+                <div v-if="devicesOfStore(s.id).length" style="margin-top:4px">
+                  <div class="sec-dev" v-for="dv in devicesOfStore(s.id)" :key="dv.id"
+                       style="padding:4px 0;border-bottom:1px dashed #eee">
+                    <div class="flex-between" style="font-size:14px">
+                      <span>
+                        <b>{{ dv.name || t('dev.code') }}</b>
+                        <span class="prod-meta mono">{{ dv.code }}</span>
+                        <template v-if="deviceTaskLabel(dv)">
+                          · <span class="coop-task-label">{{ deviceTaskLabel(dv) }}</span>
+                        </template>
+                      </span>
+                      <span>
+                        <span class="bridge-state" :class="dv.online ? 'st-on' : 'st-off'" style="font-size:12px">●</span>
+                        <span class="prod-meta">{{ dv.status==='active' ? t('dev.active') : t('dev.disabled') }}</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div class="hint" v-else style="margin:4px 0">{{ t('sb.noHandheld') }}</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- ================= 用户与门店权限（系统管理子视图，企业整体级：仅总店店长） ================= -->
         <section v-if="tab==='system' && adminSub==='users' && isAdminRole() && isHqStore()">
           <details class="biz-guide"><summary>📖 {{ t('biz.title') }}</summary><div class="biz-body">{{ t('adminUser.guide') }}</div></details>
@@ -1467,6 +1548,33 @@
             </table>
           </div>
         </section>
+
+        <!-- 已定锁定明细（①） -->
+        <div v-if="lockedSheet.open" class="sheet-mask show pc" @click.self="closeLockedItems">
+          <div class="sheet" style="max-width:560px" @click.stop>
+            <div class="sheet-head">
+              <span class="sheet-title">🔒 {{ t('inv.lockTitle') }}</span>
+              <button class="sheet-close" @click="closeLockedItems">×</button>
+            </div>
+            <div class="sheet-body">
+              <div class="table-wrap" style="max-height:60vh;overflow:auto">
+                <table class="data-table">
+                  <thead><tr><th>{{ t('lbl.huohao') }}</th><th>{{ t('lbl.name') }}</th><th class="r">{{ t('lbl.weight') }}</th><th class="r">{{ t('lbl.price') }}</th><th>{{ t('inv.lockReason') }}</th></tr></thead>
+                  <tbody>
+                    <tr v-for="it in lockedSheet.items" :key="it.id">
+                      <td class="mono">{{ it.code }}</td>
+                      <td>{{ it.name }}</td>
+                      <td class="r">{{ it.weight }}g</td>
+                      <td class="r">￥{{ fmt(it.price) }}</td>
+                      <td class="small">{{ it.lockReason }}</td>
+                    </tr>
+                    <tr v-if="!lockedSheet.items.length"><td colspan="5" class="small">{{ t('inv.lockEmpty') }}</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <!-- 批量导入商品 -->
         <div v-if="importDlg.open" class="sheet-mask show pc" @click.self="closeImportDlg">
@@ -1935,6 +2043,17 @@ Content-Type: application/json
             <button class="btn btn-primary btn-sm" v-if="subView==='purchases'" @click="openPurchase">+ {{ t('act.purchase') }}</button>
             <button class="btn btn-primary btn-sm" v-if="subView==='outsourcings'" @click="openOutsource">+ {{ t('act.sendOut') }}</button>
             <a class="btn btn-sm btn-outline" v-if="subView==='logs'" :href="exportHref" @click.prevent="exportLogs">{{ t('act.export') }}</a>
+          </div>
+        </div>
+        <div v-if="subView==='customers'">
+          <div class="cust-stats-bar" v-if="custStats">
+            <div class="csb-item"><span class="csb-val">{{ custStats.total }}</span><span class="csb-lbl">{{ t('cust.statTotal') }}</span></div>
+            <div class="csb-item"><span class="csb-val">{{ custStats.today }}</span><span class="csb-lbl">{{ t('cust.statToday') }}</span></div>
+            <div class="csb-item"><span class="csb-val">{{ custStats.month }}</span><span class="csb-lbl">{{ t('cust.statMonth') }}</span></div>
+          </div>
+          <div class="search-wrap" style="margin-bottom:12px">
+            <input class="search-input" v-model="custQ" :placeholder="t('cust.searchPh')" @input="onCustSearch">
+            <button class="btn btn-sm btn-outline" v-if="custQ" @click="custQ='';onCustSearch()">{{ t('act.clear') }}</button>
           </div>
         </div>
         <div v-if="subView==='loans'">

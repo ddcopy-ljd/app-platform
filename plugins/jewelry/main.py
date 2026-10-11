@@ -333,7 +333,7 @@ def _touch_customer(conn: sqlite3.Connection, name: str, phone: str, amount: flo
         )
         return cust["id"]
     cur = conn.execute(
-        "INSERT INTO customers(name,phone,level,total_amount,due_amount) VALUES(?,?,?,?,?)",
+        "INSERT INTO customers(name,phone,level,total_amount,due_amount,created) VALUES(?,?,?,?,?,datetime('now','localtime'))",
         (name or "散客", phone or "", "普通", amount, max(due, 0)),
     )
     return cur.lastrowid
@@ -2610,20 +2610,160 @@ def inventory_summary(request: Request):
         sid, _ = _current_store(request, conn, sess)
         cost_visible = _can_view_cost(conn, sess)
         def cnt(st):
-            r = conn.execute("SELECT COUNT(*) n, COALESCE(SUM(cost),0) c FROM products WHERE status=? AND store_id=?",
-                             (st, sid)).fetchone()
-            return {"count": r["n"], "cost": round(r["c"], 2) if cost_visible else None}
+            r = conn.execute(
+                "SELECT COUNT(*) n, COALESCE(SUM(cost),0) c, COALESCE(SUM(price),0) p "
+                "FROM products WHERE status=? AND store_id=?", (st, sid)).fetchone()
+            return {"count": r["n"],
+                    "cost": round(r["c"], 2) if cost_visible else None,
+                    "price": round(r["p"], 2)}
+        in_stock, reserved = cnt("在库"), cnt("已定")
+        # 金额指标口径：在店库存 = 在库 + 已定锁定
+        on_hand = in_stock["count"] + reserved["count"]
+        stock_cost = (in_stock["cost"] or 0) + (reserved["cost"] or 0)
+        stock_price = in_stock["price"] + reserved["price"]
+        profit = stock_price - stock_cost
+        metrics = {
+            "onHand": on_hand,
+            "stockCost": round(stock_cost, 2) if cost_visible else None,
+            "stockPrice": round(stock_price, 2),
+            "profit": round(profit, 2) if cost_visible else None,
+            "profitRate": round(profit * 100.0 / stock_price, 1) if cost_visible and stock_price > 0 else None,
+        }
+        # 分类库存占比（在库+已定）
+        cats = conn.execute(
+            "SELECT COALESCE(NULLIF(product_type,''),'未分类') cat, COUNT(*) n, "
+            "COALESCE(SUM(cost),0) c, COALESCE(SUM(price),0) p "
+            "FROM products WHERE status IN ('在库','已定') AND store_id=? "
+            "GROUP BY cat ORDER BY n DESC", (sid,)).fetchall()
+        categories = [{"cat": r["cat"], "count": r["n"],
+                       "cost": round(r["c"], 2) if cost_visible else None,
+                       "price": round(r["p"], 2)} for r in cats]
+        repairing = conn.execute(
+            "SELECT COUNT(*) n FROM repairs WHERE status NOT IN ('已完成','已取走') AND (store_id=? OR store_id=0)",
+            (sid,)).fetchone()["n"]
         logs = conn.execute(
             "SELECT * FROM inventory_logs WHERE store_id=? OR store_id=0 ORDER BY id DESC LIMIT 30",
             (sid,)).fetchall()
         return {
-            "inStock": cnt("在库"),
+            "inStock": in_stock,
             "inTransit": cnt("在途"),  # 已发出待验收，资产仍归调出店
-            "reserved": cnt("已定"),
+            "reserved": reserved,
             "loaned": cnt("借出"),
             "sold": cnt("已售"),
+            "repairing": repairing,
+            "metrics": metrics,
+            "categories": categories,
             "logs": [dict(r) for r in logs],
         }
+
+
+@app.get("/api/inventory/locked-items")
+def inventory_locked_items(request: Request):
+    """已定锁定商品明细 + 锁定原因（关联未完结定金单）。"""
+    sess = _require_auth(request)
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
+        cost_visible = _can_view_cost(conn, sess)
+        rows = conn.execute(
+            """SELECT p.id, p.code, p.name, p.weight, p.price, p.cost, p.product_type,
+                      d.id AS deposit_id, d.customer, d.phone, d.deposit, d.balance,
+                      d.promised_date, d.created
+               FROM products p
+               LEFT JOIN deposits d ON d.product_id = p.id AND d.status = '已定'
+               WHERE p.status = '已定' AND p.store_id = ?
+               ORDER BY d.created DESC, p.id""", (sid,)).fetchall()
+        items = []
+        for r in rows:
+            reason = ""
+            if r["deposit_id"]:
+                reason = (f"定金单#{r['deposit_id']} 客户{r['customer'] or '散客'}"
+                          f" 定金￥{(r['deposit'] or 0):,.2f} 尾款￥{(r['balance'] or 0):,.2f}"
+                          f" 约定{r['promised_date'] or '未填'}")
+            else:
+                reason = "已定状态（无关联定金单）"
+            items.append({
+                "id": r["id"], "code": r["code"], "name": r["name"],
+                "product_type": r["product_type"] or "", "weight": r["weight"],
+                "price": r["price"],
+                "cost": round(r["cost"], 2) if cost_visible else None,
+                "lockReason": reason,
+                "customer": r["customer"] or "", "phone": r["phone"] or "",
+                "promisedDate": r["promised_date"] or "", "depositCreated": r["created"] or "",
+            })
+        return {"items": items}
+
+
+@app.get("/api/inventory/psi")
+def inventory_psi(request: Request, start: str = "", end: str = ""):
+    """进销存查询：时间段内进货（purchases）/销售（sale_items×sales）+ 当前期末库存，按品类分组。"""
+    sess = _require_auth(request)
+    if not start or not end:
+        today = date.today()
+        start = start or today.replace(day=1).isoformat()
+        end = end or today.isoformat()
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
+        cost_visible = _can_view_cost(conn, sess)
+        agg = {}
+        def bucket(cat):
+            cat = cat or "未分类"
+            return agg.setdefault(cat, {"cat": cat, "inQty": 0, "inAmount": 0.0,
+                                        "outQty": 0, "outAmount": 0.0,
+                                        "endQty": 0, "endCost": 0.0, "endPrice": 0.0})
+        # 进货：采购单按下单日期区间；品类经商品名回联（无关联则未分类）
+        for r in conn.execute(
+            """SELECT COALESCE((SELECT p.product_type FROM products p
+                                WHERE p.name = pu.product LIMIT 1), '未分类') cat,
+                      SUM(pu.qty) q, SUM(pu.cost) a
+               FROM purchases pu
+               WHERE (pu.store_id = ? OR pu.store_id = 0) AND pu.order_date BETWEEN ? AND ?
+               GROUP BY cat""", (sid, start, end)).fetchall():
+            b = bucket(r["cat"])
+            b["inQty"] += r["q"] or 0
+            b["inAmount"] += r["a"] or 0
+        # 销售：明细 join 单头，排除冲红
+        for r in conn.execute(
+            """SELECT COALESCE(p.product_type, '未分类') cat, COUNT(*) q, SUM(si.subtotal) a
+               FROM sale_items si JOIN sales s ON si.sale_id = s.id
+               LEFT JOIN products p ON si.product_id = p.id
+               WHERE s.status != '已冲红' AND (s.store_id = ? OR s.store_id = 0)
+                 AND s.biz_date BETWEEN ? AND ?
+               GROUP BY cat""", (sid, start, end)).fetchall():
+            b = bucket(r["cat"])
+            b["outQty"] += r["q"] or 0
+            b["outAmount"] += r["a"] or 0
+        # 期末库存（当前值）：在库 + 已定
+        for r in conn.execute(
+            """SELECT COALESCE(NULLIF(product_type, ''), '未分类') cat, COUNT(*) q,
+                      COALESCE(SUM(cost), 0) c, COALESCE(SUM(price), 0) p
+               FROM products WHERE status IN ('在库', '已定') AND store_id = ?
+               GROUP BY cat""", (sid,)).fetchall():
+            b = bucket(r["cat"])
+            b["endQty"] += r["q"]
+            b["endCost"] += r["c"]
+            b["endPrice"] += r["p"]
+        total = {"cat": "__total__", "inQty": 0, "inAmount": 0.0, "outQty": 0, "outAmount": 0.0,
+                 "endQty": 0, "endCost": 0.0, "endPrice": 0.0}
+        rows = []
+        for b in agg.values():
+            b["inAmount"] = round(b["inAmount"], 2) if cost_visible else None
+            b["endCost"] = round(b["endCost"], 2) if cost_visible else None
+            b["outAmount"] = round(b["outAmount"], 2)
+            b["endPrice"] = round(b["endPrice"], 2)
+            total["inQty"] += b["inQty"]
+            total["inAmount"] = (total["inAmount"] + (b["inAmount"] or 0)) if cost_visible else None
+            total["outQty"] += b["outQty"]
+            total["outAmount"] += b["outAmount"]
+            total["endQty"] += b["endQty"]
+            total["endCost"] = (total["endCost"] + (b["endCost"] or 0)) if cost_visible else None
+            total["endPrice"] += b["endPrice"]
+            rows.append(b)
+        rows.sort(key=lambda x: -x["endQty"])
+        total["inAmount"] = round(total["inAmount"], 2) if cost_visible else None
+        total["endCost"] = round(total["endCost"], 2) if cost_visible else None
+        total["outAmount"] = round(total["outAmount"], 2)
+        total["endPrice"] = round(total["endPrice"], 2)
+        return {"start": start, "end": end, "rows": rows, "total": total}
 
 
 class InboundIn(BaseModel):
@@ -3012,11 +3152,47 @@ class LabelPrintIn(BaseModel):
     simulate: bool = False  # True 时只生成 ZPL 不实际发送
     template_id: int | None = None  # 指定模板后按模板 slots 排版，忽略 fields
     route: str = ""  # 'agent'=经本地打印桥下发（店里电脑 print_agent.py 取任务打印）
+    enqueue_zpl: str = Field(default="", max_length=200000)  # 本地直打失败回退：直接入队该 ZPL（EPC/条码已在前次生成，跳过重复分配）
+    enqueue_store_id: int = 0  # 回退入队目标门店桥（不传用总店）
 
 
 @app.post("/api/print/labels")
 def print_labels(body: LabelPrintIn, request: Request):
     op = _require_auth(request)
+    if body.enqueue_zpl:
+        # 回退入队：前端本地直打失败后把已生成的 ZPL 送回云端下发（不重复分配 EPC/条码/制卡记录）
+        zpl = body.enqueue_zpl
+        count = zpl.count("^XA") or 1
+        printer_desc = body.printer or ""
+        sent = False
+        if body.route == "agent":
+            sid0 = body.enqueue_store_id or 1
+            srow = None
+            with _db(request) as conn:
+                srow = conn.execute("SELECT name FROM stores WHERE id=?", (sid0,)).fetchone()
+                bmap = _biz_printer_map(conn, sid0)
+            pname = bmap.get("label_product", "")
+            sname = srow["name"] if srow else f"门店{sid0}"
+            with _bridges_lock:
+                offline = sid0 not in _bridges or time.time() - _bridges[sid0].last_seen >= 15
+            if offline:
+                raise HTTPException(400, "打印代理不在线：" + sname)
+            _bridge_enqueue(sid0, zpl, count, biz="label_product", printer=pname)
+            sent = True
+            printer_desc = "打印桥（" + sname + "）"
+        else:
+            if not body.printer:
+                raise HTTPException(400, "未选择打印机")
+            try:
+                rfid_print.send_raw(body.printer, zpl, job_title="jewelry-labels-retry")
+                sent = True
+            except Exception as e:
+                raise HTTPException(500, f"发送打印机失败：{e}")
+        with _db(request) as conn:
+            _log(conn, op["username"], "RFID标签打印",
+                 f"本地直打失败回退 {count}张 {printer_desc or '仅生成指令'}")
+        return {"ok": True, "sent": sent, "count": count, "printer": printer_desc,
+                "jobs": [], "zpl": "", "template_id": None}
     if not body.product_ids:
         raise HTTPException(400, "请至少选择一件商品")
     with _db(request) as conn:
@@ -3256,52 +3432,27 @@ def scan_app_download():
     raise HTTPException(404, "APK 尚未构建（scan-assistant 需先执行 Gradle release 构建）")
 
 
-_PA_BURN = None
+def _public_server(request: Request) -> str:
+    """代理应连接的公开服务地址 = 用户当前下载所经的地址（从哪下载就连哪）。
+    独立运行（8002 直连）：scheme://host；经平台网关：scheme://原始Host + X-App-Base
+    （/app/{插件}/{租户} 或 /gw/{票据}，网关透传原始 Host 并注入 X-App-Base 头）。"""
+    host = (request.headers.get("host") or request.url.netloc or "").strip()
+    scheme = (request.headers.get("x-forwarded-proto") or request.url.scheme or "http").strip()
+    if scheme == "ws":          # WebSocket 握手同样适用：折算为 HTTP(S) 形式
+        scheme = "http"
+    elif scheme == "wss":
+        scheme = "https"
+    app_base = (request.headers.get("x-app-base") or "").strip().rstrip("/")
+    return f"{scheme}://{host}{app_base}"
 
 
-def _pa_burn():
-    """惰性加载 scripts/print_agent.py 取 embed_token_bytes（exe 尾部 overlay 烧录）。"""
-    global _PA_BURN
-    if _PA_BURN is None:
-        try:
-            import importlib.util
-            spec = importlib.util.spec_from_file_location(
-                "print_agent", str(ROOT / "scripts" / "print_agent.py"))
-            m = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(m)
-            _PA_BURN = m.embed_token_bytes
-        except Exception:
-            _PA_BURN = False
-    return _PA_BURN or None
-
-
-@app.get("/api/stores/{sid}/agent-download")
-def store_agent_download(sid: int, request: Request):
-    """按门店下载已内嵌该店 Token 的打印代理 exe（管理员操作，Token 服务端注入，用户不可见）。"""
+@app.get("/api/agent-server")
+def agent_server(request: Request):
+    """管理页「连接本机代理」用：返回代理应连接的本服务公开地址
+    （独立运行=本机 origin；经平台网关=还原原始 Host + /app 或 /gw 前缀）。
+    管理页把它与门店密钥一起 POST 给本机代理 127.0.0.1:18080/configure。"""
     _require_auth(request)
-    with _db(request) as conn:
-        r = conn.execute(
-            "SELECT id,name,bridge_key FROM stores WHERE id=?", (sid,)).fetchone()
-    if not r:
-        raise HTTPException(404, "门店不存在")
-    key = (r["bridge_key"] or "").strip()
-    if not key:
-        raise HTTPException(400, "该门店尚未生成密钥，请先点【生成/重置】")
-    exe = ROOT / "scripts" / "dist" / "PrintBridge.exe"
-    if not exe.is_file():
-        raise HTTPException(404, "代理尚未打包：请先运行 scripts/build_exe.bat 生成 PrintBridge.exe")
-    burn = _pa_burn()
-    if not burn:
-        raise HTTPException(500, "烧录模块加载失败")
-    data = burn(exe.read_bytes(), key)
-    fname = ("PrintBridge-"
-             + re.sub(r'[\\/:*?"<>|\s]+', "_", (r["name"] or "").strip() or f"store{sid}")
-             + ".exe")
-    return Response(
-        content=data,
-        media_type="application/vnd.microsoft.portable-executable",
-        headers={"Content-Disposition":
-                 "attachment; filename*=UTF-8''" + urllib.parse.quote(fname)})
+    return {"server": _public_server(request)}
 
 
 @app.get("/api/stores/bridge-whoami")
@@ -3529,6 +3680,7 @@ async def print_agent_ws(websocket: WebSocket, key: str = "", name: str = ""):
     async def _push_config():
         await websocket.send_text(json.dumps(
             {"type": "config", "store_name": store["name"],
+             "server": _public_server(websocket),
              "printer": biz_map.get("label_product", "") or store["printer_name"] or "",
              "biz_printers": dict(biz_map)}, ensure_ascii=False))
 
@@ -3547,6 +3699,12 @@ async def print_agent_ws(websocket: WebSocket, key: str = "", name: str = ""):
                     await _push_config()
                 elif mtype == "heartbeat":
                     pass  # 每收到一帧已刷新 last_seen，心跳本身无需处理
+                elif mtype == "local_ack":
+                    # 本地直打回执：浏览器经代理 localhost 直发打印（未经云端中转），补一条审计
+                    n = int(d.get("count") or 0)
+                    with _db(websocket) as conn:
+                        _log(conn, f"{store['name']}打印桥", "本地直打",
+                             f"{n}张 → {d.get('printer') or '默认打印机'}")
                 elif mtype == "ack":
                     # 打印任务回执：记录该桥最近一次任务结果（只代表已写入打印队列，
                     # 物理出纸仍需人眼确认——RAW 通道读不到硬件状态）
@@ -5881,12 +6039,38 @@ class CustomerIn(BaseModel):
 
 
 @app.get("/api/customers/list")
-def customer_list(request: Request, page: int = 1, size: int = 50):
+def customer_list(request: Request, page: int = 1, size: int = 50, keyword: str = ""):
+    _require_auth(request)
+    q = (keyword or "").strip()
+    with _db(request) as conn:
+        if q:
+            like = f"%{q}%"
+            total = conn.execute(
+                "SELECT COUNT(*) n FROM customers WHERE name LIKE ? OR phone LIKE ?", (like, like)
+            ).fetchone()["n"]
+            rows = conn.execute(
+                "SELECT * FROM customers WHERE name LIKE ? OR phone LIKE ? "
+                "ORDER BY total_amount DESC LIMIT ? OFFSET ?",
+                (like, like, size, (page - 1) * size),
+            ).fetchall()
+        else:
+            total = conn.execute("SELECT COUNT(*) n FROM customers").fetchone()["n"]
+            rows = conn.execute("SELECT * FROM customers ORDER BY total_amount DESC LIMIT ? OFFSET ?", (size, (page - 1) * size)).fetchall()
+        return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
+
+
+@app.get("/api/customers/stats")
+def customer_stats(request: Request):
+    """会员统计：总数 / 今日新增 / 本月新增（按建档时间 created 统计）。"""
     _require_auth(request)
     with _db(request) as conn:
         total = conn.execute("SELECT COUNT(*) n FROM customers").fetchone()["n"]
-        rows = conn.execute("SELECT * FROM customers ORDER BY total_amount DESC LIMIT ? OFFSET ?", (size, (page - 1) * size)).fetchall()
-        return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
+        today = conn.execute(
+            "SELECT COUNT(*) n FROM customers WHERE date(created)=date('now','localtime')").fetchone()["n"]
+        month = conn.execute(
+            "SELECT COUNT(*) n FROM customers "
+            "WHERE substr(created,1,7)=substr(datetime('now','localtime'),1,7)").fetchone()["n"]
+        return {"total": total, "today": today, "month": month}
 
 
 @app.get("/api/customers/lookup")
@@ -5923,7 +6107,8 @@ def customer_create(body: CustomerIn, request: Request):
         raise HTTPException(400, "金价折扣需在 0~1 之间（如 0.98）")
     with _db(request) as conn:
         cur = conn.execute(
-            "INSERT INTO customers(name,phone,level,birthday,anniversary,preference,gold_discount) VALUES(?,?,?,?,?,?,?)",
+            "INSERT INTO customers(name,phone,level,birthday,anniversary,preference,gold_discount,created) "
+            "VALUES(?,?,?,?,?,?,?,datetime('now','localtime'))",
             (body.name, body.phone, body.level, body.birthday, body.anniversary, body.preference,
              gd if gd is not None else 1.0),
         )

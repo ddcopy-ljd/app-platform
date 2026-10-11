@@ -204,5 +204,18 @@
 - **实现**：`_log` target 改为 `单号（N件：名1、名2…）`，超 10 件截断加 `…`；验收分列相符/不符明细。
 - **验证方法**：走一次发出+验收 API，`operate_logs.target` 含商品名；前端 `.log-plain` 行内可见明细。
 
+## TC-29 「＋ 新增门店」按钮点击无反应（1.2.17）
+
+- **问题现象**：总部管理页点「＋ 新增门店」按钮，页面无任何变化（表单不弹出、无反馈），用户以为功能失效；实际表单一直显示着，直接填写点确认能保存。
+- **根因**：`storeEditMode` 初始值为 `'new'`，模板 `v-if="storeEditMode==='new' || storeEdit.id"` 恒真 → 表单默认展开；`createStore()` 只是把状态重置为同样的 `'new'`，无视觉变化。
+- **修复**：`storeEditMode` 初始值与 `resetStoreEdit()` 改为 `''`（收起），点按钮才展开表单。
+- **验证方法**：进入总部管理 → 初始无门店表单 → 点「＋ 新增门店」表单展开 → 填写保存后表单收起且列表新增；「取消」按钮可收起表单。
+
+## TC-30 库存分析页改造：金额指标/6 卡公式/分类占比/导出打印/进销存/PC 两栏（1.2.17）
+
+- **需求**：①4 金额指标（库存成本/售价/预计利润/利润率，口径=在库+已定）+点【已定锁定】看明细与锁定原因 ②5 卡改 6 小卡（+维修在途）+公式「在店库存总数=在库+已定锁定」③分类库存占比环形图 TOP5+明细表 ④表头列勾选导出 CSV+打印 ⑤进销存查询子 tab（区间进货/销售/期末库存）⑥PC 两栏布局（左统计+表格，右占比；禁止只拉宽）。
+- **实现**：`/api/inventory/summary` 扩展 price/repairing/metrics/categories；新增 `/api/inventory/locked-items`（products 已定 JOIN deposits 已定）与 `/api/inventory/psi`（purchases 按 order_date、sale_items×sales 按 biz_date 排除已冲红、期末=当前在库+已定，按品类分组+合计）。无 can_view_cost 权限时 cost/profit/inAmount/endCost 返回 null，前端 `***`。前端 `.inv-layout` grid 两栏（<1200px 回落单列，移动端占比区在表格后）；导出为前端 CSV（\uFEFF BOM）；打印 window.open 内联表格+window.print()。
+- **验证方法**：E2E（Python）18 项：metrics.onHand=inStock+reserved、profit=price-cost、categories 合计=onHand、locked-items 数=reserved 数、psi 未来区间进销=0 而期末>0。浏览器走查：PC 视口 `.inv-layout` 内同时存在 `.inv-main` 与 `.inv-side`（含 donut+明细表）、6 小卡+公式行+4 指标条、点已定锁定弹抽屉含「锁定原因」列、选择列面板 11 复选框、导出 blob>0、打印新窗口生成、进销存 tab 默认本月且查询出行、isPc=false 单列且占比在表格后、EN/IT 切换新区域文案无界面级中文残留（商品名数据本身中文除外）、console 无 error。
+
 
 
