@@ -1290,11 +1290,11 @@
 
             <!-- 下设门店列表（按店铺分组，卡片含门店详情统计） -->
             <div v-for="p in manageShops" :key="'hgrp-'+p.id" style="margin-top:12px">
-              <div class="biz-grp-title">🏬 {{ p.name }} <span style="color:#999;font-weight:400">#{{ p.code }}</span></div>
+              <div class="biz-grp-title">🏬 {{ p.name }} <span style="color:var(--text3);font-weight:400">#{{ p.code }}</span></div>
               <div class="store-grid">
                 <div v-for="s in storesByShop(p.id)" :key="s.id" class="bridge-store">
                   <div class="flex-between">
-                    <b>🏪 {{ s.name }} <span class="mono" style="font-size:14px;color:#999">#{{ s.code }}</span></b>
+                    <b>🏪 {{ s.name }} <span class="mono" style="font-size:14px;color:var(--text3)">#{{ s.code }}</span></b>
                   </div>
                   <div class="prod-meta" :class="(bridgeOfStore(s.id) && bridgeOfStore(s.id).online) ? 'mv-in' : 'mv-out'">● {{ t('store.bridge') }} {{ (bridgeOfStore(s.id) && bridgeOfStore(s.id).online) ? t('sb.online') : t('sb.offline') }}</div>
                   <div class="prod-meta" v-if="s.owner">{{ t('store.owner') }}：{{ s.owner }}</div>
@@ -1401,11 +1401,11 @@
 
             <!-- 按店铺分组的门店列表（manageShops：总店列出全部，分店只有本店所属分组） -->
             <div v-for="p in manageShops" :key="'grp-'+p.id" style="margin-bottom:14px">
-              <div class="biz-grp-title">🏬 {{ p.name }} <span style="color:#999;font-weight:400">#{{ p.code }} · {{ t('shop.itemLimit') }} {{ p.sale_item_limit }}</span></div>
+              <div class="biz-grp-title">🏬 {{ p.name }} <span style="color:var(--text3);font-weight:400">#{{ p.code }} · {{ t('shop.itemLimit') }} {{ p.sale_item_limit }}</span></div>
               <div class="store-grid">
                 <div v-for="s in storesByShop(p.id)" :key="s.id" class="bridge-store" :class="{'store-sel': locStore===s.id}">
                   <div class="flex-between">
-                    <b style="cursor:pointer" @click="selectStore(s.id)">🏪 {{ s.name }} <span class="mono" style="font-size:14px;color:#999">#{{ s.code }}</span></b>
+                    <b style="cursor:pointer" @click="selectStore(s.id)">🏪 {{ s.name }} <span class="mono" style="font-size:14px;color:var(--text3)">#{{ s.code }}</span></b>
                   </div>
                   <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
                     <button class="btn-small" @click="selectStore(s.id)">{{ t('store.manage') }}</button>
@@ -1549,7 +1549,7 @@
 
             <div class="bridge-store" v-for="s in stores" :key="s.id">
               <div class="flex-between">
-                <b>{{ s.name }} <span class="mono" style="font-size:14px;color:#999">#{{ s.code }}</span></b>
+                <b>{{ s.name }} <span class="mono" style="font-size:14px;color:var(--text3)">#{{ s.code }}</span></b>
                 <span class="bridge-state" v-if="bridgeOfStore(s.id)"
                       :class="bridgeOfStore(s.id).online ? 'st-on' : 'st-off'">
                   ● {{ bridgeOfStore(s.id).online ? t('sb.online') : t('sb.offline') }}
