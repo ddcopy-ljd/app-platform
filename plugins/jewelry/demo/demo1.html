@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>懿臻珠宝云 - 旗舰版</title>
+    <style>
+        :root {
+            --primary-bg: #6B1724; /* 深酒红 */
+            --primary-dark: #4A0E17; /* 暗酒红 */
+            --gold-light: #FDF1B8;
+            --gold-main: #D4AF37;
+            --gold-dark: #9A6B22;
+            --bg-gray: #F5F6FA;
+            --text-main: #333333;
+            --text-gray: #888888;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+        body { display: flex; height: 100vh; background-color: var(--bg-gray); overflow: hidden; }
+
+        /* 左侧导航栏 */
+        .sidebar {
+            width: 240px; background: linear-gradient(180deg, var(--primary-bg) 0%, var(--primary-dark) 100%);
+            color: white; display: flex; flex-direction: column; transition: 0.3s;
+        }
+        .logo-area {
+            height: 70px; display: flex; align-items: center; justify-content: center;
+            font-size: 22px; font-weight: 800; letter-spacing: 2px;
+            background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+            color: var(--gold-main); font-family: 'STZhongsong', serif;
+        }
+        .nav-menu { flex: 1; padding-top: 20px; overflow-y: auto; }
+        .nav-item {
+            padding: 15px 25px; cursor: pointer; display: flex; align-items: center;
+            font-size: 15px; color: #EEAAAA; transition: 0.2s; border-left: 4px solid transparent;
+        }
+        .nav-item:hover { background: rgba(255,255,255,0.05); color: white; }
+        .nav-item.active {
+            background: linear-gradient(90deg, rgba(212,175,55,0.15) 0%, transparent 100%);
+            color: var(--gold-light); font-weight: bold; border-left-color: var(--gold-main);
+        }
+        .nav-item i { margin-right: 12px; font-style: normal; width: 20px; text-align: center; }
+
+        /* 右侧主区域 */
+        .main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        
+        /* 顶部通栏 */
+        .topbar {
+            height: 70px; background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            display: flex; justify-content: space-between; align-items: center; padding: 0 30px; z-index: 10;
+        }
+        .store-selector select {
+            padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; outline: none; font-weight: bold;
+        }
+        .user-info { display: flex; align-items: center; gap: 20px; color: var(--text-gray); }
+        .user-info .badge { background: var(--primary-bg); color: white; padding: 2px 6px; border-radius: 10px; font-size: 12px; }
+
+        /* 内容区 */
+        .page-view { padding: 30px; display: none; height: calc(100vh - 70px); overflow-y: auto; }
+        .page-view.active { display: block; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* 通用卡片网格 */
+        .grid-row { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
+        .card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.03); flex: 1; min-width: 250px; }
+        .card h3 { font-size: 16px; color: var(--text-gray); margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;}
+        
+        /* 数据指标卡 */
+        .metric { font-size: 28px; font-weight: bold; color: var(--primary-bg); margin-bottom: 5px; }
+        .metric-sub { font-size: 13px; color: var(--text-gray); }
+        .trend-up { color: #52C41A; } .trend-down { color: #F5222D; }
+
+        /* 按钮与表格 */
+        .btn { padding: 8px 16px; background: var(--primary-bg); color: white; border: none; border-radius: 4px; cursor: pointer; transition: 0.2s; }
+        .btn:hover { background: var(--primary-dark); }
+        .btn-gold { background: linear-gradient(45deg, var(--gold-dark), var(--gold-main)); color: white; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { color: var(--text-gray); font-weight: normal; }
+        .tag { padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+        .tag-blue { background: #E6F7FF; color: #1890FF; }
+        .tag-gold { background: #FFFBE6; color: #FAAD14; }
+    </style>
+</head>
+<body>
+
+    <!-- 侧边栏 (涵盖所有 7 个模块的入口) -->
+    <div class="sidebar">
+        <div class="logo-area">懿臻珠宝云</div>
+        <div class="nav-menu">
+            <div class="nav-item active" onclick="switchTab('dashboard')"><i>📊</i>BI 决策看板</div>
+            <div class="nav-item" onclick="switchTab('pos')"><i>💰</i>智慧收银台</div>
+            <div class="nav-item" onclick="switchTab('crm')"><i>💎</i>会员与 O2O</div>
+            <div class="nav-item" onclick="switchTab('mdm')"><i>🏷️</i>商品与供应链</div>
+            <div class="nav-item" onclick="switchTab('wms')"><i>📦</i>仓储与调拨</div>
+            <div class="nav-item" onclick="switchTab('aiot')"><i>📡</i>物联与安防</div>
+            <div class="nav-item" onclick="switchTab('org')"><i>⚙️</i>系统与权限</div>
+        </div>
+    </div>
+
+    <!-- 右侧主区域 -->
+    <div class="main-content">
+        <!-- 顶部工具栏 (模块7：组织切换) -->
+        <div class="topbar">
+            <div class="store-selector">
+                <select>
+                    <option>总部视角 (全局数据)</option>
+                    <option selected>分店：北京 SKP 旗舰店</option>
+                    <option>分店：上海恒隆广场店</option>
+                </select>
+            </div>
+            <div class="user-info">
+                <span>实时金价: <b style="color:var(--gold-main)">¥612.5/g</b></span>
+                <span>🔔 待办 <span class="badge">9</span></span>
+                <span>店长：王丽</span>
+            </div>
+        </div>
+
+        <!-- 视图 1：BI 数据看板 (模块1) -->
+        <div id="dashboard" class="page-view active">
+            <div class="grid-row">
+                <div class="card"><h3>今日营业额</h3><div class="metric">¥ 128,500</div><div class="metric-sub">单数 14 | 客单价 ¥9,178 <span class="trend-up">↑ 12%</span></div></div>
+                <div class="card"><h3>在店资产总额</h3><div class="metric">¥ 8,450,200</div><div class="metric-sub">总件数 2,305 | 金重 15.2kg</div></div>
+                <div class="card"><h3>利润预估分析</h3><div class="metric" style="color:var(--gold-dark)">¥ 42,600</div><div class="metric-sub">平均毛利率 33.1%</div></div>
+            </div>
+            <div class="grid-row">
+                <div class="card" style="flex:2">
+                    <h3>智能待办中心 (9类聚合)</h3>
+                    <table>
+                        <tr><td>🔴 借货逾期</td><td>李总借出 [玻璃种翡翠手镯] 超出3天</td><td><button class="btn" style="padding:4px 8px">催还</button></td></tr>
+                        <tr><td>🟡 定金到期</td><td>客户张女士定制钻戒尾款 3,500元 今日到期</td><td><button class="btn" style="padding:4px 8px">跟进</button></td></tr>
+                        <tr><td>🎂 会员生日</td><td>黑卡会员 王太太 明日生日</td><td><button class="btn" style="padding:4px 8px">发券</button></td></tr>
+                    </table>
+                </div>
+                <div class="card" style="flex:1">
+                    <h3>品类销售占比 TOP5</h3>
+                    <div style="height:150px; background:#f9f9f9; border-radius:4px; display:flex; align-items:center; justify-content:center; color:#ccc;">(环形图表渲染区)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 视图 2：智慧收银 (模块2) -->
+        <div id="pos" class="page-view">
+            <div class="grid-row">
+                <div class="card" style="flex:2">
+                    <h3>快速开单 (多件合并)</h3>
+                    <div style="display:flex; gap:10px; margin-bottom:15px;">
+                        <input type="text" placeholder="扫描商品条码 / EPC / 拼音首字母" style="flex:1; padding:8px;">
+                        <button class="btn btn-gold">识别读写器商品</button>
+                    </div>
+                    <table>
+                        <tr><th>货号</th><th>品名</th><th>单价</th><th>折扣</th><th>实收</th><th>操作</th></tr>
+                        <tr><td>XS202301</td><td>古法足金手镯 (32g)</td><td>¥19,600</td><td>98折</td><td>¥19,208</td><td>❌</td></tr>
+                    </table>
+                </div>
+                <div class="card" style="flex:1">
+                    <h3>结算面板</h3>
+                    <p style="margin:10px 0;">客户：散客 <a href="#">关联会员</a></p>
+                    <h2 style="color:var(--primary-bg); margin: 20px 0; font-size:32px;">¥ 19,208</h2>
+                    <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:20px;">
+                        <button class="tag tag-blue">微信支付</button><button class="tag tag-blue">刷卡</button><button class="tag tag-gold">储值余额</button>
+                    </div>
+                    <button class="btn" style="width:100%; padding:12px; font-size:16px;">确认收款 & 打印小票</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 视图 3：CRM 与 O2O (模块3) -->
+        <div id="crm" class="page-view">
+            <div class="card">
+                <h3>客户库与预约大厅</h3>
+                <div style="margin-bottom:15px;">
+                    <button class="btn">新增会员</button>
+                    <button class="btn" style="background:white; color:#333; border:1px solid #ccc;">处理官网预约 (2)</button>
+                </div>
+                <table>
+                    <tr><th>姓名</th><th>手机号</th><th>等级</th><th>账户余额</th><th>累计消费</th><th>状态</th></tr>
+                    <tr><td>王女士</td><td>138****1234</td><td>💎 钻石卡</td><td>¥ 5,000</td><td>¥ 128,000</td><td><span class="tag tag-gold">本月生日</span></td></tr>
+                    <tr><td>李先生</td><td>139****5678</td><td>🥈 银卡</td><td>¥ 0</td><td>¥ 12,500</td><td><span class="tag tag-blue">官网预约到店</span></td></tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- 视图 4：商品与供应链 (模块4) -->
+        <div id="mdm" class="page-view">
+            <div class="card">
+                <h3>一物一码主数据</h3>
+                <div style="margin-bottom:15px;">
+                    <button class="btn">新建商品</button> <button class="btn">采购入库</button> <button class="btn">委外加工</button>
+                </div>
+                <table>
+                    <tr><th>EPC 芯片码</th><th>主图片</th><th>品类 / 材质</th><th>计价方式</th><th>零售标价</th><th>当前状态</th></tr>
+                    <tr><td>E200...001</td><td>🖼️</td><td>戒指 / 18K金伴钻</td><td>按件</td><td>¥ 6,800</td><td><span class="tag tag-blue">在库</span></td></tr>
+                    <tr><td>E200...002</td><td>🖼️</td><td>吊坠 / 冰种翡翠</td><td>按件</td><td>¥ 45,000</td><td><span class="tag tag-gold">已定 (锁)</span></td></tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- 视图 5：仓储与调拨 (模块5) -->
+        <div id="wms" class="page-view">
+            <div class="grid-row">
+                <div class="card">
+                    <h3>RFID 协同盘点</h3>
+                    <p style="color:var(--text-gray); margin-bottom:15px;">当前盘点将自动冻结在库商品销售</p>
+                    <button class="btn btn-gold" style="width:100%; height:80px; font-size:20px;">▶ 开启全局盘点任务</button>
+                    <p style="margin-top:15px; font-size:12px;">手持机(PDA)扫描中: 0 件</p>
+                </div>
+                <div class="card">
+                    <h3>店际调拨单</h3>
+                    <table>
+                        <tr><th>调拨单号</th><th>流向</th><th>件数</th><th>状态</th></tr>
+                        <tr><td>DB-1011</td><td>总部 → 本店</td><td>45</td><td>🚚 在途 (待验收)</td></tr>
+                        <tr><td>DB-1012</td><td>本店 → 上海店</td><td>2</td><td>✅ 已完成</td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 视图 6：物联与安防 (模块6) -->
+        <div id="aiot" class="page-view">
+            <div class="grid-row">
+                <div class="card">
+                    <h3>硬件网关 (PrintBridge)</h3>
+                    <p>状态: <span style="color:#52C41A">🟢 WebSockets 已连接</span></p>
+                    <div style="margin-top:15px;">
+                        <button class="btn">标签设计器 (拖拽)</button>
+                        <button class="btn" style="background:white; color:#333; border:1px solid #ccc;">测试打码机</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>智能防盗通道门 (UHF)</h3>
+                    <p>当前防区状态: <span style="color:#F5222D">🔴 营业中 (过滤已售商品)</span></p>
+                    <table style="margin-top:10px;">
+                        <tr><th>报警时间</th><th>事件</th><th>拦截 EPC</th></tr>
+                        <tr><td>10:45:12</td><td>未结算商品越界</td><td>E200...099</td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 视图 7：系统与组织 (模块7) -->
+        <div id="org" class="page-view">
+            <div class="card">
+                <h3>门店与权限基建</h3>
+                <div style="margin-bottom:15px;">
+                    <button class="btn">员工账号</button> <button class="btn">角色与授权</button> <button class="btn">安全审计日志</button>
+                </div>
+                <table>
+                    <tr><th>账号</th><th>归属门店</th><th>系统角色</th><th>最近登录</th></tr>
+                    <tr><td>wangli</td><td>北京 SKP 旗舰店</td><td>店长 (Store Manager)</td><td>今日 08:30</td></tr>
+                    <tr><td>admin_hq</td><td>总部</td><td>系统管理员 (SaaS Admin)</td><td>今日 09:15</td></tr>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // 简单的路由切换逻辑
+        function switchTab(tabId) {
+            // 移除所有导航的 active
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            // 隐藏所有页面视图
+            document.querySelectorAll('.page-view').forEach(el => el.classList.remove('active'));
+            
+            // 激活当前点击的
+            event.currentTarget.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+    </script>
+</body>
+</html>
