@@ -141,6 +141,13 @@ a { text-decoration: none; color: inherit; }
 .lg-line.lg-cur { border-color: #3D6B99; }
 .lg-line.lg-past { border-color: #C9A227; border-top-style: dashed; }
 .trend-ticks { display: flex; justify-content: space-between; font-size: 14px; color: var(--text3); padding: 2px 4px 0; }
+/* 趋势图纵轴：单位标签 + 刻度列（与 SVG 网格线 y=8/52/96 对齐） */
+.trend-unit-label { font-size: 14px; color: var(--text3); margin: 0 0 2px; }
+.trend-plot { display: flex; align-items: stretch; }
+.trend-yaxis { position: relative; width: 46px; flex: 0 0 46px; }
+.trend-yaxis > span { position: absolute; left: 0; right: 6px; transform: translateY(-50%); text-align: right; font-size: 14px; color: var(--text3); line-height: 1; }
+.trend-plot .trend-svg { flex: 1; min-width: 0; }
+.trend-ticks-indent { padding-left: 46px; }
 /* 经营分析区块 */
 .biz-analysis .ba-group { margin: 10px 0 14px; }
 .biz-analysis .ba-group-title { font-size: 14px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
@@ -1095,6 +1102,11 @@ tr.row-flash, tr.row-flash:hover { background-color: #FFF3CD !important; transit
 /* ===== 门店与打印代理（多门店） ===== */
 .bridge-store { border: 1px solid #ece4d3; border-radius: 8px; padding: 10px; margin-top: 10px; background: #fdfbf6; }
 /* 总部管理门店卡片详情统计 */
+/* 门店卡片列表：PC 每行 6 卡，窄屏回落单列 */
+.store-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.store-grid > .bridge-store { margin-top: 0; min-width: 0; }
+.store-grid .hqs-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 1199px) { .store-grid { grid-template-columns: 1fr; } .store-grid .hqs-stat-grid { grid-template-columns: repeat(3, 1fr); } }
 .hqs-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 10px; margin: 8px 0 4px; }
 .hqs-stat { background: #fff; border: 1px solid #f0e8d8; border-radius: 6px; padding: 5px 8px; text-align: center; }
 .hqs-stat > span { display: block; font-size: 15px; font-weight: 600; color: #8a2a2a; line-height: 1.3; }

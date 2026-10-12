@@ -290,6 +290,7 @@ var I18N = {
     // 看板
     'dash.cost': '成本', 'dash.bills': '笔', 'dash.birthday': '生日', 'dash.due': '待付',
     'dash.mom': '环比', 'dash.yoy': '同比', 'dash.curYear': '本年', 'dash.prevYear': '去年',
+    'dash.trendUnit': '纵轴：实销金额（元）',
     'dash.today': '今日', 'dash.week': '本周', 'dash.month': '本月', 'dash.custom': '自定义',
     'dash.query': '查询', 'dash.pickRange': '请选择起止日期', 'dash.avg': '客单价',
     'dash.onhand': '在库', 'dash.depBills': '单待收', 'dash.rangeMove': '区间出入库',
@@ -668,6 +669,7 @@ var I18N = {
     'rem.outLoanDue': 'Lent Overdue', 'rem.inLoanDue': 'Borrow Return', 'rem.loanDue': 'Loan Due',
     'rem.repairPending': 'Repair Pending', 'rem.repairReady': 'Repair Ready', 'rem.repairing': 'Repairing',
     'dash.mom': 'MoM', 'dash.yoy': 'YoY', 'dash.curYear': 'Current', 'dash.prevYear': 'Last year',
+    'dash.trendUnit': 'Y-axis: Sales amount (¥)',
     'dash.today': 'Today', 'dash.week': 'This Week', 'dash.month': 'This Month', 'dash.custom': 'Custom',
     'dash.query': 'Query', 'dash.pickRange': 'Please pick start and end date', 'dash.avg': 'Avg Order',
     'dash.onhand': 'On hand', 'dash.depBills': 'pending', 'dash.rangeMove': 'Stock Movement',
@@ -1335,6 +1337,7 @@ var I18N = {
     'rem.outLoanDue': 'Prestato Scaduto', 'rem.inLoanDue': 'Rendere Prestato', 'rem.loanDue': 'Prestito Scaduto',
     'rem.repairPending': 'Riparazione In Attesa', 'rem.repairReady': 'Riparazione Pronta', 'rem.repairing': 'In Riparazione',
     'dash.mom': 'MoM', 'dash.yoy': 'YoY', 'dash.curYear': 'Corrente', 'dash.prevYear': 'Anno scorso',
+    'dash.trendUnit': 'Asse Y: Importo vendite (¥)',
     'dash.today': 'Oggi', 'dash.week': 'Questa settimana', 'dash.month': 'Questo mese', 'dash.custom': 'Personalizzato',
     'dash.query': 'Consulta', 'dash.pickRange': 'Seleziona date di inizio e fine', 'dash.avg': 'Ordine medio',
     'dash.onhand': 'Disponibili', 'dash.depBills': 'in sospeso', 'dash.rangeMove': 'Movimento magazzino',

@@ -188,14 +188,20 @@
                 </select>
               </span>
             </div>
-            <svg class="trend-svg" viewBox="0 0 300 100" preserveAspectRatio="none">
-              <line x1="4" y1="96" x2="296" y2="96" class="trend-axis"></line>
-              <line x1="4" y1="52" x2="296" y2="52" class="trend-grid"></line>
-              <line x1="4" y1="8" x2="296" y2="8" class="trend-grid"></line>
-              <polyline v-if="hasLastYear(trendData.amountsLastYear)" :points="trendLinePoints(trendData.amountsLastYear, trendScaleMax())" class="trend-line-past" fill="none"></polyline>
-              <polyline :points="trendLinePoints(trendData.amounts, trendScaleMax())" class="trend-line-cur" fill="none"></polyline>
-            </svg>
-            <div class="trend-ticks">
+            <div class="trend-unit-label">{{ t('dash.trendUnit') }}</div>
+            <div class="trend-plot">
+              <div class="trend-yaxis">
+                <span v-for="ya in trendYAxis()" :key="ya.top" :style="{top: ya.top}">{{ ya.text }}</span>
+              </div>
+              <svg class="trend-svg" viewBox="0 0 300 100" preserveAspectRatio="none">
+                <line x1="4" y1="96" x2="296" y2="96" class="trend-axis"></line>
+                <line x1="4" y1="52" x2="296" y2="52" class="trend-grid"></line>
+                <line x1="4" y1="8" x2="296" y2="8" class="trend-grid"></line>
+                <polyline v-if="hasLastYear(trendData.amountsLastYear)" :points="trendLinePoints(trendData.amountsLastYear, trendScaleMax())" class="trend-line-past" fill="none"></polyline>
+                <polyline :points="trendLinePoints(trendData.amounts, trendScaleMax())" class="trend-line-cur" fill="none"></polyline>
+              </svg>
+            </div>
+            <div class="trend-ticks trend-ticks-indent">
               <span v-for="tk in trendTicks()" :key="tk.i">{{ tk.text }}</span>
             </div>
           </div>
@@ -1285,26 +1291,28 @@
             <!-- 下设门店列表（按店铺分组，卡片含门店详情统计） -->
             <div v-for="p in manageShops" :key="'hgrp-'+p.id" style="margin-top:12px">
               <div class="biz-grp-title">🏬 {{ p.name }} <span style="color:#999;font-weight:400">#{{ p.code }}</span></div>
-              <div v-for="s in storesByShop(p.id)" :key="s.id" class="bridge-store">
-                <div class="flex-between">
-                  <b>🏪 {{ s.name }} <span class="mono" style="font-size:14px;color:#999">#{{ s.code }}</span></b>
-                  <span class="bridge-state" :class="(bridgeOfStore(s.id) && bridgeOfStore(s.id).online) ? 'st-on' : 'st-off'">● {{ t('store.bridge') }} {{ (bridgeOfStore(s.id) && bridgeOfStore(s.id).online) ? t('sb.online') : t('sb.offline') }}</span>
-                </div>
-                <div class="prod-meta" v-if="s.owner">{{ t('store.owner') }}：{{ s.owner }}</div>
-                <div class="prod-meta" v-if="s.printer_name">🖨 {{ s.printer_name }}</div>
-                <div class="hqs-stat-grid">
-                  <div class="hqs-stat"><span>{{ s.stat ? s.stat.onHand : '-' }}</span><label>{{ t('inv.stock') }}</label></div>
-                  <div class="hqs-stat"><span>{{ s.stat ? s.stat.reserved : '-' }}</span><label>{{ t('inv.reserved') }}</label></div>
-                  <div class="hqs-stat"><span>{{ s.stat ? s.stat.locations : '-' }}</span><label>{{ t('loc.title') }}</label></div>
-                  <div class="hqs-stat"><span>{{ s.stat ? s.stat.saleMonth : '-' }}</span><label>{{ t('store.saleMonth') }}</label></div>
-                  <div class="hqs-stat"><span>{{ devicesOfStore(s.id).length }}</span><label>{{ t('store.devices') }}</label></div>
-                  <div class="hqs-stat"><span>{{ storeSecStore(s.id).length }}</span><label>{{ t('sb.secPanel') }}</label></div>
-                </div>
-                <div class="prod-meta" v-if="s.stat">
-                  {{ t('inv.metricCost') }} {{ costText(s.stat.stockCost) }} · {{ t('inv.metricPrice') }} {{ costText(s.stat.stockPrice) }}
-                </div>
-                <div class="prod-meta" v-if="s.stat">
-                  {{ t('store.saleCount') }} {{ s.stat.saleCount }} · {{ t('store.saleAmount') }} ￥{{ fmt(s.stat.saleAmount) }}
+              <div class="store-grid">
+                <div v-for="s in storesByShop(p.id)" :key="s.id" class="bridge-store">
+                  <div class="flex-between">
+                    <b>🏪 {{ s.name }} <span class="mono" style="font-size:14px;color:#999">#{{ s.code }}</span></b>
+                  </div>
+                  <div class="prod-meta" :class="(bridgeOfStore(s.id) && bridgeOfStore(s.id).online) ? 'mv-in' : 'mv-out'">● {{ t('store.bridge') }} {{ (bridgeOfStore(s.id) && bridgeOfStore(s.id).online) ? t('sb.online') : t('sb.offline') }}</div>
+                  <div class="prod-meta" v-if="s.owner">{{ t('store.owner') }}：{{ s.owner }}</div>
+                  <div class="prod-meta" v-if="s.printer_name">🖨 {{ s.printer_name }}</div>
+                  <div class="hqs-stat-grid">
+                    <div class="hqs-stat"><span>{{ s.stat ? s.stat.onHand : '-' }}</span><label>{{ t('inv.stock') }}</label></div>
+                    <div class="hqs-stat"><span>{{ s.stat ? s.stat.reserved : '-' }}</span><label>{{ t('inv.reserved') }}</label></div>
+                    <div class="hqs-stat"><span>{{ s.stat ? s.stat.locations : '-' }}</span><label>{{ t('loc.title') }}</label></div>
+                    <div class="hqs-stat"><span>{{ s.stat ? s.stat.saleMonth : '-' }}</span><label>{{ t('store.saleMonth') }}</label></div>
+                    <div class="hqs-stat"><span>{{ devicesOfStore(s.id).length }}</span><label>{{ t('store.devices') }}</label></div>
+                    <div class="hqs-stat"><span>{{ storeSecStore(s.id).length }}</span><label>{{ t('sb.secPanel') }}</label></div>
+                  </div>
+                  <div class="prod-meta" v-if="s.stat">
+                    {{ t('inv.metricCost') }} {{ costText(s.stat.stockCost) }} · {{ t('inv.metricPrice') }} {{ costText(s.stat.stockPrice) }}
+                  </div>
+                  <div class="prod-meta" v-if="s.stat">
+                    {{ t('store.saleCount') }} {{ s.stat.saleCount }} · {{ t('store.saleAmount') }} ￥{{ fmt(s.stat.saleAmount) }}
+                  </div>
                 </div>
               </div>
               <div v-if="!storesByShop(p.id).length" class="prod-meta" style="padding:4px 0">{{ t('store.emptyInShop') }}</div>
@@ -1394,16 +1402,18 @@
             <!-- 按店铺分组的门店列表（manageShops：总店列出全部，分店只有本店所属分组） -->
             <div v-for="p in manageShops" :key="'grp-'+p.id" style="margin-bottom:14px">
               <div class="biz-grp-title">🏬 {{ p.name }} <span style="color:#999;font-weight:400">#{{ p.code }} · {{ t('shop.itemLimit') }} {{ p.sale_item_limit }}</span></div>
-              <div v-for="s in storesByShop(p.id)" :key="s.id" class="bridge-store" :class="{'store-sel': locStore===s.id}">
-                <div class="flex-between">
-                  <b style="cursor:pointer" @click="selectStore(s.id)">🏪 {{ s.name }} <span class="mono" style="font-size:14px;color:#999">#{{ s.code }}</span></b>
-                  <span>
+              <div class="store-grid">
+                <div v-for="s in storesByShop(p.id)" :key="s.id" class="bridge-store" :class="{'store-sel': locStore===s.id}">
+                  <div class="flex-between">
+                    <b style="cursor:pointer" @click="selectStore(s.id)">🏪 {{ s.name }} <span class="mono" style="font-size:14px;color:#999">#{{ s.code }}</span></b>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
                     <button class="btn-small" @click="selectStore(s.id)">{{ t('store.manage') }}</button>
                     <button class="btn-small" :disabled="frozen" @click="inboundForStore(s)">📥 {{ t('store.inbound') }}</button>
                     <button class="btn-small" @click="openDevices(s.id)">📷 {{ t('store.devices') }}</button>
-                  </span>
+                  </div>
+                  <div class="prod-meta" v-if="s.owner">{{ t('store.owner') }}：{{ s.owner }}</div>
                 </div>
-                <div class="prod-meta" v-if="s.owner">{{ t('store.owner') }}：{{ s.owner }}</div>
               </div>
               <div v-if="!storesByShop(p.id).length" class="prod-meta" style="padding:4px 0">{{ t('store.emptyInShop') }}</div>
             </div>

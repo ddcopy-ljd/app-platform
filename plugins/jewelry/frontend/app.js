@@ -244,6 +244,22 @@ function trendTicks() {
   if (out.length && out[out.length - 1].i !== n - 1) out.push({ i: n - 1, text: d.labels[n - 1] });
   return out;
 }
+// 纵轴刻度（实销金额，元）：0 / 半程 / 最大值，与 SVG 网格线 y=96/52/8 对齐
+function trendYAxis() {
+  var mx = trendScaleMax();
+  var zh = (ST.lang || 'zh') === 'zh';
+  function short(n) {
+    n = Math.round(n);
+    if (zh && n >= 10000) return (n / 10000).toFixed(n >= 100000 ? 0 : 1).replace(/\.0$/, '') + '万';
+    if (!zh && n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'k';
+    return fmt(n);
+  }
+  return [
+    { top: '8%', text: short(mx) },
+    { top: '52%', text: short(mx / 2) },
+    { top: '96%', text: '0' }
+  ];
+}
 
 // i18n.js 已提供全局 t(key) 翻译函数（先于本文件加载）；
 // 切勿在此重新声明同名 function t，否则会覆盖 window.t 导致自递归栈溢出。
@@ -4817,7 +4833,7 @@ var app = Vue.createApp({
     roleText: roleText,
     t: t, fmt: fmt, fmtY: fmtY, dateFmt: dateFmt,
     pctLabel: pctLabel, pctCls: pctCls, trendMax: trendMax, hasLastYear: hasLastYear,
-    setTrendRange: setTrendRange, trendLinePoints: trendLinePoints, trendScaleMax: trendScaleMax, trendTicks: trendTicks,
+    setTrendRange: setTrendRange, trendLinePoints: trendLinePoints, trendScaleMax: trendScaleMax, trendTicks: trendTicks, trendYAxis: trendYAxis,
     baDonutSegments: baDonutSegments, baTop5Sum: baTop5Sum,
     toggleHealth: toggleHealth,
     statusClass: statusClass,
