@@ -217,5 +217,25 @@
 - **实现**：`/api/inventory/summary` 扩展 price/repairing/metrics/categories；新增 `/api/inventory/locked-items`（products 已定 JOIN deposits 已定）与 `/api/inventory/psi`（purchases 按 order_date、sale_items×sales 按 biz_date 排除已冲红、期末=当前在库+已定，按品类分组+合计）。无 can_view_cost 权限时 cost/profit/inAmount/endCost 返回 null，前端 `***`。前端 `.inv-layout` grid 两栏（<1200px 回落单列，移动端占比区在表格后）；导出为前端 CSV（\uFEFF BOM）；打印 window.open 内联表格+window.print()。
 - **验证方法**：E2E（Python）18 项：metrics.onHand=inStock+reserved、profit=price-cost、categories 合计=onHand、locked-items 数=reserved 数、psi 未来区间进销=0 而期末>0。浏览器走查：PC 视口 `.inv-layout` 内同时存在 `.inv-main` 与 `.inv-side`（含 donut+明细表）、6 小卡+公式行+4 指标条、点已定锁定弹抽屉含「锁定原因」列、选择列面板 11 复选框、导出 blob>0、打印新窗口生成、进销存 tab 默认本月且查询出行、isPc=false 单列且占比在表格后、EN/IT 切换新区域文案无界面级中文残留（商品名数据本身中文除外）、console 无 error。
 
+## TC-31 商品管理列表「消失」：库存页状态筛选跨页隐形残留（1.2.18）
+
+- **问题现象**：商品管理页商品列表整段空白（表格 0 行），但后端 `/api/products` 与 `ST.products` 均有数据；用户报「列表消失了」。
+- **根因**：`prodStatusFilter` 是「库存分析」页可点状态卡（`goInvStatus`）的专属筛选，其清除横幅 `v-if` 限定 `tab==='inventory'`；但商品管理页表格数据源 `filteredProducts()` 也消费了 `prodStatusFilter`。用户从库存页点过某状态卡（如「已售」）再进商品管理，该筛选在商品页隐形生效且无任何清除入口 → 列表被筛空，看似消失。库存页改造后状态卡更多，更易误触发。
+- **修复**：`filteredProducts()` 移除对 `prodStatusFilter` 的过滤（加注释说明该筛选为库存页专属）。商品页状态筛选本无 UI 入口，属死逻辑；`prodStatusFilter` 仅保留给库存页横幅清除与后续 invStockList 响应使用。
+- **验证方法**：浏览器复现路径 `goInvStatus('已售') → go('products')`，修复前 `.table-products tbody tr` = 0、修复后 = 9；商品页搜索/品类/库位筛选仍正常（手镯→1、戒指→1、清空→9）。
+
+## TC-32 总部管理下设门店列表：详情统计卡（删入库/扫描设备按钮）
+
+- **需求**：总部管理（tab=shops）下设门店列表卡片加入门店详情；不放【入库】【扫描设备】按钮（go('stores') 在总店视角被重定向回首页，属死链；入库/设备在门店管理页已有）；数据信息卡片尽量多放详情。
+- **实现**：`/api/stores` 新增 `detail=1`（`_store_card_stats`：在库/已定/库位数/销售笔数金额/今日/本月/库存成本售价，全部查询在 with _db 块内；无 can_view_cost 权限金额置 None→前端 `***`）。前端仅 `go('shops')` 时 `loadStores(true, true)`，其它页不带 detail；卡片 6 格统计 + 打印代理在线状态 + 负责人/打印机 + 成本/售价/销售合计行。
+- **验证方法**：E2E 33 项（4 店 × onHand/reserved/locations/saleCount/saleAmount/saleMonth/stockCost 与 SQLite 直连逐项一致）；浏览器：4 卡渲染、卡内按钮数=0、三语无界面级中文残留（负责人数据值中文除外）。
+
+## TC-33 销售分析页改造：分析/流水子 tab + KPI + 分类占比 + 热销榜 + 销售人员饼图
+
+- **需求**：按截图把「销售分析」页从纯流水列表改造为分析看板：日期选择（今天/昨天/近7天/本月/近3月/自定义）、4 KPI（客单价/连带率/平均单价/售罄率）、分类实销总额占比环形 TOP5+明细表（分类/实销数量/实销成本/实销总额）、商品热销榜（按销量件数 TOP10，含条码/规格/售价/热卖N件）、销售人员销售占比饼图；原流水列表（冲红/小票）保留为「销售流水」子 tab。
+- **实现**：后端新增 `GET /api/sales/analysis?start=&end=`（静态路由注册在 `/api/sales/{sid}` 之前；缺省本月；start>end 自动交换；KPI/分类/热销/clerk 四段，成本无权限置 None；clerk_name 空回落 clerk_type 再回落「未指定」）。前端 `saleSub`（analysis/list）+ `saleAna` 状态；`saleAnaDonut/saleClerkDonut` 复用 donut 先例；`refreshAll()` 置 `saleAna.data=null` 缓存失效（开单/冲红后重拉）；`.sale-ana-grid` PC 两栏 <1200px 单列。
+- **验证方法**：E2E 20 项（revenue/bills/items/avgPerBill/attachment 与直连一致、分类件数合计=items、pct 合计≈100、热销降序且 TOP1 一致、clerks 金额合计=revenue、未来区间全 0、倒序自动交换、无 token 401）；浏览器：近3月 KPI/双环形图/热销榜 4 条渲染、流水 tab 14 单含小票+冲红、今日空态「暂无销售记录」、自定义一年 revenue=181740/14 单、EN/IT 无界面级中文残留、移动单列、console 无 error。
+
+
 
 

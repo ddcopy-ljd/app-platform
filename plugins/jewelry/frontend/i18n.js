@@ -211,6 +211,7 @@ var I18N = {
     'biz.security': '接入 RFID 防盗通道门、EAS 门禁等防盗设备：设备通过 HTTP 或 WebSocket 上报，布防时段内检测到未放行商品经过即触发告警（界面弹窗+提示音，可配置 Webhook 外发）。\n已售/借出商品自动放行；委外、展览等场景可添加临时放行。\n布防/撤防可手动切换，也可设置每日定时自动布撤防。',
     'biz.report': '使用 BugTracker 缺陷跟踪系统的免登录上报通道：填写类型（缺陷/需求）、标题与详细说明（可附最多 3 张截图）后提交，受理编号即时返回，由质量团队在 BugTracker 待处理箱统一跟进。',
     'report.openNew': '🔗 新窗口打开',
+    'report.beautify': '美观输出',
     'report.tip': '上报内容将提交到 BugTracker「外部上报箱」，来源与上报人已自动记录。',
 
     // 门店切换 / 用户与门店授权
@@ -346,6 +347,12 @@ var I18N = {
     'sale.clerk': '经办人', 'sale.clerkAll': '全部类别', 'sale.clerkFilter': '按经办人类别筛选',
     'sale.receiptBtn': '小票', 'sale.receiptTitle': '销售小票', 'sale.receiptNo': '单号',
     'sale.dueShort': '欠款', 'sale.receiptThanks': '感谢惠顾，欢迎再次光临！', 'sale.receiptBlocked': '浏览器拦截了小票窗口，请允许弹出窗口',
+    // 销售分析页
+    'sale.tabAnalysis': '销售分析', 'sale.tabList': '销售流水',
+    'dash.yesterday': '昨天', 'dash.last7d': '近7天', 'dash.last3m': '近3个月',
+    'sale.bills': '笔数', 'sale.revenue': '实销总额',
+    'sale.catRealShare': '分类实销总额占比', 'sale.clerkShare': '销售人员销售占比', 'sale.clerkTotal': '销售总额',
+    'sale.hotRank': '商品热销榜', 'sale.hotSold': '热卖',
     // 多件快速开单
     'sale.pickItem': '添加商品', 'sale.pickPh': '选择在库商品',
     'sale.colName': '商品', 'sale.colCode': '货号', 'sale.colPrice': '单价',
@@ -389,11 +396,8 @@ var I18N = {
     'shop.guide': '总部是唯一的上层虚位，用于管理各门店并设置业务规则（如快速开单每单件数上限）。',
     'shop.title': '总部设置', 'shop.hint': '总部为唯一隐式实体，不可新增/删除，仅可调整每单件数上限',
     'shop.subtitle': '下设门店列表（在总部下可直接开设分店）',
-    'shop.name': '总部名称', 'shop.code': '总部编码', 'shop.itemLimit': '每单件数上限',
-    'shop.storeCount': '门店数', 'shop.empty': '暂无总部',
-    'shop.namePh': '如：总部', 'shop.codePh': '如：HQ', 'shop.addNew': '新增总部',
-    'shop.cfDel': '确认删除总部「{n}」？其下仍有门店时不可删除。',
-    'shop.nameReq': '请填写总部名称', 'shop.storeNameReq': '请填写门店名称',
+    'shop.itemLimit': '每单件数上限',
+    'shop.storeNameReq': '请填写门店名称',
     'shop.inboundAt': '{n} · 商品入库',
     // 门店
     'store.title': '门店管理', 'store.add': '新增门店', 'store.name': '门店名称', 'store.code': '门店编码',
@@ -402,6 +406,7 @@ var I18N = {
     'store.manage': '管理', 'store.inbound': '入库', 'store.devices': '扫描设备',
     'store.baseInfo': '基本信息', 'store.editInfo': '修改资料',
     'store.emptyInShop': '该总部下暂无门店', 'store.inboundStore': '入库门店（直接关联，不可更改）',
+    'store.bridge': '打印代理', 'store.saleMonth': '本月销售', 'store.saleCount': '累计销售笔数', 'store.saleAmount': '累计销售额',
     // 定金
     'dep.paid': '已付', 'dep.createdAt': '创建于', 'dep.lockHint': '锁定在库商品（可选）', 'dep.noStock': '无现货定制',
     'dep.deliveryTime': '交付时间', 'dep.deliveryTimePh': '如 10月20日 下午2-4点',
@@ -824,6 +829,7 @@ var I18N = {
     'biz.security': 'Connect RFID anti-theft gates, EAS gates and other security devices: devices report via HTTP or WebSocket; during armed hours, any unauthorized product passing through triggers an alarm (popup + sound, optional outbound Webhook).\nSold/loaned products pass automatically; add temporary passes for outsourcing, exhibitions, etc.\nArm/disarm manually, or schedule daily automatic switching.',
     'biz.report': 'Uses the BugTracker login-free reporting channel: fill in type (bug/request), title and details (up to 3 screenshots), submit to get a ticket code; the QA team follows up in the BugTracker inbox.',
     'report.openNew': '🔗 Open in new window',
+    'report.beautify': 'Beautify theme',
     'report.tip': 'Reports go to the BugTracker "External Inbox"; source and reporter are recorded automatically.',
 
     // Store switching / user-store grants
@@ -995,6 +1001,8 @@ var I18N = {
     'dep.remindDays': 'Remind days before', 'dep.payBal': 'Pay balance & pick up',
     'epc.hint': 'EPC = enterprise prefix + store code (2 letters/digits) + type code (2) + serial (4-6 hex). Serial increments per store+type. Prefix = first 3 pinyin initials of the company name; leave blank to auto-generate (editable). Store code is the 2-letter/digit code from the store profile (e.g. HQ, A1, 06). Letter prefixes or store codes are ASCII-hex encoded when writing the chip (YZZ → 595A5A, HQ → 4851)',
     'store.codePh': '2 letters/digits, e.g. HQ, A1', 'store.codeRule': 'Store code must be 2 letters or digits (HQ, A1, 06); leave blank to auto-generate',
+    'store.bridge': 'Print agent', 'store.saleMonth': 'Sales this month', 'store.saleCount': 'Total orders', 'store.saleAmount': 'Total revenue',
+    'store.owner': 'Manager', 'store.devices': 'Scan devices',
     'epc.prefix': 'Prefix',
     'epc.save': 'Save Rule',
     'epc.seqBits': 'Serial digits',
@@ -1168,6 +1176,12 @@ var I18N = {
     'sale.clerk': 'Clerk', 'sale.clerkAll': 'All types', 'sale.clerkFilter': 'Filter by clerk type',
     'sale.receiptBtn': 'Receipt', 'sale.receiptTitle': 'Sales Receipt', 'sale.receiptNo': 'No.',
     'sale.dueShort': 'Due', 'sale.receiptThanks': 'Thank you for your visit!', 'sale.receiptBlocked': 'Pop-up blocked. Please allow pop-ups to print the receipt.',
+    // sales analysis page
+    'sale.tabAnalysis': 'Analysis', 'sale.tabList': 'Transactions',
+    'dash.yesterday': 'Yesterday', 'dash.last7d': 'Last 7 days', 'dash.last3m': 'Last 3 months',
+    'sale.bills': 'Bills', 'sale.revenue': 'Revenue',
+    'sale.catRealShare': 'Sales by Category', 'sale.clerkShare': 'Sales by Staff', 'sale.clerkTotal': 'Total',
+    'sale.hotRank': 'Top Sellers', 'sale.hotSold': 'Sold', 'sale.itemsUnit': 'items',
     'sale.searchPh': 'Search by code / barcode / EPC',
     'sale.suggestEmpty': 'No matching in-stock item',
     'sale.modePiece': 'Fixed price', 'sale.modeWeight': 'By weight',
@@ -1482,6 +1496,7 @@ var I18N = {
     'biz.security': 'Collega varchi RFID antifurto, barriere EAS e altri dispositivi di sicurezza: i dispositivi inviano eventi via HTTP o WebSocket; durante l\'orario di attivazione, il passaggio di prodotti non autorizzati genera un allarme (popup + suono, Webhook opzionale).\nI prodotti venduti/prestati passano automaticamente; aggiungi pass temporanei per lavorazioni esterne, mostre, ecc.\nAttiva/disattiva manualmente o programma l\'orario giornaliero.',
     'biz.report': 'Utilizza il canale di segnalazione senza login di BugTracker: compila tipo (bug/richiesta), titolo e dettagli (fino a 3 screenshot) e invia; il team qualità gestisce le segnalazioni nella casella esterna.',
     'report.openNew': '🔗 Apri in nuova finestra',
+    'report.beautify': 'Tema abbellito',
     'report.tip': 'Le segnalazioni vengono inviate alla "Casella esterna" di BugTracker; origine e segnalante registrati automaticamente.',
 
     // Cambio negozio / autorizzazioni utenti-negozi
@@ -1653,6 +1668,8 @@ var I18N = {
     'dep.remindDays': 'Giorni prima del promemoria', 'dep.payBal': 'Saldo e ritiro',
     'epc.hint': 'EPC = prefisso + codice negozio (2 lettere/cifre) + codice tipo (2) + seriale (4-6 hex). Il seriale aumenta per negozio+tipo. Prefisso = prime 3 iniziali del nome dell\'azienda; lascia vuoto per auto-generare. Il codice negozio è il codice a 2 lettere/cifre della scheda negozio (es. HQ, A1, 06). Prefissi e codici con lettere vengono codificati in ASCII-hex (YZZ → 595A5A, HQ → 4851)',
     'store.codePh': '2 lettere/cifre, es. HQ, A1', 'store.codeRule': 'Il codice negozio deve essere di 2 lettere o cifre (HQ, A1, 06); lascia vuoto per generarlo automaticamente',
+    'store.bridge': 'Agente di stampa', 'store.saleMonth': 'Vendite questo mese', 'store.saleCount': 'Ordini totali', 'store.saleAmount': 'Ricavi totali',
+    'store.owner': 'Responsabile', 'store.devices': 'Dispositivi di scansione',
     'epc.prefix': 'Prefisso',
     'epc.save': 'Salva Regola',
     'epc.seqBits': 'Cifre seriali',
@@ -1827,6 +1844,12 @@ var I18N = {
     'sale.clerk': 'Addetto', 'sale.clerkAll': 'Tutti i tipi', 'sale.clerkFilter': 'Filtra per tipo addetto',
     'sale.receiptBtn': 'Scontrino', 'sale.receiptTitle': 'Scontrino di vendita', 'sale.receiptNo': 'N.',
     'sale.dueShort': 'Residuo', 'sale.receiptThanks': 'Grazie e arrivederci!', 'sale.receiptBlocked': 'Popup bloccato. Consenti i popup per stampare lo scontrino.',
+    // pagina analisi vendite
+    'sale.tabAnalysis': 'Analisi', 'sale.tabList': 'Transazioni',
+    'dash.yesterday': 'Ieri', 'dash.last7d': 'Ultimi 7 giorni', 'dash.last3m': 'Ultimi 3 mesi',
+    'sale.bills': 'Scontrini', 'sale.revenue': 'Ricavi',
+    'sale.catRealShare': 'Vendite per categoria', 'sale.clerkShare': 'Vendite per addetto', 'sale.clerkTotal': 'Totale',
+    'sale.hotRank': 'Più venduti', 'sale.hotSold': 'Venduti', 'sale.itemsUnit': 'pezzi',
     'sale.searchPh': 'Cerca per codice / barcode / EPC',
     'sale.suggestEmpty': 'Nessun articolo disponibile corrispondente',
     'sale.modePiece': 'Prezzo fisso', 'sale.modeWeight': 'A peso',

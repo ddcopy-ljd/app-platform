@@ -5291,6 +5291,90 @@ def sale_create(body: SaleReq, request: Request):
                 "discount": discount, "paid": paid, "points": paid, "count": len(resolved)}
 
 
+@app.get("/api/sales/analysis")
+def sale_analysis(request: Request, start: str = Query(default=""), end: str = Query(default="")):
+    """销售分析（区间口径，缺省=本月）：KPI / 分类实销占比 / 商品热销榜 / 销售人员占比。
+    成本相关字段无 can_view_cost 权限时返回 None。静态路由，注册在 /api/sales/{sid} 之前。"""
+    sess = _require_auth(request)
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
+        today = date.today().isoformat()
+        rs = (start or today[:8] + "01")[:10]
+        re_ = (end or today)[:10]
+        if rs > re_:
+            rs, re_ = re_, rs
+        cost_visible = _can_view_cost(conn, sess)
+        base = "s.status!='已冲红' AND (s.store_id=? OR s.store_id=0) AND s.biz_date BETWEEN ? AND ?"
+        args = [sid, rs, re_]
+        agg = conn.execute(
+            f"SELECT COALESCE(SUM(s.amount),0) amt, COUNT(DISTINCT s.id) bills FROM sales s WHERE {base}", args
+        ).fetchone()
+        items_cnt = conn.execute(
+            f"SELECT COUNT(*) n FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE {base}", args
+        ).fetchone()["n"]
+        in_stock = conn.execute(
+            "SELECT COUNT(*) n FROM products WHERE status='在库' AND (store_id=? OR store_id=0)", (sid,)
+        ).fetchone()["n"]
+        amt, bills = round(agg["amt"], 2), agg["bills"]
+        kpi = {
+            "revenue": amt, "bills": bills, "items": items_cnt,
+            "avgPerBill": round(amt / bills, 2) if bills else 0.0,
+            "attachment": round(items_cnt / bills, 2) if bills else 0.0,
+            "avgPerItem": round(amt / items_cnt, 2) if items_cnt else 0.0,
+            "sellThrough": round(items_cnt * 100.0 / (items_cnt + in_stock), 1) if (items_cnt + in_stock) else 0.0,
+        }
+        # 分类实销占比（含件数/成本/金额；无成本权限 cost=None）
+        if cost_visible:
+            cat_rows = conn.execute(
+                f"SELECT COALESCE(NULLIF(p.product_type,''),'其他') cat, "
+                f"COUNT(*) qty, COALESCE(SUM(COALESCE(p.cost,0)),0) cost, COALESCE(SUM(si.subtotal),0) amt "
+                f"FROM sale_items si JOIN sales s ON s.id=si.sale_id "
+                f"LEFT JOIN products p ON p.id=si.product_id WHERE {base} "
+                f"GROUP BY cat ORDER BY amt DESC", args).fetchall()
+        else:
+            cat_rows = conn.execute(
+                f"SELECT COALESCE(NULLIF(p.product_type,''),'其他') cat, "
+                f"COUNT(*) qty, COALESCE(SUM(si.subtotal),0) amt "
+                f"FROM sale_items si JOIN sales s ON s.id=si.sale_id "
+                f"LEFT JOIN products p ON p.id=si.product_id WHERE {base} "
+                f"GROUP BY cat ORDER BY amt DESC", args).fetchall()
+        cat_total = sum(r["amt"] for r in cat_rows) or 1
+        categories = []
+        for r in cat_rows:
+            row = {"category": r["cat"], "qty": r["qty"], "amount": round(r["amt"], 2),
+                   "pct": round(r["amt"] * 100 / cat_total, 1)}
+            row["cost"] = round(r["cost"], 2) if cost_visible else None
+            categories.append(row)
+        # 商品热销榜 TOP10（按销量件数；同件数按金额）
+        hot_rows = conn.execute(
+            f"""SELECT COALESCE(si.product_id,0) pid, si.code, si.name,
+                       COUNT(*) qty, COALESCE(SUM(si.subtotal),0) amt,
+                       MAX(COALESCE(p.price, si.price)) price,
+                       MAX(COALESCE(p.size,'')) size,
+                       MAX(COALESCE(p.image_ts,'')) image_ts
+                FROM sale_items si JOIN sales s ON s.id=si.sale_id
+                LEFT JOIN products p ON p.id=si.product_id
+                WHERE {base}
+                GROUP BY COALESCE(si.product_id,0), si.code, si.name
+                ORDER BY qty DESC, amt DESC LIMIT 10""", args).fetchall()
+        hot_products = [
+            {"pid": r["pid"], "code": r["code"], "name": r["name"], "qty": r["qty"],
+             "amount": round(r["amt"], 2), "price": round(r["price"] or 0, 2),
+             "size": r["size"] or "", "image_ts": r["image_ts"] or ""}
+            for r in hot_rows]
+        # 销售人员占比（clerk_name 空时回落 clerk_type）
+        clerk_rows = conn.execute(
+            f"""SELECT COALESCE(NULLIF(s.clerk_name,''), NULLIF(s.clerk_type,''), '未指定') clerk,
+                       COUNT(*) bills, COALESCE(SUM(s.amount),0) amt
+                FROM sales s WHERE {base}
+                GROUP BY clerk ORDER BY amt DESC""", args).fetchall()
+        clerk_total = sum(r["amt"] for r in clerk_rows) or 1
+        clerks = [{"clerk": r["clerk"], "bills": r["bills"], "amount": round(r["amt"], 2),
+                   "pct": round(r["amt"] * 100 / clerk_total, 1)} for r in clerk_rows]
+        return {"range": {"start": rs, "end": re_}, "kpi": kpi, "categories": categories,
+                "hotProducts": hot_products, "clerks": clerks}
+
+
 @app.get("/api/sales")
 def sale_list(request: Request, q: str = "", clerk_type: str = "", clerk_name: str = "",
               start: str = "", end: str = "", page: int = 1, size: int = 50):
@@ -5382,9 +5466,10 @@ def sale_void(sid: int, request: Request):
 # ---------------------------------------------------------------- 门店精简列表 / 库位主数据
 
 @app.get("/api/stores")
-def store_list(request: Request, all: int = 0):
+def store_list(request: Request, all: int = 0, detail: int = 0):
     """门店精简列表（含所属店铺；库位、调拨、商品表单等共用）。
-    默认只返回当前账号被授权的门店；all=1 且为店长时返回全部门店（门店/总部管理页使用）。"""
+    默认只返回当前账号被授权的门店；all=1 且为店长时返回全部门店（门店/总部管理页使用）。
+    detail=1 附带门店卡片统计（库存/销售/库位；无成本权限时金额字段为 null）。"""
     sess = _require_auth(request)
     with _db(request) as conn:
         rows = conn.execute(
@@ -5399,7 +5484,54 @@ def store_list(request: Request, all: int = 0):
         if not all:
             allow = {r["id"] for r in _accessible_store_rows(conn, sess)}
             rows = [r for r in rows if r["id"] in allow]
-        return [dict(r) for r in rows]
+        rows = [dict(r) for r in rows]
+        if detail:
+            _store_card_stats(conn, rows, sess)
+        return rows
+
+
+def _store_card_stats(conn, rows, sess):
+    """门店卡片统计：在库/已定/库存成本售价、销售笔数金额（今日/本月）、启用库位数。
+    所有查询在本函数内（调用方的 with _db 块内）完成；无成本权限时金额字段置 None。"""
+    if not rows:
+        return
+    ids = [r["id"] for r in rows]
+    ph = ",".join("?" * len(ids))
+    today = datetime.now().strftime("%Y-%m-%d")
+    month_start = today[:7] + "-01"
+    stock = {r["sid"]: r for r in conn.execute(
+        f"""SELECT store_id AS sid,
+                   SUM(CASE WHEN status='在库' THEN 1 ELSE 0 END) AS on_hand,
+                   SUM(CASE WHEN status='已定' THEN 1 ELSE 0 END) AS reserved,
+                   SUM(CASE WHEN status IN ('在库','已定') THEN 1 ELSE 0 END) AS stock_cnt,
+                   SUM(CASE WHEN status IN ('在库','已定') THEN IFNULL(cost,0) ELSE 0 END) AS stock_cost,
+                   SUM(CASE WHEN status IN ('在库','已定') THEN IFNULL(price,0) ELSE 0 END) AS stock_price
+            FROM products WHERE store_id IN ({ph}) GROUP BY store_id""", ids).fetchall()}
+    sale = {r["sid"]: r for r in conn.execute(
+        f"""SELECT store_id AS sid, COUNT(*) AS n, IFNULL(SUM(amount),0) AS amt,
+                   SUM(CASE WHEN biz_date=? THEN 1 ELSE 0 END) AS today_n,
+                   SUM(CASE WHEN biz_date>=? THEN 1 ELSE 0 END) AS month_n
+            FROM sales WHERE store_id IN ({ph}) AND status!='已冲红' GROUP BY store_id""",
+        [today, month_start] + ids).fetchall()}
+    loc = {r["sid"]: r["n"] for r in conn.execute(
+        f"SELECT store_id AS sid, COUNT(*) AS n FROM locations "
+        f"WHERE store_id IN ({ph}) AND active=1 GROUP BY store_id", ids).fetchall()}
+    can_cost = _can_view_cost(conn, sess)
+    for r in rows:
+        st = stock.get(r["id"])
+        sa = sale.get(r["id"])
+        r["stat"] = {
+            "onHand": (st["on_hand"] or 0) if st else 0,
+            "reserved": (st["reserved"] or 0) if st else 0,
+            "stockCount": (st["stock_cnt"] or 0) if st else 0,
+            "stockCost": round((st["stock_cost"] if st else 0) or 0, 2) if can_cost else None,
+            "stockPrice": round((st["stock_price"] if st else 0) or 0, 2) if can_cost else None,
+            "saleCount": (sa["n"] or 0) if sa else 0,
+            "saleAmount": round(sa["amt"] or 0, 2) if sa else 0,
+            "saleToday": (sa["today_n"] or 0) if sa else 0,
+            "saleMonth": (sa["month_n"] or 0) if sa else 0,
+            "locations": loc.get(r["id"], 0),
+        }
 
 
 @app.put("/api/stores/{sid}")

@@ -23,6 +23,7 @@ var ST = Vue.reactive({
   token: '', user: null, mode: 'NORMAL', tenant: '', version: '',
   softName: '懿臻珠宝云',   // 软件名：启动时从 /api/health 拉取（源自 plugin.json），此处仅为兜底
   tab: 'dashboard', subView: '', adminSub: 'epc',
+  reportBeautify: true,   // 问题上报「美观输出」：勾选=上报页跟随本应用主题配色，不勾选=BugTracker 默认样式
   custDetail: null,   // 客户档案详情（必须放 ST 内才响应式；曾是模块级 var 导致 PC 详情空白）
   isPc: isPcLayout(),
   // 列表排序状态：{ 表key: { key: 排序列, dir: 1升/-1降 } }
@@ -98,6 +99,8 @@ var ST = Vue.reactive({
   stockBatches: [], stockDetail: null, batchProd: null,
   coTask: null, coTaskHost: '', coBusy: false, coTimer: null,
   invSub: 'stock',              // 库存页子页签：stock=在库商品，count=库存盘点
+  saleSub: 'analysis',          // 销售页子页签：analysis=销售分析，list=销售流水
+  saleAna: { range: '3m', start: '', end: '', curStart: '', curEnd: '', data: null },   // 销售分析区间与结果
   invQ: '',                     // 在库商品搜索词
   invMerge: true,               // 在库商品：按货号合并展示
   expandedCodes: [],            // 合并视图中已展开(显示各件)的货号集合
@@ -146,7 +149,6 @@ var ST = Vue.reactive({
   curStoreId: 0,      // 当前工作门店（由后端会话决定，只能在本人授权门店间切换）
   // 店铺（上层组织）/ 门店管理编辑态
   shops: [],
-  shopEdit: { id: 0, name: '', code: '', sale_item_limit: 20 }, shopEditMode: 'new',
   storeEdit: { id: 0, name: '', code: '', owner: '', shop_id: 0 }, storeEditMode: '',
   inboundStore: null,   // 门店内入库时锁定的门店对象
   locations: [], locStore: 0,
@@ -448,9 +450,8 @@ function langNameFilled(langKey) {
 // ---- computed-like getters ----
 function filteredProducts() {
   var list = ST.products || [];
-  if (ST.prodStatusFilter) {
-    list = list.filter(function (p) { return p.status === ST.prodStatusFilter; });
-  }
+  // 注意：prodStatusFilter 是「库存分析」页状态卡点击的专属筛选，商品管理页不消费它
+  //（商品页无状态筛选控件，若在此过滤会造成隐形清空，见 goInvStatus/invStockList）。
   if (ST.prodCat) list = list.filter(function (p) {
     // 按商品品类筛选
     return p.product_type_code === ST.prodCat;
@@ -761,9 +762,10 @@ function go(tab) {
   if (ST.tab === 'inventory') { loadInv(); loadStockBatches(); loadCoTask(); }
   if (ST.tab === 'shops') probeLocalAgent();   // 总部管理：立即探测本机代理（另有 30 秒定时）
   if (ST.tab === 'transfers') loadTransfers();
+  if (ST.tab === 'sales' && ST.saleSub === 'analysis' && !ST.saleAna.data) loadSaleAnalysis();
   if (ST.tab === 'appointments') loadAppt();
   if (ST.tab === 'showcase') loadShowcase();
-  if (ST.tab === 'shops') { syncManageStore(); loadShops(); loadStores(true); loadBridgeList(); loadProfile(); loadProductTypes(); loadTemplates(); loadAllDevices(); }
+  if (ST.tab === 'shops') { syncManageStore(); loadShops(); loadStores(true, true); loadBridgeList(); loadProfile(); loadProductTypes(); loadTemplates(); loadAllDevices(); loadSecSensors(); }
   if (ST.tab === 'stores') { syncManageStore(); loadShops(); loadStores(true); loadBridgeList(); loadLocations(); loadAllDevices(); }
   if (ST.tab === 'system') {
     // 企业整体级子页（账号权限/EPC/打印模板/经办人）在分店视图不可见，校正到门店级子页
@@ -849,6 +851,73 @@ function applySaleCustomRange() {
   ST.saleRange.mode = 'custom';
   loadSales();
 }
+// ===== 销售分析（子页签 analysis）=====
+function openSaleSub(sub) {
+  ST.saleSub = sub;
+  if (sub === 'analysis' && !ST.saleAna.data) loadSaleAnalysis();
+  if (sub === 'list' && !ST.sales.length) loadSales();
+}
+function saleAnaRangeCompute() {
+  var a = ST.saleAna, now = new Date();
+  var iso = function (d) {
+    var y = d.getFullYear(), m = ('0' + (d.getMonth() + 1)).slice(-2), dd = ('0' + d.getDate()).slice(-2);
+    return y + '-' + m + '-' + dd;
+  };
+  if (a.range === 'custom' && a.start && a.end) return { start: a.start, end: a.end };
+  var t0 = iso(now);
+  if (a.range === 'yesterday') {
+    var yd = new Date(now); yd.setDate(now.getDate() - 1);
+    return { start: iso(yd), end: iso(yd) };
+  }
+  if (a.range === '7d') {
+    var d7 = new Date(now); d7.setDate(now.getDate() - 6);
+    return { start: iso(d7), end: t0 };
+  }
+  if (a.range === '3m') {
+    var d3 = new Date(now); d3.setMonth(d3.getMonth() - 3);
+    return { start: iso(d3), end: t0 };
+  }
+  if (a.range === 'month') {
+    var first = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { start: iso(first), end: t0 };
+  }
+  return { start: t0, end: t0 };
+}
+function setSaleAnaRange(mode) {
+  ST.saleAna.range = mode;
+  if (mode !== 'custom') loadSaleAnalysis();
+}
+function loadSaleAnalysis() {
+  var rg = saleAnaRangeCompute();
+  if (ST.saleAna.range === 'custom' && (!ST.saleAna.start || !ST.saleAna.end)) { toast(t('dash.pickRange'), 'error'); return; }
+  ST.saleAna.curStart = rg.start; ST.saleAna.curEnd = rg.end;
+  return api('GET', '/api/sales/analysis?start=' + rg.start + '&end=' + rg.end).then(function (r) {
+    ST.saleAna.data = r;
+  }).catch(function () {});
+}
+// 分类实销 TOP5 环形（按 TOP5 金额重新归一化）
+function saleAnaTop5() { return ((ST.saleAna.data && ST.saleAna.data.categories) || []).slice(0, 5); }
+function saleAnaTop5Sum() { return saleAnaTop5().reduce(function (s, c) { return s + (c.amount || 0); }, 0); }
+function saleAnaDonut() {
+  var items = saleAnaTop5(), sum = saleAnaTop5Sum() || 1, acc = 0;
+  return items.map(function (c, i) {
+    var pct = Math.round((c.amount || 0) * 1000 / sum) / 10;
+    var seg = { pct: pct, offset: -acc, color: i % 6, key: c.category };
+    acc += pct;
+    return seg;
+  });
+}
+// 销售人员占比环形（全量归一化）
+function saleClerkSum() { return ((ST.saleAna.data && ST.saleAna.data.clerks) || []).reduce(function (s, c) { return s + (c.amount || 0); }, 0); }
+function saleClerkDonut() {
+  var items = (ST.saleAna.data && ST.saleAna.data.clerks) || [], sum = saleClerkSum() || 1, acc = 0;
+  return items.map(function (c, i) {
+    var pct = Math.round((c.amount || 0) * 1000 / sum) / 10;
+    var seg = { pct: pct, offset: -acc, color: i % 6, key: c.clerk };
+    acc += pct;
+    return seg;
+  });
+}
 function loadDash() {
   var rg = dashRangeCompute();
   var q = '?start=' + rg.start + '&end=' + rg.end;
@@ -886,7 +955,9 @@ function reportThemeParams() {
 function reportPageUrl() {
   var user = encodeURIComponent((ST.user && (ST.user.display_name || ST.user.username)) || '');
   var appname = encodeURIComponent(ST.softName || '懿臻珠宝云');   // 上报归属项目名（按应用名称建项目）
-  var q = '?source=jewelry&appname=' + appname + '&user=' + user + reportThemeParams();
+  // 「美观输出」勾选=附加主题参数（跟随珠宝云配色）；不勾选=不附加，BugTracker 用默认朴素样式
+  var theme = ST.reportBeautify ? reportThemeParams() : '';
+  var q = '?source=jewelry&appname=' + appname + '&user=' + user + theme;
   var base = (API || '').replace(/\/+$/, '');   // 例：/app/jewelry/tenant_trial
   if (!base) return 'http://127.0.0.1:8003/report' + q;
   var seg = base.split('/');                     // ['', 'app', 'jewelry', 'tenant_trial']
@@ -960,6 +1031,8 @@ function refreshAll() {
   api('GET', '/api/products?page=1&size=200').then(function (r) { ST.products = r.items; ST.prodTotal = r.total; }).catch(function () {});
   api('GET', '/api/deposits?page=1&size=100').then(function (r) { ST.deposits = r.items; ST.depTotal = r.total; }).catch(function () {});
   loadSales();
+  ST.saleAna.data = null;   // 销售分析缓存失效（开单/冲红后数据变化）
+  if (ST.tab === 'sales' && ST.saleSub === 'analysis') loadSaleAnalysis();
   api('GET', '/api/products/options?status=在库').then(function (r) { ST.stockOptions = r.items; }).catch(function () {});
   api('GET', '/api/categories').then(function (r) { ST.cats = r || []; }).catch(function () {});
   api('GET', '/api/product-types').then(function (r) { ST.productTypes = r || []; }).catch(function () {});
@@ -4344,8 +4417,8 @@ function saveStore() {
 }
 
 // ---- 店铺（上层组织）----
-function loadStores(all) {
-  var url = '/api/stores' + (all ? '?all=1' : '');
+function loadStores(all, detail) {
+  var url = '/api/stores' + (all ? '?all=1' : '') + (detail ? (all ? '&detail=1' : '?detail=1') : '');
   return api('GET', url).then(function (r) {
     ST.stores = r || [];
     if (ST.locStore && !ST.stores.some(function (s) { return s.id === ST.locStore; })) ST.locStore = 0;
@@ -4354,24 +4427,6 @@ function loadStores(all) {
 }
 function loadShops() {
   api('GET', '/api/shops').then(function (r) { ST.shops = r || []; }).catch(function () {});
-}
-function editShop(s) {
-  ST.shopEditMode = 'edit';
-  ST.shopEdit = { id: s.id, name: s.name, code: s.code || '', sale_item_limit: s.sale_item_limit || 20 };
-}
-function resetShopEdit() { ST.shopEditMode = ''; ST.shopEdit = { id: 0, name: '', code: '', sale_item_limit: 20 }; }
-function saveShop() {
-  var d = ST.shopEdit;
-  if (!d.id && (!d.name || !d.name.trim())) { toast(t('shop.nameReq'), 'error'); return; }
-  var payload = { name: (d.name || '').trim(), code: (d.code || '').trim(), sale_item_limit: Number(d.sale_item_limit) || 20 };
-  var req = d.id ? api('PUT', '/api/shops/' + d.id, payload) : api('POST', '/api/shops', payload);
-  req.then(function () { toast(t('toast.saveOk')); resetShopEdit(); loadShops(); })
-    .catch(function (e) { toast(e.message, 'error'); });
-}
-function delShop(s) {
-  if (!confirm(t('shop.cfDel', { n: s.name }))) return;
-  api('DELETE', '/api/shops/' + s.id).then(function () { toast(t('toast.saveOk')); loadShops(); })
-    .catch(function (e) { toast(e.message, 'error'); });
 }
 // 门店管理：按店铺分组（分组数据受总店/分店可见性约束：分店只有本店）
 function storesByShop(shopId) { return manageStores().filter(function (s) { return (s.shop_id || 0) === shopId; }); }
@@ -4392,6 +4447,10 @@ function selectStore(id) {
 }
 function bridgeOfStore(sid) { return ST.bridges.find(function (b) { return b.store_id === sid; }) || null; }
 function storeSecStore(sid) { return ST.secSensors.filter(function (x) { return (x.store_id || 1) === sid; }); }
+// 轻量加载安防设备列表（总部管理门店卡片统计用，不建 WS）
+function loadSecSensors() {
+  api('GET', '/api/sensors').then(function (r) { ST.secSensors = r.items || []; }).catch(function () {});
+}
 function shopOfStore(s) { return ST.shops.find(function (p) { return p.id === (s && s.shop_id); }) || null; }
 // 门店内入库：固定门店打开入库面板
 function inboundForStore(s) { openInbound(s); }
@@ -4750,6 +4809,8 @@ var app = Vue.createApp({
     probeLocalAgent: probeLocalAgent, connectLocalAgent: connectLocalAgent,
     setDashRange: setDashRange, applyDashCustomRange: applyDashCustomRange,
     setSaleRange: setSaleRange, applySaleCustomRange: applySaleCustomRange,
+    openSaleSub: openSaleSub, setSaleAnaRange: setSaleAnaRange, loadSaleAnalysis: loadSaleAnalysis,
+    saleAnaDonut: saleAnaDonut, saleAnaTop5Sum: saleAnaTop5Sum, saleClerkDonut: saleClerkDonut, saleClerkSum: saleClerkSum,
     switchStore: switchStore,
     isHqStore: isHqStore,   // 总店/分店视图判定（模板以 isHqStore() 调用，故放 methods）
     isExecRole: isExecRole, // 高管只读标识（模板可用于只读角标）
@@ -4829,7 +4890,6 @@ var app = Vue.createApp({
     storeControl: storeControl,
     loadShops: loadShops, loadStores: loadStores, storesByShop: storesByShop,
     selectStore: selectStore, bridgeOfStore: bridgeOfStore, storeSecStore: storeSecStore, shopOfStore: shopOfStore,
-    editShop: editShop, resetShopEdit: resetShopEdit, saveShop: saveShop, delShop: delShop,
     editStore: editStore, resetStoreEdit: resetStoreEdit, saveStore: saveStore, inboundForStore: inboundForStore,
     labelStoreBridge: labelStoreBridge,
     openInbound: openInbound, copyInbound: copyInbound, openRfid: openRfid, doRfid: doRfid, toggleInvGroup: toggleInvGroup,

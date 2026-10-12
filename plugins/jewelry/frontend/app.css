@@ -175,6 +175,31 @@ a { text-decoration: none; color: inherit; }
 .dl-name { color: var(--text2); width: 42px; flex-shrink: 0; }
 .dl-val { color: var(--text3); margin-left: auto; white-space: nowrap; }
 
+/* ---------- 销售分析页 ---------- */
+.sale-kpi-grid .stat-card { padding: 10px 12px; min-height: 74px; }
+.sale-kpi-grid .stat-value { font-size: clamp(17px, 2.4vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 分类占比 + 销售饼图：PC 两栏，<1200px 单列 */
+.sale-ana-grid { display: block; }
+.app-shell.pc .sale-ana-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.app-shell.pc .sale-ana-grid .section { margin-top: 18px; }
+@media (max-width: 1199px) {
+  .app-shell.pc .sale-ana-grid { grid-template-columns: 1fr; }
+}
+/* 商品热销榜 */
+.hot-list { display: flex; flex-direction: column; gap: 8px; }
+.hot-item { display: flex; align-items: center; gap: 10px; background: var(--white); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+.hot-rank { width: 26px; height: 26px; flex-shrink: 0; border-radius: 50%; background: var(--text3); color: #fff; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.hot-rank.hr-1 { background: #e0a106; }
+.hot-rank.hr-2 { background: #a9adb8; }
+.hot-rank.hr-3 { background: #c98a5e; }
+.hot-thumb { width: 44px; height: 44px; flex-shrink: 0; border-radius: 8px; object-fit: cover; background: #f4ece0; border: 1px solid var(--border); }
+.hot-thumb-ph { display: flex; align-items: center; justify-content: center; font-size: 20px; }
+.hot-info { flex: 1; min-width: 0; }
+.hot-name { font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hot-meta { font-size: 14px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.hot-price { font-size: 14px; color: var(--wine); font-weight: 700; margin-top: 2px; }
+.hot-qty { flex-shrink: 0; font-size: 14px; font-weight: 600; color: #e2582a; white-space: nowrap; }
+
 /* KPI 卡压缩空白：值字号自适应，卡片等高 */
 .dash-kpi .stat-card { padding: 10px 12px; display: flex; flex-direction: column; justify-content: center; min-height: 74px; }
 .dash-kpi .stat-value { font-size: clamp(17px, 2.4vw, 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1069,6 +1094,11 @@ tr.row-flash, tr.row-flash:hover { background-color: #FFF3CD !important; transit
 
 /* ===== 门店与打印代理（多门店） ===== */
 .bridge-store { border: 1px solid #ece4d3; border-radius: 8px; padding: 10px; margin-top: 10px; background: #fdfbf6; }
+/* 总部管理门店卡片详情统计 */
+.hqs-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 10px; margin: 8px 0 4px; }
+.hqs-stat { background: #fff; border: 1px solid #f0e8d8; border-radius: 6px; padding: 5px 8px; text-align: center; }
+.hqs-stat > span { display: block; font-size: 15px; font-weight: 600; color: #8a2a2a; line-height: 1.3; }
+.hqs-stat > label { font-size: 14px; color: #999; font-weight: 400; }
 .bridge-state { font-size: 14px; padding: 2px 10px; border-radius: 12px; white-space: nowrap; }
 .bridge-state.st-on { background: #e6f6ea; color: #1d7a37; }
 .bridge-state.st-off { background: #f0f0f0; color: #999; }
