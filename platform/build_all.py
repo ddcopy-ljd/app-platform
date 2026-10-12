@@ -170,7 +170,7 @@ def collect_android(proj_root: Path, arc_top: str) -> list[tuple[Path, str]]:
 
 def collect_root_files() -> list[tuple[Path, str]]:
     """仓库根目录要带走的启动脚本与规范。"""
-    pick = ["AGENTS.md", "应用插件开发说明.md"]
+    pick = ["AGENTS.md"]
     out = []
     for name in pick:
         p = ROOT / name
@@ -314,7 +314,7 @@ Windows Server 部署（一键）：
   - 生产部署务必修改默认管理员密码 admin123
   - AGENT_API_KEY 环境变量控制 Agent 升级流水线接口，生产不开启可留空
 
-参考文档：应用插件开发说明.md
+参考文档：AGENTS.md（总纲）及各目录 AGENTS.md/STRUCTURE.md
 """.encode("utf-8")
     else:
         deploy_guide = f"""综合业务应用服务平台 v{version} · 外网部署包
@@ -341,7 +341,7 @@ Windows Server 部署（一键）：
   - 生产部署务必修改默认管理员密码 admin123 与 admin/123456（插件内）
   - AGENT_API_KEY 环境变量控制 Agent 升级流水线接口，生产不开启可留空
 
-参考文档：应用插件开发说明.md
+参考文档：AGENTS.md（总纲）及各目录 AGENTS.md/STRUCTURE.md
 """.encode("utf-8")
 
     db_backups = []
