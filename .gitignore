@@ -43,3 +43,14 @@ venv/
 *.log
 # Gradle 本地缓存（本地编译产生）
 .gradle/
+
+# 编辑器本地配置
+.vscode/
+
+# 演示草稿页（不入库）
+plugins/jewelry/demo/demo1.html
+
+# 本地调试脚本与改造方案草稿（不入库）
+plugins/jewelry/test_printer.py
+.trae/documents/inventory-analysis-pc-rework.md
+
