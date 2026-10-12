@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>懿臻珠宝云</title>
 <link rel="icon" href="/logo/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./app.css?v=20261010f128">
+<link rel="stylesheet" href="./app.css?v=20261012e130">
 </head>
 <body>
 <div id="app">
@@ -102,6 +102,17 @@
 
       <!-- 全局盘点冻结横幅：任务进行中/待核对时全页面显示，点击跳转处理 -->
       <div v-if="frozen" class="freeze-banner" @click="go('inventory'); invSub='count'">🔒 {{ t('inv.frozenBanner') }}<b>{{ coTask.task_no }} · {{ coStatusText(coTask.status) }}</b></div>
+
+      <!-- PC 顶部提醒滚动横幅：所有提醒类消息循环滚动展示 -->
+      <div v-if="isPc && remindMarquee.length" class="notice-marquee">
+        <span class="mq-label">📢</span>
+        <div class="mq-viewport">
+          <div class="mq-track">
+            <span v-for="(m,i) in remindMarquee" :key="'m'+i" class="mq-item" :class="m.cls">{{ m.text }}</span>
+            <span v-for="(m,i) in remindMarquee" :key="'r'+i" class="mq-item" :class="m.cls" aria-hidden="true">{{ m.text }}</span>
+          </div>
+        </div>
+      </div>
 
       <!-- 账号未被授权任何门店：请联系店长开通 -->
       <div v-if="user && stores.length===0" class="no-store-mask">
@@ -296,6 +307,7 @@
               <div v-for="d in remindData.deposits" :key="'d'+d.id" class="reminder-item"><div class="ri-left"><span class="ri-tag rt-deposit">{{ reminderHint(d,'deposit') }}</span><span class="ri-name">{{ d.customer }}</span><span class="ri-date">{{ d.product }} · {{ d.promised_date }}</span></div><span class="ri-amount">￥{{ fmt(d.balance) }}</span></div>
               <div v-for="l in remindData.loansOverdue" :key="'l'+l.id" class="reminder-item"><div class="ri-left"><span class="ri-tag rt-loan">{{ reminderHint(l,'loan') }}</span><span class="ri-name">{{ l.product }}</span><span class="ri-date">{{ l.party }} · {{ t('common.overdue') }} {{ l.due_date }}</span></div></div>
               <div v-for="r in remindData.repairsPending" :key="'r'+r.id" class="reminder-item"><div class="ri-left"><span class="ri-tag rt-repair">{{ reminderHint(r,'repair') }}</span><span class="ri-name">{{ r.item }}</span><span class="ri-date">{{ r.customer }} · {{ r.promised_date || statusText(r.status) }}</span></div></div>
+              <div v-for="p in remindData.purchasesIncoming" :key="'p'+p.id" class="reminder-item" @click="go('purchases')"><div class="ri-left"><span class="ri-tag rt-purchase">{{ reminderHint(p,'purchase') }}</span><span class="ri-name">{{ p.product }}</span><span class="ri-date">{{ p.supplier }} · {{ p.expected_date }}</span></div><span class="ri-amount" v-if="p.qty">×{{ p.qty }}</span></div>
               <div v-for="(c,ci) in remindData.care" :key="'c'+ci" class="reminder-item"><div class="ri-left"><span class="ri-tag rt-care">{{ careHint(c) }}</span><span class="ri-name">{{ c.customer }}</span><span class="ri-date">{{ c.phone }} · {{ c.date }}</span></div></div>
               <div class="reminder-empty" v-if="!todoCount">{{ t('empty.todo') }}</div>
             </div>
@@ -568,13 +580,13 @@
                 <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
                   <button class="btn btn-sm" style="background:#c0392b;color:#fff" :disabled="coBusy" @click="cancelCoTask">{{ t('co.cancel') }}</button>
                   <button class="btn btn-sm" style="background:#e67e22;color:#fff" :disabled="coBusy" @click="terminateCoTask">{{ t('co.terminate') }}</button>
-                  <span class="small" style="color:#8B7A6B">{{ t('co.endHint') }}</span>
+                  <span class="small" style="color:var(--text2)">{{ t('co.endHint') }}</span>
                 </div>
               </div>
               <div class="rfid-right">
                 <img v-if="coQrUrl" class="qr-img" :src="coQrUrl" :alt="t('co.qrAlt')">
-                <div v-else class="qr-img" style="display:flex;align-items:center;justify-content:center;color:#B0A08C;font-size:14px">{{ t('co.qrLoading') }}</div>
-                <div class="qr-cap">{{ t('co.qrCap') }}<br><span style="font-size:14px;color:#8B7A6B">{{ t('co.qrCap2') }}</span></div>
+                <div v-else class="qr-img" style="display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:14px">{{ t('co.qrLoading') }}</div>
+                <div class="qr-cap">{{ t('co.qrCap') }}<br><span style="font-size:14px;color:var(--text2)">{{ t('co.qrCap2') }}</span></div>
               </div>
             </div>
 
@@ -645,7 +657,7 @@
                     <tr class="grp-row" :class="{open: expandedCodes.indexOf(g.key)>=0}" @click="toggleInvGroup(g.key)">
                       <td class="grp-code mono">{{ g.code || '—' }}</td>
                       <td>{{ g.name }}</td>
-                      <td><span class="cnt-badge">×{{ g.count }}</span></td>
+                      <td>{{ g.count }}</td>
                       <td>{{ productTypeName(g.first) }}</td>
                       <td>{{ materialText(g.first.material) || '—' }}</td>
                       <td>{{ g.first.weight }}g</td>
@@ -703,7 +715,7 @@
                           <b>{{ g.name }}</b>
                         </div>
                         <div class="prod-meta" style="margin-top:4px">{{ t('lbl.huohao') }}：{{ g.code || '—' }}</div>
-                        <div class="prod-meta" style="margin-top:2px">{{ t('inv.count') }}：×{{ g.count }}</div>
+                        <div class="prod-meta" style="margin-top:2px">{{ t('inv.count') }}：{{ g.count }}</div>
                         <div class="prod-meta" style="margin-top:2px">{{ productTypeName(g.first) }} · {{ materialText(g.first.material) || '—' }} · {{ g.first.weight }}g<span v-if="g.first.size"> · {{ g.first.size }}</span></div>
                         <div class="prod-meta mono" v-if="g.uniform" style="margin-top:2px;word-break:break-all">EPC：{{ g.epcs.length ? g.epcs.map(function(x){return x.slice(-8)}).join('、') : '—' }}</div>
                         <div class="prod-meta" v-if="g.uniform && g.barcodes.length" style="margin-top:2px;word-break:break-all">{{ t('lbl.barcode') }}：{{ g.barcodes.join('、') }}</div>
@@ -963,7 +975,8 @@
           <div v-if="saleSub==='list'">
           <div class="page-head">
             <div class="biz-actions">
-              <select v-model="saleClerkType" @change="loadSales" class="sale-clerk-filter" :title="t('sale.clerkFilter')">
+              <label class="sale-clerk-label" for="saleClerkFilter">{{ t('sale.clerkType') }}</label>
+              <select id="saleClerkFilter" v-model="saleClerkType" @change="loadSales" class="sale-clerk-filter" :title="t('sale.clerkFilter')">
                 <option value="">{{ t('sale.clerkAll') }}</option>
                 <option v-for="o in clerkTypes" :key="o.id" :value="o.name">{{ o.name }}</option>
               </select>
@@ -991,6 +1004,7 @@
                 <span class="sale-info">{{ s.customer }} · {{ s.product }}<b v-if="s.item_count>1">（{{ s.item_count }}{{ t('sale.itemsUnit') }}）</b> · {{ methodText(s.method) }} · {{ s.biz_date }}</span>
                 <span class="tag tag-gold sale-clerk-tag">{{ clerkText(s) }}</span>
                 <span class="sale-amount">￥{{ fmt(s.amount) }}</span>
+                <button class="btn btn-sm btn-outline" @click="toggleSaleDetail(s.id)">{{ saleDetailId===s.id ? '▴' : '▾' }} {{ t('sale.detail') }}</button>
                 <button class="btn btn-sm btn-outline" @click="printReceipt(s)">{{ t('sale.receiptBtn') }}</button>
                 <button v-if="s.status!=='已冲红'" class="btn btn-sm btn-outline" :disabled="frozen" @click="voidSale(s)">{{ t('act.void') }}</button>
               </div>
@@ -1000,6 +1014,36 @@
                 <span v-if="s.payments && s.payments.length>1" class="sale-sub-pays">
                   {{ s.payments.map(function(p){ return methodText(p.method) + ' ￥' + fmt(p.amount); }).join(' + ') }}
                 </span>
+              </div>
+              <!-- 单据明细：商品行 + 支付行（混合支付逐笔展示） -->
+              <div class="sale-detail" v-if="saleDetailId===s.id">
+                <table class="sale-detail-table">
+                  <thead><tr>
+                    <th>{{ t('sale.colName') }}</th><th>{{ t('sale.colCode') }}</th>
+                    <th>{{ t('sale.colPrice') }}</th><th v-if="s.items.some(function(it){ return it.pricing_mode==='weight'; })">{{ t('sale.colWeight') }}</th>
+                    <th v-if="s.items.some(function(it){ return it.pricing_mode==='weight'; })">{{ t('sale.colGold') }}</th>
+                    <th v-if="s.items.some(function(it){ return it.labor_fee>0; })">{{ t('sale.colLabor') }}</th>
+                    <th class="sd-num">{{ t('sale.colSubtotal') }}</th>
+                  </tr></thead>
+                  <tbody>
+                    <tr v-for="it in s.items" :key="it.id">
+                      <td>{{ it.name }}</td>
+                      <td class="mono">{{ it.code || '-' }}</td>
+                      <td class="sd-num">{{ it.pricing_mode==='weight' ? fmt(it.gold_price) : fmt(it.price) }}</td>
+                      <td class="sd-num" v-if="s.items.some(function(x){ return x.pricing_mode==='weight'; })">{{ it.pricing_mode==='weight' ? fmt(it.weight) : '-' }}</td>
+                      <td class="sd-num" v-if="s.items.some(function(x){ return x.pricing_mode==='weight'; })">{{ it.pricing_mode==='weight' ? fmt(it.gold_price) : '-' }}</td>
+                      <td class="sd-num" v-if="s.items.some(function(x){ return x.labor_fee>0; })">{{ fmt(it.labor_fee) }}</td>
+                      <td class="sd-num"><b>￥{{ fmt(it.subtotal) }}</b></td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div class="sale-detail-pays">
+                  <span class="sd-pay-label">{{ t('sale.pay') }}</span>
+                  <span class="sd-pay" v-for="(p,pi) in (s.payments && s.payments.length ? s.payments : [{method:s.method, amount:s.amount}])" :key="pi">
+                    <span v-if="pi>0" class="sd-pay-plus">+</span>{{ methodText(p.method) }} ￥{{ fmt(p.amount) }}
+                  </span>
+                  <span class="sd-pay-sum" v-if="s.discount>0">{{ t('sale.discount') }} ￥{{ fmt(s.discount) }}</span>
+                </div>
               </div>
             </div>
             <div class="empty" v-if="!sales.length">{{ t('empty.sale') }}</div>
@@ -1290,11 +1334,11 @@
 
             <!-- 下设门店列表（按店铺分组，卡片含门店详情统计） -->
             <div v-for="p in manageShops" :key="'hgrp-'+p.id" style="margin-top:12px">
-              <div class="biz-grp-title">🏬 {{ p.name }} <span style="color:var(--text3);font-weight:400">#{{ p.code }}</span></div>
+              <div class="biz-grp-title">🏬 {{ p.name }} <span style="color:inherit;font-weight:400">#{{ p.code }}</span></div>
               <div class="store-grid">
                 <div v-for="s in storesByShop(p.id)" :key="s.id" class="bridge-store">
                   <div class="flex-between">
-                    <b>🏪 {{ s.name }} <span class="mono" style="font-size:14px;color:var(--text3)">#{{ s.code }}</span></b>
+                    <b>🏪 {{ s.name }} <span class="mono" style="font-size:14px;color:#6B5A48">#{{ s.code }}</span></b>
                   </div>
                   <div class="prod-meta" :class="(bridgeOfStore(s.id) && bridgeOfStore(s.id).online) ? 'mv-in' : 'mv-out'">● {{ t('store.bridge') }} {{ (bridgeOfStore(s.id) && bridgeOfStore(s.id).online) ? t('sb.online') : t('sb.offline') }}</div>
                   <div class="prod-meta" v-if="s.owner">{{ t('store.owner') }}：{{ s.owner }}</div>
@@ -1401,11 +1445,11 @@
 
             <!-- 按店铺分组的门店列表（manageShops：总店列出全部，分店只有本店所属分组） -->
             <div v-for="p in manageShops" :key="'grp-'+p.id" style="margin-bottom:14px">
-              <div class="biz-grp-title">🏬 {{ p.name }} <span style="color:var(--text3);font-weight:400">#{{ p.code }} · {{ t('shop.itemLimit') }} {{ p.sale_item_limit }}</span></div>
+              <div class="biz-grp-title">🏬 {{ p.name }} <span style="color:inherit;font-weight:400">#{{ p.code }} · {{ t('shop.itemLimit') }} {{ p.sale_item_limit }}</span></div>
               <div class="store-grid">
                 <div v-for="s in storesByShop(p.id)" :key="s.id" class="bridge-store" :class="{'store-sel': locStore===s.id}">
                   <div class="flex-between">
-                    <b style="cursor:pointer" @click="selectStore(s.id)">🏪 {{ s.name }} <span class="mono" style="font-size:14px;color:var(--text3)">#{{ s.code }}</span></b>
+                    <b style="cursor:pointer" @click="selectStore(s.id)">🏪 {{ s.name }} <span class="mono" style="font-size:14px;color:#6B5A48">#{{ s.code }}</span></b>
                   </div>
                   <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
                     <button class="btn-small" @click="selectStore(s.id)">{{ t('store.manage') }}</button>
@@ -3271,7 +3315,7 @@ Content-Type: application/json
 <script src="./vendor/vue.global.prod.js"></script>
 <script src="./vendor/qrcode.min.js"></script>
 <script src="./vendor/zxing.min.js"></script>
-<script src="./i18n.js?v=20261008d117"></script>
-<script src="./app.js?v=20261009e121"></script>
+<script src="./i18n.js?v=20261012e130"></script>
+<script src="./app.js?v=20261012e130"></script>
 </body>
 </html>

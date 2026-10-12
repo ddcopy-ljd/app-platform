@@ -1617,6 +1617,13 @@ def dashboard_reminders(request: Request):
             "SELECT * FROM repairs WHERE status IN ('待维修','维修中') "
             "AND (store_id=? OR store_id=0) ORDER BY promised_date LIMIT 8", (sid,)
         ).fetchall()
+        # 采购到货提醒：未入库且应到货日在未来 3 天内（含今天）
+        purchases_incoming = conn.execute(
+            "SELECT * FROM purchases WHERE status!='已入库' "
+            "AND expected_date != '' AND expected_date IS NOT NULL "
+            "AND expected_date BETWEEN date('now','localtime') AND date('now','localtime','+3 days') "
+            "AND (store_id=? OR store_id=0) ORDER BY expected_date LIMIT 8", (sid,)
+        ).fetchall()
         # 客情维护提醒：生日 / 结婚纪念日（未来30天）+ 售出满一年保养（±30天窗口）
         today = date.today()
         care: list[dict] = []
@@ -1645,6 +1652,7 @@ def dashboard_reminders(request: Request):
             "deposits": [dict(r) for r in deposits_urgent],
             "loansOverdue": [dict(r) for r in loans_overdue],
             "repairsPending": [dict(r) for r in repairs_pending],
+            "purchasesIncoming": [dict(r) for r in purchases_incoming],
             "care": care[:12],
         }
 

@@ -100,6 +100,7 @@ var ST = Vue.reactive({
   coTask: null, coTaskHost: '', coBusy: false, coTimer: null,
   invSub: 'stock',              // 库存页子页签：stock=在库商品，count=库存盘点
   saleSub: 'analysis',          // 销售页子页签：analysis=销售分析，list=销售流水
+  saleDetailId: null,           // 销售流水展开明细的单据 id（同时只展开一张）
   saleAna: { range: '3m', start: '', end: '', curStart: '', curEnd: '', data: null },   // 销售分析区间与结果
   invQ: '',                     // 在库商品搜索词
   invMerge: true,               // 在库商品：按货号合并展示
@@ -496,6 +497,7 @@ function todoCount() {
   return (ST.remindData.deposits || []).length +
          (ST.remindData.loansOverdue || []).length +
          (ST.remindData.repairsPending || []).length +
+         (ST.remindData.purchasesIncoming || []).length +
          (ST.remindData.care || []).length;
 }
 
@@ -507,16 +509,26 @@ function printAllChecked() {
   return list.length > 0 && list.every(function (p) { return ST.printSel[p.id]; });
 }
 
-// 库存页「在库商品」列表：在库 + 名称/编码/EPC 过滤
+// 库存页「在库商品」列表：在库 + 名称/货号/EPC/品类/材质/克重/尺寸 过滤
+// 空格分隔多个关键字：关键字之间 AND（每个都需命中），单个关键字对字段 OR（命中任一字段即可）
 function invStockList() {
   var list = (ST.products || []).filter(function (p) { return p.status === '在库'; });
   if (ST.invQ) {
-    var q = ST.invQ.toLowerCase();
-    list = list.filter(function (p) {
-      return (p.name && p.name.toLowerCase().indexOf(q) >= 0) ||
-             (p.code && p.code.toLowerCase().indexOf(q) >= 0) ||
-             (p.rfid_epc && p.rfid_epc.toLowerCase().indexOf(q) >= 0);
-    });
+    var kws = ST.invQ.toLowerCase().split(/\s+/).filter(Boolean);
+    if (kws.length) {
+      list = list.filter(function (p) {
+        var fields = [
+          p.name, p.code, p.rfid_epc,
+          productTypeName(p), materialText(p.material), p.material,
+          p.weight == null ? '' : String(p.weight),
+          p.weight == null ? '' : (String(p.weight) + 'g'),
+          p.size
+        ].map(function (v) { return String(v == null ? '' : v).toLowerCase(); });
+        return kws.every(function (kw) {
+          return fields.some(function (f) { return f.indexOf(kw) >= 0; });
+        });
+      });
+    }
   }
   return applyTblSort(list, 'stock', function (p, k) { return k === 'count' ? 1 : prodSortVal(p, k); });
 }
@@ -694,10 +706,44 @@ function reminderHint(item, cat) {
     }
     return t('rem.repairing');  // "维修中"
   }
+  if (cat === 'purchase') {
+    var n = daysUntil(item.expected_date);
+    return n <= 0 ? t('rem.purchaseToday') : t('rem.purchaseDue', { n: n });
+  }
   return '';
 }
+// 距目标日期还有几天（负数=已过期）
+function daysUntil(dateStr) {
+  if (!dateStr) return 999;
+  var d = new Date(dateStr); if (isNaN(d.getTime())) return 999;
+  d.setHours(0,0,0,0);
+  var today = new Date(); today.setHours(0,0,0,0);
+  return Math.round((d - today) / 86400000);
+}
 function reminderTagCls(cat) {
-  return 'rt-' + cat;  // rt-deposit / rt-loan / rt-repair / rt-care
+  return 'rt-' + cat;  // rt-deposit / rt-loan / rt-repair / rt-purchase / rt-care
+}
+// PC 顶部滚动提醒横幅：把所有提醒类消息拼成一条循环滚动的消息列表
+function remindMarqueeItems() {
+  var rd = ST.remindData;
+  if (!rd) return [];
+  var out = [];
+  (rd.purchasesIncoming || []).forEach(function (p) {
+    out.push({ cls: 'mq-purchase', text: '📦 ' + t('nav.purchases') + '：' + (p.supplier || '') + ' · ' + (p.product || '') + ' ' + reminderHint(p, 'purchase') + '（' + p.expected_date + '）' });
+  });
+  (rd.deposits || []).forEach(function (d) {
+    out.push({ cls: 'mq-deposit', text: '💰 ' + t('nav.deposits') + '：' + (d.customer || '') + ' · ' + (d.product || '') + ' ' + reminderHint(d, 'deposit') });
+  });
+  (rd.loansOverdue || []).forEach(function (l) {
+    out.push({ cls: 'mq-loan', text: '🤝 ' + t('nav.loans') + '：' + (l.product || '') + ' · ' + (l.party || '') + ' ' + reminderHint(l, 'loan') });
+  });
+  (rd.repairsPending || []).forEach(function (r) {
+    out.push({ cls: 'mq-repair', text: '🔧 ' + t('nav.repairs') + '：' + (r.item || '') + ' · ' + (r.customer || '') + ' ' + reminderHint(r, 'repair') });
+  });
+  (rd.care || []).forEach(function (c) {
+    out.push({ cls: 'mq-care', text: '🎂 ' + t('nav.customers') + '：' + (c.customer || '') + ' ' + careHint(c) + '（' + c.date + '）' });
+  });
+  return out;
 }
 // 客情维护提醒 tag 文案：生日 / 纪念日 / 保养
 function careHint(c) {
@@ -872,6 +918,9 @@ function openSaleSub(sub) {
   ST.saleSub = sub;
   if (sub === 'analysis' && !ST.saleAna.data) loadSaleAnalysis();
   if (sub === 'list' && !ST.sales.length) loadSales();
+}
+function toggleSaleDetail(id) {
+  ST.saleDetailId = ST.saleDetailId === id ? null : id;
 }
 function saleAnaRangeCompute() {
   var a = ST.saleAna, now = new Date();
@@ -4727,6 +4776,7 @@ var app = Vue.createApp({
     invStockGroups: invStockGroups,
     showcasePool: showcasePoolFiltered,
     todoCount: todoCount,
+    remindMarquee: remindMarqueeItems,
     frozen: isFrozen,
     currentTitle: currentTitle,
     curStoreName: curStoreName,
@@ -4826,6 +4876,7 @@ var app = Vue.createApp({
     setDashRange: setDashRange, applyDashCustomRange: applyDashCustomRange,
     setSaleRange: setSaleRange, applySaleCustomRange: applySaleCustomRange,
     openSaleSub: openSaleSub, setSaleAnaRange: setSaleAnaRange, loadSaleAnalysis: loadSaleAnalysis,
+    toggleSaleDetail: toggleSaleDetail,
     saleAnaDonut: saleAnaDonut, saleAnaTop5Sum: saleAnaTop5Sum, saleClerkDonut: saleClerkDonut, saleClerkSum: saleClerkSum,
     switchStore: switchStore,
     isHqStore: isHqStore,   // 总店/分店视图判定（模板以 isHqStore() 调用，故放 methods）
