@@ -119,6 +119,28 @@ createApp({
       });
     }
 
+    // ------------------------------------------------ 删除租户
+    function removeTenant(t) {
+      openConfirm({
+        title: `🗑 删除租户 ${t.name}`,
+        lines: [
+          `将永久删除 ${t.name}（${t.id}）及其授权台账、试用/续费申请记录、门户账号。`,
+          '该租户在各插件的数据副本（数据库文件与文件存储）一并删除，不可恢复。',
+          '如只是暂停使用，请改用「⏸ 停用」（数据保留，随时可重新启用）。',
+        ],
+        okText: '确认删除', btnClass: 'danger',
+        onOk: async () => {
+          try {
+            const r = await Platform.api('/api/tenants/' + t.id, { method: 'DELETE' });
+            modal.value = null;
+            toast(`租户 ${t.name} 已删除（清理数据副本 ${r.db_files_removed ?? 0} 个文件）`);
+            await load();
+            await loadApps();
+          } catch (e) { toast(e.message, true); }
+        },
+      });
+    }
+
     // ------------------------------------------------ 授权台账
     const PAY_LABELS = { trial: '试用中', free: '免费', paid: '已付费', arrears: '欠费' };
     const payLabel = g => PAY_LABELS[g.pay_status] || g.pay_status;
@@ -292,7 +314,7 @@ createApp({
       tenants, apps, plugins, busy, modal, toastMsg, form, grantsTenant, ledger, confirmBox,
       newGrantPlugin, grantForm, renewalItem, renewalPaidUntil, accountTenant, accountForm,
       pendingTrials, pendingRenewals, pendingCount, openablePlugins,
-      loadApps, openCreate, openRename, saveTenant, setLevel, toggleStatus,
+      loadApps, openCreate, openRename, saveTenant, setLevel, toggleStatus, removeTenant,
       openGrants, openGrant, openNewGrant, saveGrant, toggleGrant, removeGrant, provisionDb,
       reviewTrial, openRenewal, confirmRenewal, openAccount, saveAccount,
       payLabel, platformVersion, version: Platform.version,

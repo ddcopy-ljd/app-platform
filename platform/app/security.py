@@ -99,6 +99,27 @@ def drop_session(token: str) -> None:
         pass
 
 
+def drop_tenant_sessions(tenant_id: str) -> None:
+    """删除租户时踢掉其门户会话（内存 + 持久库）。"""
+    with _lock:
+        for tok in [t for t, s in _sessions.items() if s["user"].get("tenant_id") == tenant_id]:
+            _sessions.pop(tok, None)
+    try:
+        _ensure_db()
+        with sqlite3.connect(PLATFORM_DB, timeout=30) as conn:
+            rows = conn.execute("SELECT token, user_json FROM platform_sessions").fetchall()
+            for tok, uj in rows:
+                try:
+                    u = json.loads(uj)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if u.get("tenant_id") == tenant_id:
+                    conn.execute("DELETE FROM platform_sessions WHERE token=?", (tok,))
+            conn.commit()
+    except sqlite3.Error:
+        pass
+
+
 SESSION_COOKIE = "platform_session"
 
 

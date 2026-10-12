@@ -215,6 +215,7 @@ tr.current .ver-no{color:var(--brand)}
 .cell-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .ver-side-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
 .ver-table th.th-ops{min-width:230px}
+.ver-table th.th-svc{min-width:190px}
 .ops-grid{display:grid;grid-template-columns:repeat(2,auto);gap:6px;justify-content:start}
 .ops-grid .btn{width:100%;text-align:center}
 .sub{font-size:12.5px;color:var(--ink-3)}

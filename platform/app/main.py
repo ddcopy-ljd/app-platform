@@ -2,7 +2,9 @@ import asyncio
 import json
 import re
 import secrets
+import shutil
 import threading
+from pathlib import Path
 
 from fastapi import (Depends, FastAPI, File, HTTPException, Request, UploadFile,
                      WebSocket)
@@ -18,10 +20,11 @@ from . import grants as grant_svc
 from . import platform_upgrade as pupgrade
 from . import plugin_service as svc
 from . import portal, runtime, traffic
-from .config import AGENT_API_KEY, FRONTEND_DIR, MAX_PACKAGE_BYTES, PACKAGES_DIR, SESSION_TTL_SECONDS
-from .db import audit, get_conn, init_db
-from .security import (SESSION_COOKIE, cookie_user, create_session, current_user, drop_session,
-                       hash_password, verify_password)
+from .config import (AGENT_API_KEY, FRONTEND_DIR, MAX_PACKAGE_BYTES, PACKAGES_DIR,
+                     SESSION_TTL_SECONDS, STORAGE_DIR, TENANT_DB_DIR)
+from .db import audit, get_conn, init_db, now_str
+from .security import (SESSION_COOKIE, cookie_user, create_session, current_user,
+                       drop_session, drop_tenant_sessions, hash_password, verify_password)
 from .ws_relay import WSClient
 
 # 标签属性中的绝对路径（排除 // 协议相对与 http: 等 scheme），供应用挂载前缀重写
@@ -377,6 +380,37 @@ def tenant_status(tenant_id: str, body: TenantStatusIn, user: dict = Depends(cur
             audit(conn, user["username"], "停用租户" if body.status == "inactive" else "启用租户",
                   tenant_id, row["name"])
     return {"ok": True}
+
+
+@app.delete("/api/tenants/{tenant_id}")
+def delete_tenant(tenant_id: str, user: dict = Depends(current_user)):
+    """删除无用租户：连带清理授权台账/申请记录/门户账号/数据副本/文件存储，不可恢复。"""
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM tenants WHERE id=?", (tenant_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="租户不存在")
+        if row["is_sandbox"]:
+            raise HTTPException(status_code=400, detail="沙箱租户为系统内置，不可删除")
+        # 收集数据副本文件路径（删行前查）；插件服务为多租户共享，不因此停服
+        db_files = [str(p) for p in TENANT_DB_DIR.glob(f"*/db_*_{tenant_id}_v*.sqlite*")]
+        conn.execute("DELETE FROM plugin_grants WHERE tenant_id=?", (tenant_id,))
+        conn.execute("DELETE FROM plugin_trials WHERE tenant_id=?", (tenant_id,))
+        conn.execute("DELETE FROM plugin_renewals WHERE tenant_id=?", (tenant_id,))
+        conn.execute("DELETE FROM tenant_users WHERE tenant_id=?", (tenant_id,))
+        conn.execute("DELETE FROM tenant_apps WHERE tenant_id=?", (tenant_id,))
+        conn.execute("DELETE FROM tenants WHERE id=?", (tenant_id,))
+        audit(conn, user["username"], "删除租户", tenant_id,
+              f"{row['name']}；授权/申请/门户账号已清，数据副本文件 {len(db_files)} 个")
+    # 库外文件清理：租户数据副本 + storage 目录 + 门户会话
+    for f in db_files:
+        try:
+            Path(f).unlink(missing_ok=True)
+        except OSError:
+            pass
+    for d in STORAGE_DIR.glob(f"*/{tenant_id}"):
+        shutil.rmtree(d, ignore_errors=True)
+    drop_tenant_sessions(tenant_id)
+    return {"ok": True, "db_files_removed": len(db_files)}
 
 
 @app.get("/api/tenants/applications")

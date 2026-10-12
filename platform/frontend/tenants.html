@@ -73,11 +73,12 @@
                 </td>
                 <td><span class="sub">{{ t.portal_users || '—' }}</span></td>
                 <td>
-                  <div v-if="!t.is_sandbox" class="cell-col">
+                  <div v-if="!t.is_sandbox" class="ops-grid">
                     <button class="btn ghost sm" @click="openRename(t)">✏ 改名</button>
                     <button class="btn ghost sm" @click="openAccount(t)">🔑 门户账号</button>
                     <button v-if="t.status === 'active'" class="btn danger-ghost sm" @click="toggleStatus(t, 'inactive')">⏸ 停用</button>
                     <button v-else class="btn ghost sm" @click="toggleStatus(t, 'active')">▶ 启用</button>
+                    <button class="btn danger-ghost sm" @click="removeTenant(t)">🗑 删除</button>
                   </div>
                   <span v-else class="sub">系统内置</span>
                 </td>

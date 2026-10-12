@@ -110,7 +110,7 @@
           </div>
           <div v-if="!detail.versions.length" class="ver-empty">暂无版本，拖拽插件包到此面板上传</div>
           <table v-else class="ver-table">
-            <thead><tr><th>版本</th><th>软件包</th><th>数据状态</th><th>服务</th><th class="th-ops">操作</th></tr></thead>
+            <thead><tr><th>版本</th><th>软件包</th><th>数据状态</th><th class="th-svc">服务</th><th class="th-ops">操作</th></tr></thead>
             <tbody>
               <tr v-for="v in detail.versions" :key="v.id" :class="rowClass(v)">
                 <td>
@@ -146,9 +146,11 @@
                         <span class="badge" :class="v.service.state === 'running' ? 'b-ok' : 'b-gray'">{{ v.service.state === 'running' ? '● 运行中' : '○ 已停止' }}</span>
                         <span v-if="v.service.state === 'running'" class="sub mono">:{{ v.service.port }} · PID {{ v.service.pid }}</span>
                       </span>
-                      <button v-if="v.service.state !== 'running'" class="btn primary sm" :disabled="svcBusy === v.id || !canStart(v)" :title="canStart(v) ? '' : '数据就绪（初始化/试运行/已切换）后可启动'" @click="serviceAction(v, 'start')">{{ svcBusy === v.id ? '启动中…' : '▶ 启动' }}</button>
-                      <button v-else class="btn danger-ghost sm" :disabled="svcBusy === v.id" @click="confirmStopService(v)">■ 停止</button>
-                      <button class="btn ghost sm" @click="openServiceLog(v)">服务日志</button>
+                      <div class="cell-row">
+                        <button v-if="v.service.state !== 'running'" class="btn primary sm" :disabled="svcBusy === v.id || !canStart(v)" :title="canStart(v) ? '' : '数据就绪（初始化/试运行/已切换）后可启动'" @click="serviceAction(v, 'start')">{{ svcBusy === v.id ? '启动中…' : '▶ 启动' }}</button>
+                        <button v-else class="btn danger-ghost sm" :disabled="svcBusy === v.id" @click="confirmStopService(v)">■ 停止</button>
+                        <button class="btn ghost sm" @click="openServiceLog(v)">服务日志</button>
+                      </div>
                       <span v-if="v.service.error" class="sub err">{{ v.service.error }}</span>
                     </template>
                   </div>
