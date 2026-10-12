@@ -214,6 +214,9 @@ tr.current .ver-no{color:var(--brand)}
 .cell-col{display:flex;flex-direction:column;gap:5px;align-items:flex-start}
 .cell-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .ver-side-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.ver-table th.th-ops{min-width:230px}
+.ops-grid{display:grid;grid-template-columns:repeat(2,auto);gap:6px;justify-content:start}
+.ops-grid .btn{width:100%;text-align:center}
 .sub{font-size:12.5px;color:var(--ink-3)}
 .sub.upgrade{color:var(--warn);font-weight:600}
 .sub.same{color:#1d4ed8}

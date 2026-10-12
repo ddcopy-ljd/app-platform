@@ -110,7 +110,7 @@
           </div>
           <div v-if="!detail.versions.length" class="ver-empty">暂无版本，拖拽插件包到此面板上传</div>
           <table v-else class="ver-table">
-            <thead><tr><th>版本</th><th>软件包</th><th>上传时间</th><th>数据状态</th><th>服务</th><th>操作</th></tr></thead>
+            <thead><tr><th>版本</th><th>软件包</th><th>数据状态</th><th>服务</th><th class="th-ops">操作</th></tr></thead>
             <tbody>
               <tr v-for="v in detail.versions" :key="v.id" :class="rowClass(v)">
                 <td>
@@ -127,8 +127,7 @@
                     </div>
                   </div>
                 </td>
-                <td><div class="cell-col"><span>{{ fmtSize(v.package_size) }}</span><span class="sub">{{ v.package_name }}</span></div></td>
-                <td class="sub">{{ v.uploaded_at }}</td>
+                <td><div class="cell-col"><span>{{ fmtSize(v.package_size) }}</span><span class="sub">{{ v.package_name }}</span><span class="sub">{{ v.uploaded_at }}</span></div></td>
                 <td>
                   <div class="cell-col">
                     <span class="badge" :class="statusMeta(v).cls">{{ statusMeta(v).text }}</span>
@@ -155,7 +154,7 @@
                   </div>
                 </td>
                 <td>
-                  <div class="cell-col">
+                  <div class="ops-grid">
                     <template v-if="v.status === 'uploaded' || v.status === 'failed'">
                       <button v-if="!detail.current_version" class="btn primary sm" :disabled="busy" @click="act(v, 'init')">初始化数据</button>
                       <button v-else-if="isNewer(v)" class="btn primary sm" :disabled="busy" @click="openPrepare(v)">🧪 发起试运行</button>
