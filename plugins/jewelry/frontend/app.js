@@ -807,6 +807,12 @@ function resultText(r) {
 // ---- language ----
 function setLang(lang) {
   switchLang(typeof canonLang === 'function' ? canonLang(lang) : lang);
+  var dictKey = (typeof LANG_MAP !== 'undefined') ? LANG_MAP[currentLang] : '';
+  // 拆分后字典按需加载：目标语言字典未载入时先异步加载，完成后再刷新界面
+  if (typeof ensureLangDict === 'function' && dictKey && dictKey !== 'zh' && !I18N[dictKey]) {
+    ensureLangDict(dictKey, function () { ST.lang = currentLang; });
+    return;
+  }
   ST.lang = currentLang;
 }
 
@@ -1300,7 +1306,12 @@ function recordLines(kind, d) {
     ]));
   } else if (kind === 'outsourcings') {
     L.push(joinLine([d.product, d.material, d.weight ? d.weight + 'g' : '']));
-    L.push(joinLine([d.factory, fmtY((d.gold_price || 0) * (d.weight || 0) + (d.labor_fee || 0))]));
+    L.push(joinLine([
+      d.factory,
+      d.gold_price ? (t('lbl.goldPrice') + ' ' + fmtY(d.gold_price) + '/g') : '',
+      d.labor_fee ? (t('lbl.laborFee') + ' ' + fmtY(d.labor_fee)) : '',
+      '＝ ' + fmtY((d.gold_price || 0) * (d.weight || 0) + (d.labor_fee || 0))
+    ]));
     L.push(joinLine([
       d.send_date ? (t('rec.send') + ' ' + d.send_date) : '',
       d.expected_date ? (t('rec.expected') + ' ' + d.expected_date) : '',

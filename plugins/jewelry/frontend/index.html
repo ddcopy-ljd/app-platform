@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>懿臻珠宝云</title>
 <link rel="icon" href="/logo/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./app.css?v=20261012e131">
+<link rel="stylesheet" href="./app.css?v=20261013e136">
 </head>
 <body>
 <div id="app">
@@ -438,17 +438,21 @@
             <button class="inv-tab" :class="{active:transferTab==='out'}" @click="transferTab='out'">📤 {{ t('tr.tabOut') }}</button>
             <button class="inv-tab" :class="{active:transferTab==='in'}" @click="transferTab='in'">📥 {{ t('tr.tabIn') }}</button>
           </div>
-          <div class="card-list">
+          <div class="card-list tr-grid">
             <div class="card-item transfer-card" v-for="x in transferList()" :key="x.id" @click="openTransfer(x)">
               <div class="tr-head">
                 <span class="tr-no mono">{{ x.transfer_no }}</span>
                 <span class="tag" :class="statusClass(x.status)">{{ statusText(x.status) }}</span>
               </div>
               <div class="tr-route">🏬 {{ x.from_store_name }} → {{ x.to_store_name }}</div>
+              <div class="tr-items" v-if="x.item_names">📦 {{ x.item_names }}<span v-if="x.total_count > 3"> {{ t('tr.more') }}{{ x.total_count }}{{ t('tr.itemsUnit') }}</span></div>
               <div class="tr-meta dim">
                 <span>{{ t('tr.total') }} {{ x.total_count }}</span>
                 <span v-if="x.status!=='在途'"> · {{ t('tr.matched') }} {{ x.matched_count }}<span v-if="x.diff_count"> · <b class="tr-diff">{{ t('tr.diff') }} {{ x.diff_count }}</b></span></span>
                 <span> · {{ transferTab==='out' ? x.sent_at : (x.received_at || x.sent_at) }}</span>
+              </div>
+              <div class="tr-meta dim">
+                <span>{{ t('tr.operator') }}：{{ transferTab==='out' ? (x.created_by || '-') : (x.received_by || x.created_by || '-') }}</span>
               </div>
             </div>
             <div class="empty" v-if="!transferList().length"><div class="empty-icon">🚚</div>{{ t('tr.empty') }}</div>
@@ -1193,17 +1197,30 @@
             <input class="search-input" v-model="custQ" :placeholder="t('cust.searchPh')" @input="onCustSearch">
             <button class="btn btn-sm btn-outline" v-if="custQ" @click="custQ='';onCustSearch()">{{ t('act.clear') }}</button>
           </div>
-          <div class="card-list">
-            <div class="card-item" v-for="d in subList" :key="d.id">
-              <div class="cust-item" @click="viewCustomer(d)">
+          <div class="card-list cust-grid">
+            <div class="card-item cust-card" v-for="d in subList" :key="d.id" @click="viewCustomer(d)">
+              <div class="cc-head">
                 <div class="cust-avatar">{{ (d.name||'?')[0] }}</div>
-                <div class="cust-info"><div class="cust-name">{{ d.name }} · {{ levelText(d.level) }}<span class="cust-points" v-if="d.points">⭐ {{ fmt(d.points) }} {{ t('cust.points') }}</span></div><div class="cust-phone">{{ d.phone }}</div><div class="cust-meta" v-if="d.preference || d.birthday || d.anniversary">
-                  <span v-if="d.birthday" class="tag tag-gold">{{ t('dash.birthday') }} {{ d.birthday }}</span>
-                  <span v-if="d.anniversary" class="tag tag-gold">{{ t('dash.anniversary') }} {{ d.anniversary }}</span>
-                  <span v-if="d.preference" class="tag">{{ d.preference }}</span>
-                </div></div>
-                <div class="cust-stats"><div class="cust-total">￥{{ fmt(d.total_amount) }}</div><div class="cust-due" v-if="d.due_amount">{{ t('dash.due') }} ￥{{ fmt(d.due_amount) }}</div>
+                <div class="cc-id">
+                  <div class="cust-name">{{ d.name }}</div>
+                  <div class="cust-phone">{{ d.phone || '-' }}</div>
                 </div>
+                <span class="tag" :class="d.level==='金卡'?'tag-gold':(d.level==='银卡'?'tag-blue':'')">{{ levelText(d.level) }}</span>
+              </div>
+              <div class="cc-meta">
+                <span v-if="d.birthday" class="tag tag-gold">🎂 {{ t('dash.birthday') }} {{ d.birthday }}</span>
+                <span v-if="d.anniversary" class="tag tag-gold">💍 {{ t('dash.anniversary') }} {{ d.anniversary }}</span>
+                <span v-if="d.preference" class="tag">💡 {{ d.preference }}</span>
+                <span v-if="d.points" class="tag">⭐ {{ fmt(d.points) }}</span>
+              </div>
+              <div class="cc-buy" v-if="d.last_date">
+                <div class="cc-buy-line">🛍 {{ d.last_product || '-' }}</div>
+                <div class="cc-buy-line dim">{{ d.last_date }} · ￥{{ fmt(d.last_amount || 0) }}<span v-if="d.sales_count > 1"> · {{ d.sales_count }} {{ t('cust.times') }}</span></div>
+              </div>
+              <div class="cc-buy dim" v-else>🛍 {{ t('cust.noPurchase') }}</div>
+              <div class="cc-foot">
+                <span class="cust-total">累计 ￥{{ fmt(d.total_amount) }}</span>
+                <span class="cust-due" v-if="d.due_amount">{{ t('dash.due') }} ￥{{ fmt(d.due_amount) }}</span>
               </div>
             </div>
             <div class="empty" v-if="!subList.length">{{ t('cust.empty') }}</div>
@@ -2264,10 +2281,27 @@ Content-Type: application/json
           </div>
         </div>
         <div v-if="subView==='customers'">
-          <div class="card-item" v-for="d in subList" :key="d.id" @click="editCustomer(d)">
-            <div class="cust-item"><div class="cust-avatar">{{ (d.name||'?')[0] }}</div>
-              <div class="cust-info"><div class="cust-name">{{ d.name }} · {{ levelText(d.level) }}</div><div class="cust-phone">{{ d.phone }}</div></div>
-              <div class="cust-stats"><div class="cust-total">￥{{ fmt(d.total_amount) }}</div><div class="cust-due" v-if="d.due_amount">{{ t('dash.due') }} ￥{{ fmt(d.due_amount) }}</div></div>
+          <div class="card-item cust-card" v-for="d in subList" :key="d.id" @click="editCustomer(d)">
+            <div class="cc-head">
+              <div class="cust-avatar">{{ (d.name||'?')[0] }}</div>
+              <div class="cc-id">
+                <div class="cust-name">{{ d.name }}</div>
+                <div class="cust-phone">{{ d.phone || '-' }}</div>
+              </div>
+              <span class="tag" :class="d.level==='金卡'?'tag-gold':(d.level==='银卡'?'tag-blue':'')">{{ levelText(d.level) }}</span>
+            </div>
+            <div class="cc-meta">
+              <span v-if="d.birthday" class="tag tag-gold">🎂 {{ t('dash.birthday') }} {{ d.birthday }}</span>
+              <span v-if="d.preference" class="tag">💡 {{ d.preference }}</span>
+              <span v-if="d.points" class="tag">⭐ {{ fmt(d.points) }}</span>
+            </div>
+            <div class="cc-buy" v-if="d.last_date">
+              <div class="cc-buy-line">🛍 {{ d.last_product || '-' }}</div>
+              <div class="cc-buy-line dim">{{ d.last_date }} · ￥{{ fmt(d.last_amount || 0) }}<span v-if="d.sales_count > 1"> · {{ d.sales_count }} {{ t('cust.times') }}</span></div>
+            </div>
+            <div class="cc-foot">
+              <span class="cust-total">累计 ￥{{ fmt(d.total_amount) }}</span>
+              <span class="cust-due" v-if="d.due_amount">{{ t('dash.due') }} ￥{{ fmt(d.due_amount) }}</span>
             </div>
           </div>
           <div class="empty" v-if="!subList.length">{{ t('cust.emptyShort') }}</div>
@@ -3315,7 +3349,14 @@ Content-Type: application/json
 <script src="./vendor/vue.global.prod.js"></script>
 <script src="./vendor/qrcode.min.js"></script>
 <script src="./vendor/zxing.min.js"></script>
-<script src="./i18n.js?v=20261012e130"></script>
-<script src="./app.js?v=20261012e130"></script>
+<script src="./i18n.js?v=20261013e136"></script>
+<script>
+// 非中文时同步加载对应语言字典（i18n.<dict>.js），确保 app.js 挂载前字典就绪
+(function () {
+  var _dict = (typeof i18nDictFile === 'function') ? i18nDictFile() : '';
+  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261013e136"><\/script>');
+})();
+</script>
+<script src="./app.js?v=20261013e136"></script>
 </body>
 </html>

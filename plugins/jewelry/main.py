@@ -2958,7 +2958,10 @@ def transfer_create(body: TransferIn, request: Request):
 
 def _transfer_list_rows(conn, where: str, args: list, limit: int, offset: int):
     sql = f"""
-        SELECT t.*, fs.name from_store_name, ts.name to_store_name
+        SELECT t.*, fs.name from_store_name, ts.name to_store_name,
+               (SELECT GROUP_CONCAT(nm, '、') FROM
+                  (SELECT COALESCE(NULLIF(product_name,''), epc) nm
+                   FROM transfer_items WHERE transfer_id=t.id ORDER BY id LIMIT 3)) item_names
         FROM transfers t
         JOIN stores fs ON fs.id=t.from_store_id
         JOIN stores ts ON ts.id=t.to_store_id
@@ -6182,6 +6185,14 @@ class CustomerIn(BaseModel):
 def customer_list(request: Request, page: int = 1, size: int = 50, keyword: str = ""):
     _require_auth(request)
     q = (keyword or "").strip()
+    # 附带最近一次购买（商品/日期/金额）与购买次数，供会员卡片展示
+    base = """
+        SELECT c.*,
+          (SELECT s.product FROM sales s WHERE s.customer_id=c.id ORDER BY s.biz_date DESC, s.id DESC LIMIT 1) last_product,
+          (SELECT s.biz_date  FROM sales s WHERE s.customer_id=c.id ORDER BY s.biz_date DESC, s.id DESC LIMIT 1) last_date,
+          (SELECT s.amount    FROM sales s WHERE s.customer_id=c.id ORDER BY s.biz_date DESC, s.id DESC LIMIT 1) last_amount,
+          (SELECT COUNT(*)    FROM sales s WHERE s.customer_id=c.id) sales_count
+        FROM customers c"""
     with _db(request) as conn:
         if q:
             like = f"%{q}%"
@@ -6189,13 +6200,13 @@ def customer_list(request: Request, page: int = 1, size: int = 50, keyword: str 
                 "SELECT COUNT(*) n FROM customers WHERE name LIKE ? OR phone LIKE ?", (like, like)
             ).fetchone()["n"]
             rows = conn.execute(
-                "SELECT * FROM customers WHERE name LIKE ? OR phone LIKE ? "
-                "ORDER BY total_amount DESC LIMIT ? OFFSET ?",
+                base + " WHERE c.name LIKE ? OR c.phone LIKE ? "
+                "ORDER BY c.total_amount DESC LIMIT ? OFFSET ?",
                 (like, like, size, (page - 1) * size),
             ).fetchall()
         else:
             total = conn.execute("SELECT COUNT(*) n FROM customers").fetchone()["n"]
-            rows = conn.execute("SELECT * FROM customers ORDER BY total_amount DESC LIMIT ? OFFSET ?", (size, (page - 1) * size)).fetchall()
+            rows = conn.execute(base + " ORDER BY c.total_amount DESC LIMIT ? OFFSET ?", (size, (page - 1) * size)).fetchall()
         return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
 
 

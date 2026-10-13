@@ -397,6 +397,19 @@ a { text-decoration: none; color: inherit; }
 /* ---------- customer ---------- */
 .cust-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .cust-item:last-child { border-bottom: none; }
+/* 会员卡片（PC 一行 3-4 张） */
+.cust-card { cursor: pointer; transition: box-shadow .15s, border-color .15s; }
+.cust-card:hover { border-color: var(--gold); box-shadow: 0 4px 14px rgba(201,169,97,.18); }
+.cust-card .cc-head { display: flex; align-items: center; gap: 10px; }
+.cust-card .cc-id { flex: 1; min-width: 0; }
+.cust-card .cc-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.cust-card .cc-buy { margin: 6px 0; font-size: 14px; color: var(--text); }
+.cust-card .cc-buy-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cust-card .cc-buy-line.dim, .cust-card .cc-buy.dim { color: var(--text2); }
+.cust-card .cc-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.app-shell.pc .cust-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.app-shell.pc .cust-grid .card-item { margin-bottom: 0; }
+.app-shell.pc .cust-grid .empty { grid-column: 1 / -1; }
 .cust-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, var(--wine), #8B3A52); display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; color: var(--gold-light); flex-shrink: 0; }
 .cust-info { flex: 1; min-width: 0; }
 .cust-name { font-size: 14px; font-weight: 600; }
@@ -1275,6 +1288,11 @@ tr.row-flash, tr.row-flash:hover { background-color: #FFF3CD !important; transit
 .tr-route { margin: 6px 0 4px; font-size: 14px; }
 .tr-meta { font-size: 14px; }
 .tr-diff { color: var(--danger, #c0392b); }
+.tr-items { margin: 4px 0; font-size: 14px; color: var(--text); word-break: break-word; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* 门店调拨卡片：PC 一行 3-4 张，手机端单列 */
+.app-shell.pc .tr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
+.app-shell.pc .tr-grid .card-item { margin-bottom: 0; }
+.app-shell.pc .tr-grid .empty { grid-column: 1 / -1; }
 
 .tr-field-val { padding: 7px 10px; background: var(--bg, #f7f5f0); border-radius: 8px; font-size: 14px; }
 .tr-send-box { width: min(520px, 94vw); }

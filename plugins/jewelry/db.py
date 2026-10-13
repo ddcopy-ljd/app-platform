@@ -637,6 +637,62 @@ def _has_column(conn: sqlite3.Connection, table: str, col: str) -> bool:
     return col in names
 
 
+def _dedupe_customers(conn: sqlite3.Connection) -> None:
+    """合并同名同手机号的重复会员（历史种子重复插入导致一会员多卡）。
+
+    保留 total_amount 最大的一行（并列取最小 id），其余行的积分取最大、
+    生日/偏好/纪念日/建档时间取首个非空、金价折扣取最优；销售记录改挂保留行后删除多余行。幂等。
+    """
+    if not _has_column(conn, "customers", "phone"):
+        return
+    groups = conn.execute(
+        "SELECT name, phone FROM customers WHERE phone <> '' "
+        "GROUP BY name, phone HAVING COUNT(*) > 1"
+    ).fetchall()
+    for g in groups:
+        rows = conn.execute(
+            "SELECT * FROM customers WHERE name=? AND phone=? ORDER BY total_amount DESC, id ASC",
+            (g["name"], g["phone"]),
+        ).fetchall()
+        keep = rows[0]
+        dup_ids = [r["id"] for r in rows[1:]]
+        merged = {
+            "points": max((r["points"] or 0) for r in rows),
+            "birthday": keep["birthday"] or next((r["birthday"] for r in rows if r["birthday"]), ""),
+            "preference": keep["preference"] or next((r["preference"] for r in rows if r["preference"]), ""),
+            "created": keep["created"] or next((r["created"] for r in rows if r["created"]), ""),
+        }
+        if _has_column(conn, "customers", "anniversary"):
+            merged["anniversary"] = keep["anniversary"] or next((r["anniversary"] for r in rows if r["anniversary"]), "")
+        if _has_column(conn, "customers", "gold_discount"):
+            merged["gold_discount"] = min((r["gold_discount"] if r["gold_discount"] not in (None, 0) else 1.0) for r in rows)
+        sets = ["points=?", "birthday=?", "preference=?", "created=?"]
+        vals: list = [merged["points"], merged["birthday"], merged["preference"], merged["created"]]
+        if "anniversary" in merged:
+            sets.append("anniversary=?")
+            vals.append(merged["anniversary"])
+        if "gold_discount" in merged:
+            sets.append("gold_discount=?")
+            vals.append(merged["gold_discount"])
+        conn.execute(f"UPDATE customers SET {','.join(sets)} WHERE id=?", vals + [keep["id"]])
+        for did in dup_ids:
+            if _has_column(conn, "sales", "customer_id"):
+                conn.execute("UPDATE sales SET customer_id=? WHERE customer_id=?", (keep["id"], did))
+            conn.execute("DELETE FROM customers WHERE id=?", (did,))
+
+
+def _backfill_sales_customer_id(conn: sqlite3.Connection) -> None:
+    """历史/种子销售记录按手机号回填 customer_id（开单链路已实时回填，这里兜底旧数据）。幂等。"""
+    if not (_has_column(conn, "sales", "customer_id") and _has_column(conn, "sales", "phone")):
+        return
+    conn.execute(
+        "UPDATE sales SET customer_id = "
+        "(SELECT c.id FROM customers c WHERE c.phone = sales.phone ORDER BY c.total_amount DESC, c.id ASC LIMIT 1) "
+        "WHERE IFNULL(customer_id,0)=0 AND phone <> '' "
+        "AND EXISTS (SELECT 1 FROM customers c WHERE c.phone = sales.phone)"
+    )
+
+
 def _relax_products_code_unique(conn: sqlite3.Connection) -> None:
     """放开 products.code 的唯一约束（同款多件可共享货号，底层仍以 EPC/条码 唯一标识单件）。
 
@@ -785,6 +841,8 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     for table, col, decl in alters:
         if not _has_column(conn, table, col):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    _dedupe_customers(conn)
+    _backfill_sales_customer_id(conn)
     # 角色级兜底：店长/高管始终拥有成本查看权（不触碰店员被显式授予/收回的状态）
     conn.execute(
         "UPDATE users SET can_view_cost=1 WHERE role IN ('TENANT_ADMIN','EXECUTIVE') "
@@ -1789,11 +1847,6 @@ def seed_demo(conn: sqlite3.Connection) -> None:
     seed_store_printers(conn)  # 演示门店也补齐每个打印业务的指派行
 
     _ensure_products_seed(conn)
-
-    customers = [("王晓丽", "13800001111", "金卡", 43600, 0, "1990-05-12", "偏好足金手镯"),
-                 ("李强", "13900002222", "银卡", 12800, 21800, "1988-11-03", "钻石类"),
-                 ("张美凤", "13700003333", "普通", 5600, 0, "1995-02-20", "彩宝")]
-    conn.executemany("INSERT INTO customers(name,phone,level,total_amount,due_amount,birthday,preference) VALUES(?,?,?,?,?,?,?)", customers)
 
     now = "date('now','localtime')"
     # —— sales / sale_items / sale_payments（共用 _ensure_sales_seed，保证 dashboard 趋势图/品类占比全覆盖）——
