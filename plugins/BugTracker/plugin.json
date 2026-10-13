@@ -12,10 +12,10 @@
     "截图凭据上传（客户端长边800压缩，服务端落盘存储）",
     "缺陷删除（级联删除关联截图与评论）",
     "流转历史与评论讨论",
-    "免登录外部上报（/report 页面，限频防刷，来源插件+上报人落外部上报箱）"
+    "免登录外部上报（/report 页面，限频防刷，来源插件+上报人+门店落外部上报箱；截图支持粘贴；提供按门店跟踪处理状态的公开查询）"
   ],
-  "softwareVersion": "1.1.3.261011",
-  "dataVersion": "1.1.0",
+  "softwareVersion": "1.1.4.261013",
+  "dataVersion": "1.1.4",
   "scripts": {
     "init": "scripts/init.py",
     "upgrade": "scripts/upgrade.py"

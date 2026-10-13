@@ -61,3 +61,13 @@
 - **问题现象**：从 v1.0.0 升级后外部上报 500（`projects.key='INBOX'` 不存在）或写 bugs 报 `no such column: source_plugin`。
 - **根因**：upgrade.py 未幂等补列/补 INBOX 项目行。
 - **验证方法**：对 v1.0.0 库副本跑 `scripts/upgrade.py` 后：`PRAGMA table_info(bugs)` 含 source_plugin/source_reporter；`projects` 含 key='INBOX'（seq=900）；旧 bugs/users 数据条数不变；`POST /api/report` 返回 INBOX-900 起编号。
+
+## TC-13 上报跟踪端点必须按门店隔离且不泄漏正文
+- **问题现象**：新增 `GET /api/report/track`（免登录）若过滤不严，A 店能看到 B 店上报，或泄漏 detail/截图等敏感内容。
+- **根因**：端点靠 `source_plugin + source_store` 双条件过滤，只返回 code/title/status/时间；租户隔离依赖网关注入头定位库文件（`_db(request)`），漏任一条件即跨店/跨租户泄漏。
+- **验证方法**：`POST /api/report` 带 `store=WALKSTORE` 后：`GET /api/report/track?source=jewelry&store=WALKSTORE` 命中且 statusLabel 正确；`store=别的店` 返回空；管理端 `POST /api/bugs/{id}/status` 改 in_progress 后 track 同步显示「进行中」；响应字段仅 code/title/status/statusLabel/created/updated。历史无门店记录由 upgrade.py 回填 `source_store='总部'`（幂等：仅补空值）。
+
+## TC-14 上报页粘贴截图必须复用压缩管线且受 3 张上限
+- **问题现象**：粘贴图片若直接塞 dataURL 原图，超大截图（>2MB）会被服务端拒绝或撑爆请求体。
+- **根因**：paste 事件取 `clipboardData.items` 的 File 后必须走 `addImageFile()`（长边 800 压缩 JPEG），与文件选择共用 `ST.imgs` 上限 3 张判断。
+- **验证方法**：`/report?source=jewelry&store=WALKSTORE` 页面用 `new ClipboardEvent('paste',{clipboardData:dt})`（dt 含 1 个 png File）dispatch 后：`ST.imgs.length===1` 且 `#imgBox [data-thumb]` 为 1；已有 3 张时再粘贴显示「截图最多 3 张」；控制台无报错。

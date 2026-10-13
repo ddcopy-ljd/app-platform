@@ -529,6 +529,7 @@ class ReportIn(BaseModel):
     source: str = Field(min_length=2, max_length=32, description="来源插件标识")
     appname: str = Field(default="", max_length=64, description="来源插件应用名称（项目名）")
     reporter: str = Field(min_length=1, max_length=32, description="上报人姓名")
+    store: str = Field(default="", max_length=64, description="上报人所属门店（空则归总部）")
     title: str = Field(min_length=1, max_length=120)
     kind: str = "缺陷"
     detail: str = Field(default="", max_length=2000)
@@ -579,11 +580,12 @@ def api_external_report(body: ReportIn, request: Request):
         code = f"{proj['key']}-{proj['seq']}"
         conn.execute("UPDATE projects SET seq=seq+1 WHERE id=?", (proj["id"],))
         display = f"{reporter}（来自 {source}）"
+        store = body.store.strip() or "总部"
         cur = conn.execute(
             "INSERT INTO bugs(project_id,code,title,module,status,severity,priority,assignee,reporter,"
-            "steps,actual,expected,source_plugin,source_reporter) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "steps,actual,expected,source_plugin,source_reporter,source_store) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (proj["id"], code, title, "", "open", "major", "p2", "未指派",
-             display, body.detail.strip() or "未提供", "未提供", "未提供", source, reporter),
+             display, body.detail.strip() or "未提供", "未提供", "未提供", source, reporter, store),
         )
         bug_id = cur.lastrowid
         n_img = 0
@@ -591,12 +593,37 @@ def api_external_report(body: ReportIn, request: Request):
             _save_dataurl_image(conn, _storage_dir(tenant), bug_id, code, img)
             n_img += 1
         _activity(conn, bug_id, display,
-                  f"外部上报（{body.kind}），来源插件 [{source}]。")
+                  f"外部上报（{body.kind}），来源插件 [{source}]，门店 [{store}]。")
         conn.execute(
             "INSERT INTO audit_logs(operator,action,target,detail) VALUES(?,?,?,?)",
             (display, "外部上报", code, f"[{_operator_mode(request)}] {body.kind}，附带 {n_img} 张截图"))
         conn.commit()
         return {"ok": True, "code": code, "title": title, "images": n_img}
+
+
+@app.get("/api/report/track")
+def api_external_track(request: Request, source: str = Query(min_length=2, max_length=32),
+                       store: str = Query(min_length=1, max_length=64),
+                       reporter: str = Query(default="", max_length=32),
+                       limit: int = Query(default=50, le=100)):
+    """免登录上报跟踪：按来源插件+门店（可选再按上报人）返回本门店上报的缺陷状态。
+
+    仅暴露编号/标题/状态/时间，不含正文与截图；租户库天然隔离（网关头定位库文件）。
+    """
+    with _db(request) as conn:
+        sql = ("SELECT code,title,status,created,updated FROM bugs "
+               "WHERE source_plugin=? AND source_store=?")
+        args: list = [source.strip(), store.strip()]
+        if reporter.strip():
+            sql += " AND source_reporter=?"
+            args.append(reporter.strip())
+        sql += " ORDER BY id DESC LIMIT ?"
+        args.append(limit)
+        rows = conn.execute(sql, args).fetchall()
+        items = [{"code": r["code"], "title": r["title"], "status": r["status"],
+                  "statusLabel": STATUS_LABELS.get(r["status"], r["status"]),
+                  "created": r["created"], "updated": r["updated"]} for r in rows]
+    return {"ok": True, "items": items}
 
 
 # ---------------------------------------------------------------- 图片伺服

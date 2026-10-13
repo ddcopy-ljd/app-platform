@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS bugs (
   -- 外部上报来源（免登录 /api/report 写入；站内创建为空串）
   source_plugin TEXT DEFAULT '',
   source_reporter TEXT DEFAULT '',
+  source_store TEXT DEFAULT '',
   steps TEXT DEFAULT '',
   actual TEXT DEFAULT '',
   expected TEXT DEFAULT '',
@@ -140,6 +141,7 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     alters = [
         ("source_plugin", "source_plugin TEXT DEFAULT ''"),
         ("source_reporter", "source_reporter TEXT DEFAULT ''"),
+        ("source_store", "source_store TEXT DEFAULT ''"),
     ]
     for col, ddl in alters:
         if col not in existing:

@@ -30,6 +30,11 @@ def main() -> None:
     conn.executescript(SCHEMA)
     migrate_schema(conn)
     ensure_inbox(conn)
+    # 历史外部上报无门店字段：统一归入「总部」（幂等：仅补空值，不覆盖已有）
+    conn.execute(
+        "UPDATE bugs SET source_store='总部' "
+        "WHERE source_plugin != '' AND (source_store IS NULL OR source_store = '')"
+    )
     conn.commit()
     conn.close()
 
