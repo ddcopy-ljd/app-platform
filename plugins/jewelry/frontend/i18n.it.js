@@ -188,6 +188,7 @@ registerLang('it', {
     'misc.tenant': 'Tenant', 'misc.operator': 'Operatore', 'misc.action': 'Azione', 'misc.target': 'Obiettivo',
     'misc.time': 'Orario', 'misc.result': 'Risultato', 'misc.store': 'Negozio',
     'misc.role.admin': 'Manager', 'misc.role.staff': 'Staff', 'misc.role.exec': 'Dirigente',
+    'misc.language': 'Lingua',
     // Dirigente sola lettura
     'role.readonlyBadge': 'Sola lettura',
     'role.execReadonly': "L'account dirigente e' di sola lettura: azione non consentita",

@@ -189,6 +189,7 @@ registerLang('en', {
     'misc.tenant': 'Tenant', 'misc.operator': 'Operator', 'misc.action': 'Action', 'misc.target': 'Target',
     'misc.time': 'Time', 'misc.result': 'Result', 'misc.store': 'Store',
     'misc.role.admin': 'Manager', 'misc.role.staff': 'Staff', 'misc.role.exec': 'Executive',
+    'misc.language': 'Language',
     // Executive read-only
     'role.readonlyBadge': 'Read-only',
     'role.execReadonly': 'Executive accounts are view-only; this action is not allowed',

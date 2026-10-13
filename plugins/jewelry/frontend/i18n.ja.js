@@ -372,6 +372,7 @@ registerLang('ja', {
     'misc.store': '店舗',
     'misc.role.admin': '店長',
     'misc.role.staff': 'スタッフ',
+    'misc.language': '言語',
     'misc.role.exec': '役員',
     'role.readonlyBadge': '読み取り専用',
     'role.execReadonly': '役員アカウントは閲覧のみで、この操作はできません',

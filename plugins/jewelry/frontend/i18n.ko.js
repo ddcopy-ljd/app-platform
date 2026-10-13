@@ -372,6 +372,7 @@ registerLang('ko', {
     'misc.store': '매장',
     'misc.role.admin': '점장',
     'misc.role.staff': '직원',
+    'misc.language': '언어',
     'misc.role.exec': '임원',
     'role.readonlyBadge': '읽기 전용',
     'role.execReadonly': '임원 계정은 조회만 가능하며 해당 작업을 수행할 수 없습니다',

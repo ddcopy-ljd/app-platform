@@ -372,6 +372,7 @@ registerLang('zhHant', {
     'misc.store': '門店',
     'misc.role.admin': '店長',
     'misc.role.staff': '店員',
+    'misc.language': '語言',
     'misc.role.exec': '高管',
     'role.readonlyBadge': '唯讀',
     'role.execReadonly': '高管帳號僅可查看，不能進行該操作',

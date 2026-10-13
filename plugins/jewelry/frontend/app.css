@@ -63,9 +63,8 @@ a { text-decoration: none; color: inherit; }
 /* ---------- app bar ---------- */
 .app-bar { position: sticky; top: 0; z-index: 100; background: linear-gradient(135deg, #65293B 0%, #5C2233 50%, #4A1B2A 100%); color: #F7EFE0; padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 14px; display: flex; align-items: center; gap: 12px; box-shadow: 0 2px 12px rgba(20,8,14,.25); }
 .app-bar::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(201,169,97,.5), transparent); }
-.app-bar .brand { font-size: 15px; font-weight: 600; flex: 1; letter-spacing: .5px; display: flex; align-items: center; gap: 8px; }
+.app-bar .brand { font-size: 13px; font-weight: 600; flex: 1; letter-spacing: .5px; display: flex; align-items: center; gap: 6px; }
 .app-bar .app-logo { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
-.app-bar .store-tag { font-size: 14px; background: rgba(201,169,97,.15); padding: 3px 10px; border-radius: 10px; color: rgba(232,213,160,.85); border: 1px solid rgba(201,169,97,.3); }
 .app-bar .avatar { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, #F5E7B8, #E8D5A0 30%, #C9A961 60%, #9C7B3A); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: #5C2233; cursor: pointer; box-shadow: 0 2px 8px rgba(201,169,97,.4), inset 0 1px 1px rgba(255,255,255,.6); }
 
 /* ---------- main content ---------- */
@@ -134,7 +133,7 @@ a { text-decoration: none; color: inherit; }
 .trend-range-select { font-size: 14px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--white); color: var(--text1); }
 .trend-svg { width: 100%; height: 120px; display: block; }
 .trend-svg .trend-axis { stroke: var(--border); stroke-width: 1; }
-.trend-svg .trend-grid { stroke: var(--border); stroke-width: .5; stroke-dasharray: 3 3; opacity: .6; }
+.trend-svg .trend-grid { stroke: #C9BFA8; stroke-width: .5; stroke-dasharray: 3 3; opacity: 1; }
 .trend-svg .trend-line-cur { stroke: #3D6B99; stroke-width: 2; }
 .trend-svg .trend-line-past { stroke: #C9A227; stroke-width: 2; stroke-dasharray: 5 4; }
 .lg-line { display: inline-block; width: 16px; height: 0; border-top: 2px solid; margin: 0 4px 0 10px; vertical-align: middle; }
@@ -499,7 +498,8 @@ a { text-decoration: none; color: inherit; }
 .sheet-head .sheet-title { font-size: 16px; font-weight: 700; }
 .sheet-close { width: 32px; height: 32px; border-radius: 50%; border: none; background: var(--bg); font-size: 18px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text2); }
 .sheet-body { flex: 1; overflow-y: auto; padding: 18px; }
-.sheet-foot { padding: 12px 18px; border-top: 1px solid var(--border); flex-shrink: 0; }
+.sheet-foot { padding: 12px 18px; border-top: 1px solid var(--border); flex-shrink: 0; display: flex; gap: 10px; }
+.sheet-foot > .btn-block { flex: 1; }
 
 /* ---------- toast ---------- */
 .toast { position: fixed; top: 18px; left: 50%; transform: translateX(-50%); z-index: 999; padding: 10px 22px; border-radius: 20px; font-size: 14px; font-weight: 600; color: #fff; box-shadow: 0 6px 20px rgba(0,0,0,.15); pointer-events: none; opacity: 0; transition: opacity .25s; white-space: nowrap; }
@@ -558,6 +558,10 @@ a { text-decoration: none; color: inherit; }
 .cust-stats-bar .csb-item { flex: 1; background: var(--white); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; text-align: center; }
 .cust-stats-bar .csb-val { display: block; font-size: 20px; font-weight: 700; color: var(--gold); }
 .cust-stats-bar .csb-lbl { display: block; font-size: 14px; color: var(--text-2, #888); margin-top: 2px; }
+/* 统计卡片可点击过滤：选中态高亮描边 */
+.cust-stats-bar .csb-item.clickable { cursor: pointer; transition: border-color .15s, box-shadow .15s, transform .15s; }
+.cust-stats-bar .csb-item.clickable:hover { border-color: var(--gold); box-shadow: 0 3px 10px rgba(92,34,51,.10); transform: translateY(-1px); }
+.cust-stats-bar .csb-item.csb-on { border-color: var(--gold); background: #FFF9EC; box-shadow: inset 0 0 0 1px var(--gold); }
 
 /* ---------- sub page ---------- */
 .sub-page { padding: 0 14px calc(78px + var(--safe-bottom)); }
@@ -630,10 +634,24 @@ a { text-decoration: none; color: inherit; }
 .pc-top h1 { font-size: 18px; font-weight: 700; color: var(--text); }
 .pc-top-actions { display: flex; align-items: center; gap: 10px; }
 .lang-select { padding: 6px 10px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); font-size: 14px; outline: none; cursor: pointer; }
+/* 「我的」页内嵌语言切换行 */
+.menu-item.menu-lang { cursor: pointer; position: relative; }
+.lang-cur { display: flex; align-items: center; gap: 4px; font-size: 14px; color: var(--text2); flex-shrink: 0; }
+.lang-pop { position: fixed; left: 8px; right: 8px; top: calc(env(safe-area-inset-top, 0px) + 66px); z-index: 130; background: var(--white); border-radius: 14px; box-shadow: 0 12px 32px rgba(20,8,14,.25); padding: 8px; max-height: 60vh; overflow-y: auto; }
+.lang-pop-item { display: block; width: 100%; text-align: left; padding: 9px 12px; border: none; background: none; border-radius: 8px; font-size: 14px; color: var(--text); cursor: pointer; }
+.lang-pop-item:active { background: var(--bg); }
+.lang-pop-item.on { color: var(--wine); font-weight: 700; background: rgba(201,169,97,.12); }
+/* 手机版顶栏门店切换按钮+面板 */
+.store-pop-wrap { position: static; display: inline-flex; }
+.store-pop-btn { border: 1px solid rgba(201,169,97,.5); background: rgba(201,169,97,.15); color: #E8D5A0; font-size: 13px; font-weight: 600; padding: 5px 12px; border-radius: 14px; cursor: pointer; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.store-pop { position: fixed; left: 8px; right: 8px; top: calc(env(safe-area-inset-top, 0px) + 66px); z-index: 130; background: var(--white); border-radius: 14px; box-shadow: 0 12px 32px rgba(20,8,14,.25); padding: 8px; max-height: 60vh; overflow-y: auto; }
+.store-pop-title { font-size: 13px; color: var(--text3); padding: 6px 10px 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.store-pop-item { display: block; width: 100%; text-align: left; padding: 11px 12px; border: none; background: none; border-radius: 9px; font-size: 15px; color: var(--text); cursor: pointer; }
+.store-pop-item:active { background: var(--bg); }
+.store-pop-item.on { color: var(--wine); font-weight: 700; background: rgba(201,169,97,.12); }
 
-/* 顶部门店切换器 */
+/* 顶部门店切换器（PC 顶栏） */
 .store-switch { padding: 6px 10px; border: 1.5px solid var(--gold); border-radius: var(--radius-sm); background: var(--bg); font-size: 14px; font-weight: 600; color: var(--wine); outline: none; cursor: pointer; max-width: 180px; }
-.app-bar .store-switch { max-width: 120px; padding: 4px 8px; }
 
 /* 无授权门店遮罩 */
 .no-store-mask { position: fixed; inset: 0; z-index: 900; background: rgba(255,255,255,.92); display: flex; align-items: center; justify-content: center; padding: 24px; }
@@ -1132,8 +1150,8 @@ tr.row-flash, tr.row-flash:hover { background-color: #FFF3CD !important; transit
 .bridge-store .prod-meta.mv-in { color: var(--success); }
 .bridge-store .prod-meta.mv-out { color: var(--wine); }
 /* 总部管理门店卡片详情统计 */
-/* 门店卡片列表：PC 每行 6 卡，窄屏回落单列 */
-.store-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+/* 门店卡片列表：PC 卡片宽度 300–420px 自适应（太窄太宽都不好看），窄屏回落单列 */
+.store-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 420px)); gap: 10px; margin-top: 10px; justify-content: center; }
 .store-grid > .bridge-store { margin-top: 0; min-width: 0; }
 .store-grid .hqs-stat-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
 .store-grid .hqs-stat { padding: 4px 2px; }
@@ -1585,8 +1603,8 @@ tr.tr-row-hit { animation: tr-hit-flash 1.2s ease; }
 .app-shell.mobile .cat-bar-row { gap: 6px; font-size: 14px; }
 .app-shell.mobile .cat-bar-name { width: 28px; font-size: 14px; }
 
-/* 3. 快捷入口 4 列 → 3 列（每列约 120px 更宽松） */
-.app-shell.mobile .quick-grid { grid-template-columns: repeat(3, 1fr); gap: 8px 6px; margin-top: 10px; }
+/* 3. 快捷入口 4 列（与 PC 一致） */
+.app-shell.mobile .quick-grid { grid-template-columns: repeat(4, 1fr); gap: 8px 6px; margin-top: 10px; }
 .app-shell.mobile .quick-item { padding: 10px 4px; gap: 4px; }
 .app-shell.mobile .quick-icon { width: 36px; height: 36px; font-size: 18px; }
 .app-shell.mobile .quick-label { font-size: 14px; }

@@ -6182,9 +6182,11 @@ class CustomerIn(BaseModel):
 
 
 @app.get("/api/customers/list")
-def customer_list(request: Request, page: int = 1, size: int = 50, keyword: str = ""):
+def customer_list(request: Request, page: int = 1, size: int = 50, keyword: str = "", filter: str = ""):
     _require_auth(request)
     q = (keyword or "").strip()
+    # 统计卡片过滤：today=今日新增 / month=本月新增（按建档时间 created，与 stats 口径一致）
+    flt = (filter or "").strip().lower()
     # 附带最近一次购买（商品/日期/金额）与购买次数，供会员卡片展示
     base = """
         SELECT c.*,
@@ -6193,20 +6195,24 @@ def customer_list(request: Request, page: int = 1, size: int = 50, keyword: str 
           (SELECT s.amount    FROM sales s WHERE s.customer_id=c.id ORDER BY s.biz_date DESC, s.id DESC LIMIT 1) last_amount,
           (SELECT COUNT(*)    FROM sales s WHERE s.customer_id=c.id) sales_count
         FROM customers c"""
+    conds, params = [], []
+    if q:
+        like = f"%{q}%"
+        conds.append("(c.name LIKE ? OR c.phone LIKE ?)")
+        params += [like, like]
+    if flt == "today":
+        conds.append("date(c.created)=date('now','localtime')")
+    elif flt == "month":
+        conds.append("substr(c.created,1,7)=substr(datetime('now','localtime'),1,7)")
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
     with _db(request) as conn:
-        if q:
-            like = f"%{q}%"
-            total = conn.execute(
-                "SELECT COUNT(*) n FROM customers WHERE name LIKE ? OR phone LIKE ?", (like, like)
-            ).fetchone()["n"]
-            rows = conn.execute(
-                base + " WHERE c.name LIKE ? OR c.phone LIKE ? "
-                "ORDER BY c.total_amount DESC LIMIT ? OFFSET ?",
-                (like, like, size, (page - 1) * size),
-            ).fetchall()
-        else:
-            total = conn.execute("SELECT COUNT(*) n FROM customers").fetchone()["n"]
-            rows = conn.execute(base + " ORDER BY c.total_amount DESC LIMIT ? OFFSET ?", (size, (page - 1) * size)).fetchall()
+        total = conn.execute(
+            "SELECT COUNT(*) n FROM customers c" + where, params
+        ).fetchone()["n"]
+        rows = conn.execute(
+            base + where + " ORDER BY c.total_amount DESC LIMIT ? OFFSET ?",
+            params + [size, (page - 1) * size],
+        ).fetchall()
         return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
 
 

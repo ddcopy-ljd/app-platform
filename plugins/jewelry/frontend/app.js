@@ -51,6 +51,7 @@ var ST = Vue.reactive({
   sales: [], saleTotal: 0,
   subList: [], subTotal: 0, subPage: 1,
   custQ: '', custStats: null,   // 会员管理：搜索关键字 + 统计（总数/今日/本月新增）
+  custFilter: '',               // 统计卡片过滤：''=全部 / today / month
   appointments: [], profile: null,
   invSum: null,
   stockOptions: [],
@@ -77,6 +78,8 @@ var ST = Vue.reactive({
   agentToken: '',
   // 系统自检铃铛：面板开关 / 被关闭的检查项（localStorage 持久化）/ 轮询定时器
   healthOpen: false,
+  storePopOpen: false,   // 手机版顶栏门店切换面板
+  langPopOpen: false,    // 「我的」页语言选择面板
   healthOff: (function () { try { return JSON.parse(localStorage.getItem('yz_health_off') || '[]'); } catch (e) { return []; } })(),
   healthTimer: null,
   health: {},            // /api/health/summary 聚合数据（防盗待处理/任务停滞/缺EPC/盘点超期/欠款）
@@ -244,6 +247,15 @@ function trendTicks() {
   for (var i = 0; i < n; i += step) out.push({ i: i, text: d.labels[i] });
   if (out.length && out[out.length - 1].i !== n - 1) out.push({ i: n - 1, text: d.labels[n - 1] });
   return out;
+}
+// 纵向网格线 x 坐标：与横轴刻度对齐（viewBox 0 0 300 100，绘图区 x=4..296）
+function trendVLines() {
+  var d = ST.trendData;
+  if (!d || !d.labels || !d.labels.length) return [];
+  var n = d.labels.length;
+  return trendTicks().map(function (tk) {
+    return { x: n === 1 ? 150 : +(((tk.i / (n - 1)) * 292 + 4).toFixed(1)) };
+  });
 }
 // 纵轴刻度（实销金额，元）：0 / 半程 / 最大值，与 SVG 网格线 y=96/52/8 对齐
 function trendYAxis() {
@@ -1121,8 +1133,9 @@ function loadSubList() {
   var u = SUB_KEYS[ST.subView];
   if (!u) return;
   var extra = '';
-  if (ST.subView === 'customers' && ST.custQ) {
-    extra = '&keyword=' + encodeURIComponent(ST.custQ.trim());
+  if (ST.subView === 'customers') {
+    if (ST.custQ) extra += '&keyword=' + encodeURIComponent(ST.custQ.trim());
+    if (ST.custFilter) extra += '&filter=' + ST.custFilter;
   }
   api('GET', u + '?page=' + ST.subPage + '&size=100' + extra).then(function (r) {
     ST.subList = r.items; ST.subTotal = r.total;
@@ -1141,6 +1154,13 @@ function onCustSearch() {
     ST.subPage = 1;
     loadSubList();
   }, 300);
+}
+
+// 统计卡片点击过滤：再次点击同一卡片取消过滤（回到全部）
+function setCustFilter(f) {
+  ST.custFilter = (ST.custFilter === f) ? '' : f;
+  ST.subPage = 1;
+  loadSubList();
 }
 
 function loadInv() {
@@ -4895,7 +4915,7 @@ var app = Vue.createApp({
     roleText: roleText,
     t: t, fmt: fmt, fmtY: fmtY, dateFmt: dateFmt,
     pctLabel: pctLabel, pctCls: pctCls, trendMax: trendMax, hasLastYear: hasLastYear,
-    setTrendRange: setTrendRange, trendLinePoints: trendLinePoints, trendScaleMax: trendScaleMax, trendTicks: trendTicks, trendYAxis: trendYAxis,
+    setTrendRange: setTrendRange, trendLinePoints: trendLinePoints, trendScaleMax: trendScaleMax, trendTicks: trendTicks, trendVLines: trendVLines, trendYAxis: trendYAxis,
     baDonutSegments: baDonutSegments, baTop5Sum: baTop5Sum,
     toggleHealth: toggleHealth,
     statusClass: statusClass,
@@ -5009,7 +5029,7 @@ var app = Vue.createApp({
     openPurchase: openPurchase, receivePurchase: receivePurchase,
     openOutsource: openOutsource, receiveOut: receiveOut,
     openCustomer: openCustomer, editCustomer: editCustomer, viewCustomer: viewCustomer, subBack: subBack,
-    onCustSearch: onCustSearch, loadCustStats: loadCustStats,
+    onCustSearch: onCustSearch, loadCustStats: loadCustStats, setCustFilter: setCustFilter,
     setAppt: setAppt, saveProfile: saveProfile, exportLogs: exportLogs,
     recordLines: recordLines, recordKind: recordKind, statusClass: statusClass, logText: logText,
     openRecordDetail: openRecordDetail, editFromDetail: editFromDetail,
@@ -5032,6 +5052,12 @@ var app = Vue.createApp({
     secAddPass: secAddPass, secDelPass: secDelPass, secAckAlarm: secAckAlarm,
     guideHttpUrl: guideHttpUrl, guideWsUrl: guideWsUrl, guideExample: guideExample,
   }
+});
+
+// 顶栏门店面板 / 「我的」语言面板：点击面板外任意处关闭（面板与按钮均已 stopPropagation）
+document.addEventListener('click', function () {
+  if (ST.storePopOpen) ST.storePopOpen = false;
+  if (ST.langPopOpen) ST.langPopOpen = false;
 });
 
 app.mount('#app');

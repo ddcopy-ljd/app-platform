@@ -9,7 +9,7 @@ var LANG_MAP = {
 };
 
 var LANG_LABELS = {
-  'zh-Hans': 'ZH', 'en': 'EN', 'it': 'IT', 'ja': '日本語', 'ko': '한국어', 'zh-Hant': '繁'
+  'zh-Hans': 'ZH', 'en': 'EN', 'it': 'IT', 'ja': '日本語', 'ko': '한국어', 'zh-Hant': '繁体'
 };
 
 var LANG_KEYS = ['zh-Hans', 'en', 'it', 'ja', 'ko', 'zh-Hant'];
@@ -178,6 +178,7 @@ var I18N = {
     'misc.tenant': '租户', 'misc.operator': '操作人', 'misc.action': '操作', 'misc.target': '目标',
     'misc.time': '时间', 'misc.result': '结果', 'misc.store': '门店',
     'misc.role.admin': '店长', 'misc.role.staff': '店员', 'misc.role.exec': '高管',
+    'misc.language': '语言',
     // 高管只读
     'role.readonlyBadge': '只读',
     'role.execReadonly': '高管账号仅可查看，不能进行该操作',
@@ -668,7 +669,7 @@ function switchLang(lang) {
 currentLang = detectLang();
 switchLang(currentLang);   // 回写规范键，清理历史脏值（如 'zh'）
 
-var I18N_VER = '20261013e136';   // 语言字典文件缓存版本（与 index.html 同步升级）
+var I18N_VER = '20261013e144';   // 语言字典文件缓存版本（与 index.html 同步升级）
 function registerLang(key, dict) { I18N[key] = dict; }
 // index.html 启动时调用：返回需在 app.js 前同步加载的字典文件名后缀（中文返回 ''）
 function i18nDictFile() { var d = LANG_MAP[currentLang]; return (d && d !== 'zh') ? d : ''; }

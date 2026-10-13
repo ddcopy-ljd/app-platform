@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>懿臻珠宝云</title>
 <link rel="icon" href="/logo/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./app.css?v=20261013e136">
+<link rel="stylesheet" href="./app.css?v=20261013e144">
 </head>
 <body>
 <div id="app">
@@ -50,7 +50,6 @@
     <div class="app-main">
       <header class="app-bar" v-if="!isPc">
         <div class="brand"><img src="/logo/logo.svg" class="app-logo" alt=""> {{ softName }}</div>
-        <div class="store-tag">{{ tenant }}</div>
         <div class="health-wrap">
           <button class="health-bell" :class="healthBad ? 'bad' : 'ok'" @click.stop="healthOpen=!healthOpen" :title="t('hc.title')">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5S10.5 3.17 10.5 4v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
@@ -65,9 +64,13 @@
             </label>
           </div>
         </div>
-        <select v-if="stores.length>1" :value="curStoreId" @change="switchStore($event.target.value)" class="store-switch" :title="t('store.switch')">
-          <option v-for="s in stores" :key="s.id" :value="s.id">🏬 {{ s.name }}</option>
-        </select>
+        <div class="store-pop-wrap" v-if="stores.length>1">
+          <button class="store-pop-btn" @click.stop="storePopOpen=!storePopOpen">{{ curStoreName }}</button>
+          <div v-if="storePopOpen" class="store-pop" @click.stop>
+            <div class="store-pop-title">{{ t('store.switch') }}</div>
+            <button v-for="s in stores" :key="s.id" class="store-pop-item" :class="{on:s.id===curStoreId}" @click="switchStore(s.id);storePopOpen=false">{{ s.name }}</button>
+          </div>
+        </div>
         <div class="avatar" @click="go('more')">{{ ((user&&user.display_name)||t('misc.role.staff'))[0] }}</div>
       </header>
       <header v-else class="pc-top">
@@ -205,6 +208,7 @@
                 <span v-for="ya in trendYAxis()" :key="ya.top" :style="{top: ya.top}">{{ ya.text }}</span>
               </div>
               <svg class="trend-svg" viewBox="0 0 300 100" preserveAspectRatio="none">
+                <line v-for="(vl, vi) in trendVLines()" :key="'v'+vi" :x1="vl.x" y1="8" :x2="vl.x" y2="96" class="trend-grid"></line>
                 <line x1="4" y1="96" x2="296" y2="96" class="trend-axis"></line>
                 <line x1="4" y1="52" x2="296" y2="52" class="trend-grid"></line>
                 <line x1="4" y1="8" x2="296" y2="8" class="trend-grid"></line>
@@ -1188,9 +1192,9 @@
           </div>
           <!-- 会员统计条 -->
           <div class="cust-stats-bar" v-if="custStats">
-            <div class="csb-item"><span class="csb-val">{{ custStats.total }}</span><span class="csb-lbl">{{ t('cust.statTotal') }}</span></div>
-            <div class="csb-item"><span class="csb-val">{{ custStats.today }}</span><span class="csb-lbl">{{ t('cust.statToday') }}</span></div>
-            <div class="csb-item"><span class="csb-val">{{ custStats.month }}</span><span class="csb-lbl">{{ t('cust.statMonth') }}</span></div>
+            <div class="csb-item clickable" :class="{'csb-on': !custFilter}" @click="custFilter && setCustFilter('')"><span class="csb-val">{{ custStats.total }}</span><span class="csb-lbl">{{ t('cust.statTotal') }}</span></div>
+            <div class="csb-item clickable" :class="{'csb-on': custFilter==='today'}" @click="setCustFilter('today')"><span class="csb-val">{{ custStats.today }}</span><span class="csb-lbl">{{ t('cust.statToday') }}</span></div>
+            <div class="csb-item clickable" :class="{'csb-on': custFilter==='month'}" @click="setCustFilter('month')"><span class="csb-val">{{ custStats.month }}</span><span class="csb-lbl">{{ t('cust.statMonth') }}</span></div>
           </div>
           <!-- 会员搜索 -->
           <div class="search-wrap" style="margin-bottom:12px">
@@ -2209,18 +2213,24 @@ Content-Type: application/json
             <div class="pf-top"><div class="pf-avatar">{{ (((user&&user.display_name)||t('misc.role.staff')))[0] }}</div><div><div class="pf-name">{{ user ? user.display_name : '' }}</div><div class="pf-role">{{ user ? roleText(user.role) : '' }}<span v-if="isExecRole()" class="ro-badge">{{ t('role.readonlyBadge') }}</span></div></div></div>
           </div>
           <div class="menu-list">
-            <div class="menu-item" @click="openSubView('customers')"><div class="menu-text">{{ t('nav.customers') }}</div></div>
-            <div class="menu-item" @click="openSubView('loans')"><div class="menu-text">{{ t('nav.loans') }}</div></div>
-            <div class="menu-item" @click="openSubView('repairs')"><div class="menu-text">{{ t('nav.repairs') }}</div></div>
-            <div class="menu-item" @click="openSubView('purchases')"><div class="menu-text">{{ t('nav.purchases') }}</div></div>
-            <div class="menu-item" @click="openSubView('outsourcings')"><div class="menu-text">{{ t('nav.outsourcings') }}</div></div>
-            <div class="menu-item" @click="openSubView('logs')"><div class="menu-text">{{ t('nav.logs') }}</div></div>
+            <div class="menu-item menu-lang" @click.stop="langPopOpen=!langPopOpen"><div class="menu-text">🌍 {{ t('misc.language') }}</div>
+              <div class="lang-cur">{{ langLabels[lang] }}<span class="menu-arrow">›</span></div>
+              <div v-if="langPopOpen" class="lang-pop" @click.stop>
+                <button v-for="k in langKeys" :key="k" class="lang-pop-item" :class="{on:lang===k}" @click="setLang(k);langPopOpen=false">{{ langLabels[k] }}</button>
+              </div>
+            </div>
+            <div class="menu-item" @click="openSubView('customers')"><div class="menu-text">👥 {{ t('nav.customers') }}</div></div>
+            <div class="menu-item" @click="openSubView('loans')"><div class="menu-text">🔁 {{ t('nav.loans') }}</div></div>
+            <div class="menu-item" @click="openSubView('repairs')"><div class="menu-text">🔧 {{ t('nav.repairs') }}</div></div>
+            <div class="menu-item" @click="openSubView('purchases')"><div class="menu-text">📥 {{ t('nav.purchases') }}</div></div>
+            <div class="menu-item" @click="openSubView('outsourcings')"><div class="menu-text">🏭 {{ t('nav.outsourcings') }}</div></div>
+            <div class="menu-item" @click="openSubView('logs')"><div class="menu-text">📋 {{ t('nav.logs') }}</div></div>
             <div class="menu-item" @click="go('showcase')"><div class="menu-text">🪟 {{ t('nav.showcase') }}</div></div>
             <div class="menu-item" @click="go('security')"><div class="menu-text">🛡️ {{ t('nav.security') }}</div></div>
-            <div class="menu-item" @click="go('appointments');loadAppt()"><div class="menu-text">{{ t('nav.appointments') }}</div></div>
+            <div class="menu-item" @click="go('appointments');loadAppt()"><div class="menu-text">📅 {{ t('nav.appointments') }}</div></div>
             <div class="menu-item" @click="go(isHqStore() ? 'shops' : 'stores')"><div class="menu-text">🏪 {{ isHqStore() ? t('nav.shops') : t('nav.stores') }}</div></div>
-            <div class="menu-item"><a href="/site" target="_blank" class="menu-text">{{ t('nav.site') }}</a></div>
-            <div class="menu-item" @click="doLogout"><div class="menu-text">{{ t('nav.logout') }}</div></div>
+            <div class="menu-item"><a href="/site" target="_blank" class="menu-text">🌐 {{ t('nav.site') }}</a></div>
+            <div class="menu-item" @click="doLogout"><div class="menu-text">🚪 {{ t('nav.logout') }}</div></div>
           </div>
           <div class="footer-version">v{{ version }} · {{ tenant }}</div>
         </section>
@@ -2245,9 +2255,9 @@ Content-Type: application/json
         </div>
         <div v-if="subView==='customers'">
           <div class="cust-stats-bar" v-if="custStats">
-            <div class="csb-item"><span class="csb-val">{{ custStats.total }}</span><span class="csb-lbl">{{ t('cust.statTotal') }}</span></div>
-            <div class="csb-item"><span class="csb-val">{{ custStats.today }}</span><span class="csb-lbl">{{ t('cust.statToday') }}</span></div>
-            <div class="csb-item"><span class="csb-val">{{ custStats.month }}</span><span class="csb-lbl">{{ t('cust.statMonth') }}</span></div>
+            <div class="csb-item clickable" :class="{'csb-on': !custFilter}" @click="custFilter && setCustFilter('')"><span class="csb-val">{{ custStats.total }}</span><span class="csb-lbl">{{ t('cust.statTotal') }}</span></div>
+            <div class="csb-item clickable" :class="{'csb-on': custFilter==='today'}" @click="setCustFilter('today')"><span class="csb-val">{{ custStats.today }}</span><span class="csb-lbl">{{ t('cust.statToday') }}</span></div>
+            <div class="csb-item clickable" :class="{'csb-on': custFilter==='month'}" @click="setCustFilter('month')"><span class="csb-val">{{ custStats.month }}</span><span class="csb-lbl">{{ t('cust.statMonth') }}</span></div>
           </div>
           <div class="search-wrap" style="margin-bottom:12px">
             <input class="search-input" v-model="custQ" :placeholder="t('cust.searchPh')" @input="onCustSearch">
@@ -3349,14 +3359,14 @@ Content-Type: application/json
 <script src="./vendor/vue.global.prod.js"></script>
 <script src="./vendor/qrcode.min.js"></script>
 <script src="./vendor/zxing.min.js"></script>
-<script src="./i18n.js?v=20261013e136"></script>
+<script src="./i18n.js?v=20261013e144"></script>
 <script>
 // 非中文时同步加载对应语言字典（i18n.<dict>.js），确保 app.js 挂载前字典就绪
 (function () {
   var _dict = (typeof i18nDictFile === 'function') ? i18nDictFile() : '';
-  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261013e136"><\/script>');
+  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261013e144"><\/script>');
 })();
 </script>
-<script src="./app.js?v=20261013e136"></script>
+<script src="./app.js?v=20261013e144"></script>
 </body>
 </html>
