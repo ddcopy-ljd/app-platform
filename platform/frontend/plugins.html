@@ -168,7 +168,7 @@
                     <button v-if="v.status === 'trial_passed'" class="btn warn sm" :disabled="busy" @click="confirmSwitch(v)">⏸ 正式切换</button>
                     <button class="btn ghost sm" @click="openLog(v)">任务日志</button>
                     <button v-if="v.has_promo && !v.is_current" class="btn ghost sm" :disabled="busy" @click="syncPromo(v)">📣 推广页同步到正式版</button>
-                    <a v-if="v.has_promo" class="btn ghost sm" :href="'/market-preview/' + detail.id + '/' + v.software_version + '/'" target="_blank" rel="noopener">📣 推广页</a>
+                    <a v-if="v.has_promo" class="btn ghost sm" :href="v.is_current ? '/market/' + detail.id + '/' : '/market-preview/' + detail.id + '/' + v.software_version + '/'" target="_blank" rel="noopener">📣 推广页</a>
                   </div>
                 </td>
               </tr>
