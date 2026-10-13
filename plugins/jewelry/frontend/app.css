@@ -612,7 +612,7 @@ a { text-decoration: none; color: inherit; }
 .side-foot { padding: 16px; border-top: 1px solid rgba(201,169,97,.2); font-size: 14px; color: rgba(247,239,224,.6); }
 .side-foot .btn { margin-top: 8px; color: #fff; border-color: rgba(201,169,97,.4); width: 100%; }
 
-.app-shell.pc .app-main { flex: 1; margin-left: var(--sidebar-w); display: flex; flex-direction: column; min-height: 100vh; }
+.app-shell.pc .app-main { flex: 1; min-width: 0; margin-left: var(--sidebar-w); display: flex; flex-direction: column; min-height: 100vh; }
 .pc-top { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; background: var(--white); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 50; box-shadow: 0 1px 4px rgba(92,34,51,.04); }
 .pc-top h1 { font-size: 18px; font-weight: 700; color: var(--text); }
 .pc-top-actions { display: flex; align-items: center; gap: 10px; }
@@ -1020,7 +1020,7 @@ select.lang-code {
 /* PC 顶部提醒滚动横幅：所有提醒类消息循环滚动 */
 .notice-marquee { display: flex; align-items: center; background: #fdf6ec; border-bottom: 1px solid #f0e2c8; height: 34px; overflow: hidden; }
 .notice-marquee .mq-label { flex-shrink: 0; padding: 0 10px; font-size: 14px; color: #8a6d1f; font-weight: 600; background: #faeeda; align-self: stretch; display: flex; align-items: center; }
-.notice-marquee .mq-viewport { flex: 1; overflow: hidden; }
+.notice-marquee .mq-viewport { flex: 1; min-width: 0; overflow: hidden; }
 .notice-marquee .mq-track { display: inline-flex; white-space: nowrap; animation: mq-scroll 40s linear infinite; will-change: transform; }
 .notice-marquee:hover .mq-track { animation-play-state: paused; }
 .notice-marquee .mq-item { font-size: 13px; padding: 0 28px; color: #6b5310; }
