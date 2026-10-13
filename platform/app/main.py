@@ -280,6 +280,12 @@ def set_current(plugin_id: str, version_id: int, user: dict = Depends(current_us
     return {"ok": True}
 
 
+@app.post("/api/plugins/{plugin_id}/versions/{version_id}/sync-promo")
+def sync_promo(plugin_id: str, version_id: int, user: dict = Depends(current_user)):
+    """把该版本（如试运行版）包内推广页复制到正式版本包，使 /market/{id}/ 立即更新。"""
+    return svc.sync_promo(plugin_id, version_id, user["username"])
+
+
 @app.delete("/api/plugins/{plugin_id}/versions/{version_id}")
 def delete_version(plugin_id: str, version_id: int, user: dict = Depends(current_user)):
     return svc.delete_version(plugin_id, version_id, user["username"])

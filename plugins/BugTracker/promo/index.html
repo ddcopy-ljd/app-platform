@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BugPulse 缺陷跟踪 · 敏捷缺陷与工程质量管理系统</title>
+<style>
+:root{--ink:#1f2430;--sub:#5b6472;--line:#e6e9ef;--bg:#f7f8fb;--pri:#3b5bdb;--pri2:#5f3dc4;--ok:#0ca678}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;color:var(--ink);background:var(--bg);line-height:1.6}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+header{position:sticky;top:0;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);z-index:10}
+.top-in{display:flex;align-items:center;justify-content:space-between;height:60px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;color:var(--ink);text-decoration:none}
+.brand .ico{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--pri),var(--pri2));color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px}
+nav a{color:var(--sub);text-decoration:none;margin-left:22px;font-size:15px}
+nav a:hover{color:var(--ink)}
+.hero{padding:72px 0 56px;background:linear-gradient(180deg,#fff 0%,var(--bg) 100%)}
+.hero h1{font-size:40px;line-height:1.25;font-weight:800}
+.hero h1 em{font-style:normal;background:linear-gradient(90deg,var(--pri),var(--pri2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p{margin-top:14px;font-size:18px;color:var(--sub);max-width:640px}
+.cta{margin-top:28px;display:flex;gap:14px;flex-wrap:wrap}
+.btn{display:inline-block;padding:12px 26px;border-radius:10px;font-size:16px;font-weight:600;text-decoration:none}
+.btn-pri{background:linear-gradient(90deg,var(--pri),var(--pri2));color:#fff;box-shadow:0 6px 18px -6px rgba(59,91,219,.5)}
+.btn-line{border:1.5px solid var(--line);color:var(--ink);background:#fff}
+.pill{display:inline-block;padding:5px 14px;border-radius:999px;background:#eef2ff;color:var(--pri);font-size:13px;font-weight:600;margin-bottom:18px}
+section{padding:56px 0}
+.sec-title{font-size:28px;font-weight:800;text-align:center}
+.sec-sub{color:var(--sub);text-align:center;margin:8px 0 34px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:0 2px 10px -6px rgba(31,36,48,.12)}
+.card .ci{width:40px;height:40px;border-radius:10px;background:#eef2ff;color:var(--pri);display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:12px}
+.card h3{font-size:17px;margin-bottom:6px}
+.card p{font-size:14px;color:var(--sub)}
+.flow{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:8px}
+.step{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 18px;font-size:15px;font-weight:600}
+.arrow{align-self:center;color:var(--sub)}
+footer{border-top:1px solid var(--line);padding:28px 0;color:var(--sub);font-size:14px;text-align:center}
+@media (max-width:640px){.hero h1{font-size:30px}nav{display:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap top-in">
+    <a class="brand" href="#top"><span class="ico">🐞</span>BugPulse 缺陷跟踪</a>
+    <nav>
+      <a href="#features">核心能力</a>
+      <a href="#flow">缺陷流转</a>
+      <a href="#report">外部上报</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero" id="top">
+  <div class="wrap">
+    <span class="pill">多项目 · 看板 / 列表双视图 · 截图凭据</span>
+    <h1>让每个缺陷<em>可追踪、可复盘、可关闭</em></h1>
+    <p>BugPulse 是敏捷缺陷与工程质量管理系统：多项目缺陷看板、状态流转、截图凭据自动压缩、评论与流转历史，并提供免登录外部上报通道。</p>
+    <div class="cta">
+      <a class="btn btn-pri" href="/portal/?plugin=bugtracker" target="_blank" rel="noopener">🎁 30 天免费试用</a>
+      <a class="btn btn-line" href="#features">了解更多</a>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <h2 class="sec-title">核心能力</h2>
+    <p class="sec-sub">从提单到关闭，全链路留痕</p>
+    <div class="grid">
+      <div class="card"><div class="ci">📋</div><h3>多项目管理</h3><p>缺陷编号按项目 KEY 自增，跨项目互不干扰。</p></div>
+      <div class="card"><div class="ci">🗂️</div><h3>缺陷看板</h3><p>待处理 / 进行中 / 待验证 / 已关闭，拖拽即流转。</p></div>
+      <div class="card"><div class="ci">🔍</div><h3>列表与筛选</h3><p>列表视图配合搜索、状态、负责人多维筛选。</p></div>
+      <div class="card"><div class="ci">📸</div><h3>截图凭据</h3><p>粘贴 / 拖拽截图自动压缩存储，证据随手可得。</p></div>
+      <div class="card"><div class="ci">💬</div><h3>评论与历史</h3><p>每次状态流转自动留痕，讨论与轨迹同页可查。</p></div>
+      <div class="card"><div class="ci">🧹</div><h3>级联删除</h3><p>删除缺陷自动清理关联截图与评论，不留孤儿数据。</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="flow" style="background:#fff">
+  <div class="wrap">
+    <h2 class="sec-title">缺陷流转</h2>
+    <p class="sec-sub">四态闭环，拖拽驱动</p>
+    <div class="flow">
+      <span class="step">🔴 待处理</span><span class="arrow">→</span>
+      <span class="step"> 进行中</span><span class="arrow">→</span>
+      <span class="step">🔵 待验证</span><span class="arrow">→</span>
+      <span class="step">🟢 已关闭</span>
+    </div>
+  </div>
+</section>
+
+<section id="report">
+  <div class="wrap">
+    <h2 class="sec-title">免登录外部上报</h2>
+    <p class="sec-sub">可嵌入任意应用的问题上报页，统一落「外部上报箱」</p>
+    <div class="grid">
+      <div class="card"><div class="ci">🔗</div><h3>嵌入即用</h3><p>其他插件可直接挂载上报入口，用户无需登录。</p></div>
+      <div class="card"><div class="ci">🛡️</div><h3>限频防刷</h3><p>内置提交频率限制，防止恶意灌水。</p></div>
+      <div class="card"><div class="ci">📥</div><h3>来源可溯</h3><p>自动记录来源插件与上报人，集中到外部上报箱处理。</p></div>
+    </div>
+    <div class="cta" style="justify-content:center;margin-top:34px">
+      <a class="btn btn-pri" href="/portal/?plugin=bugtracker" target="_blank" rel="noopener">立即开通试用</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">BugPulse 缺陷跟踪 · 懿臻多租户应用平台出品</div>
+</footer>
+
+</body>
+</html>

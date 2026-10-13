@@ -20,5 +20,6 @@
     "init": "scripts/init.py",
     "upgrade": "scripts/upgrade.py"
   },
-  "entry": "main.py"
+  "entry": "main.py",
+  "promo": "promo/index.html"
 }

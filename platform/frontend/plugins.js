@@ -248,6 +248,16 @@ createApp({
       }
     }
 
+    async function syncPromo(v) {
+      if (!confirm(`把 v${v.software_version} 包内的推广页复制到正式版本 v${detail.value.current_version}？\n（只复制推广页文件，不影响业务代码与数据）`)) return;
+      try {
+        const r = await api(`/api/plugins/${detail.value.id}/versions/${v.id}/sync-promo`, { method: 'POST', json: {} });
+        toast(`推广页已同步到正式版 v${r.to_current}（${r.copied.length} 项），/market/${detail.value.id}/ 立即生效`);
+      } catch (e) {
+        toast(e.message, true);
+      }
+    }
+
     function openPrepare(v) {
       modalVer.value = v;
       prepareTenants.value = [];
@@ -393,7 +403,7 @@ createApp({
       upFileInput, upgrading, platformVersion, pickUpgradeFile, onUpgradePicked,
       setAppStatus, serviceAction, confirmStopService,
       modal, modalVer, prepareTenants, confirmBox, logData, logBox, logLines,
-      act, openPrepare, doPrepare, confirmSwitch, confirmFormal, confirmDelete, openLog, openServiceLog,
+      act, openPrepare, doPrepare, confirmSwitch, confirmFormal, confirmDelete, openLog, openServiceLog, syncPromo,
       gw, openEntry, fixedUrl,
       statusMeta, rowClass, isNewer, fmtSize, toastMsg, toastErr, version: Platform.version,
     };

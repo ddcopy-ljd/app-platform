@@ -808,6 +808,55 @@ def set_current(plugin_id: str, version_id: int, operator: str) -> None:
         log.write(msg, "ok")
 
 
+def sync_promo(plugin_id: str, version_id: int, operator: str) -> dict:
+    """把指定版本（如试运行版）包内的推广页复制到正式版本包内。
+
+    只复制推广页目录（manifest.promo 所在目录），不触碰业务代码与数据；
+    用于正式切换前让 /market/{id}/ 固定地址提前展示新版推广内容。
+    """
+    with get_conn() as conn:
+        p = _get_plugin(conn, plugin_id)
+        src_v = _get_version(conn, plugin_id, version_id)
+        if not p["current_version"]:
+            raise PluginError("该应用尚无正式版本，无法同步推广页", 400)
+        cur_v = _find_version(conn, plugin_id, p["current_version"])
+        if not cur_v:
+            raise PluginError(f"正式版本 v{p['current_version']} 记录缺失", 404)
+        if src_v["id"] == cur_v["id"]:
+            raise PluginError("该版本已是正式版本，无需同步")
+        src_manifest = json.loads(src_v["manifest"])
+        cur_manifest = json.loads(cur_v["manifest"])
+        src_promo = src_manifest.get("promo")
+        if not src_promo:
+            raise PluginError(f"v{src_v['software_version']} 未提供推广页", 400)
+        if not cur_manifest.get("promo"):
+            raise PluginError(f"正式版 v{p['current_version']} 未声明推广页，无法定位目标目录", 400)
+
+    src_dir = (package_dir(plugin_id, src_v["software_version"]) / src_promo).resolve().parent
+    dst_dir = (package_dir(plugin_id, cur_v["software_version"]) / cur_manifest["promo"]).resolve().parent
+    if not src_dir.is_dir():
+        raise PluginError("源推广页目录不存在", 404)
+    if src_dir == dst_dir:
+        raise PluginError("源与目标为同一目录")
+
+    copied = []
+    for item in sorted(src_dir.iterdir()):
+        target = dst_dir / item.name
+        if item.is_file():
+            shutil.copy2(item, target)
+            copied.append(item.name)
+        elif item.is_dir():
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(item, target)
+            copied.append(item.name + "/")
+    with get_conn() as conn:
+        audit(conn, operator, "同步推广页", plugin_id,
+              f"v{src_v['software_version']} → 正式版 v{p['current_version']}（{len(copied)} 项）")
+    return {"ok": True, "from": src_v["software_version"],
+            "to_current": p["current_version"], "copied": copied}
+
+
 def set_app_status(plugin_id: str, status: str, operator: str) -> None:
     if status not in ("OPEN", "MAINTENANCE"):
         raise PluginError("应用状态只能为 OPEN 或 MAINTENANCE")
