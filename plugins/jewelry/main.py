@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextvars
 import json
 import logging
 import os
@@ -77,12 +78,12 @@ _lock = threading.Lock()
 # 统一在中间件按路径前缀裁决，避免逐个端点散落判断；设备/公开链路无会话，不受此限。
 _EXEC_ADMIN_PREFIXES = (
     "/api/admin/", "/api/shops", "/api/stores", "/api/profile", "/api/biz-config",
-    "/api/categories", "/api/product-types", "/api/label-templates",
+    "/api/categories", "/api/product-types", "/api/label-templates", "/api/product-tags",
     "/api/clerk-types", "/api/locations", "/api/sensors",
 )
 _EXEC_PASS_PREFIXES = ("/api/auth/",)
 _EXEC_READONLY_DETAIL = "高管账号为只读账号，仅可查看，不能进行该操作"
-_EXEC_NONHQ_DETAIL = "总部/系统设置仅可在总店修改，请先切换到总店"
+_EXEC_NONHQ_DETAIL = "总部/系统设置仅可在总部视图修改，请先切换到总部"
 
 
 def _hq_store_id(conn: sqlite3.Connection) -> int:
@@ -248,7 +249,7 @@ def _ensure_seed_store(conn: sqlite3.Connection, user_id: int, username: str) ->
     # 全空 → 新建总店
     cur = conn.execute(
         "INSERT INTO stores(name,code,owner) VALUES(?,?,?)",
-        ("总店", "HQ", username),
+        ("总部", "HQ", username),
     )
     store_id = cur.lastrowid
     try:
@@ -297,14 +298,25 @@ def _current_store(request: Request, conn: sqlite3.Connection, sess: dict | None
         hdr = (request.headers.get("X-Store-Id") or "").strip()
         cur = int(hdr) if hdr.isdigit() and int(hdr) in ids else ids[0]
         sess["store_id"] = cur
+    _cur_sid_var.set(cur)  # 供 _log 等无 request 上下文的辅助函数读取当前工作门店
     return cur, rows
 
 
+_cur_sid_var = contextvars.ContextVar("cur_store_sid", default=0)  # 当前请求的工作门店（由 _current_store 写入）
+
+
 def _log(conn: sqlite3.Connection, operator: str, action: str, target: str, result: str = "成功") -> None:
+    """操作日志：store_id 记当前工作门店（0=无门店上下文，归总店视图）；门店列显示实际门店名。"""
     try:
+        sid = _cur_sid_var.get()
+        store_name = "总部"
+        if sid:
+            row = conn.execute("SELECT name FROM stores WHERE id=?", (sid,)).fetchone()
+            if row:
+                store_name = row["name"]
         conn.execute(
-            "INSERT INTO operate_logs(operator,store,action,target,result) VALUES(?,?,?,?,?)",
-            (operator, "总店", action, target, result),
+            "INSERT INTO operate_logs(operator,store,action,target,result,store_id) VALUES(?,?,?,?,?,?)",
+            (operator, store_name, action, target, result, sid or 0),
         )
         conn.commit()
     except Exception:
@@ -319,8 +331,9 @@ def _inv(conn: sqlite3.Connection, product_id: int | None, epc: str, typ: str, o
     )
 
 
-def _touch_customer(conn: sqlite3.Connection, name: str, phone: str, amount: float, due: float) -> int:
-    """销售成交后回写客户：存在则累加累计消费/欠款，不存在则建档（散客）。返回 customer_id（无则 0）。"""
+def _touch_customer(conn: sqlite3.Connection, name: str, phone: str, amount: float, due: float,
+                    store_id: int = 0) -> int:
+    """销售成交后回写客户：存在则累加累计消费/欠款，不存在则建档（散客，归属当前工作门店）。返回 customer_id（无则 0）。"""
     if not phone and not name:
         return 0
     cust = None
@@ -333,8 +346,8 @@ def _touch_customer(conn: sqlite3.Connection, name: str, phone: str, amount: flo
         )
         return cust["id"]
     cur = conn.execute(
-        "INSERT INTO customers(name,phone,level,total_amount,due_amount,created) VALUES(?,?,?,?,?,datetime('now','localtime'))",
-        (name or "散客", phone or "", "普通", amount, max(due, 0)),
+        "INSERT INTO customers(name,phone,level,total_amount,due_amount,created,store_id) VALUES(?,?,?,?,?,datetime('now','localtime'),?)",
+        (name or "散客", phone or "", "普通", amount, max(due, 0), store_id or 0),
     )
     return cur.lastrowid
 
@@ -1434,6 +1447,62 @@ def dashboard_category_sales(request: Request, start: str = Query(default=""), e
         ]}
 
 
+@app.get("/api/dashboard/tag-stats")
+def dashboard_tag_stats(request: Request, start: str = Query(default=""), end: str = Query(default=""),
+                        tag_ids: str = Query(default="")):
+    """商品标签分组统计：每个标签各为一组，多标签商品在每组重复计入（pct 分母=各组合计，非真实总额）。
+    双口径：库存（在库数量/成本/标价）+ 销售（金额/件数，排除已冲红，区间缺省=近6个月）。
+    tag_ids 逗号分隔可只统计选中标签；缺省=全部标签。成本受 can_view_cost 列级权限限制。"""
+    sess = _require_auth(request)
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
+        ids = [int(x) for x in tag_ids.replace(" ", "").split(",") if x.isdigit()]
+        sel = (" AND t.id IN (" + ",".join("?" * len(ids)) + ")") if ids else ""
+        tags = conn.execute(
+            "SELECT t.id,t.name,t.color FROM product_tags t WHERE 1=1" + sel +
+            " ORDER BY t.sort_order,t.id", ids).fetchall()
+        # 库存口径（与销售口径分开两条查询，禁止同一条 JOIN 交叉翻倍）
+        stock_by = {r["tag_id"]: r for r in conn.execute(
+            "SELECT t.id tag_id, COUNT(*) n, IFNULL(SUM(p.cost),0) c, IFNULL(SUM(p.price),0) s "
+            "FROM product_tag_links l JOIN product_tags t ON t.id=l.tag_id "
+            "JOIN products p ON p.id=l.product_id "
+            "WHERE p.status='在库' AND p.store_id=?" + sel + " GROUP BY t.id",
+            [sid] + ids).fetchall()}
+        if start and end:
+            rs, re_ = start[:10], end[:10]
+            if rs > re_:
+                rs, re_ = re_, rs
+            date_cond, date_args = "s.biz_date BETWEEN ? AND ?", [rs, re_]
+        else:
+            rs, re_ = "", ""
+            date_cond = "s.biz_date >= date('now','start of month','-5 months')"
+            date_args = []
+        sale_by = {r["tag_id"]: r for r in conn.execute(
+            "SELECT t.id tag_id, IFNULL(SUM(s.amount),0) a, COUNT(*) n "
+            "FROM sales s JOIN products p ON p.id=s.product_id "
+            "JOIN product_tag_links l ON l.product_id=p.id JOIN product_tags t ON t.id=l.tag_id "
+            "WHERE s.status!='已冲红' AND (s.store_id=? OR s.store_id=0) AND " + date_cond + sel +
+            " GROUP BY t.id", [sid] + date_args + ids).fetchall()}
+        can_cost = _can_view_cost(conn, sess)
+        sum_price = sum(stock_by[t["id"]]["s"] for t in tags if t["id"] in stock_by) or 1
+        sum_amount = sum(sale_by[t["id"]]["a"] for t in tags if t["id"] in sale_by) or 1
+        items = []
+        for t in tags:
+            st, sa = stock_by.get(t["id"]), sale_by.get(t["id"])
+            items.append({
+                "tag_id": t["id"], "name": t["name"], "color": t["color"],
+                "stock_count": st["n"] if st else 0,
+                "stock_cost": round(st["c"], 2) if st and can_cost else (None if st else 0),
+                "stock_price": round(st["s"], 2) if st else 0,
+                "stock_pct": round((st["s"] if st else 0) * 100 / sum_price, 1),
+                "sale_amount": round(sa["a"], 2) if sa else 0,
+                "sale_count": sa["n"] if sa else 0,
+                "sale_pct": round((sa["a"] if sa else 0) * 100 / sum_amount, 1),
+            })
+        return {"items": items, "start": rs, "end": re_,
+                "note": "多标签商品在各标签组重复计入，占比分母为各组合计"}
+
+
 @app.get("/api/dashboard/biz-analysis")
 def dashboard_biz_analysis(request: Request, start: str = Query(default=""), end: str = Query(default="")):
     """经营分析（区间口径，缺省=本月）：利润 / 会员 / 销售效率 / 分类实销 TOP。
@@ -1523,18 +1592,51 @@ def dashboard_biz_analysis(request: Request, start: str = Query(default=""), end
         }
 
 
-# ---- 实时金价：新浪国际黄金（伦敦金 hf_XAU）+ 美元汇率，进程内缓存 5 分钟 ----
+# ---- 实时金价：新浪国际黄金（伦敦金 hf_XAU）+ 汇率，进程内缓存 5 分钟 ----
 _GOLD_TTL = 300
 _gold_cache: dict = {"ts": 0.0, "data": None}
 
+# 当地货币映射：ISO 币种代码 →（新浪外汇符号, 符号名）。
+# 新浪外汇符号有两类：主流币用 XXXCNY（取第 2 字段），JPY/KRW 用 fx_s 前缀（取第 2 字段）。
+# 汇率含义统一为「1 外币 = ? 人民币」。
+_GOLD_FX_SYMBOLS = {
+    "CNY": ("USDCNY", 1),          # 人民币：直接用美元汇率
+    "USD": ("USDCNY", 1),
+    "EUR": ("EURCNY", 1),
+    "GBP": ("GBPCNY", 1),
+    "JPY": ("fx_sjpycny", 1),
+    "KRW": ("fx_skrwcny", 1),
+    "SGD": ("SGDCNY", 1),
+    "AUD": ("AUDCNY", 1),
+    "CAD": ("CADCNY", 1),
+    "CHF": ("CHFCNY", 1),
+    "THB": ("fx_sthbcny", 1),
+    "INR": ("fx_sinrcny", 1),
+    "MYR": ("fx_smyrcny", 1),
+    "HKD": ("fx_shkdcny", 1),
+}
+_GOLD_CCY_SYMBOL = {
+    "CNY": "￥", "USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "KRW": "₩",
+    "SGD": "S$", "AUD": "A$", "CAD": "C$", "CHF": "CHF ", "THB": "฿",
+    "INR": "₹", "MYR": "RM ", "HKD": "HK$",
+}
 
-def _sina_quotes() -> tuple[float | None, float | None]:
-    """拉新浪行情（GBK、须带 Referer），返回（伦敦金 USD/盎司, 美元汇率）。
 
-    hf_XAU 第 1 字段为现价；USDCNY 第 1 字段是时间、第 2 字段才是汇率。
+def _sina_gold_and_fx(codes: list[str]) -> tuple[float | None, dict[str, float | None]]:
+    """拉新浪行情（GBK、须带 Referer）。
+
+    返回（伦敦金 USD/盎司, {币种: 1外币=?人民币}）。
+    hf_XAU 第 1 字段为现价；外汇符号第 2 字段为对人民币汇率（USDCNY 亦然）。
     """
+    syms = ["hf_XAU"]
+    seen = set()
+    for c in codes:
+        s = _GOLD_FX_SYMBOLS.get(c)
+        if s and s[0] not in seen:
+            seen.add(s[0])
+            syms.append(s[0])
     req = urllib.request.Request(
-        "https://hq.sinajs.cn/list=hf_XAU,USDCNY",
+        "https://hq.sinajs.cn/list=" + ",".join(syms),
         headers={"Referer": "https://finance.sina.com.cn",
                  "User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=8) as resp:
@@ -1551,33 +1653,56 @@ def _sina_quotes() -> tuple[float | None, float | None]:
         except (ValueError, IndexError):
             return None
 
-    return _pick("hf_XAU", 0), _pick("USDCNY", 1)
+    usd_oz = _pick("hf_XAU", 0)
+    fx_map: dict[str, float | None] = {}
+    for c in codes:
+        s = _GOLD_FX_SYMBOLS.get(c)
+        if not s:
+            fx_map[c] = None
+            continue
+        # USDCNY/CNY 基准：1 美元 = ? 人民币；对人民币本身即汇率=1
+        fx_map[c] = 1.0 if c == "CNY" else _pick(s[0], s[1])
+    return usd_oz, fx_map
 
 
 @app.get("/api/dashboard/gold")
-def dashboard_gold(request: Request):
-    """国际金价（伦敦金 USD/盎司 → 元/克）+ 门店零售克价（biz_config.gold_price）。"""
+def dashboard_gold(request: Request, ccy: str = "CNY"):
+    """国际金价（伦敦金 USD/盎司 → 按当地货币/克）+ 门店零售克价。
+
+    ccy：ISO 币种代码（前端按浏览器地区传入），默认人民币。
+    """
     _require_auth(request)
+    ccy = (ccy or "CNY").strip().upper()[:3]
+    if ccy not in _GOLD_FX_SYMBOLS:
+        ccy = "CNY"
     now = time.time()
-    if _gold_cache["data"] is not None and now - _gold_cache["ts"] < _GOLD_TTL:
-        data = dict(_gold_cache["data"])
+    cache = _gold_cache
+    if cache["data"] is not None and cache["ccy"] == ccy and now - cache["ts"] < _GOLD_TTL:
+        data = dict(cache["data"])
     else:
-        intl_usd = intl_cny = None
+        intl_local = None
+        intl_usd = None
         try:
-            usd_oz, fx = _sina_quotes()
+            usd_oz, fx_map = _sina_gold_and_fx([ccy, "USD"])
             if usd_oz:
                 intl_usd = round(usd_oz, 2)
-                if fx:
-                    intl_cny = round(usd_oz * fx / 31.1035, 2)
+                # 伦敦金 USD/盎司 → 当地货币/克：
+                # 每克美元 = usd_oz/31.1035；fx = 「1 外币 = ? 人民币」；
+                # USD→当地币的换算 = fx_usd / fx_local（两者都以人民币为中介）。
+                fx_local, fx_usd = fx_map.get(ccy), fx_map.get("USD")
+                if fx_local and fx_usd:
+                    intl_local = round(usd_oz / 31.1035 * (fx_usd / fx_local), 2)
         except Exception as e:
             logger.warning("金价行情获取失败: %s", e)
-        data = {"intlUsd": intl_usd, "intlPrice": intl_cny,
+        data = {"intlUsd": intl_usd, "intlPrice": intl_local, "ccy": ccy,
+                "ccySymbol": _GOLD_CCY_SYMBOL.get(ccy, ccy + " "),
                 "intlTime": datetime.now().strftime("%H:%M") if intl_usd else ""}
         if intl_usd:  # 成功才刷新缓存；失败时保留旧值继续降级返回
-            _gold_cache["ts"] = now
-            _gold_cache["data"] = dict(data)
-        elif _gold_cache["data"]:
-            data = dict(_gold_cache["data"])
+            cache["ts"] = now
+            cache["ccy"] = ccy
+            cache["data"] = dict(data)
+        elif cache["data"] and cache["ccy"] == ccy:
+            data = dict(cache["data"])
     with _db(request) as conn:
         r = conn.execute("SELECT IFNULL(gold_price,0) g FROM biz_config WHERE id=1").fetchone()
         data["retailPrice"] = round(r["g"], 2) if r and r["g"] else 0
@@ -1752,6 +1877,39 @@ class ProductIn(BaseModel):
     high_value: int = 0
     location_id: int = 0
     cert_location_id: int = 0
+    tag_ids: list[int] = []
+
+
+def _set_product_tags(conn: sqlite3.Connection, pid: int, tag_ids: list[int]) -> None:
+    """覆盖式写入商品标签：校验标签存在后先删后插（与商品保存同事务提交）。"""
+    ids = sorted({int(t) for t in (tag_ids or []) if t})
+    if ids:
+        ph = ",".join("?" * len(ids))
+        found = {r["id"] for r in conn.execute(
+            f"SELECT id FROM product_tags WHERE id IN ({ph})", ids).fetchall()}
+        missing = sorted(set(ids) - found)
+        if missing:
+            raise HTTPException(400, f"标签不存在：{missing}")
+    conn.execute("DELETE FROM product_tag_links WHERE product_id=?", (pid,))
+    if ids:
+        conn.executemany("INSERT INTO product_tag_links(product_id,tag_id) VALUES(?,?)",
+                         [(pid, t) for t in ids])
+
+
+def _attach_tags(conn: sqlite3.Connection, items: list[dict]) -> None:
+    """商品列表/详情批量附带 tags：一次 IN 联表查询按商品分组，避免逐行子查询。"""
+    pids = [it["id"] for it in items if it.get("id")]
+    by_pid: dict[int, list] = {}
+    if pids:
+        ph = ",".join("?" * len(pids))
+        for tr in conn.execute(
+                f"SELECT l.product_id,t.id,t.name,t.color FROM product_tag_links l "
+                f"JOIN product_tags t ON t.id=l.tag_id WHERE l.product_id IN ({ph}) "
+                "ORDER BY t.sort_order,t.id", pids).fetchall():
+            by_pid.setdefault(tr["product_id"], []).append(
+                {"id": tr["id"], "name": tr["name"], "color": tr["color"]})
+    for it in items:
+        it["tags"] = by_pid.get(it["id"], [])
 
 
 # ---------------------------------------------------------------- 语言 / 业务配置 / 分类
@@ -1978,6 +2136,79 @@ def product_type_bind_template(code: str, body: ProductTypeTemplateIn, request: 
         return {"ok": True}
 
 
+# ---------------------------------------------------------------- 商品标签（业务统计字典，租户库内私有、门店共用）
+
+class ProductTagIn(BaseModel):
+    name: str = ""
+    color: str = ""
+    sort_order: int = 0
+
+
+@app.get("/api/product-tags")
+def product_tags_list(request: Request):
+    _require_auth(request)
+    with _db(request) as conn:
+        rows = conn.execute(
+            "SELECT t.*, (SELECT COUNT(*) FROM product_tag_links l WHERE l.tag_id=t.id) AS used_count "
+            "FROM product_tags t ORDER BY t.sort_order, t.id"
+        ).fetchall()
+        return {"list": [dict(r) for r in rows]}
+
+
+@app.post("/api/product-tags")
+def product_tag_create(body: ProductTagIn, request: Request):
+    op = _require_auth(request)
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(400, "标签名不能为空")
+    if len(name) > 20:
+        raise HTTPException(400, "标签名不能超过 20 字")
+    with _db(request) as conn:
+        if conn.execute("SELECT 1 FROM product_tags WHERE name=?", (name,)).fetchone():
+            raise HTTPException(400, f"标签「{name}」已存在")
+        cur = conn.execute("INSERT INTO product_tags(name,color,sort_order) VALUES(?,?,?)",
+                           (name, (body.color or "").strip(), body.sort_order))
+        conn.commit()
+        _log(conn, op["username"], "新建商品标签", name)
+        return {"ok": True, "id": cur.lastrowid}
+
+
+@app.put("/api/product-tags/{tid}")
+def product_tag_update(tid: int, body: ProductTagIn, request: Request):
+    op = _require_auth(request)
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(400, "标签名不能为空")
+    if len(name) > 20:
+        raise HTTPException(400, "标签名不能超过 20 字")
+    with _db(request) as conn:
+        if not conn.execute("SELECT id FROM product_tags WHERE id=?", (tid,)).fetchone():
+            raise HTTPException(404, "标签不存在")
+        if conn.execute("SELECT id FROM product_tags WHERE name=? AND id<>?", (name, tid)).fetchone():
+            raise HTTPException(400, f"标签「{name}」已存在")
+        conn.execute("UPDATE product_tags SET name=?,color=?,sort_order=? WHERE id=?",
+                     (name, (body.color or "").strip(), body.sort_order, tid))
+        conn.commit()
+        _log(conn, op["username"], "更新商品标签", f"#{tid} {name}")
+        return {"ok": True}
+
+
+@app.delete("/api/product-tags/{tid}")
+def product_tag_delete(tid: int, request: Request):
+    """删除标签并级联解除商品关联（标签是软属性，不拒绝删除；关联数由前端确认）。"""
+    op = _require_auth(request)
+    with _db(request) as conn:
+        row = conn.execute("SELECT name FROM product_tags WHERE id=?", (tid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "标签不存在")
+        used = conn.execute("SELECT COUNT(*) n FROM product_tag_links WHERE tag_id=?", (tid,)).fetchone()["n"]
+        conn.execute("DELETE FROM product_tag_links WHERE tag_id=?", (tid,))
+        conn.execute("DELETE FROM product_tags WHERE id=?", (tid,))
+        conn.commit()
+        _log(conn, op["username"], "删除商品标签", f"#{tid} {row['name']}（解除 {used} 件商品关联）")
+        return {"ok": True, "unlinked": used}
+
+
 # ---------------------------------------------------------------- 标签模板 CRUD
 
 class LabelTemplateIn(BaseModel):
@@ -2169,8 +2400,9 @@ def product_list(request: Request, q: str = "", status: str = "", page: int = 1,
         args.append(sid)
         if q:
             where.append("(products.name LIKE ? OR products.code LIKE ? OR products.rfid_epc LIKE ?"
+                         " OR products.material LIKE ?"
                          " OR l1.name LIKE ? OR l1.code LIKE ? OR l2.name LIKE ? OR l2.code LIKE ?)")
-            args += [f"%{q}%"] * 7
+            args += [f"%{q}%"] * 8
         if status:
             where.append("products.status=?")
             args.append(status)
@@ -2193,6 +2425,7 @@ def product_list(request: Request, q: str = "", status: str = "", page: int = 1,
         ).fetchall()
         # 列级权限：无成本权限时逐行抹掉 cost（前端 *** 渲染），防止从接口直取
         items = _hide_cost([dict(r) for r in rows], _can_view_cost(conn, sess))
+        _attach_tags(conn, items)
         return {"total": total, "page": page, "size": size, "items": items}
 
 
@@ -2366,7 +2599,9 @@ def product_detail(pid: int, request: Request):
             raise HTTPException(404, "商品不存在")
         if row["store_id"] != sid:
             raise HTTPException(403, "该商品不属于当前工作门店")
-        return _hide_cost(dict(row), _can_view_cost(conn, sess))
+        d = _hide_cost(dict(row), _can_view_cost(conn, sess))
+        _attach_tags(conn, [d])
+        return d
 
 
 @app.post("/api/products")
@@ -2394,6 +2629,7 @@ def product_create(body: ProductIn, request: Request):
              body.location_id or 0, body.cert_location_id or 0),
         )
         _inv(conn, cur.lastrowid, epc, "in", op["username"], store_id=sid)
+        _set_product_tags(conn, cur.lastrowid, body.tag_ids)
         conn.commit()
         _log(conn, op["username"], "新增商品", body.code)
         return {"id": cur.lastrowid, "rfid_epc": epc}
@@ -2436,6 +2672,7 @@ def product_update(pid: int, body: ProductIn, request: Request):
              body.showcase_public, body.showcase_order, body.showcase_desc, body.origin, body.high_value,
              body.location_id or 0, body.cert_location_id or 0, pid),
         )
+        _set_product_tags(conn, pid, body.tag_ids)
         conn.commit()
         _log(conn, op["username"], "修改商品", f"#{pid} {body.code}")
         return {"ok": True, "rfid_epc": epc}
@@ -2451,6 +2688,7 @@ def product_delete(pid: int, request: Request):
         if row["status"] not in ("在库",):
             raise HTTPException(400, "仅允许删除在库商品")
         conn.execute("DELETE FROM products WHERE id=?", (pid,))
+        conn.execute("DELETE FROM product_tag_links WHERE product_id=?", (pid,))  # 级联清标签，防统计虚增
         conn.commit()
         _log(conn, op["username"], "删除商品", f"#{pid}")
         return {"ok": True}
@@ -2480,6 +2718,7 @@ def product_batch_delete(body: ProductBatchIds, request: Request):
         skipped = len(rows) - len(ids_ok) + (len(body.ids) - len(rows))
         if ids_ok:
             conn.execute(f"DELETE FROM products WHERE id IN ({','.join('?'*len(ids_ok))})", ids_ok)
+            conn.execute(f"DELETE FROM product_tag_links WHERE product_id IN ({','.join('?'*len(ids_ok))})", ids_ok)  # 级联清标签
             conn.commit()
             for pid in ids_ok:
                 _log(conn, op["username"], "删除商品", f"#{pid}")
@@ -2509,16 +2748,25 @@ def product_batch_copy(body: ProductBatchIds, request: Request):
             while conn.execute("SELECT 1 FROM products WHERE code=?", (new_code,)).fetchone():
                 count += 1
                 new_code = r["code"] + "-" + str(count + 1)
+            epc = _gen_type_epc(conn, r["product_type_code"] or "", sid)  # 复制品生成新 EPC
             conn.execute(
-                """INSERT INTO products(code,barcode,name,category_id,category,type_id,type,material,
-                   weight,unit,price,cost,store_id,location_id,status,showcase_public,high_value,
-                   has_cert,remark)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (new_code, r["barcode"], r["name"], r["category_id"], r["category"],
-                 r["type_id"], r["type"], r["material"], r["weight"], r["unit"],
-                 r["price"], r["cost"], sid, r["location_id"] or 0, "在库",
-                 0, 0, r["has_cert"], r["remark"]),
+                """INSERT INTO products(code,name,name_i18n,category,category_code,material,
+                   product_type,product_type_code,weight,size,cert,cost,price,
+                   store_id,rfid_epc,status,showcase_public,origin,high_value,
+                   location_id,cert_location_id)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (new_code, r["name"], r["name_i18n"] or "{}", r["category"], r["category_code"],
+                 r["material"], r["product_type"], r["product_type_code"],
+                 r["weight"], r["size"], r["cert"], r["cost"], r["price"],
+                 sid, epc, "在库", 0, r["origin"], r["high_value"] or 0,
+                 r["location_id"] or 0, r["cert_location_id"] or 0),
             )
+            new_pid = conn.execute("SELECT id FROM products WHERE code=?", (new_code,)).fetchone()["id"]
+            _inv(conn, new_pid, epc, "in", op["username"], store_id=sid)
+            # 复制商品一并继承源商品标签
+            conn.execute(
+                "INSERT OR IGNORE INTO product_tag_links(product_id,tag_id) "
+                "SELECT ?,tag_id FROM product_tag_links WHERE product_id=?", (new_pid, r["id"]))
             count += 1
         conn.commit()
         _log(conn, op["username"], "批量复制商品", f"{count} 件")
@@ -5288,7 +5536,7 @@ def sale_create(body: SaleReq, request: Request):
                 "INSERT INTO sale_payments(sale_id,method,amount,seq) VALUES(?,?,?,?)",
                 (sale_id, m, amt, pseq))
         # 客户回写 + 关联会员；积分按实付 1 元 = 1 分累计
-        customer_id = _touch_customer(conn, body.customer, body.phone, payable, max(0.0, payable - paid))
+        customer_id = _touch_customer(conn, body.customer, body.phone, payable, max(0.0, payable - paid), sid)
         if customer_id:
             conn.execute("UPDATE sales SET customer_id=? WHERE id=?", (customer_id, sale_id))
             conn.execute("UPDATE customers SET points=IFNULL(points,0)+? WHERE id=?", (paid, customer_id))
@@ -5547,25 +5795,33 @@ def _store_card_stats(conn, rows, sess):
 
 @app.put("/api/stores/{sid}")
 def store_update(sid: int, body: dict, request: Request):
-    """更新门店基础信息/归属店铺。"""
-    _require_admin(request)
+    """更新门店基础信息/归属店铺。总部视图可改任意门店；分店视图仅可改本店，
+    且归属店铺由总部决定（忽略传入 shop_id，保持原值）。"""
+    sess = _require_admin(request)
     name = str(body.get("name") or "").strip()
     if not name:
         raise HTTPException(400, "门店名称必填")
     with _db(request) as conn:
-        row = conn.execute("SELECT id FROM stores WHERE id=?", (sid,)).fetchone()
+        row = conn.execute("SELECT id, shop_id FROM stores WHERE id=?", (sid,)).fetchone()
         if not row:
             raise HTTPException(404, "门店不存在")
-        shop_id = int(body.get("shop_id") or 0)
-        if shop_id:
-            if not conn.execute("SELECT 1 FROM shops WHERE id=?", (shop_id,)).fetchone():
-                raise HTTPException(400, "所属店铺不存在")
+        cur_sid, _ = _current_store(request, conn, sess)
+        if cur_sid != _hq_store_id(conn):
+            if sid != cur_sid:
+                raise HTTPException(403, "分店仅可修改本店资料，其他门店请切换到总部操作")
+            shop_id = row["shop_id"]
         else:
-            shop_id = conn.execute("SELECT id FROM shops ORDER BY id LIMIT 1").fetchone()["id"]
+            shop_id = int(body.get("shop_id") or 0)
+            if shop_id:
+                if not conn.execute("SELECT 1 FROM shops WHERE id=?", (shop_id,)).fetchone():
+                    raise HTTPException(400, "所属店铺不存在")
+            else:
+                shop_id = conn.execute("SELECT id FROM shops ORDER BY id LIMIT 1").fetchone()["id"]
         try:
             conn.execute(
                 "UPDATE stores SET name=?, owner=?, shop_id=? WHERE id=?",
                 (name, str(body.get("owner") or ""), shop_id, sid))
+            _log(conn, sess.get("username", ""), "编辑门店", f"#{sid} {name}")
             conn.commit()
         except sqlite3.IntegrityError:
             raise HTTPException(400, "门店信息保存失败")
@@ -5989,7 +6245,7 @@ def deposit_create(body: DepositIn, request: Request):
              body.promised_date, body.delivery_time, body.deliver_requirements,
              body.reminder_days, sid),
         )
-        _touch_customer(conn, body.customer, body.phone, body.deposit, body.balance)
+        _touch_customer(conn, body.customer, body.phone, body.deposit, body.balance, sid)
         conn.commit()
         _log(conn, op["username"], "收定金",
              f"#{cur.lastrowid} 客户{body.customer} 商品{name or '未指定'} "
@@ -6183,7 +6439,7 @@ class CustomerIn(BaseModel):
 
 @app.get("/api/customers/list")
 def customer_list(request: Request, page: int = 1, size: int = 50, keyword: str = "", filter: str = ""):
-    _require_auth(request)
+    sess = _require_auth(request)
     q = (keyword or "").strip()
     # 统计卡片过滤：today=今日新增 / month=本月新增（按建档时间 created，与 stats 口径一致）
     flt = (filter or "").strip().lower()
@@ -6204,8 +6460,13 @@ def customer_list(request: Request, page: int = 1, size: int = 50, keyword: str 
         conds.append("date(c.created)=date('now','localtime')")
     elif flt == "month":
         conds.append("substr(c.created,1,7)=substr(datetime('now','localtime'),1,7)")
-    where = (" WHERE " + " AND ".join(conds)) if conds else ""
     with _db(request) as conn:
+        # 会员按门店隔离：总店工作视图可看全部；分店只看本店注册的会员（store_id=0 历史会员归总店）
+        sid, _ = _current_store(request, conn, sess)
+        if sid != _hq_store_id(conn):
+            conds.append("c.store_id=?")
+            params.append(sid)
+        where = (" WHERE " + " AND ".join(conds)) if conds else ""
         total = conn.execute(
             "SELECT COUNT(*) n FROM customers c" + where, params
         ).fetchone()["n"]
@@ -6218,15 +6479,19 @@ def customer_list(request: Request, page: int = 1, size: int = 50, keyword: str 
 
 @app.get("/api/customers/stats")
 def customer_stats(request: Request):
-    """会员统计：总数 / 今日新增 / 本月新增（按建档时间 created 统计）。"""
-    _require_auth(request)
+    """会员统计：总数 / 今日新增 / 本月新增（按建档时间 created 统计；分店口径=本店，总店=全部）。"""
+    sess = _require_auth(request)
     with _db(request) as conn:
-        total = conn.execute("SELECT COUNT(*) n FROM customers").fetchone()["n"]
+        sid, _ = _current_store(request, conn, sess)
+        scope, sargs = ("", []) if sid == _hq_store_id(conn) else (" WHERE store_id=?", [sid])
+        total = conn.execute("SELECT COUNT(*) n FROM customers" + scope, sargs).fetchone()["n"]
+        tcond = "date(created)=date('now','localtime')"
+        mcond = "substr(created,1,7)=substr(datetime('now','localtime'),1,7)"
+        joiner = " AND " if scope else " WHERE "
         today = conn.execute(
-            "SELECT COUNT(*) n FROM customers WHERE date(created)=date('now','localtime')").fetchone()["n"]
+            "SELECT COUNT(*) n FROM customers" + scope + joiner + tcond, sargs).fetchone()["n"]
         month = conn.execute(
-            "SELECT COUNT(*) n FROM customers "
-            "WHERE substr(created,1,7)=substr(datetime('now','localtime'),1,7)").fetchone()["n"]
+            "SELECT COUNT(*) n FROM customers" + scope + joiner + mcond, sargs).fetchone()["n"]
         return {"total": total, "today": today, "month": month}
 
 
@@ -6263,11 +6528,12 @@ def customer_create(body: CustomerIn, request: Request):
     if gd is not None and not (0 < gd <= 1):
         raise HTTPException(400, "金价折扣需在 0~1 之间（如 0.98）")
     with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
         cur = conn.execute(
-            "INSERT INTO customers(name,phone,level,birthday,anniversary,preference,gold_discount,created) "
-            "VALUES(?,?,?,?,?,?,?,datetime('now','localtime'))",
+            "INSERT INTO customers(name,phone,level,birthday,anniversary,preference,gold_discount,created,store_id) "
+            "VALUES(?,?,?,?,?,?,?,datetime('now','localtime'),?)",
             (body.name, body.phone, body.level, body.birthday, body.anniversary, body.preference,
-             gd if gd is not None else 1.0),
+             gd if gd is not None else 1.0, sid),
         )
         conn.commit()
         _log(conn, op["username"], "新增客户", body.name)
@@ -6397,7 +6663,7 @@ def repair_update(rid: int, body: RepairIn, request: Request):
              body.promised_date, body.status, body.technician, body.remark, done, rid),
         )
         if old and old["status"] != "已完成" and body.status == "已完成" and body.actual_fee:
-            _touch_customer(conn, body.customer, body.phone, body.actual_fee, 0)
+            _touch_customer(conn, body.customer, body.phone, body.actual_fee, 0, sid)
         conn.commit()
         _log(conn, op["username"], "更新维修",
              f"#{rid} {body.item} 状态{old['status']}→{body.status}"
@@ -6554,18 +6820,28 @@ def outsource_receive(oid: int, request: Request):
 
 @app.get("/api/logs")
 def log_list(request: Request, page: int = 1, size: int = 80):
-    _require_auth(request)
+    sess = _require_auth(request)
     with _db(request) as conn:
-        total = conn.execute("SELECT COUNT(*) n FROM operate_logs").fetchone()["n"]
-        rows = conn.execute("SELECT * FROM operate_logs ORDER BY id DESC LIMIT ? OFFSET ?", (size, (page - 1) * size)).fetchall()
+        sid, _ = _current_store(request, conn, sess)
+        # 按门店隔离：总店工作视图可看全部；分店只看本店（store_id=0 历史日志归总店）
+        cond, args = "", []
+        if sid != _hq_store_id(conn):
+            cond, args = " WHERE store_id=?", [sid]
+        total = conn.execute("SELECT COUNT(*) n FROM operate_logs" + cond, args).fetchone()["n"]
+        rows = conn.execute("SELECT * FROM operate_logs" + cond + " ORDER BY id DESC LIMIT ? OFFSET ?",
+                            args + [size, (page - 1) * size]).fetchall()
         return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
 
 
 @app.get("/api/logs/export")
 def log_export(request: Request):
-    _require_auth(request)
+    sess = _require_auth(request)
     with _db(request) as conn:
-        rows = conn.execute("SELECT * FROM operate_logs ORDER BY id DESC").fetchall()
+        sid, _ = _current_store(request, conn, sess)
+        if sid != _hq_store_id(conn):
+            rows = conn.execute("SELECT * FROM operate_logs WHERE store_id=? ORDER BY id DESC", (sid,)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM operate_logs ORDER BY id DESC").fetchall()
     lines = ["id,time,operator,store,action,target,result"]
     for r in rows:
         lines.append(",".join(str(r[k]).replace(",", " ") for k in ("id", "time", "operator", "store", "action", "target", "result")))
@@ -6618,9 +6894,10 @@ class PublicAppt(BaseModel):
 def public_appointment(body: PublicAppt, request: Request):
     with _db(request) as conn:
         conn.execute(
-            """INSERT INTO appointments(tenant_id,name,contact,contact_type,category,product_id,want_date,want_slot,remark,status)
-               VALUES(?,?,?,?,?,?,?,?,?,'pending')""",
-            (_tenant_of(request), body.name, body.contact, body.contact_type, body.category, body.product_id, body.want_date, body.want_slot, body.remark),
+            """INSERT INTO appointments(tenant_id,name,contact,contact_type,category,product_id,want_date,want_slot,remark,status,store_id)
+               VALUES(?,?,?,?,?,?,?,?,?,'pending',?)""",
+            (_tenant_of(request), body.name, body.contact, body.contact_type, body.category, body.product_id,
+             body.want_date, body.want_slot, body.remark, _hq_store_id(conn)),
         )
         conn.commit()
     return {"ok": True, "detail": "预约已提交，店铺将与您联系"}

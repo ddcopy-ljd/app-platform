@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>懿臻珠宝云</title>
 <link rel="icon" href="/logo/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./app.css?v=20261013e144">
+<link rel="stylesheet" href="./app.css?v=20261013e160">
 </head>
 <body>
 <div id="app">
@@ -149,10 +149,10 @@
           <div class="gold-bar" v-if="goldData">
             <div class="gb-item">
               <span class="gb-label">🌍 {{ t('dash.goldIntl') }}</span>
-              <span class="gb-val" v-if="goldData.intlPrice">￥{{ fmt(goldData.intlPrice) }}/克</span>
+              <span class="gb-val" v-if="goldData.intlPrice">{{ goldData.ccySymbol }}{{ fmt(goldData.intlPrice) }}/{{ t('misc.gram') }}</span>
               <span class="gb-val" v-else-if="goldData.intlUsd">${{ fmt(goldData.intlUsd) }}/oz</span>
               <span class="gb-val gb-fail" v-else @click="loadGold()">{{ t('dash.goldFail') }}</span>
-              <span class="gb-sub" v-if="goldData.intlUsd">${{ fmt(goldData.intlUsd) }}/oz · {{ goldData.intlTime }}</span>
+              <span class="gb-sub" v-if="goldData.intlUsd">{{ goldData.ccy }} · ${{ fmt(goldData.intlUsd) }}/oz · {{ goldData.intlTime }}</span>
             </div>
           </div>
           <div class="stats-grid dash-kpi" v-if="dashData && dashData.rangeData">
@@ -240,6 +240,23 @@
                 </div>
               </div>
             </div>
+          </div>
+          <div class="mini-chart" v-if="tagStats && tagStats.items && tagStats.items.length">
+            <div class="mini-chart-title"><span>{{ t('tag.statsTitle') }}</span></div>
+            <div class="cat-chips tag-pick-chips" v-if="tagList.length">
+              <div class="cat-chip" :class="{active:!tagSel.length}" @click="clearTagSel()">{{ t('cat.all') }}</div>
+              <div class="cat-chip" v-for="o in tagList" :key="'ts'+o.id" :class="{active:tagSel.indexOf(o.id)>=0}" @click="toggleTagSel(o.id)">{{ o.name }}</div>
+            </div>
+            <div class="tag-stats-list">
+              <div class="tag-stats-row" v-for="(g,i) in tagStats.items" :key="g.tag_id">
+                <div class="tag-stats-line">
+                  <span class="tag-stats-name"><span class="dl-dot" :style="{background: g.color || donutColor(i%6)}"></span>{{ g.name }}</span>
+                  <div class="tag-stats-bar-wrap"><div class="tag-stats-bar" :style="tagBarStyle(g, i)"></div></div>
+                </div>
+                <div class="tag-stats-val">￥{{ fmt(g.sale_amount) }} · {{ g.sale_count }} {{ t('tag.pieceUnit') }} · {{ t('tag.inStock') }} {{ g.stock_count }} {{ t('tag.pieceUnit') }}<span v-if="g.stock_cost != null"> · {{ t('kpi.stockCost') }} ￥{{ fmt(g.stock_cost) }}</span></div>
+              </div>
+            </div>
+            <div class="tag-stats-note" v-if="tagStats.note">{{ t('tag.dupNote') }}</div>
           </div>
           </div>
           <div class="section biz-analysis" v-if="bizAnalysis">
@@ -364,6 +381,10 @@
             <div class="cat-chip" :class="{active:!prodCat}" @click="prodCat=''">{{ t('cat.all') }}</div>
             <div class="cat-chip" v-for="o in typeList" :key="o.code" :class="{active:prodCat===o.code}" @click="prodCat=o.code">{{ catNameOf(o) }}</div>
           </div>
+          <div class="cat-chips tag-pick-chips" v-if="tagList.length">
+            <div class="cat-chip" :class="{active:!prodTags.length}" @click="prodTags=[]">{{ t('cat.all') }}</div>
+            <div class="cat-chip" v-for="o in tagList" :key="'pf'+o.id" :class="{active:prodTags.indexOf(o.id)>=0}" @click="toggleProdTagFilter(o.id)">{{ o.name }}</div>
+          </div>
           <div class="table-wrap table-wide" v-if="isPc">
             <table class="data-table table-products">
               <thead><tr>
@@ -393,7 +414,7 @@
                   <td class="cell-img"><img v-if="p.image_ts" :src="productImageUrl(p)" class="prod-thumb-img" alt=""><span v-else class="prod-thumb-ph">💎</span></td>
                   <td class="cell-code mono">{{ p.code }}</td>
                   <td class="cell-barcode mono">{{ p.barcode || '—' }}</td>
-                  <td class="cell-name">{{ p.name }}<div class="cell-sub" v-if="p.location_name" :title="t('loc.where')">{{ p.location_name }}</div></td>
+                  <td class="cell-name">{{ p.name }}<div class="ptag-row" v-if="p.tags && p.tags.length"><span class="ptag" v-for="tg in p.tags" :key="'pt'+p.id+'-'+tg.id" :style="tagChipStyle(tg)">{{ tg.name }}</span></div><div class="cell-sub" v-if="p.location_name" :title="t('loc.where')">{{ p.location_name }}</div></td>
                   <td class="cell-type">{{ productTypeName(p) }}</td>
                   <td class="cell-mat mono" :title="p.material ? t('mat.cn.'+materialText(p.material)) : ''">{{ materialText(p.material) || '—' }}</td>
                   <td class="cell-num">{{ p.weight }}g</td>
@@ -417,6 +438,7 @@
                 <div class="prod-thumb"><img v-if="p.image_ts" :src="productImageUrl(p)" class="prod-thumb-img" alt=""><template v-else>💎</template></div>
                 <div class="prod-info">
                   <div class="prod-name">{{ p.name }}<span class="tag tag-printed" v-if="p.label_print_count" :title="printedTip(p)">🖨{{ p.label_print_count }}</span><span class="tag tag-hv" v-if="p.high_value">⭐{{ t('lbl.highValue') }}</span><span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span></div>
+                  <div class="ptag-row" v-if="p.tags && p.tags.length"><span class="ptag" v-for="tg in p.tags" :key="'mt'+p.id+'-'+tg.id" :style="tagChipStyle(tg)">{{ tg.name }}</span></div>
                   <div class="prod-meta">{{ t('lbl.huohao') }}：{{ p.code }} · {{ productTypeName(p) }} · {{ materialText(p.material) || '—' }} · {{ p.weight }}g<span v-if="p.location_name"> · {{ p.location_name }}</span></div>
                   <div class="prod-meta mono" v-if="p.barcode">🏷 {{ p.barcode }}</div>
                 </div>
@@ -1073,11 +1095,11 @@
               <div class="dep-row"><div class="dep-customer">{{ d.customer }}<span class="dep-phone" v-if="d.phone">· {{ d.phone }}</span></div><div class="dep-amounts"><div class="dep-total">￥{{ fmt(d.total) }}</div><div class="dep-detail">{{ t('dep.paid') }} ￥{{ fmt(d.deposit) }} / {{ t('lbl.balance') }} ￥{{ fmt(d.balance) }}</div></div></div>
               <div class="dep-prod-row">
                 <img v-if="d.has_image && d.product_id" class="dep-thumb" :src="productImageUrl({id:d.product_id, image_ts:d.image_ts})" :alt="d.product" loading="lazy" @error="$event.target.style.display='none'">
-                <div class="dep-product">{{ d.product }} · {{ d.promised_date }}</div>
+                <div class="dep-product">{{ d.product }}<span class="dep-pdate" v-if="d.promised_date"> · {{ t('lbl.promisedDate') }} {{ d.promised_date }}</span></div>
               </div>
               <div class="dep-req" v-if="d.delivery_time || d.deliver_requirements">
-                <span v-if="d.delivery_time" class="dep-req-item">⏰ {{ d.delivery_time }}</span>
-                <span v-if="d.deliver_requirements" class="dep-req-item">📝 {{ d.deliver_requirements }}</span>
+                <span v-if="d.delivery_time" class="dep-req-item">⏰ {{ t('dep.deliveryTime') }}：{{ d.delivery_time }}</span>
+                <span v-if="d.deliver_requirements" class="dep-req-item">📝 {{ t('dep.requirements') }}：{{ d.deliver_requirements }}</span>
               </div>
               <div class="dep-date">{{ t('dep.createdAt') }} {{ (d.created||'').slice(5,16) }}</div>
               <div class="dep-tags"><span class="tag tag-gold">{{ statusText(d.status) }}</span></div>
@@ -1360,7 +1382,20 @@
                 <div v-for="s in storesByShop(p.id)" :key="s.id" class="bridge-store">
                   <div class="flex-between">
                     <b>🏪 {{ s.name }} <span class="mono" style="font-size:14px;color:#6B5A48">#{{ s.code }}</span></b>
+                    <button class="btn-small" @click="(storeEditMode==='edit' && storeEdit.id===s.id) ? resetStoreEdit() : editStore(s)">{{ (storeEditMode==='edit' && storeEdit.id===s.id) ? t('act.cancel') : t('act.edit') }}</button>
                   </div>
+                  <!-- 行内编辑门店资料（总部视图：任意门店） -->
+                  <template v-if="storeEditMode==='edit' && storeEdit.id===s.id">
+                    <div class="form-group"><label>{{ t('store.name') }}</label><input v-model="storeEdit.name" :placeholder="t('store.namePh')"></div>
+                    <div class="form-group"><label>{{ t('store.owner') }}</label><input v-model="storeEdit.owner"></div>
+                    <div class="form-group"><label>{{ t('store.belongShop') }}</label>
+                      <select v-model.number="storeEdit.shop_id">
+                        <option v-for="sh in shops" :key="sh.id" :value="sh.id">{{ sh.name }}</option>
+                      </select>
+                    </div>
+                    <button class="btn btn-gold" @click="saveStore">{{ t('cat.saveEdit') }}</button>
+                  </template>
+                  <template v-else>
                   <div class="prod-meta" :class="(bridgeOfStore(s.id) && bridgeOfStore(s.id).online) ? 'mv-in' : 'mv-out'">● {{ t('store.bridge') }} {{ (bridgeOfStore(s.id) && bridgeOfStore(s.id).online) ? t('sb.online') : t('sb.offline') }}</div>
                   <div class="prod-meta" v-if="s.owner">{{ t('store.owner') }}：{{ s.owner }}</div>
                   <div class="prod-meta" v-if="s.printer_name">🖨 {{ s.printer_name }}</div>
@@ -1378,6 +1413,7 @@
                   <div class="prod-meta" v-if="s.stat">
                     {{ t('store.saleCount') }} {{ s.stat.saleCount }} · {{ t('store.saleAmount') }} ￥{{ fmt(s.stat.saleAmount) }}
                   </div>
+                  </template>
                 </div>
               </div>
               <div v-if="!storesByShop(p.id).length" class="prod-meta" style="padding:4px 0">{{ t('store.emptyInShop') }}</div>
@@ -1435,6 +1471,34 @@
               <button class="btn btn-outline" v-if="typeEditMode==='edit'" @click="resetTypeEdit" style="margin-left:8px">{{ t('act.cancel') }}</button>
             </div>
           </div>
+
+          <!-- 商品标签（企业整体级：多标签 + 分组统计） -->
+          <div class="card-item">
+            <div class="flex-between" style="margin-bottom:8px">
+              <div class="card-title" style="margin:0">{{ t('tag.mgrTitle') }}</div>
+              <button class="btn btn-gold btn-sm" @click="addTag">＋ {{ t('tag.addNew') }}</button>
+            </div>
+            <table class="data-table" style="margin-bottom:12px">
+              <thead><tr><th>{{ t('tag.name') }}</th><th>{{ t('cat.sort') }}</th><th>{{ t('tag.usedCount') }}</th><th>{{ t('common.op') }}</th></tr></thead>
+              <tbody>
+                <tr v-for="o in tagList" :key="o.id">
+                  <td><span class="ptag" :style="tagChipStyle(o)">{{ o.name }}</span></td>
+                  <td>{{ o.sort_order }}</td>
+                  <td>{{ o.used_count }}</td>
+                  <td><button class="btn-small" :class="{'btn-gold': tagEditMode==='edit' && tagEdit.id===o.id}" @click="(tagEditMode==='edit' && tagEdit.id===o.id) ? resetTagEdit() : editTag(o)">{{ (tagEditMode==='edit' && tagEdit.id===o.id) ? t('act.cancel') : t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delTag(o)">{{ t('act.del') }}</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <div id="tag-edit-form" style="margin-top:10px;padding:10px;border:1px solid #eee;border-radius:6px">
+              <div class="form-row">
+                <div class="form-group"><label>{{ t('tag.name') }}</label><input v-model="tagEdit.name" maxlength="20" :placeholder="t('tag.namePh')"></div>
+                <div class="form-group"><label>{{ t('tag.color') }}</label><input type="color" v-model="tagEdit.color"></div>
+                <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="tagEdit.sort_order" type="number"></div>
+              </div>
+              <button class="btn btn-gold" @click="saveTag">{{ tagEditMode==='edit'?t('cat.saveEdit'):t('tag.addNew') }}</button>
+              <button class="btn btn-outline" v-if="tagEditMode==='edit'" @click="resetTagEdit" style="margin-left:8px">{{ t('act.cancel') }}</button>
+            </div>
+          </div>
         </section>
 
         <!-- ================= 门店管理（店铺下门店：入库/扫描设备/库位；打印代理已集中到系统管理） ================= -->
@@ -1446,14 +1510,14 @@
               <button class="btn btn-gold" v-if="isHqStore()" @click="createStore">＋ {{ t('store.add') }}</button>
             </div>
 
-            <!-- 门店新增/编辑表单（仅总店：分店无权改门店主数据） -->
-            <div v-if="isHqStore() && (storeEditMode==='new' || storeEdit.id)" style="padding:10px;border:1px solid #eee;border-radius:6px;margin-bottom:12px">
+            <!-- 门店新增/编辑表单：新增仅总部；编辑=总部任意店，或分店改本店资料（归属店铺由总部决定） -->
+            <div v-if="(storeEditMode==='new' && isHqStore()) || (storeEditMode==='edit' && storeEdit.id && (isHqStore() || storeEdit.id===curStoreId))" style="padding:10px;border:1px solid #eee;border-radius:6px;margin-bottom:12px">
               <div class="form-row">
                 <div class="form-group"><label>{{ t('store.name') }}</label><input v-model="storeEdit.name" :placeholder="t('store.namePh')"></div>
                 <div class="form-group"><label>{{ t('store.code') }}</label><input v-model="storeEdit.code" maxlength="2" :disabled="storeEditMode==='edit'" :placeholder="t('store.codePh')"></div>
                 <div class="form-group"><label>{{ t('store.owner') }}</label><input v-model="storeEdit.owner"></div>
                 <div class="form-group"><label>{{ t('store.belongShop') }}</label>
-                  <select v-model.number="storeEdit.shop_id">
+                  <select v-model.number="storeEdit.shop_id" :disabled="!isHqStore()">
                     <option v-for="p in shops" :key="p.id" :value="p.id">{{ p.name }}</option>
                   </select>
                 </div>
@@ -1495,7 +1559,7 @@
                 <div class="form-group"><label>{{ t('store.owner') }}</label><input :value="curStore.owner||''" disabled></div>
                 <div class="form-group"><label>{{ t('store.belongShop') }}</label><input :value="curShop ? curShop.name : ''" disabled></div>
               </div>
-              <button class="btn btn-outline" v-if="isHqStore()" @click="editStore(curStore)">{{ t('store.editInfo') }}</button>
+              <button class="btn btn-outline" v-if="isHqStore() || (curStore && curStore.id===curStoreId)" @click="editStore(curStore)">{{ t('store.editInfo') }}</button>
             </div>
 
             <!-- 安防设备 -->
@@ -2574,6 +2638,13 @@ Content-Type: application/json
             <select v-model="sheetData.cert_location_id"><option :value="0">—</option>
               <option v-for="o in activeLocationsOf(sheetData.store_id || 1)" :key="'c'+o.id" :value="o.id">{{ o.code }} {{ o.name }}</option>
             </select></div></div>
+          <div class="form-group" v-if="sheetMode==='product'">
+            <label>{{ t('tag.field') }}</label>
+            <div class="cat-chips tag-pick-chips" v-if="tagList.length">
+              <div class="cat-chip" v-for="o in tagList" :key="'tp'+o.id" :class="{active:(sheetData.tag_ids||[]).indexOf(o.id)>=0}" @click="toggleTagPick(o.id)">{{ o.name }}</div>
+            </div>
+            <div class="tag-form-empty" v-else>{{ t('tag.noneHint') }}</div>
+          </div>
           <div class="form-row" v-if="sheetMode==='inbound'">
             <div class="form-group"><label>RFID EPC</label>
               <div class="scan-anchor">
@@ -2843,6 +2914,22 @@ Content-Type: application/json
   </div>
 
   <!-- RFID 标签排版打印弹窗 -->
+  <!-- 通用确认面板：收尾款/冲红等敏感操作，写明单据明细与执行后果 -->
+  <div class="modal-mask" v-if="cfm" @click.self="cfmCancel">
+    <div class="modal-box cfm-box" @click.stop>
+      <div class="modal-head"><span>{{ cfm.title }}</span><button class="sheet-close" @click="cfmCancel">×</button></div>
+      <div class="cfm-lines">
+        <div class="cfm-line" v-for="l in cfm.lines" :key="l.k"><span class="cfm-k">{{ t(l.k) }}</span><span class="cfm-v">{{ l.v }}</span></div>
+      </div>
+      <div class="cfm-warn" :class="{danger: cfm.danger}">{{ cfm.warn }}</div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-outline" @click="cfmCancel">{{ t('act.cancel') }}</button>
+        <span style="flex:1"></span>
+        <button type="button" class="btn" :class="cfm.danger ? 'btn-danger-solid' : 'btn-gold'" @click="cfmOk">{{ cfm.okText }}</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-mask" v-if="imgCrop.show" @click.self="closeImgCrop">
     <div class="modal-card img-crop-card" @click.stop>
       <div class="modal-head">
@@ -3359,14 +3446,14 @@ Content-Type: application/json
 <script src="./vendor/vue.global.prod.js"></script>
 <script src="./vendor/qrcode.min.js"></script>
 <script src="./vendor/zxing.min.js"></script>
-<script src="./i18n.js?v=20261013e144"></script>
+<script src="./i18n.js?v=20261013e160"></script>
 <script>
 // 非中文时同步加载对应语言字典（i18n.<dict>.js），确保 app.js 挂载前字典就绪
 (function () {
   var _dict = (typeof i18nDictFile === 'function') ? i18nDictFile() : '';
-  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261013e144"><\/script>');
+  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261013e160"><\/script>');
 })();
 </script>
-<script src="./app.js?v=20261013e144"></script>
+<script src="./app.js?v=20261013e160"></script>
 </body>
 </html>

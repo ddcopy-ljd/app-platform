@@ -239,3 +239,9 @@
 
 
 
+
+## TC-34 商品多标签与按标签分组统计（1.2.18）
+
+- **需求**：一件商品可贴多个标签（项链/金饰/古风/现代等受控字典，用于各类业务统计）；统计时可多选标签、按标签分组（每标签各一组，多标签商品在每组重复计入，占比分母=各组合计）；双口径=库存（在库数量/成本/标价）+销售（金额/件数，排除已冲红，缺省近6个月）。标签字典租户库内私有、租户内各门店共用；与 RFID 打印标签（label_templates）严格区分命名 tag。
+- **实现**：db.py SCHEMA 新增 product_tags（name UNIQUE）/product_tag_links（UNIQUE(product_id,tag_id)+tag_id 索引），幂等建表无 ALTER；演示标签仅进 seed_demo。后端 /api/product-tags CRUD（纳高管只读闸门；删除级联解除关联并回显 unlinked）；ProductIn.tag_ids 覆盖式写入（_set_product_tags）；商品删除/批量删除级联清 links、批量复制继承标签；列表/详情 _attach_tags 一次 IN 查询附带 tags；/api/dashboard/tag-stats 库存与销售两条 GROUP BY 查询 Python 合并（禁止同条 JOIN 交叉翻倍），stock_cost 受 can_view_cost。前端：表单标签多选 chips、列表行内 ptag+标签筛选 chips（命中任一）、总部管理「商品标签」维护区块、dashboard 标签统计卡（多选标签+横向条形+口径 note）。
+- **验证方法**：E2E（Python）：建标签→重名 400→商品贴多标→列表 tags 附带→tag-stats 与 SQLite 直连逐项一致（含重复计入、区间、tag_ids 过滤、无权限 stock_cost=None）→删标签 unlinked 正确且 links 清空→删商品级联→测试数据全清。浏览器走查：表单贴标保存回显、筛选 chips、总部管理增删改、统计卡渲染、EN 无界面级中文残留、console 无 error。迁移回归：旧库副本跑 upgrade.py 至 1.2.18，两表建成、老商品 tags=[]、既有读写正常。

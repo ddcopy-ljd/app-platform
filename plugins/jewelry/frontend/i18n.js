@@ -141,6 +141,8 @@ var I18N = {
     'toast.batchDelOk': '已删除 {n} 件',
     'toast.batchDelSkipped': '{n} 件非在库已跳过',
     'toast.payOk': '尾款已收，已转正式单', 'toast.loginOk': '登录成功', 'toast.fillForm': '请填写必填项',
+    'cfm.payBalWarn': '确认后：尾款记为已收，本单自动转为正式销售单，商品状态变为「已售」。',
+    'cfm.voidWarn': '冲红后：定金退回客户，商品解除「已定」锁定并回到在库，此操作不可撤销。',
     'toast.epcWritten': 'RFID EPC 已写入', 'toast.printOk': '标签打印完成',
     'toast.scanOk': '盘点完成', 'toast.apptOk': '预约已确认', 'toast.noProdFile': '该条目无商品档案（盘盈/异常项）',
     'toast.fillFactory': '请填写加工厂', 'toast.fillSupplier': '请填写供应商',
@@ -178,11 +180,11 @@ var I18N = {
     'misc.tenant': '租户', 'misc.operator': '操作人', 'misc.action': '操作', 'misc.target': '目标',
     'misc.time': '时间', 'misc.result': '结果', 'misc.store': '门店',
     'misc.role.admin': '店长', 'misc.role.staff': '店员', 'misc.role.exec': '高管',
-    'misc.language': '语言',
+    'misc.language': '语言', 'misc.gram': '克',
     // 高管只读
     'role.readonlyBadge': '只读',
     'role.execReadonly': '高管账号仅可查看，不能进行该操作',
-    'role.execNeedHq': '总部/系统设置请先切换到总店后再操作',
+    'role.execNeedHq': '总部/系统设置请先切换到总部后再操作',
     'role.costHidden': '无成本查看权限，成本保持不变',
     // remind
     'remind.deposits': '定金尾款到期', 'remind.loansOverdue': '借货逾期',
@@ -236,7 +238,7 @@ var I18N = {
     'adminUser.roleAdmin': '店长',
     'adminUser.roleStaff': '店员',
     'adminUser.roleExec': '高管',
-    'adminUser.roleExecHint': '业务属性角色，适用于老板、总监等巡查岗位；可切换查看全部门店；业务数据只读；总部/系统设置仅在总店可修改',
+    'adminUser.roleExecHint': '业务属性角色，适用于老板、总监等巡查岗位；可切换查看全部门店；业务数据只读；总部/系统设置仅在总部可修改',
     'adminUser.canViewCost': '成本查看权限',
     'adminUser.costOn': '可看成本', 'adminUser.costOff': '隐藏成本',
     'adminUser.costForceHint': '店长/高管默认拥有成本查看权限',
@@ -613,6 +615,15 @@ var I18N = {
     'rfid.sensed': '感应',
     'tab.dashboard': '看板', 'tab.products': '商品', 'tab.deposits': '定金', 'tab.mine': '我的',
     'act.updateShort': '更新', 'act.receiveShort': '入库', 'act.takeShort': '收货', 'act.returnShort': '归还',
+    // 商品标签（多标签 + 按标签分组统计）
+    'tag.mgrTitle': '商品标签', 'tag.field': '商品标签', 'tag.name': '标签名称',
+    'tag.namePh': '如：主推款', 'tag.color': '标签颜色', 'tag.usedCount': '已关联商品数',
+    'tag.addNew': '新增标签', 'tag.nameRequired': '请先填写标签名称',
+    'tag.delConfirm': '确认删除该标签？将解除 {n} 件商品的关联',
+    'tag.unlinked': '已解除 {n} 件商品关联',
+    'tag.noneHint': '暂无标签，请到「总部管理 → 商品标签」添加',
+    'tag.statsTitle': '标签统计', 'tag.pieceUnit': '件', 'tag.inStock': '在库',
+    'tag.dupNote': '多标签商品在各标签组重复计入，占比分母为各组合计',
   }
 };
 var currentLang = 'zh';
@@ -623,6 +634,9 @@ function t(key, params) {
   // 优先读响应式状态 ST.lang（app.js 定义后）：
   // 使所有使用 t() 的绑定/计算属性建立对语言的响应式依赖，切换语言全界面即时刷新
   var lang = (typeof ST !== 'undefined' && ST && ST.lang) ? ST.lang : currentLang;
+  // 建立对字典加载版本的响应式依赖：动态语言字典异步载入完成后，
+  // 即使 ST.lang 值未变（select v-model 已先行改写）也能触发全界面重渲染
+  if (typeof ST !== 'undefined' && ST) { void ST.dictVer; }
   var dict = dictOf(lang);
   var s = dict[key] != null ? dict[key] : (I18N.zh[key] != null ? I18N.zh[key] : key);
   // 可选命名占位替换：t('x', {n: 3}) → 文案中的 {n} 替换为 3
@@ -669,7 +683,7 @@ function switchLang(lang) {
 currentLang = detectLang();
 switchLang(currentLang);   // 回写规范键，清理历史脏值（如 'zh'）
 
-var I18N_VER = '20261013e144';   // 语言字典文件缓存版本（与 index.html 同步升级）
+var I18N_VER = '20261013e160';   // 语言字典文件缓存版本（与 index.html 同步升级）
 function registerLang(key, dict) { I18N[key] = dict; }
 // index.html 启动时调用：返回需在 app.js 前同步加载的字典文件名后缀（中文返回 ''）
 function i18nDictFile() { var d = LANG_MAP[currentLang]; return (d && d !== 'zh') ? d : ''; }

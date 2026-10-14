@@ -351,6 +351,7 @@ a { text-decoration: none; color: inherit; }
 .deposit-card .dep-customer { font-size: 15px; font-weight: 600; }
 .deposit-card .dep-phone { font-size: 14px; color: var(--text3); font-weight: 400; margin-left: 4px; }
 .deposit-card .dep-product { font-size: 14px; color: var(--text2); margin-top: 2px; }
+.deposit-card .dep-pdate { color: var(--text3); font-size: 13px; }
 .deposit-card .dep-prod-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 .deposit-card .dep-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid #eee; flex-shrink: 0; }
 .log-plain { white-space: pre-line; font-size: 14px; line-height: 1.9; color: var(--text2); background: var(--cream); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; user-select: text; -webkit-user-select: text; max-height: 60vh; overflow-y: auto; font-family: Consolas, Menlo, monospace; }
@@ -397,7 +398,7 @@ a { text-decoration: none; color: inherit; }
 .cust-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .cust-item:last-child { border-bottom: none; }
 /* 会员卡片（PC 一行 3-4 张） */
-.cust-card { cursor: pointer; transition: box-shadow .15s, border-color .15s; }
+.cust-card { cursor: pointer; transition: box-shadow .15s, border-color .15s; display: flex; flex-direction: column; }
 .cust-card:hover { border-color: var(--gold); box-shadow: 0 4px 14px rgba(201,169,97,.18); }
 .cust-card .cc-head { display: flex; align-items: center; gap: 10px; }
 .cust-card .cc-id { flex: 1; min-width: 0; }
@@ -405,7 +406,7 @@ a { text-decoration: none; color: inherit; }
 .cust-card .cc-buy { margin: 6px 0; font-size: 14px; color: var(--text); }
 .cust-card .cc-buy-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cust-card .cc-buy-line.dim, .cust-card .cc-buy.dim { color: var(--text2); }
-.cust-card .cc-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.cust-card .cc-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 8px; border-top: 1px dashed var(--border); }
 .app-shell.pc .cust-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
 .app-shell.pc .cust-grid .card-item { margin-bottom: 0; }
 .app-shell.pc .cust-grid .empty { grid-column: 1 / -1; }
@@ -664,7 +665,7 @@ a { text-decoration: none; color: inherit; }
 .store-check { display: inline-flex; align-items: center; gap: 4px; margin: 2px 12px 2px 0; font-size: 14px; cursor: pointer; white-space: nowrap; }
 .store-check input { width: 16px; height: 16px; accent-color: var(--gold); cursor: pointer; }
 
-.app-shell.pc .main-content { flex: 1; min-width: 0; padding: 24px; overflow-y: auto; }
+.app-shell.pc .main-content { flex: 1; min-width: 0; padding: 0 24px 24px; overflow-y: auto; }
 
 /* PC table */
 .table-wrap { background: var(--white); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; box-shadow: 0 1px 4px rgba(92,34,51,.04); margin-top: 12px; overflow-x: auto; }
@@ -996,6 +997,17 @@ select.lang-code {
   box-shadow: 0 20px 60px rgba(0,0,0,.25); animation: modalIn .2s ease;
 }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); font-weight: 700; }
+/* 通用确认面板（收尾款/冲红） */
+.cfm-box { max-width: 420px; }
+.cfm-lines { padding: 12px 18px 4px; }
+.cfm-line { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font-size: 14px; border-bottom: 1px dashed var(--border); }
+.cfm-line:last-child { border-bottom: none; }
+.cfm-line .cfm-k { color: var(--text2); flex-shrink: 0; }
+.cfm-line .cfm-v { text-align: right; font-weight: 600; word-break: break-all; }
+.cfm-warn { margin: 8px 18px 4px; padding: 9px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; background: #fdf6ec; color: #8a6d1f; }
+.cfm-warn.danger { background: #fdecea; color: #b03a2e; }
+.btn-danger-solid { background: #c0392b; color: #fff; border: 1.5px solid #c0392b; }
+.btn-danger-solid:hover { background: #a93226; border-color: #a93226; }
 .modal-foot { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); }
 .img-crop-card { max-width: 600px; }
 .img-crop-tools { display: flex; gap: 8px; padding: 12px 18px 0; }
@@ -1052,7 +1064,7 @@ select.lang-code {
 .notice-marquee { display: flex; align-items: center; background: #fdf6ec; border-bottom: 1px solid #f0e2c8; height: 34px; overflow: hidden; }
 .notice-marquee .mq-label { flex-shrink: 0; padding: 0 10px; font-size: 14px; color: #8a6d1f; font-weight: 600; background: #faeeda; align-self: stretch; display: flex; align-items: center; }
 .notice-marquee .mq-viewport { flex: 1; min-width: 0; overflow: hidden; }
-.notice-marquee .mq-track { display: inline-flex; white-space: nowrap; animation: mq-scroll 40s linear infinite; will-change: transform; }
+.notice-marquee .mq-track { display: inline-flex; white-space: nowrap; animation: mq-scroll 70s linear infinite; will-change: transform; }
 .notice-marquee:hover .mq-track { animation-play-state: paused; }
 .notice-marquee .mq-item { font-size: 13px; padding: 0 28px; color: #6b5310; }
 .notice-marquee .mq-item.mq-purchase { color: #047857; font-weight: 600; }
@@ -1150,8 +1162,8 @@ tr.row-flash, tr.row-flash:hover { background-color: #FFF3CD !important; transit
 .bridge-store .prod-meta.mv-in { color: var(--success); }
 .bridge-store .prod-meta.mv-out { color: var(--wine); }
 /* 总部管理门店卡片详情统计 */
-/* 门店卡片列表：PC 卡片宽度 300–420px 自适应（太窄太宽都不好看），窄屏回落单列 */
-.store-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 420px)); gap: 10px; margin-top: 10px; justify-content: center; }
+/* 门店卡片列表：PC 卡片宽度 360–520px 自适应（太窄太宽都不好看），窄屏回落单列 */
+.store-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 520px)); gap: 10px; margin-top: 10px; justify-content: center; }
 .store-grid > .bridge-store { margin-top: 0; min-width: 0; }
 .store-grid .hqs-stat-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
 .store-grid .hqs-stat { padding: 4px 2px; }
@@ -1663,3 +1675,16 @@ tr.tr-row-hit { animation: tr-hit-flash 1.2s ease; }
   padding: 20px 0 8px;
   letter-spacing: .3px;
 }
+
+/* 商品标签：列表小 chip / 表单选择 / 分组统计条 */
+.ptag-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.ptag { display: inline-block; font-size: 14px; line-height: 1.5; padding: 0 8px; border-radius: 9px; background: var(--border); color: var(--text); white-space: nowrap; }
+.tag-pick-chips { padding: 2px 0 6px; }
+.tag-form-empty { font-size: 14px; color: var(--text2); padding: 4px 0; }
+.tag-stats-list { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.tag-stats-line { display: flex; align-items: center; gap: 8px; }
+.tag-stats-name { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text); width: 92px; flex-shrink: 0; overflow: hidden; }
+.tag-stats-bar-wrap { flex: 1; height: 10px; border-radius: 5px; background: var(--border); overflow: hidden; }
+.tag-stats-bar { height: 100%; border-radius: 5px; }
+.tag-stats-val { font-size: 14px; color: var(--text2); margin-top: 2px; }
+.tag-stats-note { font-size: 14px; color: var(--text3); margin-top: 10px; line-height: 1.5; }

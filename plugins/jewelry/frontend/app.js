@@ -29,6 +29,8 @@ var ST = Vue.reactive({
   // 列表排序状态：{ 表key: { key: 排序列, dir: 1升/-1降 } }
   tblSort: { products: { key: '', dir: 1 }, stock: { key: '', dir: 1 } },
   lang: currentLang, langKeys: LANG_KEYS, langLabels: LANG_LABELS,
+  dictVer: 0,   // 语言字典加载版本号：异步字典载入完成后 +1，驱动 t() 依赖方重渲染
+  cfm: null,    // 通用确认面板：{ title, lines:[{k,v}], warn, danger, okText, fn }
   loginUser: 'admin', loginPwd: '123456',
   // data
   dashData: null, trendData: null, trendRange: '30d', bizAnalysis: null, remindData: null, showRemind: true, catSales: null,
@@ -43,6 +45,10 @@ var ST = Vue.reactive({
   // 商品品类（戒指/项链…）
   productTypes: [],
   typeEdit: { code: '', names: { zh: '', en: '', it: '' }, sort_order: 0, pricing_mode: 'piece' }, typeEditMode: 'new',
+  // 商品标签（多标签 + 按标签分组统计）
+  tagList: [], prodTags: [],   // 标签字典 / 商品页标签筛选（多选=命中任一）
+  tagEdit: { id: 0, name: '', color: '#C9A227', sort_order: 0 }, tagEditMode: 'new',
+  tagStats: null, tagSel: [],  // 标签分组统计结果 / 统计卡选中标签 id（空=全部）
   // 商品图片裁切弹窗
   imgCrop: { show: false, pid: 0, src: '', orient: 'landscape', busy: false,
              iw: 0, ih: 0, zoom: 1, tx: 0, ty: 0 },
@@ -485,6 +491,13 @@ function filteredProducts() {
     // 按商品品类筛选
     return p.product_type_code === ST.prodCat;
   });
+  if (ST.prodTags && ST.prodTags.length) {
+    // 按商品标签筛选：命中任一选中标签即保留
+    list = list.filter(function (p) {
+      var tags = p.tags || [];
+      return tags.some(function (tg) { return ST.prodTags.indexOf(tg.id) >= 0; });
+    });
+  }
   if (ST.prodQ) {
     var q = ST.prodQ.toLowerCase();
     list = list.filter(function (p) {
@@ -822,7 +835,7 @@ function setLang(lang) {
   var dictKey = (typeof LANG_MAP !== 'undefined') ? LANG_MAP[currentLang] : '';
   // 拆分后字典按需加载：目标语言字典未载入时先异步加载，完成后再刷新界面
   if (typeof ensureLangDict === 'function' && dictKey && dictKey !== 'zh' && !I18N[dictKey]) {
-    ensureLangDict(dictKey, function () { ST.lang = currentLang; });
+    ensureLangDict(dictKey, function () { ST.lang = currentLang; ST.dictVer++; });
     return;
   }
   ST.lang = currentLang;
@@ -1011,11 +1024,20 @@ function loadDash() {
   api('GET', '/api/dashboard/biz-analysis' + q).then(function (r) { ST.bizAnalysis = r; }).catch(function () {});
   api('GET', '/api/dashboard/reminders').then(function (r) { ST.remindData = r; }).catch(function () {});
   api('GET', '/api/dashboard/risk').then(function (r) { ST.riskData = r; }).catch(function () {});
+  loadTagStats();   // 标签分组统计跟随看板时间区间（依赖当前门店，切店经 refreshAll→loadDash 重取）
   loadGold();
 }
 
+// 浏览器地区 → ISO 币种代码（用于金价按当地货币显示）
+function localeCurrency() {
+  try {
+    var c = new Intl.NumberFormat().resolvedOptions().currency;
+    if (c) return c;
+  } catch (e) {}
+  return 'CNY';
+}
 function loadGold() {
-  api('GET', '/api/dashboard/gold').then(function (r) { ST.goldData = r; }).catch(function () { ST.goldData = { intlUsd: null, intlPrice: null }; });
+  api('GET', '/api/dashboard/gold?ccy=' + encodeURIComponent(localeCurrency())).then(function (r) { ST.goldData = r; }).catch(function () { ST.goldData = { intlUsd: null, intlPrice: null }; });
 }
 
 // ===== 问题上报（内嵌 BugTracker 免登录上报页 /report） =====
@@ -1038,9 +1060,10 @@ function reportThemeParams() {
 function reportPageUrl() {
   var user = encodeURIComponent((ST.user && (ST.user.display_name || ST.user.username)) || '');
   var appname = encodeURIComponent(ST.softName || '懿臻珠宝云');   // 上报归属项目名（按应用名称建项目）
+  var store = encodeURIComponent(curStoreName() || '总部');          // 当前门店（上报跟踪按门店过滤）
   // 「美观输出」勾选=附加主题参数（跟随珠宝云配色）；不勾选=不附加，BugTracker 用默认朴素样式
   var theme = ST.reportBeautify ? reportThemeParams() : '';
-  var q = '?source=jewelry&appname=' + appname + '&user=' + user + theme;
+  var q = '?source=jewelry&appname=' + appname + '&user=' + user + '&store=' + store + theme;
   var base = (API || '').replace(/\/+$/, '');   // 例：/app/jewelry/tenant_trial
   if (!base) return 'http://127.0.0.1:8003/report' + q;
   var seg = base.split('/');                     // ['', 'app', 'jewelry', 'tenant_trial']
@@ -1119,14 +1142,24 @@ function refreshAll() {
   api('GET', '/api/products/options?status=在库').then(function (r) { ST.stockOptions = r.items; }).catch(function () {});
   api('GET', '/api/categories').then(function (r) { ST.cats = r || []; }).catch(function () {});
   api('GET', '/api/product-types').then(function (r) { ST.productTypes = r || []; }).catch(function () {});
+  loadTags();
   loadBizConfig();
   api('GET', '/api/languages').then(function (r) { ST.languages = r || []; }).catch(function () {});
-  api('GET', '/api/stores').then(function (r) { ST.stores = r || []; loadShops(); return loadLocations(); }).catch(function () {});
+  // 停在总部/门店管理页时按原口径带 detail 重取，避免无统计版本覆盖卡片数据
+  var storesUrl = ST.tab === 'shops' ? '/api/stores?all=1&detail=1'
+    : (ST.tab === 'stores' ? '/api/stores?all=1' : '/api/stores');
+  api('GET', storesUrl).then(function (r) { ST.stores = r || []; loadShops(); return loadLocations(); }).catch(function () {});
   loadClerkTypes();
   loadTemplates();
   loadHealth();
   startHealthTimer();
   loadTransfers();   // 切店后同步刷新「我发出的/我接收的」调拨视角
+  // 切店/业务变更后，当前停留页面的列表按新工作门店同步重载（否则分店视图停留在旧门店数据）
+  // 注意 switchStore 会先清空 ST.subView，这里按当前 tab 重设后再加载
+  if (SUB_VIEWS.indexOf(ST.tab) >= 0) { ST.subView = ST.tab; ST.subPage = 1; loadSubList(); if (ST.tab === 'customers') loadCustStats(); }
+  if (ST.tab === 'system' && ST.adminSub === 'logs') { ST.subView = 'logs'; loadSubList(); }
+  if (ST.tab === 'inventory') loadInv();
+  if (ST.tab === 'appointments') loadAppt();
 }
 
 function loadSubList() {
@@ -1554,7 +1587,9 @@ function applySession(r) {
 
 function switchStore(sid) {
   sid = Number(sid);
-  if (!sid || sid === ST.curStoreId) return;
+  if (!sid) return;
+  // 与当前视图门店相同也照常调用（幂等）：会话可能被其他标签页/接口切换过，
+  // 短路 return 会让前端视图与后端会话永久脱节。
   api('POST', '/api/auth/switch-store', { store_id: sid }).then(function (r) {
     ST.curStoreId = r.store_id;
     ST.stores = r.stores || ST.stores;
@@ -2059,7 +2094,7 @@ function addProduct() {
             product_type_code: (ST.productTypes[0] && ST.productTypes[0].code) || '99', product_type: '',
             material: '', weight: 0, size: '', cert: '', cost: 0, price: 0,
             status: '在库', rfid_epc: '', showcase_public: 0, high_value: 0, origin: '',
-            store_id: ST.curStoreId || 1, location_id: 0, cert_location_id: 0 };
+            store_id: ST.curStoreId || 1, location_id: 0, cert_location_id: 0, tag_ids: [] };
   openSheet('product', t('sheet.product'), d);
 }
 
@@ -2069,6 +2104,7 @@ function editProduct(p) {
   ST.sheetNameLang = ST.lang;
   var d = Object.assign({}, p);
   ensureTypeCode(d);
+  d.tag_ids = (p.tags || []).map(function (x) { return x.id; });
   openSheet('product', t('sheet.product'), d);
 }
 
@@ -2081,6 +2117,7 @@ function copyProduct(p) {
   delete d.image_ts;
   d.code = '';
   d.rfid_epc = '';
+  d.tag_ids = (p.tags || []).map(function (x) { return x.id; });
   ensureTypeCode(d);
   openSheet('product', t('act.copyNew') + ' - ' + (p.name || ''), d);
   toast(t('act.copyNew') + ': ' + t('toast.fillCode'), 'info');
@@ -2247,6 +2284,101 @@ function bindTypeTemplate(code, tplId) {
   api('PUT', '/api/product-types/' + code + '/template', { label_template_id: tplId || null }).then(function () {
     toast(t('tpl.bindOk'));
     loadProductTypes();
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+
+// ---------------- 商品标签（多标签 + 按标签分组统计） ----------------
+function loadTags() {
+  api('GET', '/api/product-tags').then(function (r) { ST.tagList = (r && r.list) || []; }).catch(function () {});
+}
+// 标签分组统计：跟随看板时间区间（与 category-sales 同区间取法）；tagSel 空=全部标签
+function loadTagStats() {
+  var rg = dashRangeCompute();
+  var q = '?start=' + rg.start + '&end=' + rg.end;
+  if (ST.tagSel && ST.tagSel.length) q += '&tag_ids=' + ST.tagSel.join(',');
+  api('GET', '/api/dashboard/tag-stats' + q).then(function (r) { ST.tagStats = r; }).catch(function () {});
+}
+// 统计卡标签多选：toggle 后重新拉取
+function toggleTagSel(id) {
+  var i = ST.tagSel.indexOf(id);
+  if (i >= 0) ST.tagSel.splice(i, 1); else ST.tagSel.push(id);
+  loadTagStats();
+}
+function clearTagSel() { ST.tagSel = []; loadTagStats(); }
+// 商品页标签筛选（多选=命中任一）
+function toggleProdTagFilter(id) {
+  var i = ST.prodTags.indexOf(id);
+  if (i >= 0) ST.prodTags.splice(i, 1); else ST.prodTags.push(id);
+}
+// 商品表单标签多选：在 sheetData.tag_ids 中增删
+function toggleTagPick(id) {
+  var d = ST.sheetData;
+  if (!d) return;
+  if (!Array.isArray(d.tag_ids)) d.tag_ids = [];
+  var i = d.tag_ids.indexOf(id);
+  if (i >= 0) d.tag_ids.splice(i, 1); else d.tag_ids.push(id);
+}
+// 标签色 chip：按背景亮度选文字色（深底白字、浅底正文色），保证可读
+function tagChipStyle(tg) {
+  var c = tg && tg.color;
+  if (!c) return null;
+  var m = /^#?([0-9a-fA-F]{6})$/.exec(c);
+  var lum = 0.5;
+  if (m) {
+    var n = parseInt(m[1], 16);
+    lum = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  }
+  return { background: c, color: lum > 0.55 ? 'var(--text)' : '#fff' };
+}
+// 统计条：宽度=销售占比（最小 2% 保证可见），颜色=标签色或环形图兜底色
+function tagBarStyle(g, i) {
+  return { width: Math.max(Number(g.sale_pct) || 0, 2) + '%', background: g.color || donutColor(i % 6) };
+}
+function resetTagEdit() {
+  ST.tagEdit = { id: 0, name: '', color: '#C9A227', sort_order: (ST.tagList || []).length + 1 };
+  ST.tagEditMode = 'new';
+}
+function addTag() {
+  resetTagEdit();
+  setTimeout(function () {
+    var el = document.getElementById('tag-edit-form');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 60);
+}
+function editTag(o) {
+  ST.tagEditMode = 'edit';
+  ST.tagEdit = { id: o.id, name: o.name || '', color: o.color || '#C9A227', sort_order: o.sort_order || 0 };
+  setTimeout(function () {
+    var el = document.getElementById('tag-edit-form');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.remove('cat-edit-flash');
+      void el.offsetWidth;
+      el.classList.add('cat-edit-flash');
+    }
+  }, 60);
+}
+function saveTag() {
+  var te = ST.tagEdit;
+  if (!te.name || !te.name.trim()) { toast(t('tag.nameRequired'), 'error'); return; }
+  var body = { name: te.name.trim(), color: te.color || '', sort_order: Number(te.sort_order) || 0 };
+  var method = ST.tagEditMode === 'edit' ? 'PUT' : 'POST';
+  var url = ST.tagEditMode === 'edit' ? '/api/product-tags/' + te.id : '/api/product-tags';
+  api(method, url, body).then(function () {
+    toast(t('toast.saveOk'));
+    resetTagEdit();
+    loadTags();
+    loadTagStats();
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+function delTag(o) {
+  if (!confirm(t('tag.delConfirm', { n: o.used_count || 0 }))) return;
+  api('DELETE', '/api/product-tags/' + o.id).then(function (r) {
+    toast(t('toast.delOk') + (r && r.unlinked ? ' · ' + t('tag.unlinked', { n: r.unlinked }) : ''));
+    var si = ST.tagSel.indexOf(o.id); if (si >= 0) ST.tagSel.splice(si, 1);
+    var pi = ST.prodTags.indexOf(o.id); if (pi >= 0) ST.prodTags.splice(pi, 1);
+    loadTags();
+    loadTagStats();
   }).catch(function (e) { toast(e.message, 'error'); });
 }
 
@@ -3233,7 +3365,8 @@ function saveProductForm(d, opts) {
     status: d.status || '在库', rfid_epc: d.rfid_epc || '', store_id: d.store_id || 1,
     showcase_public: d.showcase_public || 0, showcase_order: d.showcase_order || 0,
     showcase_desc: d.showcase_desc || '', origin: d.origin || '', high_value: d.high_value || 0,
-    location_id: d.location_id || 0, cert_location_id: d.cert_location_id || 0 };
+    location_id: d.location_id || 0, cert_location_id: d.cert_location_id || 0,
+    tag_ids: d.tag_ids || [] };
   return api(isNew ? 'POST' : 'PUT', isNew ? '/api/products' : '/api/products/' + d.id, body2).then(function (r) {
     d.id = r.id;
     d.rfid_epc = r.rfid_epc || d.rfid_epc;
@@ -3338,6 +3471,15 @@ function submitSheet() {
 }
 
 // ---- actions ----
+// 通用确认面板：替代浏览器 confirm，标题+明细行+后果说明，确认后才执行 fn
+function confirmBox(opt) { ST.cfm = opt; }
+function cfmCancel() { ST.cfm = null; }
+function cfmOk() {
+  var f = ST.cfm && ST.cfm.fn;
+  ST.cfm = null;
+  if (f) f();
+}
+
 function voidSale(s) {
   if (checkFrozen()) return;
   if (!confirm(t('act.void') + '?')) return;
@@ -3346,14 +3488,40 @@ function voidSale(s) {
 
 function payDeposit(d) {
   if (checkFrozen()) return;
-  if (!confirm(t('act.payBal') + '?')) return;
-  api('POST', '/api/deposits/' + d.id + '/pay').then(function (r) { toast(t('toast.payOk') + ' ' + r.bill_no); refreshAll(); }).catch(function (e) { toast(e.message, 'error'); });
+  confirmBox({
+    title: t('act.payBal'), danger: false, okText: t('act.payBal'),
+    lines: [
+      { k: 'lbl.product', v: d.product },
+      { k: 'lbl.customer', v: d.customer + (d.phone ? ' · ' + d.phone : '') },
+      { k: 'lbl.total', v: '￥' + fmt(d.total) },
+      { k: 'lbl.deposit', v: '￥' + fmt(d.deposit) },
+      { k: 'lbl.balance', v: '￥' + fmt(d.balance) },
+      { k: 'lbl.promisedDate', v: d.promised_date || '-' }
+    ],
+    warn: t('cfm.payBalWarn'),
+    fn: function () {
+      api('POST', '/api/deposits/' + d.id + '/pay').then(function (r) { toast(t('toast.payOk') + ' ' + r.bill_no); refreshAll(); }).catch(function (e) { toast(e.message, 'error'); });
+    }
+  });
 }
 
 function voidDeposit(d) {
   if (checkFrozen()) return;
-  if (!confirm(t('act.void') + '?')) return;
-  api('POST', '/api/deposits/' + d.id + '/void').then(function () { toast(t('toast.voidOk')); refreshAll(); }).catch(function (e) { toast(e.message, 'error'); });
+  confirmBox({
+    title: t('act.void'), danger: true, okText: t('act.void'),
+    lines: [
+      { k: 'lbl.product', v: d.product },
+      { k: 'lbl.customer', v: d.customer + (d.phone ? ' · ' + d.phone : '') },
+      { k: 'lbl.total', v: '￥' + fmt(d.total) },
+      { k: 'lbl.deposit', v: '￥' + fmt(d.deposit) },
+      { k: 'lbl.balance', v: '￥' + fmt(d.balance) },
+      { k: 'dep.createdAt', v: (d.created || '').slice(0, 16) }
+    ],
+    warn: t('cfm.voidWarn'),
+    fn: function () {
+      api('POST', '/api/deposits/' + d.id + '/void').then(function () { toast(t('toast.voidOk')); refreshAll(); }).catch(function (e) { toast(e.message, 'error'); });
+    }
+  });
 }
 
 function returnLoan(d) {
@@ -4503,12 +4671,13 @@ function saveStore() {
   var d = ST.storeEdit;
   if (!d.name || !d.name.trim()) { toast(t('shop.storeNameReq'), 'error'); return; }
   var code = (d.code || '').trim().toUpperCase();
-  if (code && !/^[A-Z0-9]{2}$/.test(code)) { toast(t('store.codeRule'), 'error'); return; }
+  // 编辑态 code 输入框禁用、后端也不改 code（存量门店码可能是多位如 A001），仅新增时校验
+  if (!d.id && code && !/^[A-Z0-9]{2}$/.test(code)) { toast(t('store.codeRule'), 'error'); return; }
   d.code = code;
   var payload = { name: d.name.trim(), code: code, owner: (d.owner || '').trim(), shop_id: d.shop_id || 0 };
   var req = d.id ? api('PUT', '/api/stores/' + d.id, payload) : api('POST', '/api/stores', payload);
   req.then(function () {
-    toast(t('toast.saveOk')); resetStoreEdit(); loadShops(); loadStores(true); loadBridgeList();
+    toast(t('toast.saveOk')); resetStoreEdit(); loadShops(); loadStores(true, ST.tab === 'shops'); loadBridgeList();
   }).catch(function (e) { toast(e.message, 'error'); });
 }
 
@@ -4944,6 +5113,11 @@ var app = Vue.createApp({
     resetCatEdit: resetCatEdit, editCat: editCat, saveCat: saveCat, delCat: delCat,
     resetTypeEdit: resetTypeEdit, editType: editType, saveType: saveType, delType: delType,
     bindTypeTemplate: bindTypeTemplate,
+    // 商品标签（多标签 + 分组统计）
+    loadTags: loadTags, loadTagStats: loadTagStats,
+    toggleTagSel: toggleTagSel, clearTagSel: clearTagSel, toggleProdTagFilter: toggleProdTagFilter,
+    toggleTagPick: toggleTagPick, tagChipStyle: tagChipStyle, tagBarStyle: tagBarStyle,
+    addTag: addTag, editTag: editTag, saveTag: saveTag, delTag: delTag, resetTagEdit: resetTagEdit,
     // 商品图片裁切上传
     chooseProductImage: chooseProductImage, closeImgCrop: closeImgCrop,
     setImgOrient: setImgOrient, cropImgStyle: cropImgStyle,
@@ -5022,6 +5196,7 @@ var app = Vue.createApp({
     setScanMode: setScanMode,
     exitCoopScan: exitCoopScan,
     voidSale: voidSale, payDeposit: payDeposit, voidDeposit: voidDeposit,
+    cfmOk: cfmOk, cfmCancel: cfmCancel,
     openLoan: openLoan, returnLoan: returnLoan,
     addLoanRawCode: addLoanRawCode, removeLoanCode: removeLoanCode, loanCodes: loanCodes,
     applyDepositScan: applyDepositScan,

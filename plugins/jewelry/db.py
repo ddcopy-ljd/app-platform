@@ -127,6 +127,22 @@ CREATE TABLE IF NOT EXISTS products (
   created TEXT DEFAULT (datetime('now','localtime'))
 );
 
+-- 商品标签（业务统计用受控字典，租户库内私有、租户内各门店共用；与 RFID 打印标签 label_templates 无关）
+CREATE TABLE IF NOT EXISTS product_tags (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  color TEXT DEFAULT '',
+  sort_order INTEGER DEFAULT 0,
+  created TEXT DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS product_tag_links (
+  product_id INTEGER NOT NULL,
+  tag_id INTEGER NOT NULL,
+  UNIQUE(product_id, tag_id)
+);
+CREATE INDEX IF NOT EXISTS idx_tag_links_tag ON product_tag_links(tag_id);
+
 CREATE TABLE IF NOT EXISTS customers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -809,6 +825,9 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("appointments", "store_id", "INTEGER DEFAULT 0"),
         ("inventory_logs", "store_id", "INTEGER DEFAULT 0"),
         ("stocktakes", "store_id", "INTEGER DEFAULT 0"),
+        # 1.2.25 操作日志/会员按门店隔离（0=总店/共享，总店视图可看全部）
+        ("operate_logs", "store_id", "INTEGER DEFAULT 0"),
+        ("customers", "store_id", "INTEGER DEFAULT 0"),
         # 1.0.8 列级权限：成本查看开关（店长/高管强制 1；店员默认 0，可由店长逐账号授予）
         ("users", "can_view_cost", "INTEGER NOT NULL DEFAULT 0"),
         # 1.0.9 快速开单增强：品类计价方式 / 当日金价
@@ -877,6 +896,8 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
     _migrate_store_scope(conn)
     conn.commit()
+    _migrate_legacy_zero_store(conn)
+    conn.commit()
 
 
 def _migrate_store_scope(conn: sqlite3.Connection) -> None:
@@ -927,6 +948,22 @@ def _migrate_store_scope(conn: sqlite3.Connection) -> None:
                  AND NOT EXISTS (SELECT 1 FROM user_stores us WHERE us.user_id=u.id)"""
         )
         conn.execute("PRAGMA user_version=1")
+
+
+def _migrate_legacy_zero_store(conn: sqlite3.Connection) -> None:
+    """一次性迁移（user_version=2）：把 _migrate_store_scope 无法按商品关联出归属的
+    遗留 store_id=0 业务单据，统一归入第一家分店（无分店则归总店）。
+    归店后卡片统计与页面列表口径一致，分店页面不再显示他店历史数据。"""
+    if conn.execute("PRAGMA user_version").fetchone()[0] < 2:
+        tgt = conn.execute(
+            "SELECT id FROM stores WHERE UPPER(IFNULL(code,''))<>'HQ' ORDER BY id LIMIT 1").fetchone()
+        if not tgt:
+            tgt = conn.execute(
+                "SELECT id FROM stores WHERE UPPER(IFNULL(code,''))='HQ' ORDER BY id LIMIT 1").fetchone()
+        if tgt:
+            for tbl in ("sales", "loans", "repairs", "purchases", "outsourcings", "appointments"):
+                conn.execute(f"UPDATE {tbl} SET store_id=? WHERE COALESCE(store_id,0)=0", (tgt["id"],))
+        conn.execute("PRAGMA user_version=2")
 
 
 def _migrate_shops_and_sale_items(conn: sqlite3.Connection) -> None:
@@ -1566,27 +1603,27 @@ def _ensure_operate_logs_seed(conn: sqlite3.Connection) -> None:
         conn.execute("DELETE FROM operate_logs")
     now = datetime.now()
     logs = [
-        ("admin", "总店", "登录", "admin", "成功", now),
-        ("admin", "总店", "销售开单", "XS20261010001 古法金手串 1件", "成功", now - timedelta(minutes=10)),
-        ("admin", "总店", "切换门店", "分店A", "成功", now - timedelta(minutes=5)),
+        ("admin", "总部", "登录", "admin", "成功", now),
+        ("admin", "总部", "销售开单", "XS20261010001 古法金手串 1件", "成功", now - timedelta(minutes=10)),
+        ("admin", "总部", "切换门店", "分店A", "成功", now - timedelta(minutes=5)),
         ("admin", "分店A", "销售开单", "XS20261008001 翡翠吊坠 1件", "成功", now - timedelta(hours=2)),
         ("admin", "分店A", "收定金", "王晓丽 钻石耳钉 ￥2000", "成功", now - timedelta(hours=3)),
-        ("admin", "总店", "调拨发出", "TR20261008001 清老银饰 2件", "成功", now - timedelta(days=2)),
-        ("admin", "总店", "新增商品", "J011 珍珠项链", "成功", now - timedelta(days=2)),
+        ("admin", "总部", "调拨发出", "TR20261008001 清老银饰 2件", "成功", now - timedelta(days=2)),
+        ("admin", "总部", "新增商品", "J011 珍珠项链", "成功", now - timedelta(days=2)),
         ("admin", "分店A", "接维修", "张美凤 翡翠手镯裂纹修复", "成功", now - timedelta(days=3)),
-        ("staff", "总店", "借货", "同行老刘 足金手镯", "成功", now - timedelta(days=3)),
-        ("admin", "总店", "RFID隔空盘点", "感应12 盘亏1", "成功", now - timedelta(days=4)),
-        ("admin", "总店", "门店授权", "admin 全部门店", "成功", now - timedelta(days=5)),
-        ("admin", "总店", "定金冲红", "#1", "成功", now - timedelta(days=6)),
-        ("admin", "总店", "RFID标签打印", "J011 珍珠项链 E28.JQ.07.0001", "成功", now - timedelta(days=6)),
+        ("staff", "总部", "借货", "同行老刘 足金手镯", "成功", now - timedelta(days=3)),
+        ("admin", "总部", "RFID隔空盘点", "感应12 盘亏1", "成功", now - timedelta(days=4)),
+        ("admin", "总部", "门店授权", "admin 全部门店", "成功", now - timedelta(days=5)),
+        ("admin", "总部", "定金冲红", "#1", "成功", now - timedelta(days=6)),
+        ("admin", "总部", "RFID标签打印", "J011 珍珠项链 E28.JQ.07.0001", "成功", now - timedelta(days=6)),
         ("staff", "分店A", "预约跟进", "2:已确认", "成功", now - timedelta(days=7)),
-        ("admin", "总店", "销售冲红", "XS20261008001", "成功", now - timedelta(days=7)),
-        ("admin", "总店", "委外加工", "金艺加工厂 镶钻吊坠", "成功", now - timedelta(days=10)),
-        ("admin", "总店", "采购入库", "CG20260105001 足金金料 100g", "成功", now - timedelta(days=12)),
-        ("staff", "总店", "借货归还", "同行老刘 足金手镯", "成功", now - timedelta(days=14)),
-        ("admin", "总店", "安防布防", "定时计划", "成功", now - timedelta(days=15)),
+        ("admin", "总部", "销售冲红", "XS20261008001", "成功", now - timedelta(days=7)),
+        ("admin", "总部", "委外加工", "金艺加工厂 镶钻吊坠", "成功", now - timedelta(days=10)),
+        ("admin", "总部", "采购入库", "CG20260105001 足金金料 100g", "成功", now - timedelta(days=12)),
+        ("staff", "总部", "借货归还", "同行老刘 足金手镯", "成功", now - timedelta(days=14)),
+        ("admin", "总部", "安防布防", "定时计划", "成功", now - timedelta(days=15)),
         ("admin", "分店A", "新增账号", "staff2", "成功", now - timedelta(days=20)),
-        ("admin", "总店", "初始化演示数据（含10件新品橱窗）", "jewelry", "成功", now - timedelta(days=30)),
+        ("admin", "总部", "初始化演示数据（含10件新品橱窗）", "jewelry", "成功", now - timedelta(days=30)),
     ]
     conn.executemany(
         "INSERT INTO operate_logs(operator,store,action,target,result,time) VALUES(?,?,?,?,?,?)",
@@ -1624,7 +1661,7 @@ def _ensure_stores_seed(conn: sqlite3.Connection) -> None:
         # 全空：seed 两家
         conn.executemany(
             "INSERT INTO stores(name,code,owner,shop_id) VALUES(?,?,?,?)",
-            [("总店", "HQ", "管理员", 1), ("分店A", "A001", "店长小张", 0)],
+            [("总部", "HQ", "管理员", 1), ("分店A", "A001", "店长小张", 0)],
         )
     elif n == 1:
         # 只有 1 家：补第二家分店
@@ -1634,7 +1671,7 @@ def _ensure_stores_seed(conn: sqlite3.Connection) -> None:
                          ("分店A", "A001", "店长小张", 0))
         else:
             conn.execute("INSERT INTO stores(name,code,owner,shop_id) VALUES(?,?,?,?)",
-                         ("总店", "HQ", "管理员", 1))
+                         ("总部", "HQ", "管理员", 1))
 
 
 def _ensure_user_store_grants(conn: sqlite3.Connection) -> None:
@@ -1798,7 +1835,7 @@ def seed_demo(conn: sqlite3.Connection) -> None:
     """写入演示数据（幂等：仅在接近空库时执行）。"""
     if conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] > 0:
         return
-    stores = [("总店", "HQ", "管理员"), ("分店A", "A001", "店长小张")]
+    stores = [("总部", "HQ", "管理员"), ("分店A", "A001", "店长小张")]
     conn.executemany("INSERT INTO stores(name,code,owner) VALUES(?,?,?)", stores)
     # —— shops（上层组织）——
     conn.execute("INSERT INTO shops(name,code,sale_item_limit) VALUES(?,?,?)", ("懿臻珠宝总店", "HQ", 20))
@@ -1839,6 +1876,10 @@ def seed_demo(conn: sqlite3.Connection) -> None:
     # —— clerk_types ——
     cts = [("店长", 1), ("珠宝顾问", 2), ("收银", 3), ("维修技师", 4), ("盘点员", 5)]
     conn.executemany("INSERT INTO clerk_types(name,sort_order) VALUES(?,?)", cts)
+    # —— product_tags（商品标签字典；只进 seed_demo，不进 ensure_new_seeds，避免租户删光标签后升级复活）——
+    ptags = [("项链", 1), ("手链", 2), ("戒指", 3), ("金饰", 4), ("银饰", 5),
+             ("翡翠", 6), ("钻石", 7), ("古风", 8), ("现代", 9), ("婚庆", 10)]
+    conn.executemany("INSERT OR IGNORE INTO product_tags(name,sort_order) VALUES(?,?)", ptags)
     # —— label_templates ——
     conn.execute(
         "INSERT INTO label_templates(name,size_width,size_height,layout) VALUES(?,?,?,?)",
