@@ -94,7 +94,8 @@ CREATE TABLE IF NOT EXISTS product_types (
   names TEXT NOT NULL DEFAULT '{}',
   sort_order INTEGER DEFAULT 0,
   label_template_id INTEGER DEFAULT NULL,
-  pricing_mode TEXT DEFAULT 'piece'
+  pricing_mode TEXT DEFAULT 'piece',
+  group_name TEXT DEFAULT '主播希川'
 );
 
 CREATE TABLE IF NOT EXISTS products (
@@ -124,7 +125,16 @@ CREATE TABLE IF NOT EXISTS products (
   origin TEXT DEFAULT '',
   location_id INTEGER DEFAULT 0,
   cert_location_id INTEGER DEFAULT 0,
-  created TEXT DEFAULT (datetime('now','localtime'))
+  created TEXT DEFAULT (datetime('now','localtime')),
+  -- 价格策略：一口价/折扣率、折扣价、会员价
+  price_mode TEXT DEFAULT 'fixed',
+  discount REAL DEFAULT 100,
+  discount_price REAL DEFAULT 0,
+  member_price REAL DEFAULT 0,
+  -- 营销策略：参与整单打折、会员可见、购买赠积分
+  join_order_discount INTEGER DEFAULT 1,
+  member_only INTEGER DEFAULT 0,
+  gift_points INTEGER DEFAULT 0
 );
 
 -- 商品标签（业务统计用受控字典，租户库内私有、租户内各门店共用；与 RFID 打印标签 label_templates 无关）
@@ -224,7 +234,8 @@ CREATE TABLE IF NOT EXISTS tenant_profiles (
   gallery TEXT DEFAULT '[]',
   published INTEGER DEFAULT 1,
   showcase_title TEXT DEFAULT '新品橱窗',
-  showcase_subtitle TEXT DEFAULT '本周臻品 · 限量发售'
+  showcase_subtitle TEXT DEFAULT '本周臻品 · 限量发售',
+  i18n TEXT DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS deposits (
@@ -797,6 +808,7 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("stores", "name_i18n", "TEXT DEFAULT '{}'"),
         ("tenant_profiles", "showcase_title", "TEXT DEFAULT '新品橱窗'"),
         ("tenant_profiles", "showcase_subtitle", "TEXT DEFAULT '本周臻品 · 限量发售'"),
+        ("tenant_profiles", "i18n", "TEXT DEFAULT '{}'"),
         ("label_templates", "definition", "TEXT DEFAULT '{}'"),
         ("categories", "label_template_id", "INTEGER DEFAULT NULL"),
         ("products", "product_type", "TEXT DEFAULT ''"),
@@ -853,6 +865,16 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("deposits", "deliver_requirements", "TEXT DEFAULT ''"),
         # 1.2.16 客情维护：结婚纪念日
         ("customers", "anniversary", "TEXT DEFAULT ''"),
+        # 1.2.20 分类弹窗：product_types 按大组分组
+        ("product_types", "group_name", "TEXT DEFAULT '主播希川'"),
+        # 1.2.20 商品价格策略 + 营销策略
+        ("products", "price_mode", "TEXT DEFAULT 'fixed'"),
+        ("products", "discount", "REAL DEFAULT 100"),
+        ("products", "discount_price", "REAL DEFAULT 0"),
+        ("products", "member_price", "REAL DEFAULT 0"),
+        ("products", "join_order_discount", "INTEGER DEFAULT 1"),
+        ("products", "member_only", "INTEGER DEFAULT 0"),
+        ("products", "gift_points", "INTEGER DEFAULT 0"),
         # 会员管理：建档时间（今日/本月新增统计）。旧库 ADD COLUMN 不能用非常量默认，
         # 故迁移列用常量 ''（历史会员不计入今日/本月新增）；新建档由后端 INSERT 显式写 datetime。
         ("customers", "created", "TEXT DEFAULT ''"),
@@ -1017,7 +1039,8 @@ def _migrate_legacy_stocktake_tasks(conn: sqlite3.Connection) -> None:
 def _seed_base_dicts(conn: sqlite3.Connection) -> None:
     conn.executemany(
         "INSERT OR IGNORE INTO languages(code,name,is_default,sort_order) VALUES(?,?,?,?)",
-        [("zh", "中文", 1, 1), ("en", "English", 0, 2), ("it", "Italiano", 0, 3)],
+        [("zh", "中文", 1, 1), ("en", "English", 0, 2), ("it", "Italiano", 0, 3),
+         ("ja", "日本語", 0, 4), ("ko", "한국어", 0, 5), ("zhHant", "繁體中文", 0, 6)],
     )
     conn.execute("INSERT OR IGNORE INTO biz_config(id,epc_prefix,seq_bits) VALUES(1,'E28',6)")
     # 智能安防默认设置：撤防、每日21:00布防/10:00撤防、抑制60秒
@@ -1371,13 +1394,16 @@ def ensure_new_seeds(conn: sqlite3.Connection) -> None:
              "2026-11-15", "", "", 7, "已定"),
             ("李雪", "13500005555", 3, "翡翠观音吊坠", 9800, 4000, 5800,
              "2026-10-18", "10月18日 上午10点前", "改款加配 3 颗小钻 · 国检证书", 7, "已定"),
+            ("周佳慧", "13755556666", 6, "黄金福字吊坠", 5600, 3000, 2600,
+             "2026-10-25", "10月25日 上午10点前", "GIA 证书 · 刻字 ZJH", 7, "已定"),
         ]
         conn.executemany(
             "INSERT INTO deposits(customer,phone,product_id,product,total,deposit,balance,"
             "promised_date,delivery_time,deliver_requirements,reminder_days,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             deposits,
         )
-    # —— shops（上层组织）——
+        # 有"已定"定金单的商品 → 自动置为已定锁定（同 seed_demo 逻辑）
+        conn.execute("UPDATE products SET status='已定' WHERE id IN (SELECT product_id FROM deposits WHERE status='已定')")
     if conn.execute("SELECT COUNT(*) FROM shops").fetchone()[0] == 0:
         conn.execute(
             "INSERT INTO shops(name,code,sale_item_limit) VALUES(?,?,?)",
@@ -1399,18 +1425,39 @@ def ensure_new_seeds(conn: sqlite3.Connection) -> None:
             ("PEARL", '{"zh":"珍珠","en":"Pearl","it":"Perla"}'),
         ]
         conn.executemany("INSERT INTO categories(code,names) VALUES(?,?)", cats)
-    # —— product_types ——
+    # —— product_types（按 group_name 分大组）——
     if conn.execute("SELECT COUNT(*) FROM product_types").fetchone()[0] == 0:
         pts = [
-            ("RING", '{"zh":"戒指","en":"Ring","it":"Anello"}', 1, "piece"),
-            ("NECKLACE", '{"zh":"项链","en":"Necklace","it":"Collana"}', 2, "piece"),
-            ("BRACELET", '{"zh":"手镯","en":"Bracelet","it":"Bracciale"}', 3, "piece"),
-            ("EARRING", '{"zh":"耳饰","en":"Earring","it":"Orecchino"}', 4, "piece"),
-            ("PENDANT", '{"zh":"吊坠","en":"Pendant","it":"Ciondolo"}', 5, "piece"),
-            ("CHAIN", '{"zh":"链","en":"Chain","it":"Catena"}', 6, "piece"),
-            ("BEAD", '{"zh":"串珠","en":"Bead","it":"Perla"}', 7, "piece"),
+            ("RING", '{"zh":"戒指","en":"Ring","it":"Anello"}', 1, "piece", "主播希川"),
+            ("NECKLACE", '{"zh":"项链","en":"Necklace","it":"Collana"}', 2, "piece", "主播希川"),
+            ("BRACELET", '{"zh":"手镯","en":"Bracelet","it":"Bracciale"}', 3, "piece", "主播希川"),
+            ("EARRING", '{"zh":"耳饰","en":"Earring","it":"Orecchino"}', 4, "piece", "主播希川"),
+            ("PENDANT", '{"zh":"吊坠","en":"Pendant","it":"Ciondolo"}', 5, "piece", "主播希川"),
+            ("CHAIN", '{"zh":"链","en":"Chain","it":"Catena"}', 6, "piece", "主播希川"),
+            ("BEAD", '{"zh":"串珠","en":"Bead","it":"Perla"}', 7, "piece", "主播希川"),
+            ("ANTIQUE_RING", '{"zh":"古董戒指","en":"Antique Ring","it":"Anello Antico"}', 1, "piece", "古董款"),
+            ("ANTIQUE_NECK", '{"zh":"古董项链","en":"Antique Necklace","it":"Collana Antica"}', 2, "piece", "古董款"),
+            ("BROOCH", '{"zh":"胸针","en":"Brooch","it":"Spilla"}', 3, "piece", "古董款"),
+            ("CUFFLINK", '{"zh":"袖扣","en":"Cufflink","it":"Gemelli"}', 4, "piece", "古董款"),
+            ("CLASP", '{"zh":"搭扣","en":"Clasp","it":"Fermaglio"}', 5, "piece", "古董款"),
+            ("COUNTER_RING", '{"zh":"专柜戒指","en":"Counter Ring","it":"Anello Banco"}', 1, "piece", "专柜款"),
+            ("COUNTER_NECK", '{"zh":"专柜项链","en":"Counter Necklace","it":"Collana Banco"}', 2, "piece", "专柜款"),
+            ("COUNTER_BRACE", '{"zh":"专柜手链","en":"Counter Bracelet","it":"Bracciale Banco"}', 3, "piece", "专柜款"),
+            ("SET", '{"zh":"套装","en":"Set","it":"Set"}', 4, "piece", "专柜款"),
         ]
-        conn.executemany("INSERT INTO product_types(code,names,sort_order,pricing_mode) VALUES(?,?,?,?)", pts)
+        conn.executemany("INSERT INTO product_types(code,names,sort_order,pricing_mode,group_name) VALUES(?,?,?,?,?)", pts)
+    # 老库补插古董款 / 专柜款 分组（已存在的 code 跳过）
+    conn.executemany("INSERT OR IGNORE INTO product_types(code,names,sort_order,pricing_mode,group_name) VALUES(?,?,?,?,?)", [
+        ("ANTIQUE_RING", '{"zh":"古董戒指","en":"Antique Ring"}', 1, "piece", "古董款"),
+        ("ANTIQUE_NECK", '{"zh":"古董项链","en":"Antique Necklace"}', 2, "piece", "古董款"),
+        ("BROOCH", '{"zh":"胸针","en":"Brooch"}', 3, "piece", "古董款"),
+        ("CUFFLINK", '{"zh":"袖扣","en":"Cufflink"}', 4, "piece", "古董款"),
+        ("CLASP", '{"zh":"搭扣","en":"Clasp"}', 5, "piece", "古董款"),
+        ("COUNTER_RING", '{"zh":"专柜戒指","en":"Counter Ring"}', 1, "piece", "专柜款"),
+        ("COUNTER_NECK", '{"zh":"专柜项链","en":"Counter Necklace"}', 2, "piece", "专柜款"),
+        ("COUNTER_BRACE", '{"zh":"专柜手链","en":"Counter Bracelet"}', 3, "piece", "专柜款"),
+        ("SET", '{"zh":"套装","en":"Set"}', 4, "piece", "专柜款"),
+    ])
     # —— locations（库位）——
     if conn.execute("SELECT COUNT(*) FROM locations").fetchone()[0] == 0:
         locs = [
@@ -1786,8 +1833,8 @@ def _ensure_products_seed(conn: sqlite3.Connection) -> None:
         ("J005", "红碧玺彩宝戒指", "彩宝", "18K金+红碧玺", 3.1, "13号", "CB-77421", 4100, 5600, "在库", 2, "", 1, 5,
          "产地：巴西米纳斯｜材质：18K金+3.2ct天然红碧玺｜金重：3.10g｜13号戒圈｜旺运招财，女王气场｜参考价：¥5,600",
          "巴西·米纳斯"),
-        # J006 - 黄金吊坠（已定，不进橱窗）
-        ("J006", "黄金福字吊坠", "黄金", "足金999", 6.8, "", "GDH-90344", 4600, 5600, "已定", 1, "", 0, 0, "",
+        # J006 - 黄金吊坠（已定，不进橱窗；status 由 deposits 自动驱动）
+        ("J006", "黄金福字吊坠", "黄金", "足金999", 6.8, "", "GDH-90344", 4600, 5600, "在库", 1, "", 0, 0, "",
          "深圳·水贝"),
         # J007 - 银质对戒 (6)
         ("J007", "银质一生一世对戒", "银饰", "925银", 8.5, "17号", "AG-12098", 900, 1280, "在库", 2, "", 1, 6,
@@ -1854,17 +1901,29 @@ def seed_demo(conn: sqlite3.Connection) -> None:
         ("PEARL", '{"zh":"珍珠","en":"Pearl","it":"Perla"}'),
     ]
     conn.executemany("INSERT INTO categories(code,names) VALUES(?,?)", cats)
-    # —— product_types ——
+    # —— product_types（按 group_name 分大组，种子覆盖 3 个默认组）——
     pts = [
-        ("RING", '{"zh":"戒指","en":"Ring","it":"Anello"}', 1, "piece"),
-        ("NECKLACE", '{"zh":"项链","en":"Necklace","it":"Collana"}', 2, "piece"),
-        ("BRACELET", '{"zh":"手镯","en":"Bracelet","it":"Bracciale"}', 3, "piece"),
-        ("EARRING", '{"zh":"耳饰","en":"Earring","it":"Orecchino"}', 4, "piece"),
-        ("PENDANT", '{"zh":"吊坠","en":"Pendant","it":"Ciondolo"}', 5, "piece"),
-        ("CHAIN", '{"zh":"链","en":"Chain","it":"Catena"}', 6, "piece"),
-        ("BEAD", '{"zh":"串珠","en":"Bead","it":"Perla"}', 7, "piece"),
+        # 主播希川（默认组）
+        ("RING", '{"zh":"戒指","en":"Ring","it":"Anello"}', 1, "piece", "主播希川"),
+        ("NECKLACE", '{"zh":"项链","en":"Necklace","it":"Collana"}', 2, "piece", "主播希川"),
+        ("BRACELET", '{"zh":"手镯","en":"Bracelet","it":"Bracciale"}', 3, "piece", "主播希川"),
+        ("EARRING", '{"zh":"耳饰","en":"Earring","it":"Orecchino"}', 4, "piece", "主播希川"),
+        ("PENDANT", '{"zh":"吊坠","en":"Pendant","it":"Ciondolo"}', 5, "piece", "主播希川"),
+        ("CHAIN", '{"zh":"链","en":"Chain","it":"Catena"}', 6, "piece", "主播希川"),
+        ("BEAD", '{"zh":"串珠","en":"Bead","it":"Perla"}', 7, "piece", "主播希川"),
+        # 古董款
+        ("ANTIQUE_RING", '{"zh":"古董戒指","en":"Antique Ring","it":"Anello Antico"}', 1, "piece", "古董款"),
+        ("ANTIQUE_NECK", '{"zh":"古董项链","en":"Antique Necklace","it":"Collana Antica"}', 2, "piece", "古董款"),
+        ("BROOCH", '{"zh":"胸针","en":"Brooch","it":"Spilla"}', 3, "piece", "古董款"),
+        ("CUFFLINK", '{"zh":"袖扣","en":"Cufflink","it":"Gemelli"}', 4, "piece", "古董款"),
+        ("CLASP", '{"zh":"搭扣","en":"Clasp","it":"Fermaglio"}', 5, "piece", "古董款"),
+        # 专柜款
+        ("COUNTER_RING", '{"zh":"专柜戒指","en":"Counter Ring","it":"Anello Banco"}', 1, "piece", "专柜款"),
+        ("COUNTER_NECK", '{"zh":"专柜项链","en":"Counter Necklace","it":"Collana Banco"}', 2, "piece", "专柜款"),
+        ("COUNTER_BRACE", '{"zh":"专柜手链","en":"Counter Bracelet","it":"Bracciale Banco"}', 3, "piece", "专柜款"),
+        ("SET", '{"zh":"套装","en":"Set","it":"Set"}', 4, "piece", "专柜款"),
     ]
-    conn.executemany("INSERT INTO product_types(code,names,sort_order,pricing_mode) VALUES(?,?,?,?)", pts)
+    conn.executemany("INSERT OR IGNORE INTO product_types(code,names,sort_order,pricing_mode,group_name) VALUES(?,?,?,?,?)", pts)
     # —— locations（库位）——
     locs = [
         (1, "A-01-01", "A区-01柜-01格", 1), (1, "A-01-02", "A区-01柜-02格", 2),
@@ -1932,12 +1991,16 @@ def seed_demo(conn: sqlite3.Connection) -> None:
          "2026-11-15", "", "", 7, "已定"),
         ("李雪", "13500005555", 3, "翡翠观音吊坠", 9800, 4000, 5800,
          "2026-10-18", "10月18日 上午10点前", "改款加配 3 颗小钻 · 国检证书", 7, "已定"),
+        ("周佳慧", "13755556666", 6, "黄金福字吊坠", 5600, 3000, 2600,
+         "2026-10-25", "10月25日 上午10点前", "GIA 证书 · 刻字 ZJH", 7, "已定"),
     ]
     conn.executemany(
         "INSERT INTO deposits(customer,phone,product_id,product,total,deposit,balance,"
         "promised_date,delivery_time,deliver_requirements,reminder_days,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
         deposits,
     )
+    # 有"已定"定金单的商品 → 自动置为已定锁定（库存分析抽屉才能显示关联定金单）
+    conn.execute("UPDATE products SET status='已定' WHERE id IN (SELECT product_id FROM deposits WHERE status='已定')")
 
     loans = [
         ("out", "足金手镯", "J001", "同行老刘", 1, "2026-01-20", "2026-02-20", "借出中"),

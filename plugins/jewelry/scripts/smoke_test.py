@@ -38,13 +38,9 @@ SKIP_PATTERNS = [
     "/api/stocktake/qr",            # 必须 token 参数
 ]
 
-# —— 已知线程池争用端点：单点直连秒回，但串行打满 ~50 个 GET 后，排在字母序末尾的
-#    这几个会因全局 _lock 争用（桥接 fut.result(timeout=10) 占住 worker）而超时。
-#    属既有问题（非本次改动引入），满负载超时时归为 KNOWN 而非 FAIL；
-#    若返回真实 5xx 仍算 FAIL。详见 TEST_CASES.md。——
-KNOWN_CONTENTION = [
-    "/api/tasks", "/api/transfers",
-]
+# —— 已知线程池争用端点：TC-21 已修复（v1.2.25），后台金价预拉不再阻塞 anyio worker ——
+# 恢复全量验证，不再将 tasks/transfers 归入 KNOWN
+KNOWN_CONTENTION = []
 
 
 def _is_known_contention(path: str) -> bool:

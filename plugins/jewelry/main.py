@@ -487,6 +487,8 @@ _PRODUCT_COLS = (
     "products.showcase_public,products.showcase_order,products.showcase_desc,products.showcase_desc_i18n,"
     "products.origin,products.high_value,"
     "products.location_id,products.cert_location_id,"
+    "products.price_mode,products.discount,products.discount_price,products.member_price,"
+    "products.join_order_discount,products.member_only,products.gift_points,"
     "(SELECT l.code||' '||l.name FROM locations l WHERE l.id=products.location_id) AS location_name,"
     "(SELECT l.code||' '||l.name FROM locations l WHERE l.id=products.cert_location_id) AS cert_location_name,"
     "products.image_ts,products.created,"
@@ -1878,6 +1880,14 @@ class ProductIn(BaseModel):
     location_id: int = 0
     cert_location_id: int = 0
     tag_ids: list[int] = []
+    # 价格策略 + 营销策略
+    price_mode: str = "fixed"            # fixed=一口价 / percent=按折扣率
+    discount: float = 100                # 折扣率 0-100（100=不打折）
+    discount_price: float = 0             # 一口折扣价（元）
+    member_price: float = 0               # 会员专属价（0=不设）
+    join_order_discount: int = 1          # 是否参与整单打折（1=是）
+    member_only: int = 0                  # 仅会员可见（1=是）
+    gift_points: int = 0                  # 购买赠送积分
 
 
 def _set_product_tags(conn: sqlite3.Connection, pid: int, tag_ids: list[int]) -> None:
@@ -2620,13 +2630,17 @@ def product_create(body: ProductIn, request: Request):
             """INSERT INTO products(code,name,name_i18n,category,category_code,material,product_type,product_type_code,
                                      weight,size,cert,cost,price,status,store_id,rfid_epc,
                                      showcase_public,showcase_order,showcase_desc,origin,high_value,
-                                     location_id,cert_location_id)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                     location_id,cert_location_id,
+                                     price_mode,discount,discount_price,member_price,
+                                     join_order_discount,member_only,gift_points)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (body.code, body.name, body.name_i18n, body.category, body.category_code,
              _norm_material(body.material), type_name, type_code,
              body.weight, body.size, body.cert, body.cost, body.price, body.status, body.store_id, epc,
              body.showcase_public, body.showcase_order, body.showcase_desc, body.origin, body.high_value,
-             body.location_id or 0, body.cert_location_id or 0),
+             body.location_id or 0, body.cert_location_id or 0,
+             body.price_mode, body.discount, body.discount_price, body.member_price,
+             body.join_order_discount, body.member_only, body.gift_points),
         )
         _inv(conn, cur.lastrowid, epc, "in", op["username"], store_id=sid)
         _set_product_tags(conn, cur.lastrowid, body.tag_ids)
@@ -2665,12 +2679,18 @@ def product_update(pid: int, body: ProductIn, request: Request):
                product_type=?,product_type_code=?,weight=?,size=?,cert=?,
                cost=?,price=?,status=?,store_id=?,rfid_epc=?,showcase_public=?,
                showcase_order=?,showcase_desc=?,origin=?,high_value=?,
-               location_id=?,cert_location_id=? WHERE id=?""",
+               location_id=?,cert_location_id=?,
+               price_mode=?,discount=?,discount_price=?,member_price=?,
+               join_order_discount=?,member_only=?,gift_points=?
+               WHERE id=?""",
             (body.code, body.name, body.name_i18n, body.category, body.category_code,
              _norm_material(body.material), type_name, type_code,
              body.weight, body.size, body.cert, body.cost, body.price, body.status, body.store_id, epc,
              body.showcase_public, body.showcase_order, body.showcase_desc, body.origin, body.high_value,
-             body.location_id or 0, body.cert_location_id or 0, pid),
+             body.location_id or 0, body.cert_location_id or 0,
+             body.price_mode, body.discount, body.discount_price, body.member_price,
+             body.join_order_discount, body.member_only, body.gift_points,
+             pid),
         )
         _set_product_tags(conn, pid, body.tag_ids)
         conn.commit()

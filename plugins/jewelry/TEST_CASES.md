@@ -153,12 +153,12 @@
 - **修复**：抽出共享函数 `_ensure_products_seed()`（products 空表时灌 12 件 + 回填 category_code + 材质迁移 + 三语 + EPC 规则化），`seed_demo()` 与 `ensure_new_seeds()` 都调用它；并加防御：历史商品 `store_id IS NULL` 归到第一家门店（否则按门店过滤永远查不到）。
 - **附带修复**：门店切换入口消失（`_ensure_stores_seed()` 保证 stores≥2，前端 select 仅 `stores.length>1` 才渲染）+ 操作日志空（`_ensure_operate_logs_seed()` 补 21 条覆盖全业务链）。
 
-## TC-21 冒烟满负载时 tasks/transfers 超时（既有 _lock 争用，未修）
+## TC-21 冒烟满负载时 tasks/transfers 超时（**已修复** 1.2.25）
 
-- **问题现象**：`scripts/smoke_test.py` 串行打满约 50 个 GET 后，排在字母序末尾的 `/api/tasks*`、`/api/transfers*` 稳定超时（15s/30s 均无响应，重试仍失败）；但**单独直连这些端点秒回（0.04s）**。改动前后计数一致，非回归。
-- **根因（推断，未彻底定位）**：全局 `threading.Lock`（main.py L71 `_lock`）争用——序列中某个早执行的端点持锁后阻塞在慢操作（如桥接 `_bridge_send` 的 `fut.result(timeout=10)` 占住 anyio worker 线程），到字母序靠后的 tasks/transfers 时线程池已被占满。属**既有问题**，与 products 修复无关。
-- **验证方法**：`python scripts/smoke_test.py` → 这 5 个归入 `KNOWN`（满负载超时·已知 _lock 争用），不计 FAIL；报告应为 `FAIL=0`。若某次返回真实 5xx 则仍算 FAIL 需排查。
-- **遗留**：后续单独立项排查 `_lock` 持锁范围与桥接阻塞调用（候选：缩小临界区 / 桥接发送移出锁 / 提高线程池上限），本轮不阻塞交付。
+- **问题现象**：`scripts/smoke_test.py` 串行打满约 50 个 GET 后，排在字母序末尾的 `/api/tasks*`、`/api/transfers*` 稳定超时（15s/30s 均无响应，重试仍失败）；但**单独直连这些端点秒回（0.04s）**。
+- **根因（已定位）**：不是 `_lock` 争用（`_lock`/`_bridges_lock` 都是内存字典快速持锁，纳秒级），而是 `GET /api/dashboard/gold` 同步端点内的 `urllib.request.urlopen(req, timeout=8)` 阻塞 anyio worker 最多 8 秒。冒烟脚本每个请求带 `Connection: close`（每次新建 TCP 连接），50+ GET 并发丢进 Uvicorn 默认 worker 池（上限 40），单个慢端点占住 worker 导致字母序靠后的端点排队超时。
+- **修复**（1.2.25）：金价行情改为**后台守护线程定时预拉**（每 5 分钟拉全 14 币种新浪汇率+伦敦金），`dashboard_gold` 端点改为纯读内存缓存、零阻塞 anyio worker。缓存结构改为 `{ccy: {ts, data}}` 每币种独立条目，读写全程加锁避免竞态。
+- **验证方法**：`python scripts/smoke_test.py` → **所有 GET 端点秒回，tasks/transfers 不再归入 KNOWN**，报告应为 `FAIL=0`。单点直连 gold 响应 <40ms。
 
 ## TC-22 收定金面板输入框显示 `{{ t(...) }}` 原始代码（1.2.15）
 
@@ -245,3 +245,14 @@
 - **需求**：一件商品可贴多个标签（项链/金饰/古风/现代等受控字典，用于各类业务统计）；统计时可多选标签、按标签分组（每标签各一组，多标签商品在每组重复计入，占比分母=各组合计）；双口径=库存（在库数量/成本/标价）+销售（金额/件数，排除已冲红，缺省近6个月）。标签字典租户库内私有、租户内各门店共用；与 RFID 打印标签（label_templates）严格区分命名 tag。
 - **实现**：db.py SCHEMA 新增 product_tags（name UNIQUE）/product_tag_links（UNIQUE(product_id,tag_id)+tag_id 索引），幂等建表无 ALTER；演示标签仅进 seed_demo。后端 /api/product-tags CRUD（纳高管只读闸门；删除级联解除关联并回显 unlinked）；ProductIn.tag_ids 覆盖式写入（_set_product_tags）；商品删除/批量删除级联清 links、批量复制继承标签；列表/详情 _attach_tags 一次 IN 查询附带 tags；/api/dashboard/tag-stats 库存与销售两条 GROUP BY 查询 Python 合并（禁止同条 JOIN 交叉翻倍），stock_cost 受 can_view_cost。前端：表单标签多选 chips、列表行内 ptag+标签筛选 chips（命中任一）、总部管理「商品标签」维护区块、dashboard 标签统计卡（多选标签+横向条形+口径 note）。
 - **验证方法**：E2E（Python）：建标签→重名 400→商品贴多标→列表 tags 附带→tag-stats 与 SQLite 直连逐项一致（含重复计入、区间、tag_ids 过滤、无权限 stock_cost=None）→删标签 unlinked 正确且 links 清空→删商品级联→测试数据全清。浏览器走查：表单贴标保存回显、筛选 chips、总部管理增删改、统计卡渲染、EN 无界面级中文残留、console 无 error。迁移回归：旧库副本跑 upgrade.py 至 1.2.18，两表建成、老商品 tags=[]、既有读写正常。
+
+## TC-35 推广页多语言可写（1.2.19）
+
+- **问题现象**：企业网站 /site 固定中文渲染，租户无法按语言录入推广内容；橱窗商品已有 name_i18n/showcase_desc_i18n 列但 /site 未使用。
+- **根因**：tenant_profiles 无多语言列；public_site 模板硬编码中文文案，无语言协商。
+- **实现**：tenant_profiles.i18n JSON 列（{语言码:{字段:文本}}，缺字段回退中文主列）；/site 语言协商 ?lang > Accept-Language > zh（6 语言白名单）；插件固定文案内置 SITE_UI 文案包；橱窗商品名/描述接上 name_i18n/showcase_desc_i18n；总部管理企业资料卡新增「推广页多语言内容」区块（语言 chips + 独立编辑缓冲 profEdit，保存时序列化进 profile.i18n）。
+- **验证方法**：
+  1. 迁移：旧库跑两次 upgrade.py 幂等（tenant_profiles 有 i18n 列、languages 含 ja/ko/zhHant 六行）；
+  2. API：PUT /api/profile 带合法 i18n JSON 后 GET /site?lang=en 显示英文内容、缺 ja 字段回退中文、Accept-Language: it 命中意语文案、非法 i18n（数组/非对象）被 400；
+  3. 浏览器：总部管理按语言录入→保存→/site 顶部语言切换链接渲染对应语言（导航/预约表单/承诺文案跟随）→控制台无报错；
+  4. 测试数据（录入的各语言内容）验证后恢复原值。

@@ -84,7 +84,7 @@ var I18N = {
     'inv.filteringByStatus': '当前筛选', 'inv.clearFilter': '清除',
     'inv.repairing': '维修在途', 'inv.onHandFormula': '在店库存总数',
     'inv.metricCost': '库存成本', 'inv.metricPrice': '库存售价', 'inv.metricProfit': '预计利润', 'inv.metricRate': '预计利润率',
-    'inv.catShare': '分类库存占比', 'inv.lockTitle': '已定锁定明细', 'inv.lockReason': '锁定原因', 'inv.lockEmpty': '暂无已定锁定商品',
+    'inv.catShare': '分类库存占比', 'inv.ptypeShare': '品类库存占比', 'inv.lockTitle': '已定锁定明细', 'inv.lockReason': '锁定原因', 'inv.lockEmpty': '暂无已定锁定商品',
     'inv.tabPsi': '进销存查询', 'inv.psiStart': '开始日期', 'inv.psiEnd': '结束日期', 'inv.psiQuery': '查询',
     'inv.psiInQty': '进货数量', 'inv.psiIn': '进货金额', 'inv.psiOutQty': '销售数量', 'inv.psiOut': '销售金额',
     'inv.psiEndQty': '期末库存数量', 'inv.psiEndCost': '期末库存成本', 'inv.psiTotal': '合计', 'inv.psiEmpty': '暂无数据，请点击查询',
@@ -111,6 +111,9 @@ var I18N = {
     // form labels
     'lbl.code': '编码', 'lbl.huohao': '货号', 'lbl.name': '名称', 'lbl.category': '品类', 'lbl.material': '材质',
     'tbl.cols': '显示列', 'lbl.origin': '产地',
+    'price.strategy': '价格策略', 'price.mode': '商品折扣', 'price.percent': '打折', 'price.fixed': '一口价',
+    'price.discount': '折扣率 (%)', 'price.discountPrice': '折扣价 (元)', 'price.memberPrice': '会员价',
+    'mkt.strategy': '营销策略', 'mkt.joinDiscount': '参与整单打折', 'mkt.memberOnly': '仅会员可见', 'mkt.giftPoints': '购买赠送积分',
     'lbl.weight': '克重', 'lbl.size': '尺寸', 'lbl.cost': '成本', 'lbl.price': '售价', 'lbl.barcode': '条码',
     'lbl.cert': '证书号', 'lbl.status': '状态', 'lbl.epc': 'RFID EPC', 'lbl.showcase': '允许上橱窗',
     'lbl.customer': '客户', 'lbl.phone': '手机号', 'lbl.product': '商品',
@@ -360,8 +363,8 @@ var I18N = {
     'sale.tabAnalysis': '销售分析', 'sale.tabList': '销售流水',
     'dash.yesterday': '昨天', 'dash.last7d': '近7天', 'dash.last3m': '近3个月',
     'sale.bills': '笔数', 'sale.revenue': '实销总额',
-    'sale.catRealShare': '分类实销总额占比', 'sale.clerkShare': '销售人员销售占比', 'sale.clerkTotal': '销售总额',
-    'sale.hotRank': '商品热销榜', 'sale.hotSold': '热卖', 'sale.detail': '明细',
+    'sale.catRealShare': '分类实销总额占比', 'sale.ptypeRealShare': '品类实销总额占比', 'sale.clerkShare': '销售人员销售占比', 'sale.clerkTotal': '销售总额',
+    'sale.hotRank': '单品热销榜', 'sale.hotSold': '热卖', 'sale.detail': '明细',
     // 多件快速开单
     'sale.pickItem': '添加商品', 'sale.pickPh': '选择在库商品',
     'sale.colName': '商品', 'sale.colCode': '货号', 'sale.colPrice': '单价',
@@ -440,14 +443,19 @@ var I18N = {
     // 店铺管理 / EPC / 分类管理
     'pf.title': '企业资料', 'pf.name': '名称', 'pf.slogan': '口号', 'pf.intro': '简介', 'pf.phone': '电话',
     'pf.hours': '营业时间', 'pf.address': '地址', 'pf.previewSite': '预览企业网站',
+    'pf.shTitle': '橱窗标题', 'pf.shTitlePh': '默认：新品橱窗', 'pf.shSub': '橱窗副标题', 'pf.shSubPh': '默认：本周臻品 · 限量发售',
+    'pf.siteI18n': '推广页多语言内容', 'pf.siteI18nHint': '按语言录入企业网站展示内容；某字段留空时自动回退中文。',
+    'pf.namePhLang': '该语言的企业名称', 'pf.cats': '经营品类',
     'epc.title': 'EPC 编码规则', 'epc.prefix': '企业前缀', 'epc.seqBits': '序号位数',
     'epc.hint': 'EPC = 企业前缀 + 门店码(2位字母/数字) + 品类码(2位) + 序号(4-6位十六进制)。序号按「门店+品类」独立递增；前缀取企业名称拼音首字母前三位（如 懿臻珠宝→YZZ），留空保存自动生成、可手填修改；门店编码取门店资料中的 2 位字母/数字（如 HQ、A1、06）；含字母的前缀或门店码写入芯片时自动转 ASCII 十六进制（YZZ→595A5A，HQ→4851）', 'epc.save': '保存规则',
     'cat.mgrTitle': '商品分类管理', 'cat.title': '商品分类', 'cat.name': '名称', 'cat.zhName': '中文名', 'cat.enName': '英文名',
     'cat.sort': '排序', 'cat.saveEdit': '保存修改', 'cat.addNew': '新增分类', 'cat.codePh': '如 08',
+    'cat.pick': '选择分类', 'cat.addCustom': '自定义',
     // 商品品类（戒指/项链…）与材质
     'type.mgrTitle': '商品品类管理', 'type.title': '商品品类', 'type.addNew': '新增品类',
     'type.namePh': '如：戒指', 'type.codePh': '如 10', 'type.confirmDel': '该品类下仍有商品，不能删除',
     'type.pricingMode': '计价方式', 'type.modePiece': '计件（一口价）', 'type.modeWeight': '计重（克重×金价+工费）',
+    'type.noTypes': '暂无品类，请先在总部管理中添加',
     'mat.AU': 'AU', 'mat.PT': 'PT', 'mat.AG': 'AG',
     'mat.DIA': 'DIA', 'mat.JAD': 'JAD', 'mat.CGS': 'CGS',
     'mat.PRL': 'PRL', 'mat.OTH': 'OTH',
@@ -683,7 +691,7 @@ function switchLang(lang) {
 currentLang = detectLang();
 switchLang(currentLang);   // 回写规范键，清理历史脏值（如 'zh'）
 
-var I18N_VER = '20261013e160';   // 语言字典文件缓存版本（与 index.html 同步升级）
+var I18N_VER = '20261013e161';   // 语言字典文件缓存版本（与 index.html 同步升级）
 function registerLang(key, dict) { I18N[key] = dict; }
 // index.html 启动时调用：返回需在 app.js 前同步加载的字典文件名后缀（中文返回 ''）
 function i18nDictFile() { var d = LANG_MAP[currentLang]; return (d && d !== 'zh') ? d : ''; }

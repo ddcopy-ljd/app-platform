@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>懿臻珠宝云</title>
 <link rel="icon" href="/logo/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./app.css?v=20261013e160">
+<link rel="stylesheet" href="./app.css?v=20261013e161">
 </head>
 <body>
 <div id="app">
@@ -464,6 +464,21 @@
             <button class="inv-tab" :class="{active:transferTab==='out'}" @click="transferTab='out'">📤 {{ t('tr.tabOut') }}</button>
             <button class="inv-tab" :class="{active:transferTab==='in'}" @click="transferTab='in'">📥 {{ t('tr.tabIn') }}</button>
           </div>
+          <div class="range-bar">
+            <div class="range-tabs">
+              <button class="range-tab" :class="{on:transferRange.range==='today'}" @click="setListRange('transferRange','today',loadTransfers)">{{ t('dash.today') }}</button>
+              <button class="range-tab" :class="{on:transferRange.range==='yesterday'}" @click="setListRange('transferRange','yesterday',loadTransfers)">{{ t('dash.yesterday') }}</button>
+              <button class="range-tab" :class="{on:transferRange.range==='7d'}" @click="setListRange('transferRange','7d',loadTransfers)">{{ t('dash.last7d') }}</button>
+              <button class="range-tab" :class="{on:transferRange.range==='month'}" @click="setListRange('transferRange','month',loadTransfers)">{{ t('dash.month') }}</button>
+              <button class="range-tab" :class="{on:transferRange.range==='3m'}" @click="setListRange('transferRange','3m',loadTransfers)">{{ t('dash.last3m') }}</button>
+              <button class="range-tab" :class="{on:transferRange.range==='custom'}" @click="setListRange('transferRange','custom')">{{ t('dash.custom') }}</button>
+            </div>
+            <div class="range-custom" v-if="transferRange.range==='custom'">
+              <input type="date" v-model="transferRange.start"> ~ <input type="date" v-model="transferRange.end">
+              <button class="btn btn-sm btn-gold" @click="customRangeQuery('transferRange', loadTransfers)">{{ t('dash.query') }}</button>
+            </div>
+            <div class="range-cur" v-else-if="transferRange.range">{{ transferRange.curStart }} ~ {{ transferRange.curEnd }}</div>
+          </div>
           <div class="card-list tr-grid">
             <div class="card-item transfer-card" v-for="x in transferList()" :key="x.id" @click="openTransfer(x)">
               <div class="tr-head">
@@ -828,6 +843,38 @@
                 </tbody>
               </table>
             </div>
+            <!-- 品类库存占比（product_types：戒指/手镯/古董戒指/专柜项链...） -->
+            <div class="section" v-if="invSum && invSum.ptypeInv && invSum.ptypeInv.length">
+              <div class="section-title"><span class="dot"></span>🥧 {{ t('inv.ptypeShare') }}</div>
+              <div class="donut-wrap">
+                <svg class="donut-svg" viewBox="0 0 42 42">
+                  <circle cx="21" cy="21" r="15.9" fill="none" stroke="#eee" stroke-width="6"></circle>
+                  <circle v-for="s in invPtypeDonut()" :key="s.key" cx="21" cy="21" r="15.9" fill="none"
+                          :stroke="donutColor(s.color)" stroke-width="6" pathLength="100"
+                          :stroke-dasharray="s.pct + ' ' + (100 - s.pct)" :stroke-dashoffset="s.offset"
+                          transform="rotate(-90 21 21)"></circle>
+                  <text x="21" y="20" class="donut-c1">{{ t('ba.top5') }}</text>
+                  <text x="21" y="24.5" class="donut-c2">{{ invSum.metrics.onHand }}</text>
+                </svg>
+                <div class="donut-legend">
+                  <div class="dl-row" v-for="(c,i) in invSum.ptypeInv.slice(0,5)" :key="c.productType">
+                    <span class="dl-dot" :style="{background: donutColor(i%6)}"></span>
+                    <span class="dl-name">{{ c.productType }}</span>
+                    <span class="dl-val">{{ c.count }} · {{ invPtypePct(c) }}%</span>
+                  </div>
+                </div>
+              </div>
+              <table class="ba-table" style="margin-top:10px">
+                <thead><tr><th>{{ t('lbl.category') }}</th><th class="r">{{ t('inv.count') }}</th><th class="r">{{ t('inv.metricCost') }}</th><th class="r">{{ t('inv.metricPrice') }}</th></tr></thead>
+                <tbody>
+                  <tr v-for="c in invSum.ptypeInv" :key="'pt'+c.productType">
+                    <td>{{ c.productType }}</td><td class="r">{{ c.count }}</td>
+                    <td class="r" :class="{'cell-secret':c.cost==null}">{{ c.cost==null ? '***' : '￥'+fmt(c.cost) }}</td>
+                    <td class="r">￥{{ fmt(c.price) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div><!-- /inv-side -->
           </div><!-- /inv-layout -->
           </div><!-- /invSub stock -->
@@ -949,6 +996,40 @@
                   <tbody>
                     <tr v-for="(c,i) in saleAna.data.categories" :key="'sc'+c.category">
                       <td><span class="dl-dot" :style="{background: donutColor(i%6)}"></span>{{ catText(c.category) }}</td>
+                      <td class="r">{{ c.qty }}</td>
+                      <td class="r">{{ c.cost==null ? '***' : '￥' + fmt(c.cost) }}</td>
+                      <td class="r">￥{{ fmt(c.amount) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- 品类实销总额占比（product_types：戒指/手镯/古董戒指/专柜项链...） -->
+              <div class="section" v-if="saleAna.data && saleAna.data.ptypeShares && saleAna.data.ptypeShares.length">
+                <div class="section-title"><span class="dot"></span>{{ t('sale.ptypeRealShare') }}</div>
+                <div class="donut-wrap">
+                  <svg class="donut-svg" viewBox="0 0 42 42">
+                    <circle cx="21" cy="21" r="15.9" fill="none" stroke="#eee" stroke-width="6"></circle>
+                    <circle v-for="s in saleAnaPtypeDonut()" :key="s.key" cx="21" cy="21" r="15.9" fill="none"
+                            :stroke="donutColor(s.color)" stroke-width="6" pathLength="100"
+                            :stroke-dasharray="s.pct + ' ' + (100 - s.pct)" :stroke-dashoffset="s.offset"
+                            transform="rotate(-90 21 21)"></circle>
+                    <text x="21" y="20" class="donut-c1">{{ t('ba.top5') }}</text>
+                    <text x="21" y="24.5" class="donut-c2">￥{{ fmt(saleAnaPtypeTop5Sum()) }}</text>
+                  </svg>
+                  <div class="donut-legend">
+                    <div class="dl-row" v-for="(c,i) in saleAna.data.ptypeShares.slice(0,5)" :key="c.productType">
+                      <span class="dl-dot" :style="{background: donutColor(i%6)}"></span>
+                      <span class="dl-name">{{ c.productType }}</span>
+                      <span class="dl-val">{{ c.pct }}%</span>
+                    </div>
+                  </div>
+                </div>
+                <table class="ba-table">
+                  <thead><tr><th>{{ t('ba.catName') }}</th><th class="r">{{ t('ba.realQty') }}</th><th class="r">{{ t('ba.realCost') }}</th><th class="r">{{ t('ba.realAmount') }}</th></tr></thead>
+                  <tbody>
+                    <tr v-for="(c,i) in saleAna.data.ptypeShares" :key="'sp'+c.productType">
+                      <td><span class="dl-dot" :style="{background: donutColor(i%6)}"></span>{{ c.productType }}</td>
                       <td class="r">{{ c.qty }}</td>
                       <td class="r">{{ c.cost==null ? '***' : '￥' + fmt(c.cost) }}</td>
                       <td class="r">￥{{ fmt(c.amount) }}</td>
@@ -1090,6 +1171,21 @@
             </details>
             <div class="biz-actions"><button class="btn btn-primary btn-sm" :disabled="frozen" @click="openDeposit">+ {{ t('act.deposit') }}</button></div>
           </div>
+          <div class="range-bar">
+            <div class="range-tabs">
+              <button class="range-tab" :class="{on:depRange.range==='today'}" @click="setListRange('depRange','today',loadDeposits)">{{ t('dash.today') }}</button>
+              <button class="range-tab" :class="{on:depRange.range==='yesterday'}" @click="setListRange('depRange','yesterday',loadDeposits)">{{ t('dash.yesterday') }}</button>
+              <button class="range-tab" :class="{on:depRange.range==='7d'}" @click="setListRange('depRange','7d',loadDeposits)">{{ t('dash.last7d') }}</button>
+              <button class="range-tab" :class="{on:depRange.range==='month'}" @click="setListRange('depRange','month',loadDeposits)">{{ t('dash.month') }}</button>
+              <button class="range-tab" :class="{on:depRange.range==='3m'}" @click="setListRange('depRange','3m',loadDeposits)">{{ t('dash.last3m') }}</button>
+              <button class="range-tab" :class="{on:depRange.range==='custom'}" @click="setListRange('depRange','custom')">{{ t('dash.custom') }}</button>
+            </div>
+            <div class="range-custom" v-if="depRange.range==='custom'">
+              <input type="date" v-model="depRange.start"> ~ <input type="date" v-model="depRange.end">
+              <button class="btn btn-sm btn-gold" @click="customRangeQuery('depRange', loadDeposits)">{{ t('dash.query') }}</button>
+            </div>
+            <div class="range-cur" v-else-if="depRange.range">{{ depRange.curStart }} ~ {{ depRange.curEnd }}</div>
+          </div>
           <div class="card-grid">
             <div class="card-item deposit-card clickable" v-for="d in deposits" :key="d.id" @click="openRecordDetail('deposits', d)">
               <div class="dep-row"><div class="dep-customer">{{ d.customer }}<span class="dep-phone" v-if="d.phone">· {{ d.phone }}</span></div><div class="dep-amounts"><div class="dep-total">￥{{ fmt(d.total) }}</div><div class="dep-detail">{{ t('dep.paid') }} ￥{{ fmt(d.deposit) }} / {{ t('lbl.balance') }} ￥{{ fmt(d.balance) }}</div></div></div>
@@ -1102,7 +1198,7 @@
                 <span v-if="d.deliver_requirements" class="dep-req-item">📝 {{ t('dep.requirements') }}：{{ d.deliver_requirements }}</span>
               </div>
               <div class="dep-date">{{ t('dep.createdAt') }} {{ (d.created||'').slice(5,16) }}</div>
-              <div class="dep-tags"><span class="tag tag-gold">{{ statusText(d.status) }}</span></div>
+              <div class="dep-tags"><span :class="displayCardClass(d,'deposit')">{{ displayCardStatus(d,'deposit') }}</span></div>
               <div class="row-actions" v-if="d.status==='已定'" @click.stop>
                 <button class="btn btn-sm btn-gold" :disabled="frozen" @click="payDeposit(d)">{{ t('act.payBal') }}</button>
                 <button class="btn btn-sm btn-outline" :disabled="frozen" @click="voidDeposit(d)">{{ t('act.void') }}</button>
@@ -1120,13 +1216,28 @@
             </details>
             <div class="biz-actions"><button class="btn btn-primary btn-sm" :disabled="frozen" @click="openLoan">+ {{ t('act.addNew') }}</button></div>
           </div>
+          <div class="range-bar">
+            <div class="range-tabs">
+              <button class="range-tab" :class="{on:loanRange.range==='today'}" @click="setListRange('loanRange','today',loadSubList)">{{ t('dash.today') }}</button>
+              <button class="range-tab" :class="{on:loanRange.range==='yesterday'}" @click="setListRange('loanRange','yesterday',loadSubList)">{{ t('dash.yesterday') }}</button>
+              <button class="range-tab" :class="{on:loanRange.range==='7d'}" @click="setListRange('loanRange','7d',loadSubList)">{{ t('dash.last7d') }}</button>
+              <button class="range-tab" :class="{on:loanRange.range==='month'}" @click="setListRange('loanRange','month',loadSubList)">{{ t('dash.month') }}</button>
+              <button class="range-tab" :class="{on:loanRange.range==='3m'}" @click="setListRange('loanRange','3m',loadSubList)">{{ t('dash.last3m') }}</button>
+              <button class="range-tab" :class="{on:loanRange.range==='custom'}" @click="setListRange('loanRange','custom')">{{ t('dash.custom') }}</button>
+            </div>
+            <div class="range-custom" v-if="loanRange.range==='custom'">
+              <input type="date" v-model="loanRange.start"> ~ <input type="date" v-model="loanRange.end">
+              <button class="btn btn-sm btn-gold" @click="customRangeQuery('loanRange', loadSubList)">{{ t('dash.query') }}</button>
+            </div>
+            <div class="range-cur" v-else-if="loanRange.range">{{ loanRange.curStart }} ~ {{ loanRange.curEnd }}</div>
+          </div>
           <div class="card-grid">
             <div class="card-item rec-card" v-for="d in subList" :key="d.id" @click="openRecordDetail('loans', d)">
               <div class="rec-head">
                 <div class="rec-lines">
                   <div class="rec-line" :class="{'rec-title': i===0}" v-for="(ln,i) in recordLines('loans', d)" :key="i">{{ ln }}</div>
                 </div>
-                <span class="tag" :class="statusClass(d.status)">{{ statusText(d.status) }}</span>
+                <span class="tag" :class="displayCardClass(d,'loan')">{{ displayCardStatus(d,'loan') }}</span>
               </div>
               <div class="rec-actions">
                 <button v-if="d.status==='借出中'||d.status==='借入中'" class="btn btn-sm btn-outline" :disabled="frozen" @click.stop="returnLoan(d)">{{ t('act.returnWriteOff') }}</button>
@@ -1143,13 +1254,28 @@
             </details>
             <div class="biz-actions"><button class="btn btn-primary btn-sm" @click="openRepair">+ {{ t('act.accept') }}</button></div>
           </div>
+          <div class="range-bar">
+            <div class="range-tabs">
+              <button class="range-tab" :class="{on:repRange.range==='today'}" @click="setListRange('repRange','today',loadSubList)">{{ t('dash.today') }}</button>
+              <button class="range-tab" :class="{on:repRange.range==='yesterday'}" @click="setListRange('repRange','yesterday',loadSubList)">{{ t('dash.yesterday') }}</button>
+              <button class="range-tab" :class="{on:repRange.range==='7d'}" @click="setListRange('repRange','7d',loadSubList)">{{ t('dash.last7d') }}</button>
+              <button class="range-tab" :class="{on:repRange.range==='month'}" @click="setListRange('repRange','month',loadSubList)">{{ t('dash.month') }}</button>
+              <button class="range-tab" :class="{on:repRange.range==='3m'}" @click="setListRange('repRange','3m',loadSubList)">{{ t('dash.last3m') }}</button>
+              <button class="range-tab" :class="{on:repRange.range==='custom'}" @click="setListRange('repRange','custom')">{{ t('dash.custom') }}</button>
+            </div>
+            <div class="range-custom" v-if="repRange.range==='custom'">
+              <input type="date" v-model="repRange.start"> ~ <input type="date" v-model="repRange.end">
+              <button class="btn btn-sm btn-gold" @click="customRangeQuery('repRange', loadSubList)">{{ t('dash.query') }}</button>
+            </div>
+            <div class="range-cur" v-else-if="repRange.range">{{ repRange.curStart }} ~ {{ repRange.curEnd }}</div>
+          </div>
           <div class="card-grid">
             <div class="card-item rec-card" v-for="d in subList" :key="d.id" @click="openRecordDetail('repairs', d)">
               <div class="rec-head">
                 <div class="rec-lines">
                   <div class="rec-line" :class="{'rec-title': i===0}" v-for="(ln,i) in recordLines('repairs', d)" :key="i">{{ ln }}</div>
                 </div>
-                <span class="tag" :class="statusClass(d.status)">{{ statusText(d.status) }}</span>
+                <span class="tag" :class="displayCardClass(d,'repair')">{{ displayCardStatus(d,'repair') }}</span>
               </div>
               <div class="rec-actions">
                 <button class="btn btn-sm btn-outline" @click.stop="editRepair(d)">{{ t('act.updateStatus') }}</button>
@@ -1166,13 +1292,28 @@
             </details>
             <div class="biz-actions"><button class="btn btn-primary btn-sm" @click="openPurchase">+ {{ t('act.purchase') }}</button></div>
           </div>
+          <div class="range-bar">
+            <div class="range-tabs">
+              <button class="range-tab" :class="{on:purRange.range==='today'}" @click="setListRange('purRange','today',loadSubList)">{{ t('dash.today') }}</button>
+              <button class="range-tab" :class="{on:purRange.range==='yesterday'}" @click="setListRange('purRange','yesterday',loadSubList)">{{ t('dash.yesterday') }}</button>
+              <button class="range-tab" :class="{on:purRange.range==='7d'}" @click="setListRange('purRange','7d',loadSubList)">{{ t('dash.last7d') }}</button>
+              <button class="range-tab" :class="{on:purRange.range==='month'}" @click="setListRange('purRange','month',loadSubList)">{{ t('dash.month') }}</button>
+              <button class="range-tab" :class="{on:purRange.range==='3m'}" @click="setListRange('purRange','3m',loadSubList)">{{ t('dash.last3m') }}</button>
+              <button class="range-tab" :class="{on:purRange.range==='custom'}" @click="setListRange('purRange','custom')">{{ t('dash.custom') }}</button>
+            </div>
+            <div class="range-custom" v-if="purRange.range==='custom'">
+              <input type="date" v-model="purRange.start"> ~ <input type="date" v-model="purRange.end">
+              <button class="btn btn-sm btn-gold" @click="customRangeQuery('purRange', loadSubList)">{{ t('dash.query') }}</button>
+            </div>
+            <div class="range-cur" v-else-if="purRange.range">{{ purRange.curStart }} ~ {{ purRange.curEnd }}</div>
+          </div>
           <div class="card-grid">
             <div class="card-item rec-card" v-for="d in subList" :key="d.id" @click="openRecordDetail('purchases', d)">
               <div class="rec-head">
                 <div class="rec-lines">
                   <div class="rec-line" :class="{'rec-title': i===0}" v-for="(ln,i) in recordLines('purchases', d)" :key="i">{{ ln }}</div>
                 </div>
-                <span class="tag" :class="statusClass(d.status)">{{ statusText(d.status) }}</span>
+                <span class="tag" :class="displayCardClass(d,'purchase')">{{ displayCardStatus(d,'purchase') }}</span>
               </div>
               <div class="rec-actions">
                 <button v-if="d.status!=='已入库'" class="btn btn-sm btn-outline" :disabled="frozen" @click.stop="receivePurchase(d)">{{ t('act.confirmReceive') }}</button>
@@ -1188,6 +1329,21 @@
               <div class="biz-body">{{ t('biz.outsourcings') }}</div>
             </details>
             <div class="biz-actions"><button class="btn btn-primary btn-sm" @click="openOutsource">+ {{ t('act.sendOut') }}</button></div>
+          </div>
+          <div class="range-bar">
+            <div class="range-tabs">
+              <button class="range-tab" :class="{on:outRange.range==='today'}" @click="setListRange('outRange','today',loadSubList)">{{ t('dash.today') }}</button>
+              <button class="range-tab" :class="{on:outRange.range==='yesterday'}" @click="setListRange('outRange','yesterday',loadSubList)">{{ t('dash.yesterday') }}</button>
+              <button class="range-tab" :class="{on:outRange.range==='7d'}" @click="setListRange('outRange','7d',loadSubList)">{{ t('dash.last7d') }}</button>
+              <button class="range-tab" :class="{on:outRange.range==='month'}" @click="setListRange('outRange','month',loadSubList)">{{ t('dash.month') }}</button>
+              <button class="range-tab" :class="{on:outRange.range==='3m'}" @click="setListRange('outRange','3m',loadSubList)">{{ t('dash.last3m') }}</button>
+              <button class="range-tab" :class="{on:outRange.range==='custom'}" @click="setListRange('outRange','custom')">{{ t('dash.custom') }}</button>
+            </div>
+            <div class="range-custom" v-if="outRange.range==='custom'">
+              <input type="date" v-model="outRange.start"> ~ <input type="date" v-model="outRange.end">
+              <button class="btn btn-sm btn-gold" @click="customRangeQuery('outRange', loadSubList)">{{ t('dash.query') }}</button>
+            </div>
+            <div class="range-cur" v-else-if="outRange.range">{{ outRange.curStart }} ~ {{ outRange.curEnd }}</div>
           </div>
           <div class="card-grid">
             <div class="card-item rec-card" v-for="d in subList" :key="d.id" @click="openRecordDetail('outsourcings', d)">
@@ -1241,7 +1397,7 @@
               </div>
               <div class="cc-buy" v-if="d.last_date">
                 <div class="cc-buy-line">🛍 {{ d.last_product || '-' }}</div>
-                <div class="cc-buy-line dim">{{ d.last_date }} · ￥{{ fmt(d.last_amount || 0) }}<span v-if="d.sales_count > 1"> · {{ d.sales_count }} {{ t('cust.times') }}</span></div>
+                <div class="cc-buy-line dim">{{ t('lbl.date') }} {{ d.last_date }} · {{ t('lbl.price') }} ￥{{ fmt(d.last_amount || 0) }}<span v-if="d.sales_count > 1"> · {{ t('cust.times') }} {{ d.sales_count }}</span></div>
               </div>
               <div class="cc-buy dim" v-else>🛍 {{ t('cust.noPurchase') }}</div>
               <div class="cc-foot">
@@ -1427,8 +1583,28 @@
               <div class="form-group"><label>{{ t('pf.intro') }}</label><textarea v-model="profile.intro"></textarea></div>
               <div class="form-row"><div class="form-group"><label>{{ t('pf.phone') }}</label><input v-model="profile.phone"></div><div class="form-group"><label>{{ t('pf.hours') }}</label><input v-model="profile.hours"></div></div>
               <div class="form-group"><label>{{ t('pf.address') }}</label><input v-model="profile.address"></div>
+              <div class="form-group"><label>{{ t('pf.shTitle') }}</label><input v-model="profile.showcase_title" :placeholder="t('pf.shTitlePh')"></div>
+              <div class="form-group"><label>{{ t('pf.shSub') }}</label><input v-model="profile.showcase_subtitle" :placeholder="t('pf.shSubPh')"></div>
               <button class="btn btn-gold" @click="saveProfile">{{ t('act.save') }}</button>
               <a class="btn btn-outline" href="/site" target="_blank" style="margin-left:12px">{{ t('pf.previewSite') }}</a>
+              <div class="pf-i18n-box">
+                <div class="pf-i18n-title">🌐 {{ t('pf.siteI18n') }}</div>
+                <div class="hint">{{ t('pf.siteI18nHint') }}</div>
+                <div class="tag-pick-chips">
+                  <button v-for="l in profLangs" :key="l" class="tag-chip" :class="{'tag-chip-on': profLang===l}" @click="openProfLang(l)">{{ profLangName(l) }}<span v-if="profLangFilled(l)" class="pf-i18n-ok">✓</span></button>
+                </div>
+                <div class="form-row">
+                  <div class="form-group"><label>{{ t('pf.name') }}</label><input v-model="profEdit.name" :placeholder="t('pf.namePhLang')"></div>
+                  <div class="form-group"><label>{{ t('pf.slogan') }}</label><input v-model="profEdit.slogan"></div>
+                  <div class="form-group"><label>{{ t('pf.hours') }}</label><input v-model="profEdit.hours"></div>
+                  <div class="form-group"><label>{{ t('pf.address') }}</label><input v-model="profEdit.address"></div>
+                  <div class="form-group"><label>{{ t('pf.shTitle') }}</label><input v-model="profEdit.showcase_title"></div>
+                  <div class="form-group"><label>{{ t('pf.shSub') }}</label><input v-model="profEdit.showcase_subtitle"></div>
+                  <div class="form-group"><label>{{ t('pf.cats') }}</label><input v-model="profEdit.categories"></div>
+                </div>
+                <div class="form-group"><label>{{ t('pf.intro') }}</label><textarea v-model="profEdit.intro"></textarea></div>
+                <button class="btn btn-gold" @click="saveProfile">{{ t('act.save') }}</button>
+              </div>
             </div>
           </div>
 
@@ -2334,7 +2510,7 @@ Content-Type: application/json
               <div class="rec-lines">
                 <div class="rec-line" :class="{'rec-title': i===0}" v-for="(ln,i) in recordLines('loans', d)" :key="i">{{ ln }}</div>
               </div>
-              <span class="tag" :class="statusClass(d.status)">{{ statusText(d.status) }}</span>
+              <span class="tag" :class="displayCardClass(d,'loan')">{{ displayCardStatus(d,'loan') }}</span>
             </div>
             <div class="rec-actions">
               <button v-if="d.status==='借出中'||d.status==='借入中'" class="btn btn-sm btn-outline" :disabled="frozen" @click.stop="returnLoan(d)">{{ t('act.returnShort') }}</button>
@@ -2347,7 +2523,7 @@ Content-Type: application/json
               <div class="rec-lines">
                 <div class="rec-line" :class="{'rec-title': i===0}" v-for="(ln,i) in recordLines('repairs', d)" :key="i">{{ ln }}</div>
               </div>
-              <span class="tag" :class="statusClass(d.status)">{{ statusText(d.status) }}</span>
+              <span class="tag" :class="displayCardClass(d,'repair')">{{ displayCardStatus(d,'repair') }}</span>
             </div>
             <div class="rec-actions">
               <button class="btn btn-sm btn-outline" @click.stop="editRepair(d)">{{ t('act.updateShort') }}</button>
@@ -2371,7 +2547,7 @@ Content-Type: application/json
             </div>
             <div class="cc-buy" v-if="d.last_date">
               <div class="cc-buy-line">🛍 {{ d.last_product || '-' }}</div>
-              <div class="cc-buy-line dim">{{ d.last_date }} · ￥{{ fmt(d.last_amount || 0) }}<span v-if="d.sales_count > 1"> · {{ d.sales_count }} {{ t('cust.times') }}</span></div>
+              <div class="cc-buy-line dim">{{ t('lbl.date') }} {{ d.last_date }} · {{ t('lbl.price') }} ￥{{ fmt(d.last_amount || 0) }}<span v-if="d.sales_count > 1"> · {{ t('cust.times') }} {{ d.sales_count }}</span></div>
             </div>
             <div class="cc-foot">
               <span class="cust-total">累计 ￥{{ fmt(d.total_amount) }}</span>
@@ -2416,7 +2592,7 @@ Content-Type: application/json
               <div class="rec-lines">
                 <div class="rec-line" :class="{'rec-title': i===0}" v-for="(ln,i) in recordLines('purchases', d)" :key="i">{{ ln }}</div>
               </div>
-              <span class="tag" :class="statusClass(d.status)">{{ statusText(d.status) }}</span>
+              <span class="tag" :class="displayCardClass(d,'purchase')">{{ displayCardStatus(d,'purchase') }}</span>
             </div>
             <div class="rec-actions">
               <button v-if="d.status!=='已入库'" class="btn btn-sm btn-outline" :disabled="frozen" @click.stop="receivePurchase(d)">{{ t('act.receiveShort') }}</button>
@@ -2616,9 +2792,11 @@ Content-Type: application/json
           </div>
           <div class="form-row">
             <div class="form-group"><label>{{ t('lbl.category') }}</label>
-              <select v-model="sheetData.product_type_code">
-                <option v-for="o in typeList" :key="o.code" :value="o.code">{{ catNameOf(o) }}</option>
-              </select>
+              <button class="btn btn-type-picker" type="button" @click="typePickerOpen = true">
+                <span v-if="sheetData.product_type_code">{{ catNameOf(typeList.find(function(x){return x.code===sheetData.product_type_code}) || {names:{}}) || sheetData.product_type_code }}</span>
+                <span v-else class="ph">{{ t('cat.pick') || '选择分类' }}</span>
+                <span class="caret">▾</span>
+              </button>
             </div>
             <div class="form-group"><label>{{ t('lbl.material') }}</label>
               <select v-model="sheetData.material">
@@ -2629,6 +2807,52 @@ Content-Type: application/json
           </div>
           <div class="form-row"><div class="form-group"><label>{{ t('lbl.weight') }}</label><input v-model.number="sheetData.weight" type="number"></div><div class="form-group"><label>{{ t('lbl.size') }}</label><input v-model="sheetData.size"></div></div>
           <div class="form-row"><div class="form-group"><label>{{ t('lbl.cost') }}</label><input v-model.number="sheetData.cost" type="number" :disabled="!!sheetData.id && !isCostVisible()" :placeholder="(!!sheetData.id && !isCostVisible()) ? '***' : ''" :title="(!!sheetData.id && !isCostVisible()) ? t('role.costHidden') : ''"></div><div class="form-group"><label>{{ t('lbl.price') }}</label><input v-model.number="sheetData.price" type="number"></div></div>
+
+          <!-- 价格策略区块 -->
+          <div class="form-section-card">
+            <div class="fs-title">💰 {{ t('price.strategy') }}</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>{{ t('price.mode') }}</label>
+                <div class="mode-switch">
+                  <label class="ms-opt"><input type="radio" v-model="sheetData.price_mode" value="percent">{{ t('price.percent') }}</label>
+                  <label class="ms-opt"><input type="radio" v-model="sheetData.price_mode" value="fixed">{{ t('price.fixed') }}</label>
+                </div>
+              </div>
+              <div class="form-group" v-if="sheetData.price_mode==='percent'">
+                <label>{{ t('price.discount') }}</label>
+                <input v-model.number="sheetData.discount" type="number" min="0" max="100">
+              </div>
+              <div class="form-group" v-else>
+                <label>{{ t('price.discountPrice') }}</label>
+                <input v-model.number="sheetData.discount_price" type="number" min="0" step="0.01">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>{{ t('price.memberPrice') }}</label>
+                <input v-model.number="sheetData.member_price" type="number" min="0" step="0.01" placeholder="0 = 不设">
+              </div>
+            </div>
+          </div>
+
+          <!-- 营销策略区块 -->
+          <div class="form-section-card">
+            <div class="fs-title">🎯 {{ t('mkt.strategy') }}</div>
+            <div class="form-row">
+              <label class="chk-row">
+                <input type="checkbox" v-model="sheetData.join_order_discount">{{ t('mkt.joinDiscount') }}
+              </label>
+              <label class="chk-row">
+                <input type="checkbox" v-model="sheetData.member_only">{{ t('mkt.memberOnly') }}
+              </label>
+              <div class="form-group chk-with-input">
+                <label>{{ t('mkt.giftPoints') }}</label>
+                <input v-model.number="sheetData.gift_points" type="number" min="0">
+              </div>
+            </div>
+          </div>
+
           <div class="form-row"><div class="form-group"><label>{{ t('lbl.cert') }}</label><input v-model="sheetData.cert"></div><div class="form-group"><label>{{ t('lbl.origin') }}</label><input v-model="sheetData.origin"></div></div>
           <div class="form-row"><div class="form-group"><label>{{ t('loc.where') }}</label>
             <select v-model="sheetData.location_id"><option :value="0">—</option>
@@ -2926,6 +3150,36 @@ Content-Type: application/json
         <button type="button" class="btn btn-outline" @click="cfmCancel">{{ t('act.cancel') }}</button>
         <span style="flex:1"></span>
         <button type="button" class="btn" :class="cfm.danger ? 'btn-danger-solid' : 'btn-gold'" @click="cfmOk">{{ cfm.okText }}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 商品品类分组选择弹窗 -->
+  <div class="modal-mask" v-if="typePickerOpen" @click.self="typePickerOpen = false">
+    <div class="modal-box modal-lg type-picker-box" @click.stop>
+      <div class="sheet-head"><h3>🗂 {{ t('cat.pick') || '选择分类' }}</h3><span class="sheet-close" @click="typePickerOpen = false">✕</span></div>
+      <div class="sheet-body type-picker-body">
+        <div class="tp-group" v-for="g in typeGroups" :key="g.name">
+          <div class="tp-group-title">
+            <span class="tp-group-label">{{ g.name }}</span>
+            <button class="btn btn-sm btn-outline tp-add-btn" type="button" @click="addCustomType(g.name)">+ {{ t('cat.addCustom') || '自定义' }}</button>
+          </div>
+          <div class="tp-tags">
+            <button type="button" class="tp-tag"
+              :class="{on: sheetData.product_type_code === t.code}"
+              v-for="t in g.items" :key="t.code"
+              @click="pickType(t)">{{ catNameOf(t) }}</button>
+          </div>
+        </div>
+        <div v-if="!typeGroups.length" class="tp-empty">{{ t('type.noTypes') || '暂无品类，请先在总部管理中添加' }}</div>
+      </div>
+      <div class="modal-foot">
+        <span class="tp-current">
+          <span v-if="sheetData.product_type_code">当前：<b>{{ catNameOf(typeList.find(function(x){return x.code===sheetData.product_type_code}) || {names:{}}) }}</b></span>
+          <span v-else class="ph">尚未选择品类</span>
+        </span>
+        <span style="flex:1"></span>
+        <button type="button" class="btn btn-outline" @click="typePickerOpen = false">{{ t('act.cancel') }}</button>
       </div>
     </div>
   </div>
@@ -3446,14 +3700,14 @@ Content-Type: application/json
 <script src="./vendor/vue.global.prod.js"></script>
 <script src="./vendor/qrcode.min.js"></script>
 <script src="./vendor/zxing.min.js"></script>
-<script src="./i18n.js?v=20261013e160"></script>
+<script src="./i18n.js?v=20261013e161"></script>
 <script>
 // 非中文时同步加载对应语言字典（i18n.<dict>.js），确保 app.js 挂载前字典就绪
 (function () {
   var _dict = (typeof i18nDictFile === 'function') ? i18nDictFile() : '';
-  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261013e160"><\/script>');
+  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261013e161"><\/script>');
 })();
 </script>
-<script src="./app.js?v=20261013e160"></script>
+<script src="./app.js?v=20261013e161"></script>
 </body>
 </html>
