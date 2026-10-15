@@ -1026,6 +1026,82 @@ function showToast(msg, type) {
   }, 3000);
 }
 
+// ---------------------------------------------------------------- AI 修复弹窗
+
+function openAiFixModal() {
+  var modal = document.getElementById('modal-ai-fix');
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+  loadAiFixList();
+}
+
+function closeAiFixModal() {
+  var modal = document.getElementById('modal-ai-fix');
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
+}
+
+function loadAiFixList() {
+  var box = document.getElementById('ai-fix-list');
+  box.innerHTML = '<p class="text-sm text-slate-400 text-center py-8">加载中…</p>';
+  fetch(API + '/api/bugs/open-list')
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (!j.ok || !j.items.length) {
+        box.innerHTML = '<p class="text-sm text-slate-400 text-center py-8">没有待处理的缺陷</p>';
+        return;
+      }
+      var SEV = { blocker: '致命', critical: '严重', major: '一般', minor: '轻微' };
+      box.innerHTML = j.items.map(function (b) {
+        var sev = SEV[b.severity] || b.severity;
+        var plugin = b.source_plugin || '未知';
+        return '<div class="border border-slate-200 rounded-lg p-3 hover:border-violet-300 transition">' +
+          '<div class="flex items-center justify-between mb-1">' +
+            '<span class="font-mono text-xs text-slate-400">' + esc(b.code) + '</span>' +
+            '<span class="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">' + esc(sev) + '</span>' +
+          '</div>' +
+          '<p class="text-sm font-medium text-slate-800 mb-1">' + esc(b.title) + '</p>' +
+          '<p class="text-xs text-slate-500 mb-2">来源：' + esc(plugin) + ' · ' + esc(b.created || '') + '</p>' +
+          '<button onclick="copyBugForAi(' + b.id + ')" class="text-xs px-2.5 py-1 bg-violet-600 hover:bg-violet-700 text-white rounded transition">复制给 Trae</button>' +
+        '</div>';
+      }).join('');
+      // 缓存供复制用
+      ST._aiFixBugs = {};
+      j.items.forEach(function (b) { ST._aiFixBugs[b.id] = b; });
+    })
+    .catch(function () {
+      box.innerHTML = '<p class="text-sm text-rose-500 text-center py-8">加载失败</p>';
+    });
+}
+
+function copyBugForAi(bugId) {
+  var b = (ST._aiFixBugs || {})[bugId];
+  if (!b) return showToast('缺陷信息不存在', 'error');
+  var text = '请修复以下缺陷：\n\n' +
+    '缺陷编号：' + b.code + '\n' +
+    '标题：' + b.title + '\n' +
+    '严重度：' + b.severity + '\n' +
+    '来源插件：' + (b.source_plugin || '未知') + '\n' +
+    '模块：' + (b.module || '未指定') + '\n' +
+    '复现步骤：\n' + (b.steps || '未提供') + '\n\n' +
+    '实际结果：\n' + (b.actual || '未提供') + '\n\n' +
+    '期望结果：\n' + (b.expected || '未提供') + '\n\n' +
+    '修复后请调用以下 API 将缺陷状态改为 testing：\n' +
+    'POST /api/bugs/' + b.id + '/status  body: {"status":"testing"}';
+  navigator.clipboard.writeText(text).then(function () {
+    showToast('已复制，请粘贴给 Trae');
+  }).catch(function () {
+    // 降级：textarea 复制
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    showToast('已复制，请粘贴给 Trae');
+  });
+}
+
 // ---------------------------------------------------------------- 生命周期
 
 document.getElementById('new-proj-key').addEventListener('input', function () {
@@ -1059,6 +1135,7 @@ window.addEventListener('DOMContentLoaded', function () {
       closeCreateBugModal();
       closeCreateProjectModal();
       closeUsersModal();
+      closeAiFixModal();
     }
   });
 

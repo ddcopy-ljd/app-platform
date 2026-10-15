@@ -96,11 +96,15 @@
 
         <!-- Top Right Actions -->
         <div class="flex items-center space-x-3 shrink-0">
+          <button onclick="openAiFixModal()" title="AI 修复" class="inline-flex items-center space-x-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs sm:text-sm font-medium px-3 sm:px-4 py-2 rounded-lg transition shadow-sm active:scale-95">
+            <i class="ph-bold ph-robot text-base"></i>
+            <span>AI 修复</span>
+          </button>
           <button onclick="openCreateBugModal()" class="inline-flex items-center space-x-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs sm:text-sm font-medium px-3 sm:px-4 py-2 rounded-lg transition shadow-sm active:scale-95">
             <i class="ph-bold ph-plus text-base"></i>
             <span>提交缺陷</span>
           </button>
-          
+
           <div class="h-6 w-px bg-slate-200 hidden sm:block"></div>
 
           <!-- User Info -->
@@ -687,6 +691,29 @@
 
         </div>
 
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Fix Modal: open BUG 列表 → 复制给 Trae -->
+  <div id="modal-ai-fix" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4">
+    <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+        <h3 class="text-base font-semibold text-slate-800 flex items-center gap-2">
+          <i class="ph-bold ph-robot text-violet-600"></i> AI 修复 — 待处理缺陷
+        </h3>
+        <button onclick="closeAiFixModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+          <i class="ph-bold ph-x text-lg"></i>
+        </button>
+      </div>
+      <div class="px-6 py-3 text-xs text-slate-500 bg-slate-50 border-b border-slate-100">
+        选择一条缺陷，点击「复制」后将信息粘贴给 Trae，Trae 会自动分析代码并修复。
+      </div>
+      <div id="ai-fix-list" class="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+        <p class="text-sm text-slate-400 text-center py-8">加载中…</p>
+      </div>
+      <div class="px-6 py-3 border-t border-slate-100 text-right">
+        <button onclick="closeAiFixModal()" class="px-4 py-1.5 border border-slate-200 text-slate-600 rounded-lg font-medium hover:bg-slate-50 text-sm">关闭</button>
       </div>
     </div>
   </div>

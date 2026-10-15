@@ -370,6 +370,19 @@ def api_list_bugs(request: Request, projectId: int = Query(default=0)):
         return [_bug_payload(conn, r["id"]) for r in rows]
 
 
+@app.get("/api/bugs/open-list")
+def api_open_list(request: Request):
+    """免登录 open BUG 列表（供 Trae AI 修复工作流拉取）。
+    返回字段含 source_plugin/steps/actual/expected，用于 AI 定位代码。"""
+    tenant = _tenant_of(request)
+    with _db(request) as conn:
+        rows = conn.execute(
+            "SELECT id,code,title,module,severity,priority,source_plugin,source_reporter,"
+            "steps,actual,expected,created FROM bugs WHERE status='open' ORDER BY id DESC"
+        ).fetchall()
+        return {"ok": True, "items": [dict(r) for r in rows]}
+
+
 @app.post("/api/bugs")
 def api_create_bug(body: BugIn, request: Request):
     sess = _require_auth(request)
