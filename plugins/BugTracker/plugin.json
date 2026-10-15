@@ -14,7 +14,7 @@
     "流转历史与评论讨论",
     "免登录外部上报（/report 页面，限频防刷，来源插件+上报人+门店落外部上报箱；截图支持粘贴；提供按门店跟踪处理状态的公开查询）"
   ],
-  "softwareVersion": "1.1.4.261013",
+  "softwareVersion": "1.1.5.261013",
   "dataVersion": "1.1.4",
   "scripts": {
     "init": "scripts/init.py",

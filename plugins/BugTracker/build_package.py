@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent
 OUT_DIR = ROOT / "dist"
 
 OTHER_FILES = ["plugin.json", "requirements.txt"]
-INCLUDE_DIRS = ["scripts", "frontend"]
+INCLUDE_DIRS = ["scripts", "frontend", "promo"]
 EXCLUDE_PARTS = ("__pycache__", ".pyc", "build", "dist")
 
 

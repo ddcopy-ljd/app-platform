@@ -39,6 +39,12 @@
   <script>
     /* 网关注入 window.__APP_BASE__（/app/bugtracker/{tenant}/）；直连为空串 */
     var API = (window.__APP_BASE__ || '').replace(/\/+$/, '');
+    if (!API) {
+      /* 独立运行 / iframe 嵌入时 __APP_BASE__ 未注入：从 URL 路径推导 API 前缀
+         页面路径形如 /app/bugtracker/{tenant}/report 或 /report（直连），去掉末尾 /report 即为 API 前缀 */
+      var p = location.pathname.replace(/\/report\/?$/, '');
+      API = p || '';
+    }
     var Q = new URLSearchParams(location.search);
 
     /* 主题适配：嵌入方通过 URL 参数传十六进制色（仅校验 #rgb/#rrggbb，防 CSS 注入）
