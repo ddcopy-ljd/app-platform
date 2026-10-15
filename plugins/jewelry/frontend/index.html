@@ -13,7 +13,7 @@
   <div v-if="mode==='SANDBOX'" class="sandbox-banner">🧪 {{ t('mode.sandbox') }}<template v-if="version"> · v{{ version }}</template> · {{ t('mode.sandboxTip') }}</div>
 
   <div v-if="!token" class="login-page">
-    <div class="login-logo"><img src="/logo/logo.svg" alt=""></div>
+    <div class="login-logo"><img src="/logo/logo_notext.png" alt=""></div>
     <div class="login-title">{{ softName }}</div>
     <div class="login-sub">{{ t('login.sub') }}</div>
     <div class="login-card">
@@ -35,7 +35,7 @@
 
   <div v-else class="app-shell" :class="{pc:isPc, mobile:!isPc}">
     <aside v-if="isPc" class="sidebar">
-      <div class="side-brand"><img src="/logo/logo.svg" alt=""><div><b>{{ softName }}</b><small>{{ tenant }}</small></div></div>
+      <div class="side-brand"><img src="/logo/logo_notext.png" alt=""><div><b>{{ softName }}</b><small>{{ tenant }}</small></div></div>
       <nav>
         <button v-for="n in nav" :key="n.id" class="nav-item" :class="{active:tab===n.id}" @click="go(n.id)">{{ n.icon }} {{ t(n.key) }}</button>
       </nav>
@@ -49,7 +49,7 @@
 
     <div class="app-main">
       <header class="app-bar" v-if="!isPc">
-        <div class="brand"><img src="/logo/logo.svg" class="app-logo" alt=""> {{ softName }}</div>
+        <div class="brand"><img src="/logo/logo_notext.png" class="app-logo" alt=""> {{ softName }}</div>
         <div class="health-wrap">
           <button class="health-bell" :class="healthBad ? 'bad' : 'ok'" @click.stop="healthOpen=!healthOpen" :title="t('hc.title')">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5S10.5 3.17 10.5 4v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
