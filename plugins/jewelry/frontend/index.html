@@ -762,7 +762,7 @@
                         <div class="prod-meta" style="margin-top:4px">{{ t('lbl.huohao') }}：{{ g.code || '—' }}</div>
                         <div class="prod-meta" style="margin-top:2px">{{ t('inv.count') }}：{{ g.count }}</div>
                         <div class="prod-meta" style="margin-top:2px">{{ productTypeName(g.first) }} · {{ materialText(g.first.material) || '—' }} · {{ g.first.weight }}g<span v-if="g.first.size"> · {{ g.first.size }}</span></div>
-                        <div class="prod-meta mono" v-if="g.uniform" style="margin-top:2px;word-break:break-all">EPC：{{ g.epcs.length ? g.epcs.map(function(x){return x.slice(-8)}).join('、') : '—' }}</div>
+                        <div class="prod-meta mono" v-if="g.uniform" style="margin-top:2px;word-break:break-all">EPC：{{ g.epcs.length ? g.epcs.map(x=>x.slice(-8)).join('、') : '—' }}</div>
                         <div class="prod-meta" v-if="g.uniform && g.barcodes.length" style="margin-top:2px;word-break:break-all">{{ t('lbl.barcode') }}：{{ g.barcodes.join('、') }}</div>
                         <div class="prod-meta" v-else-if="!g.uniform" style="margin-top:2px;color:var(--gold)">{{ t('inv.clickExpand') }}（{{ g.count }}）</div>
                       </div>
@@ -1123,7 +1123,7 @@
                 <span v-if="s.receivable!=null">{{ t('sale.receivable') }} ￥{{ fmt(s.receivable) }}</span>
                 <span v-if="s.discount>0" class="sale-sub-discount">- {{ t('sale.discount') }} ￥{{ fmt(s.discount) }}</span>
                 <span v-if="s.payments && s.payments.length>1" class="sale-sub-pays">
-                  {{ s.payments.map(function(p){ return methodText(p.method) + ' ￥' + fmt(p.amount); }).join(' + ') }}
+                  {{ s.payments.map(p=>methodText(p.method) + ' ￥' + fmt(p.amount)).join(' + ') }}
                 </span>
               </div>
               <!-- 单据明细：商品行 + 支付行（混合支付逐笔展示） -->
@@ -1131,9 +1131,9 @@
                 <table class="sale-detail-table">
                   <thead><tr>
                     <th>{{ t('sale.colName') }}</th><th>{{ t('sale.colCode') }}</th>
-                    <th>{{ t('sale.colPrice') }}</th><th v-if="s.items.some(function(it){ return it.pricing_mode==='weight'; })">{{ t('sale.colWeight') }}</th>
-                    <th v-if="s.items.some(function(it){ return it.pricing_mode==='weight'; })">{{ t('sale.colGold') }}</th>
-                    <th v-if="s.items.some(function(it){ return it.labor_fee>0; })">{{ t('sale.colLabor') }}</th>
+                    <th>{{ t('sale.colPrice') }}</th><th v-if="s.items.some(it=>it.pricing_mode==='weight')">{{ t('sale.colWeight') }}</th>
+                    <th v-if="s.items.some(it=>it.pricing_mode==='weight')">{{ t('sale.colGold') }}</th>
+                    <th v-if="s.items.some(it=>it.labor_fee>0)">{{ t('sale.colLabor') }}</th>
                     <th class="sd-num">{{ t('sale.colSubtotal') }}</th>
                   </tr></thead>
                   <tbody>
@@ -1141,9 +1141,9 @@
                       <td>{{ it.name }}</td>
                       <td class="mono">{{ it.code || '-' }}</td>
                       <td class="sd-num">{{ it.pricing_mode==='weight' ? fmt(it.gold_price) : fmt(it.price) }}</td>
-                      <td class="sd-num" v-if="s.items.some(function(x){ return x.pricing_mode==='weight'; })">{{ it.pricing_mode==='weight' ? fmt(it.weight) : '-' }}</td>
-                      <td class="sd-num" v-if="s.items.some(function(x){ return x.pricing_mode==='weight'; })">{{ it.pricing_mode==='weight' ? fmt(it.gold_price) : '-' }}</td>
-                      <td class="sd-num" v-if="s.items.some(function(x){ return x.labor_fee>0; })">{{ fmt(it.labor_fee) }}</td>
+                      <td class="sd-num" v-if="s.items.some(x=>x.pricing_mode==='weight')">{{ it.pricing_mode==='weight' ? fmt(it.weight) : '-' }}</td>
+                      <td class="sd-num" v-if="s.items.some(x=>x.pricing_mode==='weight')">{{ it.pricing_mode==='weight' ? fmt(it.gold_price) : '-' }}</td>
+                      <td class="sd-num" v-if="s.items.some(x=>x.labor_fee>0)">{{ fmt(it.labor_fee) }}</td>
                       <td class="sd-num"><b>￥{{ fmt(it.subtotal) }}</b></td>
                     </tr>
                   </tbody>
@@ -1769,7 +1769,9 @@
               <div v-if="devicesOfStore(curStore.id).length">
                 <div class="sec-dev" v-for="dv in devicesOfStore(curStore.id)" :key="dv.id">
                   <div class="flex-between">
-                    <b>{{ dv.name || t('dev.code') }} <span class="prod-meta mono">{{ dv.code }}</span></b>
+                    <b>{{ dv.name || t('dev.code') }} <span class="prod-meta mono">{{ dv.code }}</span>
+                      <span class="prod-meta" v-if="dv.app_version">· {{ t('dev.version') }} v{{ dv.app_version }}</span>
+                      <span class="upgrade-badge" v-if="dv.need_upgrade">{{ t('dev.needUpgrade') }}</span></b>
                     <span>
                       <span class="coop-task-label" v-if="deviceTaskLabel(dv)">{{ deviceTaskLabel(dv) }}</span>
                       <span class="bridge-state" :class="dv.online ? 'st-on' : 'st-off'">● {{ dv.online ? t('sb.online') : t('sb.offline') }}</span>
@@ -1927,6 +1929,8 @@
                       <span>
                         <b>{{ dv.name || t('dev.code') }}</b>
                         <span class="prod-meta mono">{{ dv.code }}</span>
+                        <span class="prod-meta" v-if="dv.app_version">· {{ t('dev.version') }} v{{ dv.app_version }}</span>
+                        <span class="upgrade-badge" v-if="dv.need_upgrade">{{ t('dev.needUpgrade') }}</span>
                         <template v-if="deviceTaskLabel(dv)">
                           · <span class="coop-task-label">{{ deviceTaskLabel(dv) }}</span>
                         </template>
@@ -2123,7 +2127,7 @@
             <button class="btn btn-sm" :class="secSettings && secSettings.armed ? 'btn-outline' : 'btn-gold'" @click="secToggleArm">
               {{ secSettings && secSettings.armed ? t('sec.disarm') : t('sec.arm') }}
             </button>
-            <span class="sec-chip">📡 {{ t('sec.online') }} {{ secSensors.filter(function(s){return s.online}).length }}/{{ secSensors.length }}</span>
+            <span class="sec-chip">📡 {{ t('sec.online') }} {{ secSensors.filter(s=>s.online).length }}/{{ secSensors.length }}</span>
             <span class="sec-chip" :class="{alert: secPending>0}">🚨 {{ t('sec.pending') }} {{ secPending }}</span>
             <button class="btn btn-sm btn-outline" @click="loadSecurity">🔄</button>
           </div>
@@ -2778,7 +2782,7 @@ Content-Type: application/json
         <template v-if="sheetMode==='product'||sheetMode==='inbound'">
           <div class="form-group">
             <label>{{ t('store.inboundStore') }}</label>
-            <input :value="curStoreName || (stores.find(function(x){return x.id===sheetData.store_id})||{}).name || ('#'+sheetData.store_id)" readonly>
+            <input :value="curStoreName || (stores.find(x=>x.id===sheetData.store_id)||{}).name || ('#'+sheetData.store_id)" readonly>
           </div>
           <div class="form-row">
             <div class="form-group"><label>{{ t('lbl.huohao') }}</label><input v-model="sheetData.code"></div>
@@ -2793,7 +2797,7 @@ Content-Type: application/json
           <div class="form-row">
             <div class="form-group"><label>{{ t('lbl.category') }}</label>
               <button class="btn btn-type-picker" type="button" @click="typePickerOpen = true">
-                <span v-if="sheetData.product_type_code">{{ catNameOf(typeList.find(function(x){return x.code===sheetData.product_type_code}) || {names:{}}) || sheetData.product_type_code }}</span>
+                <span v-if="sheetData.product_type_code">{{ typeNameByCode(sheetData.product_type_code) }}</span>
                 <span v-else class="ph">{{ t('cat.pick') || '选择分类' }}</span>
                 <span class="caret">▾</span>
               </button>
@@ -3175,7 +3179,7 @@ Content-Type: application/json
       </div>
       <div class="modal-foot">
         <span class="tp-current">
-          <span v-if="sheetData.product_type_code">当前：<b>{{ catNameOf(typeList.find(function(x){return x.code===sheetData.product_type_code}) || {names:{}}) }}</b></span>
+          <span v-if="sheetData.product_type_code">当前：<b>{{ typeNameByCode(sheetData.product_type_code) }}</b></span>
           <span v-else class="ph">尚未选择品类</span>
         </span>
         <span style="flex:1"></span>
@@ -3531,7 +3535,7 @@ Content-Type: application/json
   <!-- 扫描设备（扫描助手）管理：激活码生成 / 设备列表 / 解绑停用 -->
   <div class="modal-mask" v-if="devModal" @click.self="closeDevices">
     <div class="modal-box modal-lg">
-      <div class="sheet-head"><h3>📱 {{ t('dev.manage') }}<span v-if="devStoreScope"> · {{ (stores.find(function(x){return x.id===devStoreScope})||{}).name || ('#'+devStoreScope) }}</span></h3><span class="sheet-close" @click="closeDevices">✕</span></div>
+      <div class="sheet-head"><h3>📱 {{ t('dev.manage') }}<span v-if="devStoreScope"> · {{ (stores.find(x=>x.id===devStoreScope)||{}).name || ('#'+devStoreScope) }}</span></h3><span class="sheet-close" @click="closeDevices">✕</span></div>
       <div class="sheet-body">
         <!-- 生成激活码 -->
         <div class="dev-act-box">
