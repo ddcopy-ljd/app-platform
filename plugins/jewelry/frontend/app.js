@@ -235,15 +235,25 @@ function setTrendRange(r) {
   ST.trendRange = r;
   api('GET', '/api/dashboard/trend?range=' + r).then(function (d) { ST.trendData = d; }).catch(function () {});
 }
-// 生成 SVG 折线 points（viewBox 0 0 300 100，含去年虚线；null 断点跳过）
+// 折线图 SVG 尺寸：按数据点数动态计算，避免拉伸变形
+function trendSvgW() {
+  var d = ST.trendData;
+  if (!d || !d.labels || !d.labels.length) return 300;
+  var n = d.labels.length;
+  // 每数据点至少 10px，最少 300，最宽不超 1200
+  return Math.max(300, Math.min(1200, n * 10));
+}
+function trendSvgH() { return 120; }
+// 生成 SVG 折线 points（动态 viewBox，null 断点跳过）
 function trendLinePoints(arr, maxV) {
   if (!Array.isArray(arr) || !arr.length) return '';
   var n = arr.length;
+  var w = trendSvgW(), h = trendSvgH();
   var pts = [];
   for (var i = 0; i < n; i++) {
     if (arr[i] == null) continue;
-    var x = n === 1 ? 150 : (i / (n - 1)) * 292 + 4;
-    var y = 96 - (Math.min(Number(arr[i]) || 0, maxV) / maxV) * 88;
+    var x = n === 1 ? w / 2 : (i / (n - 1)) * (w - 8) + 4;
+    var y = (h - 4) - (Math.min(Number(arr[i]) || 0, maxV) / maxV) * (h - 12);
     pts.push(x.toFixed(1) + ',' + y.toFixed(1));
   }
   return pts.join(' ');
@@ -253,29 +263,35 @@ function trendScaleMax() {
   if (!d) return 1;
   return Math.max(1, trendMax(d.amounts, d.amountsLastYear));
 }
-// 横轴刻度（最多 8 个，等间隔取标签文本）
+// 横轴刻度：返回日期标签，按数据量智能抽稀防重叠
 function trendTicks() {
   var d = ST.trendData;
   if (!d || !d.labels) return [];
   var n = d.labels.length;
-  var step = Math.max(1, Math.ceil(n / 8));
+  // 每天一个时，超过15天则每3-4天显示一个
+  var step = n <= 15 ? 1 : (n <= 30 ? 3 : (n <= 90 ? 7 : 14));
   var out = [];
   for (var i = 0; i < n; i += step) out.push({ i: i, text: d.labels[i] });
+  // 确保最后一个日期始终显示
   if (out.length && out[out.length - 1].i !== n - 1) out.push({ i: n - 1, text: d.labels[n - 1] });
   return out;
 }
-// 纵向网格线 x 坐标：与横轴刻度对齐（viewBox 0 0 300 100，绘图区 x=4..296）
+// 纵向网格线 x 坐标：每天一条，由 CSS 统一极细样式
 function trendVLines() {
   var d = ST.trendData;
   if (!d || !d.labels || !d.labels.length) return [];
   var n = d.labels.length;
-  return trendTicks().map(function (tk) {
-    return { x: n === 1 ? 150 : +(((tk.i / (n - 1)) * 292 + 4).toFixed(1)) };
-  });
+  var w = trendSvgW();
+  var out = [];
+  for (var i = 0; i < n; i++) {
+    out.push({ x: n === 1 ? w / 2 : +(((i / (n - 1)) * (w - 8) + 4).toFixed(1)) });
+  }
+  return out;
 }
-// 纵轴刻度（实销金额，元）：0 / 半程 / 最大值，与 SVG 网格线 y=96/52/8 对齐
+// 纵轴刻度（实销金额，元）：0 / 半程 / 最大值，与 SVG 网格线对齐
 function trendYAxis() {
   var mx = trendScaleMax();
+  var h = trendSvgH();
   var zh = (ST.lang || 'zh') === 'zh';
   function short(n) {
     n = Math.round(n);
@@ -283,10 +299,12 @@ function trendYAxis() {
     if (!zh && n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'k';
     return fmt(n);
   }
+  // top/bottom/middle 对应 SVG y=4/(h-4)/中线
+  var midPct = Math.round(((h / 2) / h) * 100);
   return [
-    { top: '8%', text: short(mx) },
-    { top: '52%', text: short(mx / 2) },
-    { top: '96%', text: '0' }
+    { top: '4%', text: short(mx) },
+    { top: midPct + '%', text: short(mx / 2) },
+    { top: (Math.round(((h - 4) / h) * 100)) + '%', text: '0' }
   ];
 }
 
@@ -5307,7 +5325,7 @@ var app = Vue.createApp({
     roleText: roleText,
     t: t, fmt: fmt, fmtY: fmtY, dateFmt: dateFmt,
     pctLabel: pctLabel, pctCls: pctCls, trendMax: trendMax, hasLastYear: hasLastYear,
-    setTrendRange: setTrendRange, trendLinePoints: trendLinePoints, trendScaleMax: trendScaleMax, trendTicks: trendTicks, trendVLines: trendVLines, trendYAxis: trendYAxis,
+    setTrendRange: setTrendRange, trendLinePoints: trendLinePoints, trendScaleMax: trendScaleMax, trendTicks: trendTicks, trendVLines: trendVLines, trendYAxis: trendYAxis, trendSvgW: trendSvgW, trendSvgH: trendSvgH,
     baDonutSegments: baDonutSegments, baTop5Sum: baTop5Sum,
     toggleHealth: toggleHealth,
     statusClass: statusClass,

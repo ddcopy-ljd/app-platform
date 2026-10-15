@@ -131,16 +131,19 @@ a { text-decoration: none; color: inherit; }
 /* 实销趋势折线图 */
 .trend-head-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .trend-range-select { font-size: 14px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--white); color: var(--text1); }
-.trend-svg { width: 100%; height: 120px; display: block; }
-.trend-svg .trend-axis { stroke: var(--border); stroke-width: 1; }
-.trend-svg .trend-grid { stroke: #C9BFA8; stroke-width: .5; stroke-dasharray: 3 3; opacity: 1; }
+.trend-svg { width: 100%; height: 140px; display: block; }
+/* 网格/轴线统一 1px 精细线，non-scaling-stroke 保证不随拉伸变形 */
+.trend-svg .trend-axis { stroke: #C9BFA8; stroke-width: 1; }
+.trend-svg .trend-grid { stroke: #DDD5C3; stroke-width: 1; stroke-dasharray: 3 3; opacity: 1; }
 .trend-svg .trend-line-cur { stroke: #3D6B99; stroke-width: 2; }
 .trend-svg .trend-line-past { stroke: #C9A227; stroke-width: 2; stroke-dasharray: 5 4; }
 .lg-line { display: inline-block; width: 16px; height: 0; border-top: 2px solid; margin: 0 4px 0 10px; vertical-align: middle; }
 .lg-line.lg-cur { border-color: #3D6B99; }
 .lg-line.lg-past { border-color: #C9A227; border-top-style: dashed; }
-.trend-ticks { display: flex; justify-content: space-between; font-size: 14px; color: var(--text3); padding: 2px 4px 0; }
-/* 趋势图纵轴：单位标签 + 刻度列（与 SVG 网格线 y=8/52/96 对齐） */
+/* 日期标签：斜排防重叠 */
+.trend-ticks { display: flex; justify-content: space-between; font-size: 11px; color: var(--text3); padding: 2px 2px 0; }
+.trend-ticks span { transform: rotate(-35deg); transform-origin: top left; white-space: nowrap; margin-top: 4px; }
+/* 趋势图纵轴：单位标签 + 刻度列（与 SVG 网格线对齐） */
 .trend-unit-label { font-size: 14px; color: var(--text3); margin: 0 0 2px; }
 .trend-plot { display: flex; align-items: stretch; }
 .trend-yaxis { position: relative; width: 46px; flex: 0 0 46px; }
@@ -1402,6 +1405,7 @@ tr.tr-row-hit { animation: tr-hit-flash 1.2s ease; }
 .coop-waiting { font-size: 14px; color: #1f6fb2; font-weight: 600; }
 /* 功能名 #序号：手持机任务列表与网页提示的统一辨识标识（≥14px 红线） */
 .coop-task-label { font-size: 14px; font-weight: 700; color: var(--wine); white-space: nowrap; }
+.upgrade-badge { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 9px; background: #fff3e0; color: #c8791b; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .coop-taskno { font-size: 14px; color: var(--text3); }
 .sb-handheld { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e3d9cf; }
 .coop-exit { margin-left: auto; }

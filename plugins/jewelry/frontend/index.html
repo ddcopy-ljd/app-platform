@@ -207,13 +207,13 @@
               <div class="trend-yaxis">
                 <span v-for="ya in trendYAxis()" :key="ya.top" :style="{top: ya.top}">{{ ya.text }}</span>
               </div>
-              <svg class="trend-svg" viewBox="0 0 300 100" preserveAspectRatio="none">
-                <line v-for="(vl, vi) in trendVLines()" :key="'v'+vi" :x1="vl.x" y1="8" :x2="vl.x" y2="96" class="trend-grid"></line>
-                <line x1="4" y1="96" x2="296" y2="96" class="trend-axis"></line>
-                <line x1="4" y1="52" x2="296" y2="52" class="trend-grid"></line>
-                <line x1="4" y1="8" x2="296" y2="8" class="trend-grid"></line>
-                <polyline v-if="hasLastYear(trendData.amountsLastYear)" :points="trendLinePoints(trendData.amountsLastYear, trendScaleMax())" class="trend-line-past" fill="none"></polyline>
-                <polyline :points="trendLinePoints(trendData.amounts, trendScaleMax())" class="trend-line-cur" fill="none"></polyline>
+              <svg class="trend-svg" :viewBox="'0 0 ' + trendSvgW() + ' ' + trendSvgH()" preserveAspectRatio="none">
+                <line v-for="(vl, vi) in trendVLines()" :key="'v'+vi" :x1="vl.x" y1="8" :x2="vl.x" :y2="trendSvgH()-4" class="trend-grid" vector-effect="non-scaling-stroke"></line>
+                <line x1="4" :y1="trendSvgH()-4" :x2="trendSvgW()-4" :y2="trendSvgH()-4" class="trend-axis" vector-effect="non-scaling-stroke"></line>
+                <line x1="4" :y1="trendSvgH()/2" :x2="trendSvgW()-4" :y2="trendSvgH()/2" class="trend-grid" vector-effect="non-scaling-stroke"></line>
+                <line x1="4" y1="8" :x2="trendSvgW()-4" y2="8" class="trend-grid" vector-effect="non-scaling-stroke"></line>
+                <polyline v-if="hasLastYear(trendData.amountsLastYear)" :points="trendLinePoints(trendData.amountsLastYear, trendScaleMax())" class="trend-line-past" fill="none" vector-effect="non-scaling-stroke"></polyline>
+                <polyline :points="trendLinePoints(trendData.amounts, trendScaleMax())" class="trend-line-cur" fill="none" vector-effect="non-scaling-stroke"></polyline>
               </svg>
             </div>
             <div class="trend-ticks trend-ticks-indent">
