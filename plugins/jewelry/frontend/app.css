@@ -156,6 +156,22 @@ a { text-decoration: none; color: inherit; }
 .trend-pan-inner { will-change: transform; }
 .trend-reset-btn { font-size: 14px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--white); color: var(--text2); cursor: pointer; }
 .trend-reset-btn:hover { border-color: var(--wine); color: var(--wine); }
+/* TOP5 排行榜（7 榜网格） */
+.rank-hint { font-size: 12px; color: var(--text3); }
+.rank-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin-top: 8px; }
+.rank-box { background: var(--bg, #faf8f2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+.rank-box-title { font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+.rank-box-hint { font-weight: 400; font-size: 12px; color: var(--text3); }
+.rank-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 13px; }
+.rank-no { flex: none; width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: 50%; background: #e6ded0; color: #fff; font-size: 12px; font-weight: 700; }
+.rank-no-1 { background: #d4a017; }
+.rank-no-2 { background: #9aa3ad; }
+.rank-no-3 { background: #b07a45; }
+.rank-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text1); }
+.rank-val { flex: none; text-align: right; line-height: 1.25; }
+.rank-val b { color: var(--wine); font-weight: 700; font-size: 13px; }
+.rank-val em { display: block; font-style: normal; font-size: 11px; color: var(--text3); }
+.rank-empty { font-size: 12px; color: var(--text3); padding: 4px 0; }
 /* 经营分析区块 */
 .biz-analysis .ba-group { margin: 10px 0 14px; }
 .biz-analysis .ba-group-title { font-size: 14px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }

@@ -1233,4 +1233,9 @@ registerLang('ko', {
     'tag.dupNote': '다중 태그 상품은 각 태그 그룹에 중복 집계되며, 비율 분모는 각 그룹의 합계입니다',
     'tag.group': '그룹', 'tag.groupPh': '예: 빈티지', 'tag.ungrouped': '미분류',
     'tag.share': '비율', 'inv.tagShare': '태그별 재고 비중', 'sale.tagShare': '태그별 판매 비중',
+    'rank.title': 'TOP 5 랭킹', 'rank.periodHint': '회전/부진재고는 실시간 재고 기준, 나머지는 선택 기간',
+    'rank.turnover': '회전 가장 빠름', 'rank.profit': '이익률 최고', 'rank.qty': '판매량 최다',
+    'rank.customer': '최다 구매 회원', 'rank.clerk': '최고 매출 직원', 'rank.slow': '부진 재고',
+    'rank.slowHint': '현재 재고 일수', 'rank.category': '카테고리 매출 최고',
+    'rank.days': '일', 'rank.bills': '건', 'rank.empty': '데이터 없음',
   });

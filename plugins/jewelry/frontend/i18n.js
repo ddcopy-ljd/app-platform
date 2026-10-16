@@ -637,6 +637,11 @@ var I18N = {
     'tag.dupNote': '多标签商品在各标签组重复计入，占比分母为各组合计',
     'tag.group': '分组', 'tag.groupPh': '如：古董款', 'tag.ungrouped': '未分组',
     'tag.share': '占比', 'inv.tagShare': '标签库存占比', 'sale.tagShare': '标签销售占比',
+    'rank.title': '前五排行', 'rank.periodHint': '周转/滞销为库存实时口径，其余按所选时段',
+    'rank.turnover': '周转最快', 'rank.profit': '利润率最高', 'rank.qty': '销量最多',
+    'rank.customer': '会员消费最多', 'rank.clerk': '店员销售最多', 'rank.slow': '滞销品',
+    'rank.slowHint': '当前在库库龄', 'rank.category': '品类销售额最高',
+    'rank.days': '天', 'rank.bills': '单', 'rank.empty': '暂无数据',
   }
 };
 var currentLang = 'zh';

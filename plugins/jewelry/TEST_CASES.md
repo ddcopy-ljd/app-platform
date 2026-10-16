@@ -337,6 +337,14 @@
 - **验证方法**：API（11 项）：offset=0/1/2 窗口恒 30 点、右端逐天平移、相邻窗 amounts[1..29] 滑动对齐；月粒度 offset=1 右端=上月且滑动对齐；730 合法/731 报 422。浏览器 PointerEvent 模拟拖动：30d 拖 80px（499px 宽）→shift=5、右端 10/16→10/11；微拖 5px→shift 不变；6m 拖 100px→shift=1/labels 2026-04~09；再拖 85px→shift=2（连续累加非整窗跳）；无当前版本 console 报错。
 - **踩坑**：浏览器走查时子代理用「再注入一份 app.js script」硬刷版本，会把模块状态（trendData 点数）搞乱导致拖动换算按旧点数误判；硬刷一律用页面重新导航，禁止注入脚本。
 
+## TC-46 看板新增「前五排行」7 榜：周转/利润/销量/会员/店员/滞销/品类（1.2.36 待发布）
+
+- **需求**：经营看板新增 7 个 TOP5 榜——①周转最快（到货建档→首销天数最短）②利润率最高 ③销量最多 ④会员消费最多 ⑤店员销售最多 ⑥滞销品（当前在库库龄最长）⑦品类销售额最高（product_type）。卡片自带时间段下拉（同销售额统计卡，默认近6月）；周转/滞销为库存实时状态榜不受时段影响。
+- **实现**：后端 `GET /api/dashboard/rankings?start=&end=`（缺省近6月，`date('now','start of month','-5 months')`）；销售榜统一 `status!='已冲红' AND (store_id=? OR store_id=0)`；周转 `MIN(julianday(biz_date)-julianday(substr(created,1,10)))` HAVING d>=0；利润 `(amount-cost*qty)/amount` 排序，无成本权限 rate/profit/cost 返回 None 但排序按真实口径；会员 JOIN customers 且 customer_id>0；店员按非空 clerk_name 分组、单数=COUNT(DISTINCT bill_no)。前端 `.rank-grid`（auto-fill minmax 230px）7 块、前三名金/银/铜徽标，i18n 6 语言 rank.* 键，静态版本 a108。
+- **种子补强**（全新演示库才生效，老库守卫不重灌）：①12 件商品 created 错开为各自首销日前 6~26 天（`arrival` 映射 UPDATE），修复前全部默认「今天」导致周转榜全被 HAVING 过滤为空、滞销库龄全 0；②14 单销售补 clerk_name（林雅/陈强），修复前店员榜永远空；③修正两条销售 product_id（蓝宝石戒指 9→10、和田玉平安扣 10→11，后期插入 J0095 后编号错位），修复后 JOIN 名称与金额口径才正确。dev 库手动执行了同等对齐（UPDATE sales/products）。
+- **验证方法**：临时脚本对 7 榜逐项 API vs SQLite 直连 SQL 对账（名称/排序/金额/天数/单数全一致，8 项 PASS）；全新临时库跑 seed_demo+ensure_new_seeds：12 商品 14 单、负周转商品 0、周转 top5 非空、无 product_id 名实不符；浏览器走查：a108 版本下 .rank-box=7、7 个标题与首行数据正确、滞销标题带「（当前在库库龄）」、下拉切 year 后销量/店员数值变化（古法手串 1→2 件、林雅 ￥66,480→￥99,080）、切回 6m 正常、无 a108 资源 console 报错。
+- **踩坑**：①商品 status 由定金/借出链路在服务启动时对账刷新，滞销榜核对必须以查询当时的实时 status 为准，不能用历史快照；②sqlite3.Row 取不存在的列别名抛 IndexError（不是 KeyError），对账脚本 SELECT 别名要与取值键一致。
+
 ## TC-44 外网沙箱「销售额统计-标签维度」全 0：打标种子固化（1.2.34）
 
 - **问题现象**：外网沙箱商品从未打标（product_tag_links=0），看板「销售额统计」切标签维度横向柱状图全 0；本地 dev 正常只因手动打过标。

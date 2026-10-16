@@ -1530,6 +1530,91 @@ def dashboard_tag_stats(request: Request, start: str = Query(default=""), end: s
                 "note": "多标签商品在各标签组重复计入，占比分母为各组合计"}
 
 
+@app.get("/api/dashboard/rankings")
+def dashboard_rankings(request: Request, start: str = Query(default=""), end: str = Query(default="")):
+    """看板 TOP5 排行榜（7 榜）。
+    区间榜（start~end，缺省近 6 个月）：profit 利润率 / qty 销量 / customer 会员消费 / clerk 店员销售 / category 品类销售额；
+    状态榜（与区间无关）：turnover 周转最快（到货建档→首销天数最短）、slow 滞销（当前在库库龄最长）。
+    利润率/滞销成本受 can_view_cost 列级权限限制（无权限时 rate/profit/cost 返回 None）。"""
+    sess = _require_auth(request)
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
+        if start and end:
+            rs, re_ = start[:10], end[:10]
+            if rs > re_:
+                rs, re_ = re_, rs
+            date_cond, date_args = "s.biz_date BETWEEN ? AND ?", [rs, re_]
+        else:
+            rs, re_ = "", ""
+            date_cond = "s.biz_date >= date('now','start of month','-5 months')"
+            date_args = []
+        can_cost = _can_view_cost(conn, sess)
+        out = {"start": rs, "end": re_}
+
+        # ① 周转最快：有销售记录的商品，首销日 - 到货建档日，天数升序（同日=0 天）
+        rows = conn.execute(
+            "SELECT p.name, CAST(MIN(julianday(s.biz_date) - julianday(substr(p.created,1,10))) AS INTEGER) d, "
+            "MIN(s.biz_date) sold, IFNULL(SUM(s.amount),0) amt "
+            "FROM sales s JOIN products p ON p.id=s.product_id "
+            "WHERE s.status!='已冲红' AND (s.store_id=? OR s.store_id=0) "
+            "GROUP BY p.id HAVING d >= 0 ORDER BY d ASC, amt DESC LIMIT 5", [sid]).fetchall()
+        out["turnover"] = [{"name": r["name"], "days": r["d"], "sold": r["sold"],
+                            "amount": round(r["amt"], 2)} for r in rows]
+
+        # ② 利润率最高：区间销售额 - 成本*件数，按利润率降序（无成本权限仅不给值，排序仍按真实口径）
+        rows = conn.execute(
+            "SELECT p.name, p.cost, IFNULL(SUM(s.amount),0) amt, COUNT(*) qty "
+            "FROM sales s JOIN products p ON p.id=s.product_id "
+            "WHERE s.status!='已冲红' AND (s.store_id=? OR s.store_id=0) AND " + date_cond +
+            " GROUP BY p.id HAVING amt > 0 ORDER BY (amt - p.cost*COUNT(*)) / amt DESC, amt DESC LIMIT 5",
+            [sid] + date_args).fetchall()
+        out["profit"] = [{
+            "name": r["name"], "amount": round(r["amt"], 2), "qty": r["qty"],
+            "rate": round((r["amt"] - r["cost"] * r["qty"]) * 100 / r["amt"], 1) if can_cost else None,
+            "profit": round(r["amt"] - r["cost"] * r["qty"], 2) if can_cost else None,
+        } for r in rows]
+
+        # ③ 销量最多：按件数降序
+        rows = conn.execute(
+            "SELECT p.name, COUNT(*) qty, IFNULL(SUM(s.amount),0) amt "
+            "FROM sales s JOIN products p ON p.id=s.product_id "
+            "WHERE s.status!='已冲红' AND (s.store_id=? OR s.store_id=0) AND " + date_cond +
+            " GROUP BY p.id ORDER BY qty DESC, amt DESC LIMIT 5", [sid] + date_args).fetchall()
+        out["qty"] = [{"name": r["name"], "qty": r["qty"], "amount": round(r["amt"], 2)} for r in rows]
+
+        # ④ 会员消费最多（按会员聚合，金额降序；销售行按件一行，单数=DISTINCT bill_no）
+        rows = conn.execute(
+            "SELECT c.name nm, IFNULL(SUM(s.amount),0) amt, COUNT(DISTINCT s.bill_no) bills "
+            "FROM sales s JOIN customers c ON c.id=s.customer_id "
+            "WHERE s.status!='已冲红' AND (s.store_id=? OR s.store_id=0) AND s.customer_id > 0 AND " + date_cond +
+            " GROUP BY s.customer_id ORDER BY amt DESC LIMIT 5", [sid] + date_args).fetchall()
+        out["customer"] = [{"name": r["nm"], "amount": round(r["amt"], 2), "bills": r["bills"]} for r in rows]
+
+        # ⑤ 店员销售最多
+        rows = conn.execute(
+            "SELECT NULLIF(s.clerk_name,'') nm, IFNULL(SUM(s.amount),0) amt, COUNT(DISTINCT s.bill_no) bills "
+            "FROM sales s WHERE s.status!='已冲红' AND (s.store_id=? OR s.store_id=0) AND s.clerk_name != '' AND " + date_cond +
+            " GROUP BY s.clerk_name ORDER BY amt DESC LIMIT 5", [sid] + date_args).fetchall()
+        out["clerk"] = [{"name": r["nm"], "amount": round(r["amt"], 2), "bills": r["bills"]} for r in rows]
+
+        # ⑥ 滞销品：当前在库、库龄最长（库龄=今天-到货建档日）
+        rows = conn.execute(
+            "SELECT name, CAST(julianday('now','localtime') - julianday(substr(created,1,10)) AS INTEGER) age, cost "
+            "FROM products WHERE status='在库' AND store_id=? "
+            "ORDER BY age DESC, id LIMIT 5", [sid]).fetchall()
+        out["slow"] = [{"name": r["name"], "age": r["age"],
+                        "cost": round(r["cost"], 2) if can_cost else None} for r in rows]
+
+        # ⑦ 品类销售额最高（product_type，空归未分类）
+        rows = conn.execute(
+            "SELECT COALESCE(NULLIF(p.product_type,''),'未分类') k, IFNULL(SUM(s.amount),0) amt, COUNT(*) qty "
+            "FROM sales s JOIN products p ON p.id=s.product_id "
+            "WHERE s.status!='已冲红' AND (s.store_id=? OR s.store_id=0) AND " + date_cond +
+            " GROUP BY k ORDER BY amt DESC LIMIT 5", [sid] + date_args).fetchall()
+        out["category"] = [{"name": r["k"], "amount": round(r["amt"], 2), "qty": r["qty"]} for r in rows]
+        return out
+
+
 @app.get("/api/dashboard/biz-analysis")
 def dashboard_biz_analysis(request: Request, start: str = Query(default=""), end: str = Query(default="")):
     """经营分析（区间口径，缺省=本月）：利润 / 会员 / 销售效率 / 分类实销 TOP。

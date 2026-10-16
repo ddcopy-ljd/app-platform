@@ -1233,4 +1233,9 @@ registerLang('ja', {
     'tag.dupNote': '複数タグの商品は各タググループに重複計上され、割合の分母は各グループの合計です',
     'tag.group': 'グループ', 'tag.groupPh': '例：アンティーク', 'tag.ungrouped': '未分類',
     'tag.share': '割合', 'inv.tagShare': 'タグ別在庫構成比', 'sale.tagShare': 'タグ別販売構成比',
+    'rank.title': 'トップ5ランキング', 'rank.periodHint': '回転/滞留在庫はリアルタイム在庫基準、その他は選択期間',
+    'rank.turnover': '回転が最も速い', 'rank.profit': '利益率トップ', 'rank.qty': '販売数トップ',
+    'rank.customer': '購入額トップ会員', 'rank.clerk': '売上トップ店員', 'rank.slow': '滞留在庫',
+    'rank.slowHint': '現在の在庫日数', 'rank.category': 'カテゴリ売上トップ',
+    'rank.days': '日', 'rank.bills': '件', 'rank.empty': 'データなし',
   });

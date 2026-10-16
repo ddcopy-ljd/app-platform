@@ -52,6 +52,7 @@ var ST = Vue.reactive({
   tagEdit: { id: 0, name: '', color: '#C9A227', sort_order: 0, group_name: '' }, tagEditMode: 'new',
   tagStats: null, tagSel: [],  // 销售额统计结果 / 标签维度下选中标签 id（空=全部）
   saleStatsDim: 'category', saleStatsRange: '6m',  // 销售额统计卡：维度(category品类/tag标签) / 独立时间预设(today/week/month/3m/6m/year)
+  rankData: null, rankRange: '6m',   // 看板 TOP5 排行榜（7 榜）/ 独立时间预设
   tagGroupList: [],            // 标签分组枚举（后端 TAG_GROUPS；管理页下拉 + 各标签选择处分组块渲染）
   anaTagSel: [], anaTagStats: null,  // 分析页标签维度：选中标签 id（空=全部）/ 按区间拉取的标签统计
   profLangs: ['en', 'it', 'ja', 'ko', 'zhHant'], profLang: 'en', profI18n: {}, profEdit: {},  // 推广页多语言可写内容
@@ -1231,6 +1232,7 @@ function loadDash() {
   api('GET', '/api/dashboard/reminders').then(function (r) { ST.remindData = r; }).catch(function () {});
   api('GET', '/api/dashboard/risk').then(function (r) { ST.riskData = r; }).catch(function () {});
   loadSaleStats();   // 销售额统计卡（独立时间段，依赖当前门店，切店经 refreshAll→loadDash 重取）
+  loadRankings();    // TOP5 排行榜（独立时间段）
   loadGold();
 }
 
@@ -2545,6 +2547,37 @@ function loadSaleStats() {
 }
 function setSaleStatsDim(d) { ST.saleStatsDim = d; loadSaleStats(); }
 function setSaleStatsRange(m) { ST.saleStatsRange = m; loadSaleStats(); }
+
+// ===== 看板 TOP5 排行榜（7 榜）=====
+function loadRankings() {
+  var rg = dateRangeCompute(ST.rankRange);
+  api('GET', '/api/dashboard/rankings?start=' + rg.start + '&end=' + rg.end)
+    .then(function (r) { ST.rankData = r; }).catch(function () {});
+}
+function setRankRange(m) { ST.rankRange = m; loadRankings(); }
+// 把 7 组后端数据组装成统一 {title, hint, rows:[{name,v,sub}]} 供网格渲染
+function rankBlocks() {
+  var d = ST.rankData;
+  if (!d) return [];
+  var money = function (v) { return (v == null) ? '***' : ('￥' + fmt(v)); };
+  var blocks = [
+    { key: 'turnover', title: t('rank.turnover'), rows: (d.turnover || []).map(function (r) {
+        return { name: r.name, v: r.days + ' ' + t('rank.days'), sub: r.sold }; }) },
+    { key: 'profit', title: t('rank.profit'), rows: (d.profit || []).map(function (r) {
+        return { name: r.name, v: r.rate == null ? '***' : (r.rate + '%'), sub: money(r.profit) }; }) },
+    { key: 'qty', title: t('rank.qty'), rows: (d.qty || []).map(function (r) {
+        return { name: r.name, v: r.qty + ' ' + t('tag.pieceUnit'), sub: '￥' + fmt(r.amount) }; }) },
+    { key: 'customer', title: t('rank.customer'), rows: (d.customer || []).map(function (r) {
+        return { name: r.name, v: '￥' + fmt(r.amount), sub: r.bills + ' ' + t('rank.bills') }; }) },
+    { key: 'clerk', title: t('rank.clerk'), rows: (d.clerk || []).map(function (r) {
+        return { name: r.name, v: '￥' + fmt(r.amount), sub: r.bills + ' ' + t('rank.bills') }; }) },
+    { key: 'slow', title: t('rank.slow'), hint: t('rank.slowHint'), rows: (d.slow || []).map(function (r) {
+        return { name: r.name, v: r.age + ' ' + t('rank.days'), sub: r.cost == null ? '' : (t('kpi.stockCost') + ' ￥' + fmt(r.cost)) }; }) },
+    { key: 'category', title: t('rank.category'), rows: (d.category || []).map(function (r) {
+        return { name: r.name, v: '￥' + fmt(r.amount), sub: r.qty + ' ' + t('tag.pieceUnit') }; }) }
+  ];
+  return blocks;
+}
 // 统计卡标签多选（标签维度）：toggle 后重新拉取
 function toggleTagSel(id) {
   var i = ST.tagSel.indexOf(id);
@@ -5510,6 +5543,7 @@ var app = Vue.createApp({
     bindTypeTemplate: bindTypeTemplate,
     // 商品标签（多标签 + 分组统计）
     loadTags: loadTags, loadSaleStats: loadSaleStats, setSaleStatsDim: setSaleStatsDim, setSaleStatsRange: setSaleStatsRange,
+    setRankRange: setRankRange, rankBlocks: rankBlocks,
     toggleTagSel: toggleTagSel, clearTagSel: clearTagSel, toggleProdTagFilter: toggleProdTagFilter,
     tagGrouped: tagGrouped, tagGroupName: tagGroupName,
     toggleAnaTagSel: toggleAnaTagSel, clearAnaTagSel: clearAnaTagSel, loadAnaTagStats: loadAnaTagStats,

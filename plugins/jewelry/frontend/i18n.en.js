@@ -760,4 +760,9 @@ registerLang('en', {
     'tag.dupNote': 'Multi-tag products are counted in each tag group; the percentage denominator is the sum of all groups',
     'tag.group': 'Group', 'tag.groupPh': 'e.g. Antique', 'tag.ungrouped': 'Ungrouped',
     'tag.share': 'Share', 'inv.tagShare': 'Stock Share by Tag', 'sale.tagShare': 'Sales Share by Tag',
+    'rank.title': 'Top 5 Rankings', 'rank.periodHint': 'Turnover/slow-moving are live inventory; others use the selected period',
+    'rank.turnover': 'Fastest Turnover', 'rank.profit': 'Highest Profit Margin', 'rank.qty': 'Most Sold',
+    'rank.customer': 'Top Spending Members', 'rank.clerk': 'Top Sales Clerks', 'rank.slow': 'Slow-Moving',
+    'rank.slowHint': 'In-stock age', 'rank.category': 'Top Categories by Sales',
+    'rank.days': 'd', 'rank.bills': 'bills', 'rank.empty': 'No data',
 });

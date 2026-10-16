@@ -754,4 +754,9 @@ registerLang('it', {
     'tag.dupNote': 'I prodotti con più tag vengono conteggiati in ogni gruppo; il denominatore della percentuale è la somma di tutti i gruppi',
     'tag.group': 'Gruppo', 'tag.groupPh': 'Es: Vintage', 'tag.ungrouped': 'Senza gruppo',
     'tag.share': 'Quota', 'inv.tagShare': 'Quota scorte per tag', 'sale.tagShare': 'Quota vendite per tag',
+    'rank.title': 'Top 5', 'rank.periodHint': 'Rotazione/giacenze lente in tempo reale; le altre nel periodo scelto',
+    'rank.turnover': 'Rotazione più rapida', 'rank.profit': 'Margine più alto', 'rank.qty': 'Più venduti',
+    'rank.customer': 'Membri con più acquisti', 'rank.clerk': 'Commessi top', 'rank.slow': 'Giacenze lente',
+    'rank.slowHint': 'Giorni di giacenza', 'rank.category': 'Categorie top per fatturato',
+    'rank.days': 'gg', 'rank.bills': 'scontrini', 'rank.empty': 'Nessun dato',
 });

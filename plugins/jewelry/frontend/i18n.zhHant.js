@@ -1233,4 +1233,9 @@ registerLang('zhHant', {
     'tag.dupNote': '多標籤商品在各標籤組重複計入，佔比分母為各組合計',
     'tag.group': '分組', 'tag.groupPh': '如：古董款', 'tag.ungrouped': '未分組',
     'tag.share': '佔比', 'inv.tagShare': '標籤庫存佔比', 'sale.tagShare': '標籤銷售佔比',
+    'rank.title': '前五排行', 'rank.periodHint': '週轉/滯銷為庫存即時口徑，其餘按所選時段',
+    'rank.turnover': '週轉最快', 'rank.profit': '利潤率最高', 'rank.qty': '銷量最多',
+    'rank.customer': '會員消費最多', 'rank.clerk': '店員銷售最多', 'rank.slow': '滯銷品',
+    'rank.slowHint': '當前在庫庫齡', 'rank.category': '品類銷售額最高',
+    'rank.days': '天', 'rank.bills': '單', 'rank.empty': '暫無資料',
   });
