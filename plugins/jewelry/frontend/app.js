@@ -270,14 +270,10 @@ function trendDragEnd() {
   loadTrend();
 }
 function trendDragReset() { ST.trendOffset = 0; loadTrend(); }
-// 折线图 SVG 尺寸：按数据点数动态计算，避免拉伸变形
-function trendSvgW() {
-  var d = ST.trendData;
-  if (!d || !d.labels || !d.labels.length) return 300;
-  var n = d.labels.length;
-  // 每数据点至少 10px，最少 300，最宽不超 1200
-  return Math.max(300, Math.min(1200, n * 10));
-}
+// 折线图 SVG 尺寸：固定 viewBox="0 0 300 120"（注意：viewBox 必须是静态属性——in-DOM 模板中
+// :viewBox 动态绑定会被 HTML 解析器小写化为 :viewbox，Vue 按小写名 setAttribute 后 SVG 不识别，
+// viewBox 静默失效，图表按 1:1 坐标渲染只占容器左半，TC-43）。配合 preserveAspectRatio="none" 拉伸充满。
+function trendSvgW() { return 300; }
 function trendSvgH() { return 120; }
 // 生成 SVG 折线 points（动态 viewBox；null 断点按 0 处理，保证整条折线水平充满时间轴）
 function trendLinePoints(arr, maxV) {

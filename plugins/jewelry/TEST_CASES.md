@@ -332,6 +332,6 @@
 ## TC-43 趋势图纵轴仅 3 档 + 折线右半段空缺（1.2.32 待发布）
 
 - **问题现象**：看板「实销总额趋势」①纵轴只有 0/半程/最大 3 档，读数粒度粗；②近30日折线只画到约一半宽度，右半段时间轴有刻度无折线。
-- **根因**：①`trendYAxis()` 只返回 3 条刻度、SVG 仅 2 条固定横向网格线；②`trendLinePoints()` 对 `null` 断点 `continue` 跳过——去年同期序列后端按日对齐查不到时返回 null，折线在最后有效点中断；当前年序列虽后端 0 填充，但只要数组含 null（如旧数据/对齐缺失）同样断线。
-- **修复**：`trendYAxis()` 改为 0→区间最大均分 4 档（5 条刻度）；SVG 横向网格线改 `v-for trendHLines()` 4 条与刻度一一对齐；`trendLinePoints()` null 按 0 处理，两序列折线始终水平充满时间轴。
-- **验证方法**：浏览器 dev 走查：trendYAxis() 返回 5 条递降刻度；trendHLines() 4 条；近30日两条折线各 30 点、首尾 x≈4 与 ≈svgW-4（充满）；切近6月 6 点仍充满、纵轴仍 5 档；控制台无当前版本号资源的新报错。
+- **根因**：①`trendYAxis()` 只返回 3 条刻度、SVG 仅 2 条固定横向网格线；②**主因**：`<svg :viewBox="...">` 动态绑定在 in-DOM 模板中被 HTML 解析器小写化为 `:viewbox`，Vue 按小写名 setAttribute 后 SVG 不识别该属性，viewBox 静默失效——SVG 按 1:1 坐标渲染（坐标系 300 宽 vs 容器 450~510px），折线与网格全部只占容器左 ~60%；③次因：`trendLinePoints()` 对 `null` 断点 `continue` 跳过，含 null 的序列（去年同期）折线提前中断。
+- **修复**：viewBox 改**静态属性** `viewBox="0 0 300 120"`（HTML 解析器对 `<svg>` 内静态属性有 viewBox 大小写修正表可正确识别），`trendSvgW/H` 简化为常量 300/120；`trendYAxis()` 0→区间最大均分 4 档（5 刻度）；SVG 横向网格线 `v-for trendHLines()` 4 条对齐刻度；`trendLinePoints()` null 按 0 处理。
+- **验证方法**：浏览器走查：`.trend-svg` getAttribute('viewBox')="0 0 300 120"；`.trend-line-cur` 与 `.trend-svg` 的 getBoundingClientRect().width 比值 ≥0.95（修复前 ≈0.66）；trendYAxis() 5 条递降刻度；近30日 30 点、切近6月后比值仍 ≥0.95；控制台无当前版本号资源的新报错。
