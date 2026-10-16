@@ -748,6 +748,8 @@ registerLang('it', {
     'tag.delConfirm': 'Eliminare questo tag? Verrà scollegato da {n} prodotto/i',
     'tag.unlinked': 'Scollegato da {n} prodotto/i',
     'tag.noneHint': 'Nessun tag. Aggiungili in Gestione HQ → Tag Prodotto',
+    'tag.salesStatsTitle': 'Statistiche vendite', 'tag.dimCategory': 'Categoria', 'tag.dimTag': 'Tag',
+    'rg.3m': 'Ultimi 3 mesi', 'rg.6m': 'Ultimi 6 mesi', 'rg.year': "Quest'anno",
     'tag.statsTitle': 'Statistiche Tag', 'tag.pieceUnit': 'pz', 'tag.inStock': 'In magazzino',
     'tag.dupNote': 'I prodotti con più tag vengono conteggiati in ogni gruppo; il denominatore della percentuale è la somma di tutti i gruppi',
     'tag.group': 'Gruppo', 'tag.groupPh': 'Es: Vintage', 'tag.ungrouped': 'Senza gruppo',

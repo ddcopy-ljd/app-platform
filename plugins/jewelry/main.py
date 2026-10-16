@@ -1463,13 +1463,34 @@ def dashboard_category_sales(request: Request, start: str = Query(default=""), e
 
 @app.get("/api/dashboard/tag-stats")
 def dashboard_tag_stats(request: Request, start: str = Query(default=""), end: str = Query(default=""),
-                        tag_ids: str = Query(default="")):
-    """商品标签分组统计：每个标签各为一组，多标签商品在每组重复计入（pct 分母=各组合计，非真实总额）。
-    双口径：库存（在库数量/成本/标价）+ 销售（金额/件数，排除已冲红，区间缺省=近6个月）。
-    tag_ids 逗号分隔可只统计选中标签；缺省=全部标签。成本受 can_view_cost 列级权限限制。"""
+                        tag_ids: str = Query(default=""), dim: str = Query(default="tag")):
+    """销售额统计（看板卡片）：dim=tag 按商品标签分组、dim=category 按品类(product_type)聚合取销售额 top10。
+    dim=tag：每个标签各为一组，多标签商品在每组重复计入（pct 分母=各组合计，非真实总额），
+    双口径：库存（在库数量/成本/标价）+ 销售（金额/件数，排除已冲红，区间缺省=近6个月）；
+    tag_ids 逗号分隔可只统计选中标签；缺省=全部标签。成本受 can_view_cost 列级权限限制。
+    dim=category：仅销售口径（金额/件数），空品类归「未分类」，区间缺省=近6个月。"""
     sess = _require_auth(request)
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, sess)
+        if start and end:
+            rs, re_ = start[:10], end[:10]
+            if rs > re_:
+                rs, re_ = re_, rs
+            date_cond, date_args = "s.biz_date BETWEEN ? AND ?", [rs, re_]
+        else:
+            rs, re_ = "", ""
+            date_cond = "s.biz_date >= date('now','start of month','-5 months')"
+            date_args = []
+        if dim == "category":
+            rows = conn.execute(
+                "SELECT COALESCE(NULLIF(p.product_type,''),'未分类') k, IFNULL(SUM(s.amount),0) a, COUNT(*) n "
+                "FROM sales s JOIN products p ON p.id=s.product_id "
+                "WHERE s.status!='已冲红' AND (s.store_id=? OR s.store_id=0) AND " + date_cond +
+                " GROUP BY k ORDER BY a DESC, n DESC LIMIT 10", [sid] + date_args).fetchall()
+            total = sum(r["a"] for r in rows) or 1
+            return {"dim": "category", "start": rs, "end": re_, "items": [
+                {"name": r["k"], "color": "", "sale_amount": round(r["a"], 2), "sale_count": r["n"],
+                 "sale_pct": round(r["a"] * 100 / total, 1)} for r in rows]}
         ids = [int(x) for x in tag_ids.replace(" ", "").split(",") if x.isdigit()]
         sel = (" AND t.id IN (" + ",".join("?" * len(ids)) + ")") if ids else ""
         tags = conn.execute(
@@ -1482,15 +1503,6 @@ def dashboard_tag_stats(request: Request, start: str = Query(default=""), end: s
             "JOIN products p ON p.id=l.product_id "
             "WHERE p.status='在库' AND p.store_id=?" + sel + " GROUP BY t.id",
             [sid] + ids).fetchall()}
-        if start and end:
-            rs, re_ = start[:10], end[:10]
-            if rs > re_:
-                rs, re_ = re_, rs
-            date_cond, date_args = "s.biz_date BETWEEN ? AND ?", [rs, re_]
-        else:
-            rs, re_ = "", ""
-            date_cond = "s.biz_date >= date('now','start of month','-5 months')"
-            date_args = []
         sale_by = {r["tag_id"]: r for r in conn.execute(
             "SELECT t.id tag_id, IFNULL(SUM(s.amount),0) a, COUNT(*) n "
             "FROM sales s JOIN products p ON p.id=s.product_id "

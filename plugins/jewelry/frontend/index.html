@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>懿臻珠宝云</title>
 <link rel="icon" href="/logo/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./app.css?v=20261016a103">
+<link rel="stylesheet" href="./app.css?v=20261016a105">
 </head>
 <body>
 <div id="app">
@@ -214,8 +214,7 @@
               <svg class="trend-svg" :viewBox="'0 0 ' + trendSvgW() + ' ' + trendSvgH()" preserveAspectRatio="none">
                 <line v-for="(vl, vi) in trendVLines()" :key="'v'+vi" :x1="vl.x" y1="8" :x2="vl.x" :y2="trendSvgH()-4" class="trend-grid" vector-effect="non-scaling-stroke"></line>
                 <line x1="4" :y1="trendSvgH()-4" :x2="trendSvgW()-4" :y2="trendSvgH()-4" class="trend-axis" vector-effect="non-scaling-stroke"></line>
-                <line x1="4" :y1="trendSvgH()/2" :x2="trendSvgW()-4" :y2="trendSvgH()/2" class="trend-grid" vector-effect="non-scaling-stroke"></line>
-                <line x1="4" y1="8" :x2="trendSvgW()-4" y2="8" class="trend-grid" vector-effect="non-scaling-stroke"></line>
+                <line v-for="(hl, hi) in trendHLines()" :key="'h'+hi" x1="4" :y1="hl.y" :x2="trendSvgW()-4" :y2="hl.y" class="trend-grid" vector-effect="non-scaling-stroke"></line>
                 <polyline v-if="hasLastYear(trendData.amountsLastYear)" :points="trendLinePoints(trendData.amountsLastYear, trendScaleMax())" class="trend-line-past" fill="none" vector-effect="non-scaling-stroke"></polyline>
                 <polyline :points="trendLinePoints(trendData.amounts, trendScaleMax())" class="trend-line-cur" fill="none" vector-effect="non-scaling-stroke"></polyline>
               </svg>
@@ -248,8 +247,23 @@
             </div>
           </div>
           <div class="mini-chart" v-if="tagStats && tagStats.items && tagStats.items.length">
-            <div class="mini-chart-title"><span>{{ t('tag.statsTitle') }}</span></div>
-            <div class="tag-pick-wrap" v-if="tagList.length">
+            <div class="mini-chart-title"><span>{{ t('tag.salesStatsTitle') }}</span>
+              <span class="trend-head-right">
+                <span class="cat-chips">
+                  <div class="cat-chip" :class="{active:saleStatsDim==='category'}" @click="setSaleStatsDim('category')">{{ t('tag.dimCategory') }}</div>
+                  <div class="cat-chip" :class="{active:saleStatsDim==='tag'}" @click="setSaleStatsDim('tag')">{{ t('tag.dimTag') }}</div>
+                </span>
+                <select class="trend-range-select" :value="saleStatsRange" @change="setSaleStatsRange($event.target.value)">
+                  <option value="today">{{ t('dash.today') }}</option>
+                  <option value="week">{{ t('dash.week') }}</option>
+                  <option value="month">{{ t('dash.month') }}</option>
+                  <option value="3m">{{ t('rg.3m') }}</option>
+                  <option value="6m">{{ t('rg.6m') }}</option>
+                  <option value="year">{{ t('rg.year') }}</option>
+                </select>
+              </span>
+            </div>
+            <div class="tag-pick-wrap" v-if="saleStatsDim==='tag' && tagList.length">
               <div class="cat-chips tag-pick-chips">
                 <div class="cat-chip" :class="{active:!tagSel.length}" @click="clearTagSel()">{{ t('cat.all') }}</div>
               </div>
@@ -261,15 +275,16 @@
               </div>
             </div>
             <div class="tag-stats-list">
-              <div class="tag-stats-row" v-for="(g,i) in tagStats.items" :key="g.tag_id">
+              <div class="tag-stats-row" v-for="(g,i) in tagStats.items" :key="saleStatsDim + '-' + (g.tag_id || g.name)">
                 <div class="tag-stats-line">
                   <span class="tag-stats-name"><span class="dl-dot" :style="{background: g.color || donutColor(i%6)}"></span>{{ g.name }}</span>
                   <div class="tag-stats-bar-wrap"><div class="tag-stats-bar" :style="tagBarStyle(g, i)"></div></div>
                 </div>
-                <div class="tag-stats-val">￥{{ fmt(g.sale_amount) }} · {{ g.sale_count }} {{ t('tag.pieceUnit') }} · {{ t('tag.inStock') }} {{ g.stock_count }} {{ t('tag.pieceUnit') }}<span v-if="g.stock_cost != null"> · {{ t('kpi.stockCost') }} ￥{{ fmt(g.stock_cost) }}</span></div>
+                <div class="tag-stats-val" v-if="saleStatsDim==='category'">￥{{ fmt(g.sale_amount) }} · {{ g.sale_count }} {{ t('tag.pieceUnit') }} · {{ g.sale_pct }}%</div>
+                <div class="tag-stats-val" v-else>￥{{ fmt(g.sale_amount) }} · {{ g.sale_count }} {{ t('tag.pieceUnit') }} · {{ t('tag.inStock') }} {{ g.stock_count }} {{ t('tag.pieceUnit') }}<span v-if="g.stock_cost != null"> · {{ t('kpi.stockCost') }} ￥{{ fmt(g.stock_cost) }}</span></div>
               </div>
             </div>
-            <div class="tag-stats-note" v-if="tagStats.note">{{ t('tag.dupNote') }}</div>
+            <div class="tag-stats-note" v-if="saleStatsDim==='tag' && tagStats.note">{{ t('tag.dupNote') }}</div>
           </div>
           </div>
           <div class="section biz-analysis" v-if="bizAnalysis">
@@ -3827,14 +3842,14 @@ Content-Type: application/json
 <script src="./vendor/vue.global.prod.js"></script>
 <script src="./vendor/qrcode.min.js"></script>
 <script src="./vendor/zxing.min.js"></script>
-<script src="./i18n.js?v=20261016a103"></script>
+<script src="./i18n.js?v=20261016a105"></script>
 <script>
 // 非中文时同步加载对应语言字典（i18n.<dict>.js），确保 app.js 挂载前字典就绪
 (function () {
   var _dict = (typeof i18nDictFile === 'function') ? i18nDictFile() : '';
-  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261016a103"><\/script>');
+  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261016a105"><\/script>');
 })();
 </script>
-<script src="./app.js?v=20261016a103"></script>
+<script src="./app.js?v=20261016a105"></script>
 </body>
 </html>

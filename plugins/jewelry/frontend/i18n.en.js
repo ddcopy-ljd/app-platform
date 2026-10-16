@@ -754,6 +754,8 @@ registerLang('en', {
     'tag.delConfirm': 'Delete this tag? It will be unlinked from {n} product(s)',
     'tag.unlinked': 'Unlinked from {n} product(s)',
     'tag.noneHint': 'No tags yet. Add them in HQ Management → Product Tags',
+    'tag.salesStatsTitle': 'Sales Stats', 'tag.dimCategory': 'Category', 'tag.dimTag': 'Tag',
+    'rg.3m': 'Last 3M', 'rg.6m': 'Last 6M', 'rg.year': 'This year',
     'tag.statsTitle': 'Tag Stats', 'tag.pieceUnit': 'pcs', 'tag.inStock': 'In stock',
     'tag.dupNote': 'Multi-tag products are counted in each tag group; the percentage denominator is the sum of all groups',
     'tag.group': 'Group', 'tag.groupPh': 'e.g. Antique', 'tag.ungrouped': 'Ungrouped',

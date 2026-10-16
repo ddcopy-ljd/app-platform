@@ -631,6 +631,8 @@ var I18N = {
     'tag.delConfirm': '确认删除该标签？将解除 {n} 件商品的关联',
     'tag.unlinked': '已解除 {n} 件商品关联',
     'tag.noneHint': '暂无标签，请到「总部管理 → 商品标签」添加',
+    'tag.salesStatsTitle': '销售额统计', 'tag.dimCategory': '品类', 'tag.dimTag': '标签',
+    'rg.3m': '近3月', 'rg.6m': '近6月', 'rg.year': '今年',
     'tag.statsTitle': '标签统计', 'tag.pieceUnit': '件', 'tag.inStock': '在库',
     'tag.dupNote': '多标签商品在各标签组重复计入，占比分母为各组合计',
     'tag.group': '分组', 'tag.groupPh': '如：古董款', 'tag.ungrouped': '未分组',

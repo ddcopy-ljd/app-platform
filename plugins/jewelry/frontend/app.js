@@ -49,7 +49,8 @@ var ST = Vue.reactive({
   // 商品标签（多标签 + 按标签分组统计）
   tagList: [], prodTags: [],   // 标签字典 / 商品页标签筛选（多选=命中任一）
   tagEdit: { id: 0, name: '', color: '#C9A227', sort_order: 0, group_name: '' }, tagEditMode: 'new',
-  tagStats: null, tagSel: [],  // 标签分组统计结果 / 统计卡选中标签 id（空=全部）
+  tagStats: null, tagSel: [],  // 销售额统计结果 / 标签维度下选中标签 id（空=全部）
+  saleStatsDim: 'category', saleStatsRange: '6m',  // 销售额统计卡：维度(category品类/tag标签) / 独立时间预设(today/week/month/3m/6m/year)
   tagGroupList: [],            // 标签分组枚举（后端 TAG_GROUPS；管理页下拉 + 各标签选择处分组块渲染）
   anaTagSel: [], anaTagStats: null,  // 分析页标签维度：选中标签 id（空=全部）/ 按区间拉取的标签统计
   profLangs: ['en', 'it', 'ja', 'ko', 'zhHant'], profLang: 'en', profI18n: {}, profEdit: {},  // 推广页多语言可写内容
@@ -278,16 +279,16 @@ function trendSvgW() {
   return Math.max(300, Math.min(1200, n * 10));
 }
 function trendSvgH() { return 120; }
-// 生成 SVG 折线 points（动态 viewBox，null 断点跳过）
+// 生成 SVG 折线 points（动态 viewBox；null 断点按 0 处理，保证整条折线水平充满时间轴）
 function trendLinePoints(arr, maxV) {
   if (!Array.isArray(arr) || !arr.length) return '';
   var n = arr.length;
   var w = trendSvgW(), h = trendSvgH();
   var pts = [];
   for (var i = 0; i < n; i++) {
-    if (arr[i] == null) continue;
+    var v = (arr[i] == null) ? 0 : (Number(arr[i]) || 0);
     var x = n === 1 ? w / 2 : (i / (n - 1)) * (w - 8) + 4;
-    var y = (h - 4) - (Math.min(Number(arr[i]) || 0, maxV) / maxV) * (h - 12);
+    var y = (h - 4) - (Math.min(v, maxV) / maxV) * (h - 12);
     pts.push(x.toFixed(1) + ',' + y.toFixed(1));
   }
   return pts.join(' ');
@@ -321,7 +322,7 @@ function trendVLines() {
   }
   return out;
 }
-// 纵轴刻度（实销金额，元）：0 / 半程 / 最大值，与 SVG 网格线对齐
+// 纵轴刻度（实销金额，元）：0 → 区间最大值 均分 4 档（5 条刻度），与 SVG 横向网格线一一对齐
 function trendYAxis() {
   var mx = trendScaleMax();
   var h = trendSvgH();
@@ -332,13 +333,19 @@ function trendYAxis() {
     if (!zh && n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'k';
     return fmt(n);
   }
-  // top/bottom/middle 对应 SVG y=4/(h-4)/中线
-  var midPct = Math.round(((h / 2) / h) * 100);
-  return [
-    { top: '4%', text: short(mx) },
-    { top: midPct + '%', text: short(mx / 2) },
-    { top: (Math.round(((h - 4) / h) * 100)) + '%', text: '0' }
-  ];
+  // 4 档：值 = mx*i/4（i=0..4），线 y = (h-4) - (i/4)*(h-12)，label top = y/h 百分比
+  var out = [];
+  for (var i = 4; i >= 0; i--) {
+    var y = (h - 4) - (i / 4) * (h - 12);
+    out.push({ top: Math.round((y / h) * 100) + '%', text: i === 0 ? '0' : short(mx * i / 4) });
+  }
+  return out;
+}
+// 横向网格线 y 坐标：与纵轴 4 档刻度对齐（不含底线，底线为 trend-axis）
+function trendHLines() {
+  var h = trendSvgH(), out = [];
+  for (var i = 1; i <= 4; i++) out.push({ y: +(((h - 4) - (i / 4) * (h - 12)).toFixed(1)) });
+  return out;
 }
 
 // i18n.js 已提供全局 t(key) 翻译函数（先于本文件加载）；
@@ -1091,7 +1098,7 @@ function saleAnaRangeCompute() {
   }
   return { start: t0, end: t0 };
 }
-// 通用日期范围计算：mode (today/yesterday/7d/month/3m/custom) + custom start/end → {start,end}
+// 通用日期范围计算：mode (today/yesterday/7d/week/month/3m/6m/year/custom) + custom start/end → {start,end}
 function dateRangeCompute(mode, start, end) {
   var now = new Date();
   var iso = function (d) {
@@ -1102,7 +1109,14 @@ function dateRangeCompute(mode, start, end) {
   var t0 = iso(now);
   if (mode === 'yesterday') { var yd = new Date(now); yd.setDate(now.getDate() - 1); return { start: iso(yd), end: iso(yd) }; }
   if (mode === '7d') { var d7 = new Date(now); d7.setDate(now.getDate() - 6); return { start: iso(d7), end: t0 }; }
+  if (mode === 'week') {
+    var day = (now.getDay() + 6) % 7;   // 周一为一周开始
+    var mon = new Date(now); mon.setDate(now.getDate() - day);
+    return { start: iso(mon), end: t0 };
+  }
   if (mode === '3m') { var d3 = new Date(now); d3.setMonth(d3.getMonth() - 3); return { start: iso(d3), end: t0 }; }
+  if (mode === '6m') { var d6 = new Date(now); d6.setMonth(d6.getMonth() - 6); return { start: iso(d6), end: t0 }; }
+  if (mode === 'year') { return { start: now.getFullYear() + '-01-01', end: t0 }; }
   if (mode === 'month') { var first = new Date(now.getFullYear(), now.getMonth(), 1); return { start: iso(first), end: t0 }; }
   return { start: t0, end: t0 };  // today
 }
@@ -1183,7 +1197,7 @@ function loadDash() {
   api('GET', '/api/dashboard/biz-analysis' + q).then(function (r) { ST.bizAnalysis = r; }).catch(function () {});
   api('GET', '/api/dashboard/reminders').then(function (r) { ST.remindData = r; }).catch(function () {});
   api('GET', '/api/dashboard/risk').then(function (r) { ST.riskData = r; }).catch(function () {});
-  loadTagStats();   // 标签分组统计跟随看板时间区间（依赖当前门店，切店经 refreshAll→loadDash 重取）
+  loadSaleStats();   // 销售额统计卡（独立时间段，依赖当前门店，切店经 refreshAll→loadDash 重取）
   loadGold();
 }
 
@@ -2489,20 +2503,22 @@ function loadTags() {
     ST.tagGroupList = (r && r.groups) || [];
   }).catch(function () {});
 }
-// 标签分组统计：跟随看板时间区间（与 category-sales 同区间取法）；tagSel 空=全部标签
-function loadTagStats() {
-  var rg = dashRangeCompute();
-  var q = '?start=' + rg.start + '&end=' + rg.end;
-  if (ST.tagSel && ST.tagSel.length) q += '&tag_ids=' + ST.tagSel.join(',');
+// 销售额统计（看板卡）：维度品类 top10 / 标签可切换；时间段独立预设，不跟随看板全局区间
+function loadSaleStats() {
+  var rg = dateRangeCompute(ST.saleStatsRange);
+  var q = '?dim=' + ST.saleStatsDim + '&start=' + rg.start + '&end=' + rg.end;
+  if (ST.saleStatsDim === 'tag' && ST.tagSel && ST.tagSel.length) q += '&tag_ids=' + ST.tagSel.join(',');
   api('GET', '/api/dashboard/tag-stats' + q).then(function (r) { ST.tagStats = r; }).catch(function () {});
 }
-// 统计卡标签多选：toggle 后重新拉取
+function setSaleStatsDim(d) { ST.saleStatsDim = d; loadSaleStats(); }
+function setSaleStatsRange(m) { ST.saleStatsRange = m; loadSaleStats(); }
+// 统计卡标签多选（标签维度）：toggle 后重新拉取
 function toggleTagSel(id) {
   var i = ST.tagSel.indexOf(id);
   if (i >= 0) ST.tagSel.splice(i, 1); else ST.tagSel.push(id);
-  loadTagStats();
+  loadSaleStats();
 }
-function clearTagSel() { ST.tagSel = []; loadTagStats(); }
+function clearTagSel() { ST.tagSel = []; loadSaleStats(); }
 // 标签按组归并：组序取后端 TAG_GROUPS，后端未覆盖的组（含空组=未分组）追加末尾；
 // 组内保持后端 ORDER BY sort_order,t.id 的顺序。各标签选择处（看板/筛选/分析/商品表单）共用。
 function tagGrouped() {
@@ -2630,7 +2646,7 @@ function saveTag() {
     toast(t('toast.saveOk'));
     resetTagEdit();
     loadTags();
-    loadTagStats();
+    loadSaleStats();
   }).catch(function (e) { toast(e.message, 'error'); });
 }
 function delTag(o) {
@@ -2640,7 +2656,7 @@ function delTag(o) {
     var si = ST.tagSel.indexOf(o.id); if (si >= 0) ST.tagSel.splice(si, 1);
     var pi = ST.prodTags.indexOf(o.id); if (pi >= 0) ST.prodTags.splice(pi, 1);
     loadTags();
-    loadTagStats();
+    loadSaleStats();
   }).catch(function (e) { toast(e.message, 'error'); });
 }
 
@@ -5429,7 +5445,7 @@ var app = Vue.createApp({
     roleText: roleText,
     t: t, fmt: fmt, fmtY: fmtY, dateFmt: dateFmt,
     pctLabel: pctLabel, pctCls: pctCls, trendMax: trendMax, hasLastYear: hasLastYear,
-    setTrendRange: setTrendRange, trendLinePoints: trendLinePoints, trendScaleMax: trendScaleMax, trendTicks: trendTicks, trendVLines: trendVLines, trendYAxis: trendYAxis, trendSvgW: trendSvgW, trendSvgH: trendSvgH,
+    setTrendRange: setTrendRange, trendLinePoints: trendLinePoints, trendScaleMax: trendScaleMax, trendTicks: trendTicks, trendVLines: trendVLines, trendYAxis: trendYAxis, trendHLines: trendHLines, trendSvgW: trendSvgW, trendSvgH: trendSvgH,
     loadTrend: loadTrend, trendDragStart: trendDragStart, trendDragMove: trendDragMove, trendDragEnd: trendDragEnd, trendDragReset: trendDragReset,
     baDonutSegments: baDonutSegments, baTop5Sum: baTop5Sum,
     toggleHealth: toggleHealth,
@@ -5460,7 +5476,7 @@ var app = Vue.createApp({
     resetTypeEdit: resetTypeEdit, editType: editType, saveType: saveType, delType: delType,
     bindTypeTemplate: bindTypeTemplate,
     // 商品标签（多标签 + 分组统计）
-    loadTags: loadTags, loadTagStats: loadTagStats,
+    loadTags: loadTags, loadSaleStats: loadSaleStats, setSaleStatsDim: setSaleStatsDim, setSaleStatsRange: setSaleStatsRange,
     toggleTagSel: toggleTagSel, clearTagSel: clearTagSel, toggleProdTagFilter: toggleProdTagFilter,
     tagGrouped: tagGrouped, tagGroupName: tagGroupName,
     toggleAnaTagSel: toggleAnaTagSel, clearAnaTagSel: clearAnaTagSel, loadAnaTagStats: loadAnaTagStats,

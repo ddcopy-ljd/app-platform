@@ -1227,6 +1227,8 @@ registerLang('ko', {
     'tag.delConfirm': '이 태그를 삭제할까요? {n}개 상품의 연결이 해제됩니다',
     'tag.unlinked': '{n}개 상품의 연결을 해제했습니다',
     'tag.noneHint': '태그가 없습니다. 「본사 관리 → 상품 태그」에서 추가하세요',
+    'tag.salesStatsTitle': '매출 통계', 'tag.dimCategory': '카테고리', 'tag.dimTag': '태그',
+    'rg.3m': '최근 3개월', 'rg.6m': '최근 6개월', 'rg.year': '올해',
     'tag.statsTitle': '태그 통계', 'tag.pieceUnit': '개', 'tag.inStock': '재고',
     'tag.dupNote': '다중 태그 상품은 각 태그 그룹에 중복 집계되며, 비율 분모는 각 그룹의 합계입니다',
     'tag.group': '그룹', 'tag.groupPh': '예: 빈티지', 'tag.ungrouped': '미분류',

@@ -1227,6 +1227,8 @@ registerLang('ja', {
     'tag.delConfirm': 'このタグを削除しますか？{n} 件の商品の関連が解除されます',
     'tag.unlinked': '{n} 件の商品の関連を解除しました',
     'tag.noneHint': 'タグがありません。「本社管理 → 商品タグ」で追加してください',
+    'tag.salesStatsTitle': '売上統計', 'tag.dimCategory': 'カテゴリ', 'tag.dimTag': 'タグ',
+    'rg.3m': '近3ヶ月', 'rg.6m': '近6ヶ月', 'rg.year': '今年',
     'tag.statsTitle': 'タグ統計', 'tag.pieceUnit': '点', 'tag.inStock': '在庫あり',
     'tag.dupNote': '複数タグの商品は各タググループに重複計上され、割合の分母は各グループの合計です',
     'tag.group': 'グループ', 'tag.groupPh': '例：アンティーク', 'tag.ungrouped': '未分類',

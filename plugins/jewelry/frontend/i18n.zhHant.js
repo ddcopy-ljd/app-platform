@@ -1227,6 +1227,8 @@ registerLang('zhHant', {
     'tag.delConfirm': '確認刪除該標籤？將解除 {n} 件商品的關聯',
     'tag.unlinked': '已解除 {n} 件商品關聯',
     'tag.noneHint': '暫無標籤，請到「總部管理 → 商品標籤」添加',
+    'tag.salesStatsTitle': '銷售額統計', 'tag.dimCategory': '品類', 'tag.dimTag': '標籤',
+    'rg.3m': '近3月', 'rg.6m': '近6月', 'rg.year': '今年',
     'tag.statsTitle': '標籤統計', 'tag.pieceUnit': '件', 'tag.inStock': '在庫',
     'tag.dupNote': '多標籤商品在各標籤組重複計入，佔比分母為各組合計',
     'tag.group': '分組', 'tag.groupPh': '如：古董款', 'tag.ungrouped': '未分組',
