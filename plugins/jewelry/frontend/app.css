@@ -150,6 +150,12 @@ a { text-decoration: none; color: inherit; }
 .trend-yaxis > span { position: absolute; left: 0; right: 6px; transform: translateY(-50%); text-align: right; font-size: 14px; color: var(--text3); line-height: 1; }
 .trend-plot .trend-svg { flex: 1; min-width: 0; }
 .trend-ticks-indent { padding-left: 46px; }
+/* 趋势图拖动平移：整体内容随拖动位移，松手按窗口换算 */
+.trend-pan { cursor: grab; user-select: none; -webkit-user-select: none; touch-action: pan-y; overflow: hidden; }
+.trend-pan.dragging { cursor: grabbing; }
+.trend-pan-inner { will-change: transform; }
+.trend-reset-btn { font-size: 14px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--white); color: var(--text2); cursor: pointer; }
+.trend-reset-btn:hover { border-color: var(--wine); color: var(--wine); }
 /* 经营分析区块 */
 .biz-analysis .ba-group { margin: 10px 0 14px; }
 .biz-analysis .ba-group-title { font-size: 14px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
@@ -1683,8 +1689,21 @@ tr.tr-row-hit { animation: tr-hit-flash 1.2s ease; }
 /* 商品标签：列表小 chip / 表单选择 / 分组统计条 */
 .ptag-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 .ptag { display: inline-block; font-size: 14px; line-height: 1.5; padding: 0 8px; border-radius: 9px; background: var(--border); color: var(--text); white-space: nowrap; }
+/* 商品列表：标签独立列（chips 自动换行，窄列不撑破表格） */
+.table-products .th-tags { min-width: 72px; }
+.table-products td.cell-tags { min-width: 84px; white-space: normal; word-break: break-word; line-height: 1.6; }
+.table-products td.cell-tags .ptag { font-size: 13px; padding: 0 7px; margin: 1px 3px 1px 0; }
 .tag-pick-chips { padding: 2px 0 6px; }
 .tag-form-empty { font-size: 14px; color: var(--text2); padding: 4px 0; }
+/* 标签按组分块展示（看板统计/商品筛选/库存分析/销售分析/商品表单 5 处共用；
+   组名 chip 视觉与「商品品类分组选择弹窗」的 tp-group-label 保持一致） */
+.tag-pick-wrap { display: flex; flex-direction: column; gap: 8px; }
+.tag-pick-wrap .tag-pick-chips { padding: 0; }
+.tag-group-name {
+  display: inline-block; font-size: 14px; font-weight: 700; color: var(--wine, #5C2233);
+  padding: 2px 10px; border-radius: 4px; margin-bottom: 4px;
+  background: linear-gradient(90deg, rgba(201,169,97,.22), rgba(201,169,97,.04));
+}
 .tag-stats-list { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
 .tag-stats-line { display: flex; align-items: center; gap: 8px; }
 .tag-stats-name { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text); width: 92px; flex-shrink: 0; overflow: hidden; }

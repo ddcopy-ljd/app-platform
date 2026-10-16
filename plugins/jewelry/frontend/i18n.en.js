@@ -42,6 +42,7 @@ registerLang('en', {
     'dev.genBtn': 'Generate code', 'dev.actQrHint': 'Scan with the activation feature of the Scan Assistant app; one-time use, valid 15 minutes',
     'dev.listTitle': 'Activated devices', 'dev.code': 'Code', 'dev.store': 'Bound store',
     'dev.currentTask': 'Current task', 'dev.active': 'Active', 'dev.disabled': 'Disabled',
+    'dev.needUpgrade': 'Update available', 'dev.version': 'Version',
     'dev.disable': 'Disable', 'dev.enable': 'Enable', 'dev.unbind': 'Unbind',
     'dev.empty': 'No activated devices yet', 'dev.online': 'Online', 'dev.offline': 'Offline',
     'dev.source': 'Source', 'dev.srcApp': 'Scan Assistant', 'dev.srcH5': 'Mobile web',
@@ -755,4 +756,6 @@ registerLang('en', {
     'tag.noneHint': 'No tags yet. Add them in HQ Management → Product Tags',
     'tag.statsTitle': 'Tag Stats', 'tag.pieceUnit': 'pcs', 'tag.inStock': 'In stock',
     'tag.dupNote': 'Multi-tag products are counted in each tag group; the percentage denominator is the sum of all groups',
+    'tag.group': 'Group', 'tag.groupPh': 'e.g. Antique', 'tag.ungrouped': 'Ungrouped',
+    'tag.share': 'Share', 'inv.tagShare': 'Stock Share by Tag', 'sale.tagShare': 'Sales Share by Tag',
 });

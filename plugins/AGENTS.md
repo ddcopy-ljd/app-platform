@@ -84,3 +84,7 @@
 - **refreshAll() 必须包含所有依赖 curStoreId 的 API**：切店后 `refreshAll()` 里漏了 `loadTransfers()` → 切到分店A看不到该店发起的调拨（还停留上一个门店的 transfersOut 数据）；判断一个状态对象是否依赖 curStoreId 很简单——后端 API 路径里有 store_id 过滤或 scope=out/in 这样的视角参数，就必须在 refreshAll 里刷新；同类漏刷新还会发生在：scope 化的列表（调拨/协同任务/扫码会话）、需要门店级鉴权的配置项、门店视角统计等。
 - **dataVersion 不能大于 softwareVersion**（平台 `_validate_manifest` 按点分元组比较，如 1.3.0 > 1.2.16.x 直接 400 拒绝上传）；结构变更递增 dataVersion 时取「不高于当前 softwareVersion 前三段」的号（如 1.2.16.x 周期用 1.2.16）。
 - 调拨 scan_codes 是"扫码额外商品"，不是"手动勾选商品的 EPC 再发一遍"：前端 submitTransfer() 之前把同一批勾选商品同时塞进 product_ids 和 scan_codes → 后端 scan_codes 解析成 scan_pids 后与 product_ids 合并去重，`len(raw_ids) != len(ids)` 抛 400 "调拨商品存在重复选择"；scan_codes 真正用途是协同扫描面板扫进来的、不在 transferSel 里的额外商品；修法：前端当前无此场景直接砍 scan_codes（方案 B）；后端 `scan_pids` 解析时跳过已在 body.product_ids 里的 pid（方案 C 防御式）。
+- **直接改 `ST.tab` 切页不会触发 `go()` 里的数据加载**（loadInv/loadSaleAnalysis/loadAnaTagStats 等都在 go() 内）：走查/调试改完 tab 必须手动调对应 load 函数，否则统计区块因 `v-if="rows().length"` 数据为空不渲染，会误判"功能缺失"（库存/销售分析的标签区块踩过）。
+- **走查断言先查 i18n 实际键值**：商品编辑弹层保存按钮是 `act.submit`「确认提交」（不是「保存」）、销售分析标签区块是 `sale.tagShare`「标签销售占比」（不是「标签实销占比」）；凭臆测写断言导致保存从未触发、区块误判未渲染。
+- **种子表"只对演示库灌"禁止用"表空就灌"判定**：真实租户删光字典后升级会复活（product_tags 曾因此只进 seed_demo、致外网沙箱无标签）。正确判定 = 联动主表（如 products）本次是否新灌——主表新灌=全新演示库才灌字典种子（TC-40，`_SEED_PRODUCT_TAGS` 常量化后 seed_demo 与 ensure_new_seeds 共用）。
+- **Edit main.py 成对代码块必须带独有上下文**：`product_tag_create` 与 `product_tag_update`、list 接口间的 `return {"list": ...}` 等代码完全相同，Edit 会报 multiple matches——用各自独有的前后行（如上一行 SQL）做唯一锚点。

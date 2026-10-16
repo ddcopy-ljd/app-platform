@@ -347,6 +347,7 @@ var I18N = {
     'dev.genBtn': '生成激活码', 'dev.actQrHint': '用「扫描助手」App 的设备激活功能扫码，15 分钟内一次性有效',
     'dev.listTitle': '已激活设备', 'dev.code': '设备码', 'dev.store': '绑定门店',
     'dev.currentTask': '当前任务', 'dev.active': '正常', 'dev.disabled': '已停用',
+    'dev.needUpgrade': '待升级', 'dev.version': '版本',
     'dev.disable': '停用', 'dev.enable': '启用', 'dev.unbind': '解绑',
     'dev.empty': '尚无已激活设备', 'dev.online': '在线', 'dev.offline': '离线',
     'dev.source': '来源', 'dev.srcApp': '扫描助手', 'dev.srcH5': '手机网页',
@@ -632,6 +633,8 @@ var I18N = {
     'tag.noneHint': '暂无标签，请到「总部管理 → 商品标签」添加',
     'tag.statsTitle': '标签统计', 'tag.pieceUnit': '件', 'tag.inStock': '在库',
     'tag.dupNote': '多标签商品在各标签组重复计入，占比分母为各组合计',
+    'tag.group': '分组', 'tag.groupPh': '如：古董款', 'tag.ungrouped': '未分组',
+    'tag.share': '占比', 'inv.tagShare': '标签库存占比', 'sale.tagShare': '标签销售占比',
   }
 };
 var currentLang = 'zh';

@@ -256,3 +256,58 @@
   2. API：PUT /api/profile 带合法 i18n JSON 后 GET /site?lang=en 显示英文内容、缺 ja 字段回退中文、Accept-Language: it 命中意语文案、非法 i18n（数组/非对象）被 400；
   3. 浏览器：总部管理按语言录入→保存→/site 顶部语言切换链接渲染对应语言（导航/预约表单/承诺文案跟随）→控制台无报错；
   4. 测试数据（录入的各语言内容）验证后恢复原值。
+
+## TC-36 扫描助手 App 应用内自升级（1.2.20）
+
+- **需求**：手持机 App 具备自升级能力（可选提示 + 支持强制），并顺带做「设备版本上报 + 门店可见」；判定机制为「提取手持机已安装 APK 的 md5，与服务端包 md5 不一致即升级」。
+- **实现**：插件新增免鉴权 `GET /api/scan-app/info`（读 APK 旁 `.md5` sidecar → `{md5,size,force}`，sidecar 缺失回退现算；`force` 由 `<apk>.force` 控制）与既有 `GET /api/scan-app/download`；`devices` 表新增 `apk_md5`（WS `hello` 帧新增 `apk_md5` 字段上报已安装 base.apk 的 md5），`/api/devices` 每台设备返回 `need_upgrade`（上报 md5 非空且 ≠ 服务端包 md5）。App 侧：`UpdateChecker`（info → size 短路 → md5 比对 → 下载到私有目录 → 复核 md5 → `getPackageArchiveInfo` 校验包名/`versionCode≥当前`/签名一致 → Android 8+ 未授权先跳「安装未知应用」设置 → 拉起系统安装器，**不做无障碍自动点击/静默安装**），Manifest 加 `REQUEST_INSTALL_PACKAGES` + FileProvider(`res/xml/file_paths.xml`)；设置页新增「检查更新」条目 + 启动静默检查；`AppConfig.APP_VERSION` 改读 `BuildConfig.VERSION_NAME`（消除 1.1.0/1.0.1 双源）；`scripts/build_scan_app.bat` 产 `scan-assistant-release.apk` + `.md5` sidecar 到 `downloads/`。
+- **验证方法**：
+  1. 迁移：含旧 `devices`（无 `apk_md5`）的库跑 `upgrade.py`/`migrate_schema` 幂等，列补全且已有设备行不丢；
+  2. API：`/api/scan-app/info` 的 `md5` == APK 实际 md5（32 位小写）、`size` == 文件字节数、`force` 默认 false（放入 `.force` 且内容非 0/false 时为 true）；`/api/devices` 中对已上报 md5 且与服务端不同的设备 `need_upgrade=true`、未上报(md5 空)为 false；
+  3. App：改动打包后重装/覆盖安装，启动或设置页「检查更新」能提示；下载后 md5 复核失败必须拒绝安装；系统安装器确认后覆盖安装成功，重启后上报的 `apk_md5` 与服务端一致、卡片「待升级」消失；
+  4. 部署红线：首次上线必然「全量重下载」（旧装机包 md5 与新包不同，属预期，不视为 BUG）；
+  5. 浏览器：门店管理设备卡片显示「版本 vX」与「待升级」徽标，六语言无界面级中文残留，控制台无报错；
+  6. 平台网关：无 Cookie 客户端经 `/app|/gw` 访问 `api/scan-app/info`、`api/scan-app/download` 不被拦（已在 `_MACHINE_PATHS` 白名单）。
+
+
+## TC-37 借货提醒条与库存「借出」KPI 数据口径不一致（1.2.24）
+
+- **问题现象**：库存分析页提醒条显示「足金手镯·同行老刘 外借逾期催还(2026-02-20)」，但「借出」KPI 卡片为 0——两处数据对不上。
+- **根因**：提醒条查 loans 单据表（status 借出中/借入中 且逾期），KPI 查 products.status='借出'，两表靠 loan_create/loan_return 联动保持一致；而 seed（db.py 两处 loans 种子只插单不联动商品，且借出商品 J001 同时被定金 seed 锁为「已定」）与 _seed_demo_data.py（direction 写中文「借出/借入」——loan_create/loan_return 只认 'out'/'in'，还造出系统不存在的「已逾期」状态，且不联动 products）绕过 API 直写，造成单货脱节。
+- **修复**：db.py 两处 loans seed 改为借出 J011（无 seed 销售/定金冲突）+ UPDATE products SET status='借出' 联动 + store_id 与商品门店一致(2)；_seed_demo_data.py 借货段 direction 改英文、状态改系统真实值、商品名以库内 code 实际为准、活动借出同步置 products 借出；清理 dev 库 6 条脏 loans（id=1,3,4,5,6,7）。
+- **验证方法**：
+  1. 全新建库：reminders 的 loansOverdue 出现「珍珠项链·同行老刘」（切到分店A可见）且该店 KPI 借出=1，总店 KPI 借出=0，两处一致；
+  2. 存量 dev 库：提醒条只剩「钻石戒指·供应商A 借入逾期归还」（借入不影响商品 KPI），KPI 借出=0，一致；
+  3. _seed_demo_data.py 重跑后 loans 无中文 direction、无「已逾期」状态，活动借出单对应商品 status 均为「借出」。
+
+## TC-38 趋势折线：X 轴隔天抽稀 + 拖动平移窗口 + 缓存版本升级（1.2.24）
+
+- **需求**：①日粒度 X 轴日期隔天显示一个；②折线图撑满面板；③看板标签统计点击 chip 下方数据不跟随；④实销总额趋势可左右拖动、统计范围随动。
+- **根因/实现**：③为 index.html 静态资源版本号滞留 =20261013e161，浏览器缓存旧 app.js 无 	oggleTagSel——升版 =20261015a101（app.css/i18n.js/app.js 四处同步）；①	rendTicks 日粒度 step 恒 2（原 15d 内 step=1 每天显示）；②svg preserveAspectRatio=none+width:100% 本已拉伸，随缓存升版生效；④/api/dashboard/trend 新增 offset（窗口整体向过去平移 offset*n 天/月，ge=0/le=120），前端 ST.trendOffset + .trend-pan 鼠标/触摸拖动（90px=1 窗口，右拖看更早，松手换算），offset>0 显示「重置」按钮回当前窗口。
+- **验证方法**：
+  1. 30d：offset=0 末标签=今天，offset=1 窗口整体前移 30 天；6m：offset=1 前移 6 个月；
+  2. 浏览器：15d/30d X 轴均为隔天一个日期；图上左右拖动松手后窗口平移、标签跟随，「重置」回到今天；切 range 下拉 offset 归零；
+  3. 标签统计：点击 chip 后下方列表只显示选中标签（强刷后无缓存干扰）。
+
+## TC-39 商品标签与固定字段（品类/材质/类型）重复（1.2.24）
+
+- **问题现象**：标签字典 seed 含「项链/手链/戒指/金饰/银饰/翡翠/钻石」，与 product_type（项链/手链/戒指）和 category（金/银/翡翠/钻石材质）同维度两处维护——同一商品可在两处打不同值，统计口径必然分裂。
+- **根因**：标签定位是「固定字段之外的扩展维度」（风格/场景/客群/营销），seed 却塞入了品类/材质/类型词；违反「固定字段管口径、标签管运营」分层原则。
+- **修复**：db.py seed 10 个标签 → 8 个纯扩展维度标签（古风/现代/轻奢/简约/收藏级/婚庆/送礼/本命年）；dev 库删除 7 个重复标签并对齐新 seed（关联表 0 条引用，无副作用）；group_name 分组的启用留待后续。
+- **验证方法**：
+  1. 全新建库：`SELECT name FROM product_tags` 只有 8 个扩展维度标签，无任何与 category/product_type 重名的词；
+  2. 存量 dev 库：标签字典为 古风/现代/轻奢/简约/收藏级/婚庆/送礼/本命年（sort_order 1-8），product_tag_links 无孤儿引用（JOIN product_tags 无空 name）；
+  3. 商品编辑页给商品打标签、看板标签统计 chips 只显示字典内标签，点选后下方列表正确过滤。
+
+## TC-40 商品标签分组（固定枚举 + 5 处分块展示）（1.2.24）
+
+- **需求**：标签按固定分组归类展示与维护，便于统计管理汇总：①组为固定枚举（风格/工艺/场景/客群/营销），只允许在组内新增标签，禁止自由造组（否则同义组名碎片化、统计失效）；②单组归属（一个标签只属一组，避免统计重复计数），跨组可多选；③5 处标签选择处（经营看板标签统计 / 商品列表标签筛选 / 库存分析标签库存占比 / 销售分析标签销售占比 / 商品编辑表单商品标签）+ 标签管理表单统一按组分块渲染。
+- **实现**：后端 `main.py` 新增常量 `TAG_GROUPS=["风格","工艺","场景","客群","营销"]` 作单一数据源（前端禁止硬编码），`GET /api/product-tags` 响应增 `groups`；`product_tag_create`/`product_tag_update` 校验 `group_name` 必须在枚举内（空串=未分组合法，非法值 400「分组「X」不在预定义分组内」）；`/api/dashboard/tag-stats` items 增 `group_name`。`db.py` 标签种子 20 个按 5 组分配（风格5/工艺4/场景3/客群4/营销4），常量化 `_SEED_PRODUCT_TAGS` 供 seed_demo 与 ensure_new_seeds 共用；**ensure_new_seeds 仅「全新演示库」灌入**（判定=products 本次新灌，即外网沙箱基线），真实租户表空不灌（防删光后升级复活）。前端 `app.js` 新增共用 `tagGrouped()`（按后端 `groups` 组序归并，后端未覆盖的组/空组追加末尾，组内保持原序）+ `tagGroupName()`（空组→i18n `tag.ungrouped`），5 处选择处统一改为 `.tag-pick-wrap` + `.tag-group` 分块渲染；标签管理表单「分组」字段由自由输入 `input+datalist` 改为固定枚举 `select`（未分组 + 5 组）；6 语言字典加 `tag.ungrouped`；静态资源版本号升 `?v=20261016a103`（app.css/i18n.js/app.js 同步）。
+- **验证方法**：
+  1. API（临时脚本，仓库外）：`GET /api/product-tags` 返回 `groups`=5 组；非法分组「乱造组」新建返回 400；合法分组新建成功且 `group_name` 落库、删除回显 `unlinked`；`/api/dashboard/tag-stats` 每 item 含 `group_name`；
+  2. 新建库：`product_tags` 共 20 条，`group_name` 分布 风格5/工艺4/场景3/客群4/营销4；
+  3. 浏览器走查（dev 库）：看板标签统计、商品列表标签筛选、库存分析「标签库存占比」、销售分析「标签销售占比」、商品编辑表单「商品标签」五处 `.tag-group-name` 均渲染 5 组（风格/工艺/场景/客群/营销）；标签管理表单下拉选项 = 未分组+5 组且表格「分组」列有值；console 无新增报错；
+  4. 测试数据（临时在库商品 + 已售商品标签关联）验证后全部清理，`product_tag_links` 归零；存量租户库旧标签 `group_name` 为空→归入「未分组」，属预期；
+  5. 沙箱链路（ensure_new_seeds，临时库模拟三场景）：全新空库→标签 20+去年销售 3 单+各业务表均有数据；真实租户（products 非空）删光标签重跑→标签不复活（仍 0）；幂等重跑→各表行数不变；
+  6. UI 操作链路（dev 库）：商品编辑弹层勾选跨组标签（古风+婚庆）→「确认提交」→API 回读 tags 两项→再取消保存→tags 空；商品列表筛选/看板统计/库存分析/销售分析四处点 chip 后 items 均只含选中标签；标签管理新建（选组落库）→删除→列表还原；走查后 `product_tag_links`=0、无残留测试标签；
+  7. 统计口径核对（API vs SQL 直连 49 项）：库存汇总（在库/已定/借出/已售 count+price+cost、onHand、profit、profitRate、分类合计）、看板区间销售额与 YoY（去年同月有数）、销售分析本月+去年同月（revenue/bills/items/avgPerBill/分类合计/人员合计）、标签统计双口径（stock_count/stock_price/sale_amount/sale_count/group_name）、趋势 6m 标签数与去年同期非全 0。

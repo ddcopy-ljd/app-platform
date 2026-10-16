@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextvars
+import hashlib
 import json
 import logging
 import os
@@ -1340,8 +1341,10 @@ def dashboard_overview(request: Request, start: str = Query(default=""), end: st
 
 
 @app.get("/api/dashboard/trend")
-def dashboard_trend(request: Request, trange: str = Query(default="30d", alias="range")):
+def dashboard_trend(request: Request, trange: str = Query(default="30d", alias="range"),
+                    offset: int = Query(default=0, ge=0, le=120)):
     """实销总额趋势：range=15d/30d（按日）、6m/12m（按月）。
+    offset=向前平移的窗口数（拖动看历史）：日粒度偏移 offset*n 天，月粒度偏移 offset*n 个月。
     返回今年/去年同期双序列（labels 为今年轴，去年轴同格式对齐）。"""
     from datetime import timedelta as _td
     sess = _require_auth(request)
@@ -1352,20 +1355,22 @@ def dashboard_trend(request: Request, trange: str = Query(default="30d", alias="
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, sess)
         if by_day:
-            start = (today - _td(days=n - 1)).isoformat()
+            end_d = today - _td(days=offset * n)   # 窗口右端：offset>0 时整体向过去平移
+            start = (end_d - _td(days=n - 1)).isoformat()
+            end_s = end_d.isoformat()
             rows = conn.execute(
                 "SELECT biz_date d, COALESCE(SUM(amount),0) a FROM sales "
-                "WHERE status!='已冲红' AND (store_id=? OR store_id=0) AND biz_date>=? "
-                "GROUP BY d", (sid, start)).fetchall()
+                "WHERE status!='已冲红' AND (store_id=? OR store_id=0) AND biz_date BETWEEN ? AND ? "
+                "GROUP BY d", (sid, start, end_s)).fetchall()
             m = {r["d"]: round(r["a"], 2) for r in rows}
             labels, amounts = [], []
             for i in list(range(n)):
-                d = (today - _td(days=n - 1 - i)).isoformat()
+                d = (end_d - _td(days=n - 1 - i)).isoformat()
                 labels.append(d[5:].replace("-", "/"))
                 amounts.append(m.get(d, 0.0))
             ly_dates = []
             for i in list(range(n)):
-                d0 = today - _td(days=n - 1 - i)
+                d0 = end_d - _td(days=n - 1 - i)
                 try:
                     ly_dates.append(d0.replace(year=d0.year - 1).isoformat())
                 except ValueError:
@@ -1379,20 +1384,27 @@ def dashboard_trend(request: Request, trange: str = Query(default="30d", alias="
             last_year = [m2.get(d) for d in ly_dates]
         else:
             months_expr = "substr(biz_date,1,7)"
-            # 回溯 n-1 个月
-            y, mo = today.year, today.month
+            # 窗口右端月份：当月向过去平移 offset*n 个月
+            ey, em = today.year, today.month
+            for _ in list(range(offset * n)):
+                em -= 1
+                if em == 0:
+                    em, ey = 12, ey - 1
+            # 回溯 n-1 个月得窗口左端
+            y, mo = ey, em
             for _ in list(range(n - 1)):
                 mo -= 1
                 if mo == 0:
                     mo, y = 12, y - 1
             start = date(y, mo, 1).isoformat()[:7]
+            end_m = f"{ey}-{em:02d}"
             rows = conn.execute(
                 f"SELECT {months_expr} d, COALESCE(SUM(amount),0) a FROM sales "
-                "WHERE status!='已冲红' AND (store_id=? OR store_id=0) AND substr(biz_date,1,7)>=? "
-                "GROUP BY d ORDER BY d", (sid, start)).fetchall()
+                "WHERE status!='已冲红' AND (store_id=? OR store_id=0) AND substr(biz_date,1,7) BETWEEN ? AND ? "
+                "GROUP BY d ORDER BY d", (sid, start, end_m)).fetchall()
             m = {r["d"]: round(r["a"], 2) for r in rows}
             labels, amounts = [], []
-            y, mo = today.year, today.month
+            y, mo = ey, em
             for _ in list(range(n - 1)):
                 mo -= 1
                 if mo == 0:
@@ -1407,13 +1419,13 @@ def dashboard_trend(request: Request, trange: str = Query(default="30d", alias="
             rows2 = conn.execute(
                 f"SELECT {months_expr} d, COALESCE(SUM(amount),0) a FROM sales "
                 "WHERE status!='已冲红' AND (store_id=? OR store_id=0) "
-                f"AND substr(biz_date,1,4)=substr(?,1,4) GROUP BY d", (sid, str(today.year - 1))).fetchall()
+                f"AND substr(biz_date,1,4)=substr(?,1,4) GROUP BY d", (sid, str(ey - 1))).fetchall()
             m2 = {r["d"]: round(r["a"], 2) for r in rows2}
             last_year = []
             for lab in labels:
                 ly = f"{int(lab[:4]) - 1}-{lab[5:]}"
                 last_year.append(m2.get(ly))
-        return {"range": rng, "byDay": by_day, "labels": labels,
+        return {"range": rng, "byDay": by_day, "offset": offset, "labels": labels,
                 "amounts": amounts, "amountsLastYear": last_year}
 
 
@@ -1461,7 +1473,7 @@ def dashboard_tag_stats(request: Request, start: str = Query(default=""), end: s
         ids = [int(x) for x in tag_ids.replace(" ", "").split(",") if x.isdigit()]
         sel = (" AND t.id IN (" + ",".join("?" * len(ids)) + ")") if ids else ""
         tags = conn.execute(
-            "SELECT t.id,t.name,t.color FROM product_tags t WHERE 1=1" + sel +
+            "SELECT t.id,t.name,t.color,t.group_name FROM product_tags t WHERE 1=1" + sel +
             " ORDER BY t.sort_order,t.id", ids).fetchall()
         # 库存口径（与销售口径分开两条查询，禁止同一条 JOIN 交叉翻倍）
         stock_by = {r["tag_id"]: r for r in conn.execute(
@@ -1492,7 +1504,7 @@ def dashboard_tag_stats(request: Request, start: str = Query(default=""), end: s
         for t in tags:
             st, sa = stock_by.get(t["id"]), sale_by.get(t["id"])
             items.append({
-                "tag_id": t["id"], "name": t["name"], "color": t["color"],
+                "tag_id": t["id"], "name": t["name"], "color": t["color"], "group_name": t["group_name"],
                 "stock_count": st["n"] if st else 0,
                 "stock_cost": round(st["c"], 2) if st and can_cost else (None if st else 0),
                 "stock_price": round(st["s"], 2) if st else 0,
@@ -2148,10 +2160,15 @@ def product_type_bind_template(code: str, body: ProductTypeTemplateIn, request: 
 
 # ---------------------------------------------------------------- 商品标签（业务统计字典，租户库内私有、门店共用）
 
+# 标签分组枚举：组是固定口径，只允许在组内新增标签，禁止自由造组（否则同义组名碎片化，统计失效）
+TAG_GROUPS = ["风格", "工艺", "场景", "客群", "营销"]
+
+
 class ProductTagIn(BaseModel):
     name: str = ""
     color: str = ""
     sort_order: int = 0
+    group_name: str = ""
 
 
 @app.get("/api/product-tags")
@@ -2162,7 +2179,7 @@ def product_tags_list(request: Request):
             "SELECT t.*, (SELECT COUNT(*) FROM product_tag_links l WHERE l.tag_id=t.id) AS used_count "
             "FROM product_tags t ORDER BY t.sort_order, t.id"
         ).fetchall()
-        return {"list": [dict(r) for r in rows]}
+        return {"list": [dict(r) for r in rows], "groups": TAG_GROUPS}
 
 
 @app.post("/api/product-tags")
@@ -2173,11 +2190,14 @@ def product_tag_create(body: ProductTagIn, request: Request):
         raise HTTPException(400, "标签名不能为空")
     if len(name) > 20:
         raise HTTPException(400, "标签名不能超过 20 字")
+    grp = (body.group_name or "").strip()
+    if grp and grp not in TAG_GROUPS:
+        raise HTTPException(400, f"分组「{grp}」不在预定义分组内")
     with _db(request) as conn:
         if conn.execute("SELECT 1 FROM product_tags WHERE name=?", (name,)).fetchone():
             raise HTTPException(400, f"标签「{name}」已存在")
-        cur = conn.execute("INSERT INTO product_tags(name,color,sort_order) VALUES(?,?,?)",
-                           (name, (body.color or "").strip(), body.sort_order))
+        cur = conn.execute("INSERT INTO product_tags(name,color,sort_order,group_name) VALUES(?,?,?,?)",
+                           (name, (body.color or "").strip(), body.sort_order, grp))
         conn.commit()
         _log(conn, op["username"], "新建商品标签", name)
         return {"ok": True, "id": cur.lastrowid}
@@ -2191,13 +2211,16 @@ def product_tag_update(tid: int, body: ProductTagIn, request: Request):
         raise HTTPException(400, "标签名不能为空")
     if len(name) > 20:
         raise HTTPException(400, "标签名不能超过 20 字")
+    grp = (body.group_name or "").strip()
+    if grp and grp not in TAG_GROUPS:
+        raise HTTPException(400, f"分组「{grp}」不在预定义分组内")
     with _db(request) as conn:
         if not conn.execute("SELECT id FROM product_tags WHERE id=?", (tid,)).fetchone():
             raise HTTPException(404, "标签不存在")
         if conn.execute("SELECT id FROM product_tags WHERE name=? AND id<>?", (name, tid)).fetchone():
             raise HTTPException(400, f"标签「{name}」已存在")
-        conn.execute("UPDATE product_tags SET name=?,color=?,sort_order=? WHERE id=?",
-                     (name, (body.color or "").strip(), body.sort_order, tid))
+        conn.execute("UPDATE product_tags SET name=?,color=?,sort_order=?,group_name=? WHERE id=?",
+                     (name, (body.color or "").strip(), body.sort_order, grp, tid))
         conn.commit()
         _log(conn, op["username"], "更新商品标签", f"#{tid} {name}")
         return {"ok": True}
@@ -3698,14 +3721,48 @@ def print_agent_download():
     return FileResponse(src, filename="print_agent.py", media_type="text/x-python")
 
 
-@app.get("/api/scan-app/download")
-def scan_app_download():
-    """下载扫描助手 App（APK）：包内 downloads/ 优先，回退 scan-assistant 构建产物。"""
+def _scan_app_apk() -> Path | None:
+    """扫描助手 APK 路径：插件包内 downloads/ 优先，回退 scan-assistant 构建产物。"""
     apk = ROOT / "downloads" / "scan-assistant-release.apk"
     if not apk.is_file():
         apk = (ROOT.parent.parent / "scan-assistant" / "app" / "build" / "outputs" / "apk"
                / "release" / "app-release.apk")
-    if apk.is_file():
+    return apk if apk.is_file() else None
+
+
+def _scan_app_info() -> dict:
+    """扫描助手最新包指纹 {md5, size, force}。
+    md5 优先读发布脚本写的 sidecar（<apk>.md5），缺失时回退现算（不逐请求算哈希）；
+    force 由 <apk>.force 文件控制（内容非空且非 0/false 即强制），缺省 False。"""
+    apk = _scan_app_apk()
+    if not apk:
+        return {"md5": "", "size": 0, "force": False}
+    side = Path(str(apk) + ".md5")
+    md5 = ""
+    if side.is_file():
+        parts = side.read_text(encoding="utf-8", errors="ignore").split()
+        md5 = parts[0].lower() if parts else ""
+    if len(md5) != 32:
+        md5 = hashlib.md5(apk.read_bytes()).hexdigest()
+    force = False
+    fmark = Path(str(apk) + ".force")
+    if fmark.is_file():
+        force = fmark.read_text(encoding="utf-8", errors="ignore").strip().lower() \
+            not in ("", "0", "false")
+    return {"md5": md5, "size": apk.stat().st_size, "force": force}
+
+
+@app.get("/api/scan-app/info")
+def scan_app_info():
+    """扫描助手升级探测（免鉴权，设备端调用）：只返最新包指纹，不返回版本号。"""
+    return _scan_app_info()
+
+
+@app.get("/api/scan-app/download")
+def scan_app_download():
+    """下载扫描助手 App（APK）：包内 downloads/ 优先，回退 scan-assistant 构建产物。"""
+    apk = _scan_app_apk()
+    if apk:
         return FileResponse(str(apk), filename="scan-assistant-release.apk",
                             media_type="application/vnd.android.package-archive")
     raise HTTPException(404, "APK 尚未构建（scan-assistant 需先执行 Gradle release 构建）")
@@ -4900,6 +4957,7 @@ def devices_list(request: Request, store_id: int = 0):
     """设备列表；可按门店筛选（门店管理内嵌设备用）。"""
     _require_auth(request)
     now = time.time()
+    srv_md5 = _scan_app_info()["md5"]   # 服务端当前包指纹：与设备上报 md5 比对判定「待升级」
     with _db(request) as conn:
         sql = ("SELECT d.*, s.name store_name FROM devices d "
                "LEFT JOIN stores s ON s.id=d.bound_store_id")
@@ -4923,7 +4981,8 @@ def devices_list(request: Request, store_id: int = 0):
                 ws_online = r["code"] in _dev_ws.get(r["bound_store_id"], {})
             out.append({**dict(r), "store_name": r["store_name"], "current_task_no": task_no,
                         "current_task_type": task_type, "current_task_seq": task_seq,
-                        "online": ws_online or (now - (r["last_seen"] or 0)) <= 60})
+                        "online": ws_online or (now - (r["last_seen"] or 0)) <= 60,
+                        "need_upgrade": bool(r["apk_md5"]) and r["apk_md5"] != srv_md5})
         return out
 
 
@@ -5203,24 +5262,28 @@ async def scan_device_ws(websocket: WebSocket, token: str = ""):
         finally:
             conn2.close()
 
-    def _touch(conn: sqlite3.Connection, app_version: str = "") -> None:
-        # last_seen 只信设备上报帧刷新，服务端不自刷
+    def _touch(conn: sqlite3.Connection, app_version: str = "", apk_md5: str = "") -> None:
+        # last_seen 只信设备上报帧刷新，服务端不自刷；app_version/apk_md5 同帧上报随帧刷新
+        sets, args = ["last_seen=?"], [int(time.time())]
         if app_version:
-            conn.execute("UPDATE devices SET last_seen=?, app_version=? WHERE id=?",
-                         (int(time.time()), app_version[:40], link.device_id))
-        else:
-            conn.execute("UPDATE devices SET last_seen=? WHERE id=?",
-                         (int(time.time()), link.device_id))
+            sets.append("app_version=?")
+            args.append(app_version[:40])
+        if apk_md5:
+            sets.append("apk_md5=?")
+            args.append(apk_md5[:64])
+        args.append(link.device_id)
+        conn.execute(f"UPDATE devices SET {','.join(sets)} WHERE id=?", args)
         conn.commit()
 
     def _handle(conn: sqlite3.Connection, d: dict):
         mtype = str(d.get("type") or "")
         if mtype == "hello":
-            _touch(conn, str(d.get("app_version") or ""))
+            _touch(conn, str(d.get("app_version") or ""), str(d.get("apk_md5") or ""))
             return {"type": "ack", "ref": "hello", "ok": True, "code": link.code,
                     "store_id": sid, "server_time": int(time.time())}
         if mtype == "heartbeat":
-            _touch(conn)
+            # 心跳也携带 apk_md5：设备端 warmUpMd5 异步执行，hello 帧可能赶不上，靠心跳补齐上报
+            _touch(conn, apk_md5=str(d.get("apk_md5") or ""))
             return None  # 心跳免应答，帧本身即在线证明
         if mtype == "list":
             rows = conn.execute(

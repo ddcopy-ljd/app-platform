@@ -41,6 +41,7 @@ registerLang('it', {
     'dev.genBtn': 'Genera codice', 'dev.actQrHint': "Scansiona con la funzione di attivazione dell'app Assistente Scansione; uso singolo, valido 15 minuti",
     'dev.listTitle': 'Dispositivi attivati', 'dev.code': 'Codice', 'dev.store': 'Negozio associato',
     'dev.currentTask': 'Attività corrente', 'dev.active': 'Attivo', 'dev.disabled': 'Disattivato',
+    'dev.needUpgrade': 'Aggiornamento disponibile', 'dev.version': 'Versione',
     'dev.disable': 'Disattiva', 'dev.enable': 'Attiva', 'dev.unbind': 'Dissocia',
     'dev.empty': 'Nessun dispositivo attivato', 'dev.online': 'Online', 'dev.offline': 'Offline',
     'dev.source': 'Origine', 'dev.srcApp': 'Assistente Scansione', 'dev.srcH5': 'Web mobile',
@@ -749,4 +750,6 @@ registerLang('it', {
     'tag.noneHint': 'Nessun tag. Aggiungili in Gestione HQ → Tag Prodotto',
     'tag.statsTitle': 'Statistiche Tag', 'tag.pieceUnit': 'pz', 'tag.inStock': 'In magazzino',
     'tag.dupNote': 'I prodotti con più tag vengono conteggiati in ogni gruppo; il denominatore della percentuale è la somma di tutti i gruppi',
+    'tag.group': 'Gruppo', 'tag.groupPh': 'Es: Vintage', 'tag.ungrouped': 'Senza gruppo',
+    'tag.share': 'Quota', 'inv.tagShare': 'Quota scorte per tag', 'sale.tagShare': 'Quota vendite per tag',
 });

@@ -673,6 +673,7 @@ registerLang('ko', {
     'dev.currentTask': '현재 작업',
     'dev.active': '정상',
     'dev.disabled': '비활성화됨',
+    'dev.needUpgrade': '업데이트 필요', 'dev.version': '버전',
     'dev.disable': '비활성화',
     'dev.enable': '활성화',
     'dev.unbind': '연결 해제',
@@ -1228,4 +1229,6 @@ registerLang('ko', {
     'tag.noneHint': '태그가 없습니다. 「본사 관리 → 상품 태그」에서 추가하세요',
     'tag.statsTitle': '태그 통계', 'tag.pieceUnit': '개', 'tag.inStock': '재고',
     'tag.dupNote': '다중 태그 상품은 각 태그 그룹에 중복 집계되며, 비율 분모는 각 그룹의 합계입니다',
+    'tag.group': '그룹', 'tag.groupPh': '예: 빈티지', 'tag.ungrouped': '미분류',
+    'tag.share': '비율', 'inv.tagShare': '태그별 재고 비중', 'sale.tagShare': '태그별 판매 비중',
   });

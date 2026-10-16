@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS product_tags (
   name TEXT NOT NULL UNIQUE,
   color TEXT DEFAULT '',
   sort_order INTEGER DEFAULT 0,
+  group_name TEXT DEFAULT '',
   created TEXT DEFAULT (datetime('now','localtime'))
 );
 
@@ -507,6 +508,7 @@ CREATE TABLE IF NOT EXISTS devices (
   last_seen REAL DEFAULT 0,           -- unix 秒，仅设备上报帧刷新
   current_task_id INTEGER DEFAULT 0,  -- 任务独占占用（0=空闲）
   app_version TEXT DEFAULT '',
+  apk_md5 TEXT DEFAULT '',            -- 设备上报的已安装 APK 指纹（与服务端包比对判定「待升级」）
   created TEXT DEFAULT (datetime('now','localtime')),
   activated_at TEXT DEFAULT ''
 );
@@ -878,6 +880,10 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         # 会员管理：建档时间（今日/本月新增统计）。旧库 ADD COLUMN 不能用非常量默认，
         # 故迁移列用常量 ''（历史会员不计入今日/本月新增）；新建档由后端 INSERT 显式写 datetime。
         ("customers", "created", "TEXT DEFAULT ''"),
+        # 1.2.20 扫描助手 App 自升级：设备上报已安装 APK 指纹（门店设备卡片据此判定「待升级」）
+        ("devices", "apk_md5", "TEXT DEFAULT ''"),
+        # 商品标签分组（主播希川/古董款/专柜款…，标签管理页可配）
+        ("product_tags", "group_name", "TEXT DEFAULT ''"),
     ]
     for table, col, decl in alters:
         if not _has_column(conn, table, col):
@@ -1483,7 +1489,12 @@ def ensure_new_seeds(conn: sqlite3.Connection) -> None:
             "INSERT INTO biz_config(id,epc_prefix,seq_bits,gold_price) VALUES(1,'E28',8,520)",
         )
     # —— products（商品管理/库存管理的数据源，必须在 sales/stocktakes/transfers 引用前灌入）——
+    # 记录灌入前行数：为 0 说明本次是全新演示库（外网沙箱基线），联动判定给 product_tags 灌种子
+    _prod_cnt_before = conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]
     _ensure_products_seed(conn)
+    # —— product_tags：仅全新演示库灌入；真实租户表空不灌（避免租户删光标签后升级复活，TC-40）——
+    if _prod_cnt_before == 0 and conn.execute("SELECT COUNT(*) FROM product_tags").fetchone()[0] == 0:
+        conn.executemany("INSERT OR IGNORE INTO product_tags(name,group_name,sort_order) VALUES(?,?,?)", _SEED_PRODUCT_TAGS)
     # —— transfers + transfer_items ——
     if conn.execute("SELECT COUNT(*) FROM transfers").fetchone()[0] == 0:
         cur = conn.execute(
@@ -1563,12 +1574,15 @@ def ensure_new_seeds(conn: sqlite3.Connection) -> None:
     # —— 销售相关的 inventory_logs（销售出库）——
     _ensure_sale_inventory_logs(conn)
     # —— loans（借货）——
+    # 自洽口径：借出单必须与 products.status='借出' 联动（提醒条查 loans，库存 KPI 查 products）。
+    # 借出商品选 J011（无 seed 销售/定金锁定冲突），门店与商品一致(2)，避免跨店 KPI 对不上。
     if conn.execute("SELECT COUNT(*) FROM loans").fetchone()[0] == 0:
         loans = [
-            ("out", "足金手镯", "J001", "同行老刘", 1, "2026-01-20", "2026-02-20", "借出中"),
-            ("in", "钻石戒指", "DR-8899", "供应商A", 1, "2026-01-25", "2026-02-15", "借入中"),
+            ("out", "珍珠项链", "J011", "同行老刘", 1, "2026-01-20", "2026-02-20", "借出中", 2),
+            ("in", "钻石戒指", "DR-8899", "供应商A", 1, "2026-01-25", "2026-02-15", "借入中", 0),
         ]
-        conn.executemany("INSERT INTO loans(direction,product,code,party,qty,loan_date,due_date,status) VALUES(?,?,?,?,?,?,?,?)", loans)
+        conn.executemany("INSERT INTO loans(direction,product,code,party,qty,loan_date,due_date,status,store_id) VALUES(?,?,?,?,?,?,?,?,?)", loans)
+        conn.execute("UPDATE products SET status='借出' WHERE code='J011' AND status='在库'")
     # —— repairs（维修）——
     if conn.execute("SELECT COUNT(*) FROM repairs").fetchone()[0] == 0:
         repairs = [
@@ -1698,6 +1712,18 @@ _SEED_SALES_ROWS = [
     # 本月（KPI 今日/本月/环比）
     ("XS20261008001", "李雪", "13500005555", "翡翠吊坠", 3, 8600, 8600, "刷卡", "2026-10-08", "普通", "已完成"),
     ("XS20261010001", "王女士", "13200004444", "古法金手串", 8, 32600, 32600, "微信", "2026-10-10", "普通", "已完成"),
+]
+
+
+# 商品标签字典种子（seed_demo 与 ensure_new_seeds 共用）。
+# 标签只承载固定字段（category/product_type）之外的扩展维度，禁止与品类/材质/类型重复（TC-39）；
+# 组名取 main.TAG_GROUPS 枚举（风格/工艺/场景/客群/营销），仅可在组内新增标签，禁止自由造组（TC-40）
+_SEED_PRODUCT_TAGS = [
+    ("古风", "风格", 1), ("现代", "风格", 2), ("轻奢", "风格", 3), ("简约", "风格", 4), ("收藏级", "风格", 5),
+    ("古法金", "工艺", 6), ("3D硬金", "工艺", 7), ("5G黄金", "工艺", 8), ("珐琅", "工艺", 9),
+    ("婚庆", "场景", 10), ("送礼", "场景", 11), ("本命年", "场景", 12),
+    ("女款", "客群", 13), ("男款", "客群", 14), ("情侣", "客群", 15), ("儿童", "客群", 16),
+    ("新品", "营销", 17), ("促销", "营销", 18), ("生肖款", "营销", 19), ("联名", "营销", 20),
 ]
 
 
@@ -1935,10 +1961,8 @@ def seed_demo(conn: sqlite3.Connection) -> None:
     # —— clerk_types ——
     cts = [("店长", 1), ("珠宝顾问", 2), ("收银", 3), ("维修技师", 4), ("盘点员", 5)]
     conn.executemany("INSERT INTO clerk_types(name,sort_order) VALUES(?,?)", cts)
-    # —— product_tags（商品标签字典；只进 seed_demo，不进 ensure_new_seeds，避免租户删光标签后升级复活）——
-    ptags = [("项链", 1), ("手链", 2), ("戒指", 3), ("金饰", 4), ("银饰", 5),
-             ("翡翠", 6), ("钻石", 7), ("古风", 8), ("现代", 9), ("婚庆", 10)]
-    conn.executemany("INSERT OR IGNORE INTO product_tags(name,sort_order) VALUES(?,?)", ptags)
+    # —— product_tags（商品标签字典；seed_demo 直接灌，ensure_new_seeds 仅全新演示库联动灌入）——
+    conn.executemany("INSERT OR IGNORE INTO product_tags(name,group_name,sort_order) VALUES(?,?,?)", _SEED_PRODUCT_TAGS)
     # —— label_templates ——
     conn.execute(
         "INSERT INTO label_templates(name,size_width,size_height,layout) VALUES(?,?,?,?)",
@@ -2002,11 +2026,13 @@ def seed_demo(conn: sqlite3.Connection) -> None:
     # 有"已定"定金单的商品 → 自动置为已定锁定（库存分析抽屉才能显示关联定金单）
     conn.execute("UPDATE products SET status='已定' WHERE id IN (SELECT product_id FROM deposits WHERE status='已定')")
 
+    # 借出单与 products.status='借出' 联动（同 ensure 分支口径：借出商品 J011 无销售/定金冲突，门店一致）
     loans = [
-        ("out", "足金手镯", "J001", "同行老刘", 1, "2026-01-20", "2026-02-20", "借出中"),
-        ("in", "钻石戒指", "DR-8899", "供应商A", 1, "2026-01-25", "2026-02-15", "借入中"),
+        ("out", "珍珠项链", "J011", "同行老刘", 1, "2026-01-20", "2026-02-20", "借出中", 2),
+        ("in", "钻石戒指", "DR-8899", "供应商A", 1, "2026-01-25", "2026-02-15", "借入中", 0),
     ]
-    conn.executemany("INSERT INTO loans(direction,product,code,party,qty,loan_date,due_date,status) VALUES(?,?,?,?,?,?,?,?)", loans)
+    conn.executemany("INSERT INTO loans(direction,product,code,party,qty,loan_date,due_date,status,store_id) VALUES(?,?,?,?,?,?,?,?,?)", loans)
+    conn.execute("UPDATE products SET status='借出' WHERE code='J011' AND status='在库'")
 
     repairs = [
         ("李强", "13900002222", "18K金链", "链扣断裂", 200, 180, "2026-01-18", "2026-01-25", "2026-01-24", "已完成", "王师傅", "配原装链扣"),

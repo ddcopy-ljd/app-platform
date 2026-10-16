@@ -673,6 +673,7 @@ registerLang('ja', {
     'dev.currentTask': '現在のタスク',
     'dev.active': '正常',
     'dev.disabled': '無効化済み',
+    'dev.needUpgrade': '要アップデート', 'dev.version': 'バージョン',
     'dev.disable': '無効化',
     'dev.enable': '有効化',
     'dev.unbind': 'バインド解除',
@@ -1228,4 +1229,6 @@ registerLang('ja', {
     'tag.noneHint': 'タグがありません。「本社管理 → 商品タグ」で追加してください',
     'tag.statsTitle': 'タグ統計', 'tag.pieceUnit': '点', 'tag.inStock': '在庫あり',
     'tag.dupNote': '複数タグの商品は各タググループに重複計上され、割合の分母は各グループの合計です',
+    'tag.group': 'グループ', 'tag.groupPh': '例：アンティーク', 'tag.ungrouped': '未分類',
+    'tag.share': '割合', 'inv.tagShare': 'タグ別在庫構成比', 'sale.tagShare': 'タグ別販売構成比',
   });

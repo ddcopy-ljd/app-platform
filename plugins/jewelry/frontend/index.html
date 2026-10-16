@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>懿臻珠宝云</title>
 <link rel="icon" href="/logo/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./app.css?v=20261013e161">
+<link rel="stylesheet" href="./app.css?v=20261016a103">
 </head>
 <body>
 <div id="app">
@@ -194,6 +194,7 @@
                 <span v-if="hasLastYear(trendData.amountsLastYear)" class="chart-legend">
                   <span class="lg-line lg-cur"></span>{{ t('dash.curYear') }}<span class="lg-line lg-past"></span>{{ t('dash.prevYear') }}
                 </span>
+                <button v-if="trendOffset>0" class="trend-reset-btn" @click="trendDragReset()">⟲ {{ t('act.reset') }}</button>
                 <select class="trend-range-select" :value="trendRange" @change="setTrendRange($event.target.value)">
                   <option value="15d">{{ t('dash.tr15d') }}</option>
                   <option value="30d">{{ t('dash.tr30d') }}</option>
@@ -203,6 +204,9 @@
               </span>
             </div>
             <div class="trend-unit-label">{{ t('dash.trendUnit') }}</div>
+            <div class="trend-pan" :class="{dragging: trendDragOn}"
+                 @pointerdown="trendDragStart" @pointermove="trendDragMove" @pointerup="trendDragEnd" @pointercancel="trendDragEnd" @pointerleave="trendDragEnd">
+            <div class="trend-pan-inner" :style="{transform: 'translateX(' + trendDragX + 'px)'}">
             <div class="trend-plot">
               <div class="trend-yaxis">
                 <span v-for="ya in trendYAxis()" :key="ya.top" :style="{top: ya.top}">{{ ya.text }}</span>
@@ -218,6 +222,8 @@
             </div>
             <div class="trend-ticks trend-ticks-indent">
               <span v-for="tk in trendTicks()" :key="tk.i">{{ tk.text }}</span>
+            </div>
+            </div>
             </div>
           </div>
           <div class="mini-chart" v-if="catSales && catSales.items && catSales.items.length">
@@ -243,9 +249,16 @@
           </div>
           <div class="mini-chart" v-if="tagStats && tagStats.items && tagStats.items.length">
             <div class="mini-chart-title"><span>{{ t('tag.statsTitle') }}</span></div>
-            <div class="cat-chips tag-pick-chips" v-if="tagList.length">
-              <div class="cat-chip" :class="{active:!tagSel.length}" @click="clearTagSel()">{{ t('cat.all') }}</div>
-              <div class="cat-chip" v-for="o in tagList" :key="'ts'+o.id" :class="{active:tagSel.indexOf(o.id)>=0}" @click="toggleTagSel(o.id)">{{ o.name }}</div>
+            <div class="tag-pick-wrap" v-if="tagList.length">
+              <div class="cat-chips tag-pick-chips">
+                <div class="cat-chip" :class="{active:!tagSel.length}" @click="clearTagSel()">{{ t('cat.all') }}</div>
+              </div>
+              <div class="tag-group" v-for="tg in tagGrouped()" :key="'tsg'+tg.group">
+                <div class="tag-group-name">{{ tagGroupName(tg.group) }}</div>
+                <div class="cat-chips tag-pick-chips">
+                  <div class="cat-chip" v-for="o in tg.tags" :key="'ts'+o.id" :class="{active:tagSel.indexOf(o.id)>=0}" @click="toggleTagSel(o.id)">{{ o.name }}</div>
+                </div>
+              </div>
             </div>
             <div class="tag-stats-list">
               <div class="tag-stats-row" v-for="(g,i) in tagStats.items" :key="g.tag_id">
@@ -381,9 +394,16 @@
             <div class="cat-chip" :class="{active:!prodCat}" @click="prodCat=''">{{ t('cat.all') }}</div>
             <div class="cat-chip" v-for="o in typeList" :key="o.code" :class="{active:prodCat===o.code}" @click="prodCat=o.code">{{ catNameOf(o) }}</div>
           </div>
-          <div class="cat-chips tag-pick-chips" v-if="tagList.length">
-            <div class="cat-chip" :class="{active:!prodTags.length}" @click="prodTags=[]">{{ t('cat.all') }}</div>
-            <div class="cat-chip" v-for="o in tagList" :key="'pf'+o.id" :class="{active:prodTags.indexOf(o.id)>=0}" @click="toggleProdTagFilter(o.id)">{{ o.name }}</div>
+          <div class="tag-pick-wrap" v-if="tagList.length">
+            <div class="cat-chips tag-pick-chips">
+              <div class="cat-chip" :class="{active:!prodTags.length}" @click="prodTags=[]">{{ t('cat.all') }}</div>
+            </div>
+            <div class="tag-group" v-for="tg in tagGrouped()" :key="'pfg'+tg.group">
+              <div class="tag-group-name">{{ tagGroupName(tg.group) }}</div>
+              <div class="cat-chips tag-pick-chips">
+                <div class="cat-chip" v-for="o in tg.tags" :key="'pf'+o.id" :class="{active:prodTags.indexOf(o.id)>=0}" @click="toggleProdTagFilter(o.id)">{{ o.name }}</div>
+              </div>
+            </div>
           </div>
           <div class="table-wrap table-wide" v-if="isPc">
             <table class="data-table table-products">
@@ -396,6 +416,7 @@
                 <th class="th-barcode">{{ t('lbl.barcode') }}</th>
                 <th class="th-name" :class="sortCls('products','name')" @click="sortTbl('products','name')">{{ t('lbl.name') }}</th>
                 <th class="th-type" :class="sortCls('products','type')" @click="sortTbl('products','type')">{{ t('lbl.category') }}</th>
+                <th class="th-tags">{{ t('tag.field') }}</th>
                 <th class="th-mat" :class="sortCls('products','mat')" @click="sortTbl('products','mat')">{{ t('lbl.material') }}</th>
                 <th class="th-num" :class="sortCls('products','weight')" @click="sortTbl('products','weight')">{{ t('lbl.weight') }}</th>
                 <th class="th-num" :class="sortCls('products','price')" @click="sortTbl('products','price')">{{ t('lbl.price') }}</th>
@@ -416,6 +437,7 @@
                   <td class="cell-barcode mono">{{ p.barcode || '—' }}</td>
                   <td class="cell-name">{{ p.name }}<div class="ptag-row" v-if="p.tags && p.tags.length"><span class="ptag" v-for="tg in p.tags" :key="'pt'+p.id+'-'+tg.id" :style="tagChipStyle(tg)">{{ tg.name }}</span></div><div class="cell-sub" v-if="p.location_name" :title="t('loc.where')">{{ p.location_name }}</div></td>
                   <td class="cell-type">{{ productTypeName(p) }}</td>
+                  <td class="cell-tags"><span class="ptag" v-for="tg in p.tags" :key="'ct'+p.id+'-'+tg.id" :style="tagChipStyle(tg)">{{ tg.name }}</span></td>
                   <td class="cell-mat mono" :title="p.material ? t('mat.cn.'+materialText(p.material)) : ''">{{ materialText(p.material) || '—' }}</td>
                   <td class="cell-num">{{ p.weight }}g</td>
                   <td class="cell-num">￥{{ fmt(p.price) }}</td>
@@ -875,6 +897,50 @@
                 </tbody>
               </table>
             </div>
+            <!-- 标签库存占比（product_tags：多标签商品在各标签组重复计入） -->
+            <div class="section" v-if="invTagRows().length">
+              <div class="section-title"><span class="dot"></span>🥧 {{ t('inv.tagShare') }}</div>
+              <div class="tag-pick-wrap" v-if="tagList.length">
+                <div class="cat-chips tag-pick-chips">
+                  <div class="cat-chip" :class="{active:!anaTagSel.length}" @click="clearAnaTagSel('inv')">{{ t('cat.all') }}</div>
+                </div>
+                <div class="tag-group" v-for="tg in tagGrouped()" :key="'itg'+tg.group">
+                  <div class="tag-group-name">{{ tagGroupName(tg.group) }}</div>
+                  <div class="cat-chips tag-pick-chips">
+                    <div class="cat-chip" v-for="o in tg.tags" :key="'it'+o.id" :class="{active:anaTagSel.indexOf(o.id)>=0}" @click="toggleAnaTagSel(o.id,'inv')">{{ o.name }}</div>
+                  </div>
+                </div>
+              </div>
+              <div class="donut-wrap">
+                <svg class="donut-svg" viewBox="0 0 42 42">
+                  <circle cx="21" cy="21" r="15.9" fill="none" stroke="#eee" stroke-width="6"></circle>
+                  <circle v-for="s in invTagDonut()" :key="s.key" cx="21" cy="21" r="15.9" fill="none"
+                          :stroke="donutColor(s.color)" stroke-width="6" pathLength="100"
+                          :stroke-dasharray="s.pct + ' ' + (100 - s.pct)" :stroke-dashoffset="s.offset"
+                          transform="rotate(-90 21 21)"></circle>
+                  <text x="21" y="20" class="donut-c1">{{ t('ba.top5') }}</text>
+                  <text x="21" y="24.5" class="donut-c2">￥{{ fmt(invTagTop5Sum()) }}</text>
+                </svg>
+                <div class="donut-legend">
+                  <div class="dl-row" v-for="(c,i) in invTagTop5()" :key="'il'+c.tag_id">
+                    <span class="dl-dot" :style="{background: donutColor(i%6)}"></span>
+                    <span class="dl-name">{{ c.name }}</span>
+                    <span class="dl-val">{{ c.stock_count }} · {{ c.stock_pct }}%</span>
+                  </div>
+                </div>
+              </div>
+              <table class="ba-table" style="margin-top:10px">
+                <thead><tr><th>{{ t('tag.field') }}</th><th class="r">{{ t('inv.count') }}</th><th class="r">{{ t('inv.metricPrice') }}</th><th class="r">{{ t('tag.share') }}</th></tr></thead>
+                <tbody>
+                  <tr v-for="c in invTagRows()" :key="'irt'+c.tag_id">
+                    <td><span class="dl-dot" :style="{background: c.color || donutColor(0)}"></span>{{ c.name }}</td>
+                    <td class="r">{{ c.stock_count }}</td>
+                    <td class="r">￥{{ fmt(c.stock_price) }}</td>
+                    <td class="r">{{ c.stock_pct }}%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div><!-- /inv-side -->
           </div><!-- /inv-layout -->
           </div><!-- /invSub stock -->
@@ -1059,6 +1125,51 @@
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <!-- 标签实销占比（product_tags：多标签商品在各标签组重复计入） -->
+              <div class="section" v-if="saleTagRows().length">
+                <div class="section-title"><span class="dot"></span>{{ t('sale.tagShare') }}</div>
+                <div class="tag-pick-wrap" v-if="tagList.length">
+                  <div class="cat-chips tag-pick-chips">
+                    <div class="cat-chip" :class="{active:!anaTagSel.length}" @click="clearAnaTagSel('sale')">{{ t('cat.all') }}</div>
+                  </div>
+                  <div class="tag-group" v-for="tg in tagGrouped()" :key="'stg'+tg.group">
+                    <div class="tag-group-name">{{ tagGroupName(tg.group) }}</div>
+                    <div class="cat-chips tag-pick-chips">
+                      <div class="cat-chip" v-for="o in tg.tags" :key="'st'+o.id" :class="{active:anaTagSel.indexOf(o.id)>=0}" @click="toggleAnaTagSel(o.id,'sale')">{{ o.name }}</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="donut-wrap">
+                  <svg class="donut-svg" viewBox="0 0 42 42">
+                    <circle cx="21" cy="21" r="15.9" fill="none" stroke="#eee" stroke-width="6"></circle>
+                    <circle v-for="s in saleAnaTagDonut()" :key="s.key" cx="21" cy="21" r="15.9" fill="none"
+                            :stroke="donutColor(s.color)" stroke-width="6" pathLength="100"
+                            :stroke-dasharray="s.pct + ' ' + (100 - s.pct)" :stroke-dashoffset="s.offset"
+                            transform="rotate(-90 21 21)"></circle>
+                    <text x="21" y="20" class="donut-c1">{{ t('ba.top5') }}</text>
+                    <text x="21" y="24.5" class="donut-c2">￥{{ fmt(saleTagTop5Sum()) }}</text>
+                  </svg>
+                  <div class="donut-legend">
+                    <div class="dl-row" v-for="(c,i) in saleTagTop5()" :key="'sl'+c.tag_id">
+                      <span class="dl-dot" :style="{background: donutColor(i%6)}"></span>
+                      <span class="dl-name">{{ c.name }}</span>
+                      <span class="dl-val">{{ c.sale_count }} {{ t('tag.pieceUnit') }} · {{ c.sale_pct }}%</span>
+                    </div>
+                  </div>
+                </div>
+                <table class="ba-table">
+                  <thead><tr><th>{{ t('tag.field') }}</th><th class="r">{{ t('ba.realQty') }}</th><th class="r">{{ t('ba.realAmount') }}</th><th class="r">{{ t('tag.share') }}</th></tr></thead>
+                  <tbody>
+                    <tr v-for="c in saleTagRows()" :key="'srt'+c.tag_id">
+                      <td><span class="dl-dot" :style="{background: c.color || donutColor(0)}"></span>{{ c.name }}</td>
+                      <td class="r">{{ c.sale_count }}</td>
+                      <td class="r">￥{{ fmt(c.sale_amount) }}</td>
+                      <td class="r">{{ c.sale_pct }}%</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 
@@ -1655,10 +1766,11 @@
               <button class="btn btn-gold btn-sm" @click="addTag">＋ {{ t('tag.addNew') }}</button>
             </div>
             <table class="data-table" style="margin-bottom:12px">
-              <thead><tr><th>{{ t('tag.name') }}</th><th>{{ t('cat.sort') }}</th><th>{{ t('tag.usedCount') }}</th><th>{{ t('common.op') }}</th></tr></thead>
+              <thead><tr><th>{{ t('tag.name') }}</th><th>{{ t('tag.group') }}</th><th>{{ t('cat.sort') }}</th><th>{{ t('tag.usedCount') }}</th><th>{{ t('common.op') }}</th></tr></thead>
               <tbody>
                 <tr v-for="o in tagList" :key="o.id">
                   <td><span class="ptag" :style="tagChipStyle(o)">{{ o.name }}</span></td>
+                  <td>{{ o.group_name || '—' }}</td>
                   <td>{{ o.sort_order }}</td>
                   <td>{{ o.used_count }}</td>
                   <td><button class="btn-small" :class="{'btn-gold': tagEditMode==='edit' && tagEdit.id===o.id}" @click="(tagEditMode==='edit' && tagEdit.id===o.id) ? resetTagEdit() : editTag(o)">{{ (tagEditMode==='edit' && tagEdit.id===o.id) ? t('act.cancel') : t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delTag(o)">{{ t('act.del') }}</button></td>
@@ -1670,6 +1782,12 @@
                 <div class="form-group"><label>{{ t('tag.name') }}</label><input v-model="tagEdit.name" maxlength="20" :placeholder="t('tag.namePh')"></div>
                 <div class="form-group"><label>{{ t('tag.color') }}</label><input type="color" v-model="tagEdit.color"></div>
                 <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="tagEdit.sort_order" type="number"></div>
+                <div class="form-group"><label>{{ t('tag.group') }}</label>
+                  <select v-model="tagEdit.group_name">
+                    <option value="">{{ t('tag.ungrouped') }}</option>
+                    <option v-for="g in tagGroupList" :key="'tg'+g" :value="g">{{ g }}</option>
+                  </select>
+                </div>
               </div>
               <button class="btn btn-gold" @click="saveTag">{{ tagEditMode==='edit'?t('cat.saveEdit'):t('tag.addNew') }}</button>
               <button class="btn btn-outline" v-if="tagEditMode==='edit'" @click="resetTagEdit" style="margin-left:8px">{{ t('act.cancel') }}</button>
@@ -2868,8 +2986,13 @@ Content-Type: application/json
             </select></div></div>
           <div class="form-group" v-if="sheetMode==='product'">
             <label>{{ t('tag.field') }}</label>
-            <div class="cat-chips tag-pick-chips" v-if="tagList.length">
-              <div class="cat-chip" v-for="o in tagList" :key="'tp'+o.id" :class="{active:(sheetData.tag_ids||[]).indexOf(o.id)>=0}" @click="toggleTagPick(o.id)">{{ o.name }}</div>
+            <div class="tag-pick-wrap" v-if="tagList.length">
+              <div class="tag-group" v-for="tg in tagGrouped()" :key="'tpg'+tg.group">
+                <div class="tag-group-name">{{ tagGroupName(tg.group) }}</div>
+                <div class="cat-chips tag-pick-chips">
+                  <div class="cat-chip" v-for="o in tg.tags" :key="'tp'+o.id" :class="{active:(sheetData.tag_ids||[]).indexOf(o.id)>=0}" @click="toggleTagPick(o.id)">{{ o.name }}</div>
+                </div>
+              </div>
             </div>
             <div class="tag-form-empty" v-else>{{ t('tag.noneHint') }}</div>
           </div>
@@ -3704,14 +3827,14 @@ Content-Type: application/json
 <script src="./vendor/vue.global.prod.js"></script>
 <script src="./vendor/qrcode.min.js"></script>
 <script src="./vendor/zxing.min.js"></script>
-<script src="./i18n.js?v=20261013e161"></script>
+<script src="./i18n.js?v=20261016a103"></script>
 <script>
 // 非中文时同步加载对应语言字典（i18n.<dict>.js），确保 app.js 挂载前字典就绪
 (function () {
   var _dict = (typeof i18nDictFile === 'function') ? i18nDictFile() : '';
-  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261013e161"><\/script>');
+  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261016a103"><\/script>');
 })();
 </script>
-<script src="./app.js?v=20261013e161"></script>
+<script src="./app.js?v=20261016a103"></script>
 </body>
 </html>

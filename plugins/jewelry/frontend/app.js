@@ -34,6 +34,7 @@ var ST = Vue.reactive({
   loginUser: 'admin', loginPwd: '123456',
   // data
   dashData: null, trendData: null, trendRange: '30d', bizAnalysis: null, remindData: null, showRemind: true, catSales: null,
+  trendOffset: 0, trendDragX: 0, trendDragOn: false,  // 趋势图平移窗口数 / 拖动中位移(px) / 拖动中
   goldData: null,   // 实时金价（国际+门店零售）
   riskData: null,   // 资产风控（滞销库龄+最近盘点）
   // 看板时间范围：mode=today|week|month|custom；custom 用 start/end（ISO 日期）
@@ -47,8 +48,10 @@ var ST = Vue.reactive({
   typeEdit: { code: '', names: { zh: '', en: '', it: '' }, sort_order: 0, pricing_mode: 'piece' }, typeEditMode: 'new',
   // 商品标签（多标签 + 按标签分组统计）
   tagList: [], prodTags: [],   // 标签字典 / 商品页标签筛选（多选=命中任一）
-  tagEdit: { id: 0, name: '', color: '#C9A227', sort_order: 0 }, tagEditMode: 'new',
+  tagEdit: { id: 0, name: '', color: '#C9A227', sort_order: 0, group_name: '' }, tagEditMode: 'new',
   tagStats: null, tagSel: [],  // 标签分组统计结果 / 统计卡选中标签 id（空=全部）
+  tagGroupList: [],            // 标签分组枚举（后端 TAG_GROUPS；管理页下拉 + 各标签选择处分组块渲染）
+  anaTagSel: [], anaTagStats: null,  // 分析页标签维度：选中标签 id（空=全部）/ 按区间拉取的标签统计
   profLangs: ['en', 'it', 'ja', 'ko', 'zhHant'], profLang: 'en', profI18n: {}, profEdit: {},  // 推广页多语言可写内容
   // 商品图片裁切弹窗
   imgCrop: { show: false, pid: 0, src: '', orient: 'landscape', busy: false,
@@ -230,11 +233,42 @@ function hasLastYear(arr) {
   return false;
 }
 
-// 趋势折线：切换时间范围（15d/30d/6m/12m）
+// 趋势折线：切换时间范围（15d/30d/6m/12m），切范围时回到当前窗口
 function setTrendRange(r) {
   ST.trendRange = r;
-  api('GET', '/api/dashboard/trend?range=' + r).then(function (d) { ST.trendData = d; }).catch(function () {});
+  ST.trendOffset = 0;
+  loadTrend();
 }
+function loadTrend() {
+  var u = '/api/dashboard/trend?range=' + (ST.trendRange || '30d');
+  if (ST.trendOffset > 0) u += '&offset=' + ST.trendOffset;
+  api('GET', u).then(function (d) { ST.trendData = d; }).catch(function () {});
+}
+// 拖动平移：右拖看更早（offset+），左拖回近期（offset-，到 0 止）；松手按位移换算窗口数
+// 统一 Pointer Events（鼠标/触摸/触控笔）；CSS touch-action:pan-y 保留纵向滚动
+function trendDragStart(e) {
+  if (e.button != null && e.button !== 0) return;   // 仅主键
+  ST.trendDragOn = true;
+  ST.trendDragX = 0;
+  ST._trendDragX0 = e.clientX;
+}
+function trendDragMove(e) {
+  if (!ST.trendDragOn) return;
+  ST.trendDragX = e.clientX - ST._trendDragX0;
+}
+function trendDragEnd() {
+  if (!ST.trendDragOn) return;
+  ST.trendDragOn = false;
+  var steps = Math.round(ST.trendDragX / 90);   // 每 90px 一个窗口
+  ST.trendDragX = 0;
+  if (!steps) return;
+  var no = ST.trendOffset + steps;              // 右拖(dx>0)=看更早
+  if (no < 0) no = 0;
+  if (no === ST.trendOffset) return;
+  ST.trendOffset = no;
+  loadTrend();
+}
+function trendDragReset() { ST.trendOffset = 0; loadTrend(); }
 // 折线图 SVG 尺寸：按数据点数动态计算，避免拉伸变形
 function trendSvgW() {
   var d = ST.trendData;
@@ -263,13 +297,12 @@ function trendScaleMax() {
   if (!d) return 1;
   return Math.max(1, trendMax(d.amounts, d.amountsLastYear));
 }
-// 横轴刻度：返回日期标签，按数据量智能抽稀防重叠
+// 横轴刻度：返回日期标签；日粒度隔天显示一个（防密防重叠），月粒度每月一个
 function trendTicks() {
   var d = ST.trendData;
   if (!d || !d.labels) return [];
   var n = d.labels.length;
-  // 每天一个时，超过15天则每3-4天显示一个
-  var step = n <= 15 ? 1 : (n <= 30 ? 3 : (n <= 90 ? 7 : 14));
+  var step = (d.byDay === false) ? 1 : 2;
   var out = [];
   for (var i = 0; i < n; i += step) out.push({ i: i, text: d.labels[i] });
   // 确保最后一个日期始终显示
@@ -1026,7 +1059,7 @@ function applySaleCustomRange() {
 // ===== 销售分析（子页签 analysis）=====
 function openSaleSub(sub) {
   ST.saleSub = sub;
-  if (sub === 'analysis' && !ST.saleAna.data) loadSaleAnalysis();
+  if (sub === 'analysis') { if (!ST.saleAna.data) loadSaleAnalysis(); else loadAnaTagStats('sale'); }
   if (sub === 'list' && !ST.sales.length) loadSales();
 }
 function toggleSaleDetail(id) {
@@ -1100,6 +1133,7 @@ function loadSaleAnalysis() {
   var rg = saleAnaRangeCompute();
   if (ST.saleAna.range === 'custom' && (!ST.saleAna.start || !ST.saleAna.end)) { toast(t('dash.pickRange'), 'error'); return; }
   ST.saleAna.curStart = rg.start; ST.saleAna.curEnd = rg.end;
+  loadAnaTagStats('sale');  // 销售分析页标签维度（跟随本页区间）
   return api('GET', '/api/sales/analysis?start=' + rg.start + '&end=' + rg.end).then(function (r) {
     ST.saleAna.data = r;
   }).catch(function () {});
@@ -1144,7 +1178,7 @@ function loadDash() {
   var q = '?start=' + rg.start + '&end=' + rg.end;
   ST.dashRange.curStart = rg.start; ST.dashRange.curEnd = rg.end;
   api('GET', '/api/dashboard/overview' + q).then(function (r) { ST.dashData = r; }).catch(function () {});
-  api('GET', '/api/dashboard/trend?range=' + (ST.trendRange || '30d')).then(function (r) { ST.trendData = r; }).catch(function () {});
+  loadTrend();
   api('GET', '/api/dashboard/category-sales' + q).then(function (r) { ST.catSales = r; }).catch(function () {});
   api('GET', '/api/dashboard/biz-analysis' + q).then(function (r) { ST.bizAnalysis = r; }).catch(function () {});
   api('GET', '/api/dashboard/reminders').then(function (r) { ST.remindData = r; }).catch(function () {});
@@ -1337,6 +1371,7 @@ function setCustFilter(f) {
 
 function loadInv() {
   api('GET', '/api/inventory/summary').then(function (r) { ST.invSum = r; }).catch(function () {});
+  loadAnaTagStats('inv');  // 库存分析页标签维度（在库快照）
 }
 
 // ---- 库存分析：已定锁定明细 ----
@@ -2449,7 +2484,10 @@ function bindTypeTemplate(code, tplId) {
 
 // ---------------- 商品标签（多标签 + 按标签分组统计） ----------------
 function loadTags() {
-  api('GET', '/api/product-tags').then(function (r) { ST.tagList = (r && r.list) || []; }).catch(function () {});
+  api('GET', '/api/product-tags').then(function (r) {
+    ST.tagList = (r && r.list) || [];
+    ST.tagGroupList = (r && r.groups) || [];
+  }).catch(function () {});
 }
 // 标签分组统计：跟随看板时间区间（与 category-sales 同区间取法）；tagSel 空=全部标签
 function loadTagStats() {
@@ -2465,6 +2503,70 @@ function toggleTagSel(id) {
   loadTagStats();
 }
 function clearTagSel() { ST.tagSel = []; loadTagStats(); }
+// 标签按组归并：组序取后端 TAG_GROUPS，后端未覆盖的组（含空组=未分组）追加末尾；
+// 组内保持后端 ORDER BY sort_order,t.id 的顺序。各标签选择处（看板/筛选/分析/商品表单）共用。
+function tagGrouped() {
+  var list = ST.tagList || [], order = (ST.tagGroupList || []).slice(), map = {}, out = [], i, g;
+  for (i = 0; i < list.length; i++) {
+    g = list[i].group_name || '';
+    if (!map[g]) { map[g] = []; if (order.indexOf(g) < 0) order.push(g); }
+    map[g].push(list[i]);
+  }
+  for (i = 0; i < order.length; i++) {
+    if (map[order[i]]) out.push({ group: order[i], tags: map[order[i]] });
+  }
+  return out;
+}
+// 组名展示：空组=「未分组」（i18n）；其余直接用后端组名（业务数据，不进语言字典）
+function tagGroupName(g) { return g || t('tag.ungrouped'); }
+// ---------------- 分析页：按标签维度（库存/销售占比） ----------------
+// scope='sale' 用销售分析页当前区间；scope='inv' 用当前在库快照（无需区间）
+function loadAnaTagStats(scope) {
+  var q = '';
+  if (scope === 'sale') { var rg = saleAnaRangeCompute(); q = '?start=' + rg.start + '&end=' + rg.end; }
+  if (ST.anaTagSel && ST.anaTagSel.length) q += (q ? '&' : '?') + 'tag_ids=' + ST.anaTagSel.join(',');
+  api('GET', '/api/dashboard/tag-stats' + q).then(function (r) { ST.anaTagStats = r; }).catch(function () {});
+}
+function toggleAnaTagSel(id, scope) {
+  var i = ST.anaTagSel.indexOf(id);
+  if (i >= 0) ST.anaTagSel.splice(i, 1); else ST.anaTagSel.push(id);
+  loadAnaTagStats(scope);
+}
+function clearAnaTagSel(scope) { ST.anaTagSel = []; loadAnaTagStats(scope); }
+// 库存口径：按标价占比 TOP5（stock_price>0）
+function invTagTop5() {
+  return ((ST.anaTagStats && ST.anaTagStats.items) || []).filter(function (x) { return (x.stock_price || 0) > 0; }).slice(0, 5);
+}
+function invTagTop5Sum() { return invTagTop5().reduce(function (s, c) { return s + (c.stock_price || 0); }, 0); }
+function invTagDonut() {
+  var items = invTagTop5(), sum = invTagTop5Sum() || 1, acc = 0;
+  return items.map(function (c, i) {
+    var pct = Math.round((c.stock_price || 0) * 1000 / sum) / 10;
+    var seg = { pct: pct, offset: -acc, color: i % 6, key: c.tag_id };
+    acc += pct;
+    return seg;
+  });
+}
+function invTagRows() {
+  return ((ST.anaTagStats && ST.anaTagStats.items) || []).filter(function (x) { return (x.stock_price || 0) > 0; });
+}
+// 销售口径：按实销金额占比 TOP5（sale_amount>0）
+function saleTagTop5() {
+  return ((ST.anaTagStats && ST.anaTagStats.items) || []).filter(function (x) { return (x.sale_amount || 0) > 0; }).slice(0, 5);
+}
+function saleTagTop5Sum() { return saleTagTop5().reduce(function (s, c) { return s + (c.sale_amount || 0); }, 0); }
+function saleAnaTagDonut() {
+  var items = saleTagTop5(), sum = saleTagTop5Sum() || 1, acc = 0;
+  return items.map(function (c, i) {
+    var pct = Math.round((c.sale_amount || 0) * 1000 / sum) / 10;
+    var seg = { pct: pct, offset: -acc, color: i % 6, key: c.tag_id };
+    acc += pct;
+    return seg;
+  });
+}
+function saleTagRows() {
+  return ((ST.anaTagStats && ST.anaTagStats.items) || []).filter(function (x) { return (x.sale_amount || 0) > 0; });
+}
 // 商品页标签筛选（多选=命中任一）
 function toggleProdTagFilter(id) {
   var i = ST.prodTags.indexOf(id);
@@ -2495,7 +2597,7 @@ function tagBarStyle(g, i) {
   return { width: Math.max(Number(g.sale_pct) || 0, 2) + '%', background: g.color || donutColor(i % 6) };
 }
 function resetTagEdit() {
-  ST.tagEdit = { id: 0, name: '', color: '#C9A227', sort_order: (ST.tagList || []).length + 1 };
+  ST.tagEdit = { id: 0, name: '', color: '#C9A227', sort_order: (ST.tagList || []).length + 1, group_name: '' };
   ST.tagEditMode = 'new';
 }
 function addTag() {
@@ -2507,7 +2609,7 @@ function addTag() {
 }
 function editTag(o) {
   ST.tagEditMode = 'edit';
-  ST.tagEdit = { id: o.id, name: o.name || '', color: o.color || '#C9A227', sort_order: o.sort_order || 0 };
+  ST.tagEdit = { id: o.id, name: o.name || '', color: o.color || '#C9A227', sort_order: o.sort_order || 0, group_name: o.group_name || '' };
   setTimeout(function () {
     var el = document.getElementById('tag-edit-form');
     if (el) {
@@ -2521,7 +2623,7 @@ function editTag(o) {
 function saveTag() {
   var te = ST.tagEdit;
   if (!te.name || !te.name.trim()) { toast(t('tag.nameRequired'), 'error'); return; }
-  var body = { name: te.name.trim(), color: te.color || '', sort_order: Number(te.sort_order) || 0 };
+  var body = { name: te.name.trim(), color: te.color || '', sort_order: Number(te.sort_order) || 0, group_name: (te.group_name || '').trim() };
   var method = ST.tagEditMode === 'edit' ? 'PUT' : 'POST';
   var url = ST.tagEditMode === 'edit' ? '/api/product-tags/' + te.id : '/api/product-tags';
   api(method, url, body).then(function () {
@@ -5305,6 +5407,7 @@ var app = Vue.createApp({
     openLockedItems: openLockedItems, closeLockedItems: closeLockedItems,
     invCatDonut: invCatDonut, invCatPct: invCatPct,
     invPtypeDonut: invPtypeDonut, invPtypePct: invPtypePct,
+    invTagDonut: invTagDonut, invTagTop5: invTagTop5, invTagTop5Sum: invTagTop5Sum, invTagRows: invTagRows,
     openPsiTab: openPsiTab, loadPsi: loadPsi,
     exportInvCSV: exportInvCSV, printInv: printInv,
     probeLocalAgent: probeLocalAgent, connectLocalAgent: connectLocalAgent,
@@ -5318,6 +5421,7 @@ var app = Vue.createApp({
     toggleSaleDetail: toggleSaleDetail,
     saleAnaDonut: saleAnaDonut, saleAnaTop5Sum: saleAnaTop5Sum,
     saleAnaPtypeDonut: saleAnaPtypeDonut, saleAnaPtypeTop5Sum: saleAnaPtypeTop5Sum,
+    saleAnaTagDonut: saleAnaTagDonut, saleTagTop5: saleTagTop5, saleTagTop5Sum: saleTagTop5Sum, saleTagRows: saleTagRows,
     saleClerkDonut: saleClerkDonut, saleClerkSum: saleClerkSum,
     switchStore: switchStore,
     isHqStore: isHqStore,   // 总店/分店视图判定（模板以 isHqStore() 调用，故放 methods）
@@ -5326,6 +5430,7 @@ var app = Vue.createApp({
     t: t, fmt: fmt, fmtY: fmtY, dateFmt: dateFmt,
     pctLabel: pctLabel, pctCls: pctCls, trendMax: trendMax, hasLastYear: hasLastYear,
     setTrendRange: setTrendRange, trendLinePoints: trendLinePoints, trendScaleMax: trendScaleMax, trendTicks: trendTicks, trendVLines: trendVLines, trendYAxis: trendYAxis, trendSvgW: trendSvgW, trendSvgH: trendSvgH,
+    loadTrend: loadTrend, trendDragStart: trendDragStart, trendDragMove: trendDragMove, trendDragEnd: trendDragEnd, trendDragReset: trendDragReset,
     baDonutSegments: baDonutSegments, baTop5Sum: baTop5Sum,
     toggleHealth: toggleHealth,
     statusClass: statusClass,
@@ -5357,6 +5462,8 @@ var app = Vue.createApp({
     // 商品标签（多标签 + 分组统计）
     loadTags: loadTags, loadTagStats: loadTagStats,
     toggleTagSel: toggleTagSel, clearTagSel: clearTagSel, toggleProdTagFilter: toggleProdTagFilter,
+    tagGrouped: tagGrouped, tagGroupName: tagGroupName,
+    toggleAnaTagSel: toggleAnaTagSel, clearAnaTagSel: clearAnaTagSel, loadAnaTagStats: loadAnaTagStats,
     toggleTagPick: toggleTagPick, tagChipStyle: tagChipStyle, tagBarStyle: tagBarStyle,
     addTag: addTag, editTag: editTag, saveTag: saveTag, delTag: delTag, resetTagEdit: resetTagEdit,
     // 推广页多语言可写内容

@@ -673,6 +673,7 @@ registerLang('zhHant', {
     'dev.currentTask': '當前任務',
     'dev.active': '正常',
     'dev.disabled': '已停用',
+    'dev.needUpgrade': '待升級', 'dev.version': '版本',
     'dev.disable': '停用',
     'dev.enable': '啟用',
     'dev.unbind': '解綁',
@@ -1228,4 +1229,6 @@ registerLang('zhHant', {
     'tag.noneHint': '暫無標籤，請到「總部管理 → 商品標籤」添加',
     'tag.statsTitle': '標籤統計', 'tag.pieceUnit': '件', 'tag.inStock': '在庫',
     'tag.dupNote': '多標籤商品在各標籤組重複計入，佔比分母為各組合計',
+    'tag.group': '分組', 'tag.groupPh': '如：古董款', 'tag.ungrouped': '未分組',
+    'tag.share': '佔比', 'inv.tagShare': '標籤庫存佔比', 'sale.tagShare': '標籤銷售佔比',
   });
