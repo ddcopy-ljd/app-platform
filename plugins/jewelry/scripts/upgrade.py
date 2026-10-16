@@ -14,13 +14,16 @@
   唯一索引 idx_tasks_type_seq(store_id,type,type_seq WHERE type_seq>0)、
   dataVersion 1.2.16 客情维护：customers.anniversary 结婚纪念日列；
   dataVersion 1.2.17 会员管理：customers.created 建档时间列（会员总数/今日新增/本月新增统计）；
-  dataVersion 1.2.18 商品标签：product_tags/product_tag_links 两表（SCHEMA 幂等建表，无 ALTER，
-  演示标签仅 seed_demo 不进 ensure_new_seeds）；
+  dataVersion 1.2.18 商品标签：product_tags/product_tag_links 两表（SCHEMA 幂等建表，无 ALTER）；
   dataVersion 1.2.19 推广页多语言：tenant_profiles.i18n JSON 列（migrate_schema 幂等补列），
   languages 补种 ja/ko/zhHant（_seed_base_dicts INSERT OR IGNORE，随迁移重跑生效））；
   dataVersion 1.2.20 商品品类分组弹窗 + 价格策略/营销策略：product_types.group_name 分组列、
   products.price_mode/discount/discount_price/member_price/join_order_discount/member_only/gift_points
-  七列（migrate_schema 幂等补列，老库自动补默认值））；
+  七列，以及扫描助手自升级：devices.apk_md5 设备上报的已安装 APK 指纹
+  （migrate_schema 幂等补列，老库自动补默认值））；
+  dataVersion 1.2.21 商品标签分组：product_tags.group_name 分组列（migrate_schema 幂等补列）；
+  标签种子 _SEED_PRODUCT_TAGS 常量化，ensure_new_seeds 仅全新演示库（products 本次新灌）
+  联动灌入——外网沙箱基线库可得演示标签，真实租户删光标签后升级不复活（TC-40）；
 - 幂等执行 EPC 现行规则化（前缀+门店段+品类码+序号）与材质英文长码收敛为简写。
 参数/环境变量与平台约定一致：
   OLD_DB_PATH / NEW_DB_PATH / OLD_STORAGE / NEW_STORAGE /
