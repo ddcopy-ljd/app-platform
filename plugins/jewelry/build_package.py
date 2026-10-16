@@ -98,15 +98,23 @@ def build_changes(version: str) -> str:
         return "\n".join(lines)
 
     # 找 plugin.json 中 softwareVersion 的历次修改，取上一次作为本次变更起点
-    bumps = git("log", "--pretty=%H", "-S", '"softwareVersion"',
+    # （-G 按 diff 行正则匹配，版本号数值变更也会命中；-S 只在出现次数变化时触发，会漏掉版本 bump）
+    bumps = git("log", "--pretty=%H", "-G", '"softwareVersion"',
                 "--", f"{PLUGIN_REL}/plugin.json").splitlines()
     range_spec = f"{bumps[1]}..HEAD" if len(bumps) >= 2 else "HEAD"
 
     raw = git("log", "--pretty=%H%x09%s", range_spec, "--", PLUGIN_REL).splitlines()
-    # 排除版本号修改提交本身
-    skip = bumps[0] if bumps else ""
-    commits = [line.split("\t", 1)[1] for line in raw
-               if "\t" in line and not line.startswith(skip)]
+    # 排除「纯版本号 bump」提交（只改了 plugin.json 一个文件）；
+    # 功能与版本号合并在同一提交时仍保留，避免清单漏记
+    commits = []
+    for line in raw:
+        if "\t" not in line:
+            continue
+        h, subject = line.split("\t", 1)
+        changed = [f for f in git("show", "--name-only", "--pretty=format:", h).splitlines() if f.strip()]
+        if changed == [f"{PLUGIN_REL}/plugin.json"]:
+            continue
+        commits.append(subject)
 
     if commits:
         lines.append("本次版本变更：")
