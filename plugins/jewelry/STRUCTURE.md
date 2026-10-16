@@ -12,7 +12,7 @@
 | id | `jewelry` |
 | name | 懿臻珠宝云 |
 | entry | `main.py` |
-| softwareVersion | `1.2.32.261016` |
+| softwareVersion | `1.2.33.261016` |
 | dataVersion | `1.2.21` |
 | 默认端口 | 8002 |
 | 演示账号 | admin / admin123456 |
@@ -201,7 +201,7 @@ PrintBridge 与插件后端通过本地 HTTP 通信；`print_agent.json` 用 `ut
 
 ## 7. 版本与升级
 
-- **当前 softwareVersion**：`1.2.32.261016`（重构.功能.修订.日期 YYMMDD）
+- **当前 softwareVersion**：`1.2.33.261016`（重构.功能.修订.日期 YYMMDD）
 - **当前 dataVersion**：`1.2.21`（不得高于 softwareVersion 前三段）
 - **建库**：`scripts/init.py`（新租户，调 `db.SCHEMA` + `seed_demo`）
 - **迁移**：`scripts/upgrade.py`（增量 DDL，幂等，120 秒超时）
