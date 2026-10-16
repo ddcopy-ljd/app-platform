@@ -1495,6 +1495,8 @@ def ensure_new_seeds(conn: sqlite3.Connection) -> None:
     # —— product_tags：仅全新演示库灌入；真实租户表空不灌（避免租户删光标签后升级复活，TC-40）——
     if _prod_cnt_before == 0 and conn.execute("SELECT COUNT(*) FROM product_tags").fetchone()[0] == 0:
         conn.executemany("INSERT OR IGNORE INTO product_tags(name,group_name,sort_order) VALUES(?,?,?)", _SEED_PRODUCT_TAGS)
+    # —— product_tag_links：演示商品打标（内部三重守卫，真实租户不触发；外网沙箱已有库 links=0 也会补齐）——
+    _ensure_product_tag_links(conn)
     # —— transfers + transfer_items ——
     if conn.execute("SELECT COUNT(*) FROM transfers").fetchone()[0] == 0:
         cur = conn.execute(
@@ -1725,6 +1727,41 @@ _SEED_PRODUCT_TAGS = [
     ("女款", "客群", 13), ("男款", "客群", 14), ("情侣", "客群", 15), ("儿童", "客群", 16),
     ("新品", "营销", 17), ("促销", "营销", 18), ("生肖款", "营销", 19), ("联名", "营销", 20),
 ]
+
+# —— 演示商品「品类/名称 → 标签」打标映射（仅演示数据；按商品名匹配）——
+# 与 _SEED_PRODUCT_TAGS 配套：让演示/沙箱库的「销售额统计-标签维度」非全 0。
+_SEED_PRODUCT_TAG_LINKS = {
+    "足金手镯": ["婚庆", "古法金", "女款", "古风"],
+    "钻石耳钉": ["送礼", "轻奢", "女款"],
+    "翡翠观音吊坠": ["送礼", "男款", "古风", "收藏级"],
+    "铂金肖邦项链": ["现代", "轻奢", "女款"],
+    "红碧玺彩宝戒指": ["轻奢", "女款", "新品"],
+    "黄金福字吊坠": ["本命年", "送礼", "生肖款", "古风"],
+    "银质一生一世对戒": ["情侣", "婚庆", "现代", "促销"],
+    "古法黄金传承手串": ["古法金", "古风", "收藏级", "男款"],
+    "祖母绿锁骨链": ["轻奢", "收藏级", "女款"],
+    "蓝宝石戒指": ["轻奢", "现代", "女款"],
+    "和田玉平安扣": ["送礼", "古风", "儿童", "收藏级"],
+    "珍珠项链": ["女款", "婚庆", "简约"],
+}
+
+
+def _ensure_product_tag_links(conn: sqlite3.Connection) -> None:
+    """按 _SEED_PRODUCT_TAG_LINKS 为演示商品打标签（幂等，INSERT OR IGNORE）。
+    三重守卫避免触碰真实租户数据：
+    1) product_tag_links 已有数据 → 不灌（租户自己打过标）；
+    2) product_tags 数量 ≠ 种子数 → 不灌（租户增删过标签字典，与 TC-40「不复活」一致）；
+    3) 只按演示商品名匹配，真实租户自建商品名不在映射内 → 自然 0 匹配。"""
+    if conn.execute("SELECT COUNT(*) FROM product_tag_links").fetchone()[0] > 0:
+        return
+    if conn.execute("SELECT COUNT(*) FROM product_tags").fetchone()[0] != len(_SEED_PRODUCT_TAGS):
+        return
+    tags = {name: tid for tid, name in conn.execute("SELECT id,name FROM product_tags")}
+    pairs = [(pid, tags[t])
+             for pid, pname in conn.execute("SELECT id,name FROM products")
+             for t in _SEED_PRODUCT_TAG_LINKS.get(pname, []) if t in tags]
+    if pairs:
+        conn.executemany("INSERT OR IGNORE INTO product_tag_links(product_id,tag_id) VALUES(?,?)", pairs)
 
 
 def _ensure_stores_seed(conn: sqlite3.Connection) -> None:
@@ -1971,8 +2008,7 @@ def seed_demo(conn: sqlite3.Connection) -> None:
     seed_store_printers(conn)  # 演示门店也补齐每个打印业务的指派行
 
     _ensure_products_seed(conn)
-
-    now = "date('now','localtime')"
+    _ensure_product_tag_links(conn)
     # —— sales / sale_items / sale_payments（共用 _ensure_sales_seed，保证 dashboard 趋势图/品类占比全覆盖）——
     _ensure_sales_seed(conn)
     _ensure_sale_details(conn)
