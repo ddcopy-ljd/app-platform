@@ -34,7 +34,8 @@ var ST = Vue.reactive({
   loginUser: 'admin', loginPwd: '123456',
   // data
   dashData: null, trendData: null, trendRange: '30d', bizAnalysis: null, remindData: null, showRemind: true, catSales: null,
-  trendOffset: 0, trendDragX: 0, trendDragOn: false,  // 趋势图平移窗口数 / 拖动中位移(px) / 拖动中
+  trendShift: 0, trendDragX: 0, trendDragOn: false,  // 趋势图平移时间单位数(天/月) / 拖动中位移(px) / 拖动中
+  _trendReqSeq: 0,   // 趋势请求序号：连续拖动只接受最后一次响应
   goldData: null,   // 实时金价（国际+门店零售）
   riskData: null,   // 资产风控（滞销库龄+最近盘点）
   // 看板时间范围：mode=today|week|month|custom；custom 用 start/end（ISO 日期）
@@ -237,39 +238,75 @@ function hasLastYear(arr) {
 // 趋势折线：切换时间范围（15d/30d/6m/12m），切范围时回到当前窗口
 function setTrendRange(r) {
   ST.trendRange = r;
-  ST.trendOffset = 0;
+  ST.trendShift = 0;
   loadTrend();
 }
-function loadTrend() {
+// 平移上限：日粒度最多回看 730 天（2 年），月粒度 36 个月（3 年）
+function trendShiftMax() { return (ST.trendRange === '6m' || ST.trendRange === '12m') ? 36 : 730; }
+function loadTrend(shift) {
+  if (shift != null) ST.trendShift = shift;
+  var sh = ST.trendShift || 0;
   var u = '/api/dashboard/trend?range=' + (ST.trendRange || '30d');
-  if (ST.trendOffset > 0) u += '&offset=' + ST.trendOffset;
-  api('GET', u).then(function (d) { ST.trendData = d; }).catch(function () {});
+  if (sh > 0) u += '&offset=' + sh;
+  var token = ++ST._trendReqSeq;   // 连续拖动中只接受最后一次响应，防止乱序覆盖
+  api('GET', u).then(function (d) { if (ST._trendReqSeq === token) ST.trendData = d; }).catch(function () {});
 }
-// 拖动平移：右拖看更早（offset+），左拖回近期（offset-，到 0 止）；松手按位移换算窗口数
-// 统一 Pointer Events（鼠标/触摸/触控笔）；CSS touch-action:pan-y 保留纵向滚动
+// 拖动连续平移（Pointer Events，鼠标/触摸/触控笔统一；CSS touch-action:pan-y 保留纵向滚动）：
+// 按落点 px 换算时间单位（日粒度=天，月粒度=月），窗口长度 n 不变；
+// 拖动中防抖 120ms 实时取数并把位移锚到指针，松手不整窗跳变
 function trendDragStart(e) {
   if (e.button != null && e.button !== 0) return;   // 仅主键
+  if (e.currentTarget && e.currentTarget.setPointerCapture) {
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+  }
   ST.trendDragOn = true;
   ST.trendDragX = 0;
   ST._trendDragX0 = e.clientX;
+  ST._trendDragLastX = e.clientX;
+  ST._trendPanW = (e.currentTarget && e.currentTarget.clientWidth) || 300;
+  ST._trendUnits = (ST.trendData && ST.trendData.labels && ST.trendData.labels.length) || 30;
+}
+function trendDragConsume() {
+  var pxPerUnit = ST._trendPanW / ST._trendUnits;   // 1 天/月 占多少 px
+  var k = Math.round(ST.trendDragX / pxPerUnit);
+  if (!k) return;
+  var ns = ST.trendShift + k;
+  if (ns < 0) ns = 0;
+  if (ns > trendShiftMax()) ns = trendShiftMax();
+  var realK = ns - ST.trendShift;                  // 边界夹住后实际消费的单位数
+  if (!realK) return;
+  ST.trendShift = ns;
+  // 锚定：消费 realK 个单位后，剩余位移回到 ±0.5 单位内，指针位置不动
+  var residual = ST.trendDragX - realK * pxPerUnit;
+  ST._trendDragX0 = ST._trendDragLastX - residual;
+  ST.trendDragX = residual;
+  loadTrend();
 }
 function trendDragMove(e) {
   if (!ST.trendDragOn) return;
-  ST.trendDragX = e.clientX - ST._trendDragX0;
+  ST._trendDragLastX = e.clientX;
+  var dx = e.clientX - ST._trendDragX0;
+  // 到历史边界后给阻尼（继续拖阻力变大），提示到头
+  var pxPerUnit = ST._trendPanW / ST._trendUnits;
+  var units = dx / pxPerUnit;
+  var would = ST.trendShift + units;
+  if (would < 0) dx = -ST.trendShift * pxPerUnit + (dx + ST.trendShift * pxPerUnit) * 0.3;
+  if (would > trendShiftMax()) {
+    var over = (would - trendShiftMax()) * pxPerUnit;
+    dx = (trendShiftMax() - ST.trendShift) * pxPerUnit + over * 0.3;
+  }
+  ST.trendDragX = dx;
+  if (ST._trendDragTimer) clearTimeout(ST._trendDragTimer);
+  ST._trendDragTimer = setTimeout(trendDragConsume, 120);
 }
 function trendDragEnd() {
   if (!ST.trendDragOn) return;
   ST.trendDragOn = false;
-  var steps = Math.round(ST.trendDragX / 90);   // 每 90px 一个窗口
-  ST.trendDragX = 0;
-  if (!steps) return;
-  var no = ST.trendOffset + steps;              // 右拖(dx>0)=看更早
-  if (no < 0) no = 0;
-  if (no === ST.trendOffset) return;
-  ST.trendOffset = no;
-  loadTrend();
+  if (ST._trendDragTimer) { clearTimeout(ST._trendDragTimer); ST._trendDragTimer = null; }
+  trendDragConsume();
+  ST.trendDragX = 0;   // 消费后剩余不足 1 单位，归零无可见跳变
 }
-function trendDragReset() { ST.trendOffset = 0; loadTrend(); }
+function trendDragReset() { ST.trendShift = 0; ST.trendDragX = 0; loadTrend(); }
 // 折线图 SVG 尺寸：固定 viewBox="0 0 300 120"（注意：viewBox 必须是静态属性——in-DOM 模板中
 // :viewBox 动态绑定会被 HTML 解析器小写化为 :viewbox，Vue 按小写名 setAttribute 后 SVG 不识别，
 // viewBox 静默失效，图表按 1:1 坐标渲染只占容器左半，TC-43）。配合 preserveAspectRatio="none" 拉伸充满。

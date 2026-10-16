@@ -78,6 +78,7 @@
    - `browser_evaluate` 引擎对 IIFE/箭头函数/`function` 表达式返回 undefined、正则字面量报 SyntaxError——**只用 for 循环 + 字符串判断**，一次一条表达式；
    - 断言文案**禁止臆测**：区块标题/按钮文案先查 i18n.js 键值与模板（如 `sale.tagShare`=「标签销售占比」非「标签实销占比」、商品弹层保存=`act.submit`「确认提交」非「保存」）。
    - `browser_console_messages` 会**累积跨会话历史报错**（含旧版本号资源、子代理自身 evaluate 探针触发的 `<anonymous>` SyntaxError/TypeError、服务重启间隙的 ERR_CONNECTION_REFUSED）；判断"本次改动是否引入前端报错"必须看错误堆栈里的资源版本号（`app.js?v=...`）是否当前版本，历史残留不得当作本次回归失败证据（2026-10-16 销售额统计卡走查实踩：3 轮子代理均把历史残留误报为"console 有红色报错"）。
+   - **禁止用「再注入一份 `<script src=app.js?v=新>`」的方式硬刷静态资源版本**：重新执行脚本会重置模块状态（如 ST 初始值），Vue 绑定与状态可能错配，导致拖动/渲染行为按旧状态误判；硬刷一律重新导航页面（browser_navigate）后确认 `document.scripts` 中的版本号（2026-10-16 趋势图连续拖动走查实踩）。
 
 ---
 

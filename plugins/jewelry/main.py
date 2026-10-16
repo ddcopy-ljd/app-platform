@@ -1342,9 +1342,10 @@ def dashboard_overview(request: Request, start: str = Query(default=""), end: st
 
 @app.get("/api/dashboard/trend")
 def dashboard_trend(request: Request, trange: str = Query(default="30d", alias="range"),
-                    offset: int = Query(default=0, ge=0, le=120)):
+                    offset: int = Query(default=0, ge=0, le=730)):
     """实销总额趋势：range=15d/30d（按日）、6m/12m（按月）。
-    offset=向前平移的窗口数（拖动看历史）：日粒度偏移 offset*n 天，月粒度偏移 offset*n 个月。
+    offset=向过去平移的「时间单位」数（拖动连续平移：日粒度=天数，月粒度=月数；
+    1.2.35 起由「窗口数」改为连续单位，窗口长度 n 不变，拖动按落点精确取窗）。
     返回今年/去年同期双序列（labels 为今年轴，去年轴同格式对齐）。"""
     from datetime import timedelta as _td
     sess = _require_auth(request)
@@ -1355,7 +1356,7 @@ def dashboard_trend(request: Request, trange: str = Query(default="30d", alias="
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, sess)
         if by_day:
-            end_d = today - _td(days=offset * n)   # 窗口右端：offset>0 时整体向过去平移
+            end_d = today - _td(days=offset)   # 窗口右端：offset=向过去平移的天数
             start = (end_d - _td(days=n - 1)).isoformat()
             end_s = end_d.isoformat()
             rows = conn.execute(
@@ -1384,9 +1385,9 @@ def dashboard_trend(request: Request, trange: str = Query(default="30d", alias="
             last_year = [m2.get(d) for d in ly_dates]
         else:
             months_expr = "substr(biz_date,1,7)"
-            # 窗口右端月份：当月向过去平移 offset*n 个月
+            # 窗口右端月份：当月向过去平移 offset 个月
             ey, em = today.year, today.month
-            for _ in list(range(offset * n)):
+            for _ in list(range(offset)):
                 em -= 1
                 if em == 0:
                     em, ey = 12, ey - 1

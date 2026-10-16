@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>懿臻珠宝云</title>
 <link rel="icon" href="/logo/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./app.css?v=20261016a106">
+<link rel="stylesheet" href="./app.css?v=20261016a107">
 </head>
 <body>
 <div id="app">
@@ -194,7 +194,7 @@
                 <span v-if="hasLastYear(trendData.amountsLastYear)" class="chart-legend">
                   <span class="lg-line lg-cur"></span>{{ t('dash.curYear') }}<span class="lg-line lg-past"></span>{{ t('dash.prevYear') }}
                 </span>
-                <button v-if="trendOffset>0" class="trend-reset-btn" @click="trendDragReset()">⟲ {{ t('act.reset') }}</button>
+                <button v-if="trendShift>0" class="trend-reset-btn" @click="trendDragReset()">⟲ {{ t('act.reset') }}</button>
                 <select class="trend-range-select" :value="trendRange" @change="setTrendRange($event.target.value)">
                   <option value="15d">{{ t('dash.tr15d') }}</option>
                   <option value="30d">{{ t('dash.tr30d') }}</option>
@@ -3842,14 +3842,14 @@ Content-Type: application/json
 <script src="./vendor/vue.global.prod.js"></script>
 <script src="./vendor/qrcode.min.js"></script>
 <script src="./vendor/zxing.min.js"></script>
-<script src="./i18n.js?v=20261016a106"></script>
+<script src="./i18n.js?v=20261016a107"></script>
 <script>
 // 非中文时同步加载对应语言字典（i18n.<dict>.js），确保 app.js 挂载前字典就绪
 (function () {
   var _dict = (typeof i18nDictFile === 'function') ? i18nDictFile() : '';
-  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261016a106"><\/script>');
+  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261016a107"><\/script>');
 })();
 </script>
-<script src="./app.js?v=20261016a106"></script>
+<script src="./app.js?v=20261016a107"></script>
 </body>
 </html>
