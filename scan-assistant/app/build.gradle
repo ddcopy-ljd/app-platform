@@ -17,8 +17,8 @@ android {
         applicationId "com.yizhen.scanassistant"
         minSdk 26
         targetSdk 34
-        versionCode 8
-        versionName "1.1.0"
+        versionCode 9
+        versionName "1.1.0.261015"
     }
 
     signingConfigs {
@@ -50,6 +50,11 @@ android {
 
     kotlinOptions {
         jvmTarget = '1.8'
+    }
+
+    // AGP 8.2 默认关闭 BuildConfig 生成，AppConfig 依赖 BuildConfig.VERSION_NAME，必须显式开启
+    buildFeatures {
+        buildConfig true
     }
 }
 

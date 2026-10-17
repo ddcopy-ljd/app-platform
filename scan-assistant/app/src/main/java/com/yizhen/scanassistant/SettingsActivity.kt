@@ -56,8 +56,17 @@ class SettingsActivity : AppCompatActivity() {
         })
 
         findViewById<TextView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<TextView>(R.id.btnCheckUpdate).setOnClickListener {
+            UpdateChecker.check(this, prefs, interactive = true)
+        }
         findViewById<TextView>(R.id.btnStSave).setOnClickListener { save() }
         findViewById<TextView>(R.id.btnUnbind).setOnClickListener { confirmUnbind() }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 用户在系统「未知来源」授权页返回后，若已授权则续装待装包
+        UpdateChecker.onResumeRetryIfPending(this)
     }
 
     private fun loadValues() {

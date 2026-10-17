@@ -67,7 +67,10 @@ class ScanWsClient(
     private val heartbeatTick = object : Runnable {
         override fun run() {
             if (connected) {
-                send(JSONObject().put("type", "heartbeat"))
+                // 心跳同样带上 apk_md5：warmUpMd5 异步算 MD5，hello 帧可能赶不上，靠后续心跳补齐上报
+                send(JSONObject()
+                    .put("type", "heartbeat")
+                    .put("apk_md5", UpdateChecker.installedMd5))
                 main.postDelayed(this, HEARTBEAT_MS)
             }
         }
@@ -92,7 +95,12 @@ class ScanWsClient(
                 main.post {
                     connected = true
                     retries = 0
-                    send(JSONObject().put("type", "hello").put("app_version", appVersion))
+                    send(
+                        JSONObject()
+                            .put("type", "hello")
+                            .put("app_version", appVersion)
+                            .put("apk_md5", UpdateChecker.installedMd5)
+                    )
                     main.removeCallbacks(heartbeatTick)
                     main.postDelayed(heartbeatTick, HEARTBEAT_MS)
                     listener.onWsOpen()

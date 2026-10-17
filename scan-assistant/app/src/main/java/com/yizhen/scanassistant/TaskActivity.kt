@@ -116,6 +116,9 @@ class TaskActivity : AppCompatActivity() {
         vibrator = getSystemService(VIBRATOR_SERVICE) as? Vibrator
 
         bindViews()
+        // 应用内自升级：预热本机 APK MD5（供 WS hello 帧上报），并静默检查更新（发现更新才弹框）
+        UpdateChecker.warmUpMd5(this)
+        UpdateChecker.check(this, prefs, interactive = false)
         // 断电恢复：先加载持久队列，未被服务端接受的标签继续补传；
         // seen 用队列内容预热，避免恢复后重复入队（已接受的标签服务端任务级排重，重发安全）
         queue.addAll(prefs.queue)
@@ -176,6 +179,8 @@ class TaskActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         registerTriggerReceiver()
+        // 用户在系统「未知来源」授权页返回后，若已授权则续装待装包
+        UpdateChecker.onResumeRetryIfPending(this)
         main.postDelayed(flushTick, 800)
     }
 
