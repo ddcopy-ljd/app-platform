@@ -14,6 +14,7 @@ platform/_upgrade/
 # 插件运行时产物（本地调试数据、构建产物、存储、日志）
 plugins/jewelry/data/
 plugins/*/dev_data/
+plugins/*/dev_storage/
 plugins/*/dist/
 plugins/*/storage/
 plugins/*/__pycache__/

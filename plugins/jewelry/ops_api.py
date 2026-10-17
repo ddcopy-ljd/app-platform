@@ -1,36 +1,46 @@
-"""懿臻珠宝云 · 运维端 API（/api/ops/*，全局只读巡检）。
+"""懿臻珠宝云 · 运维端 API（/api/ops/*）。
 
 唯一准入方式：平台网关 PRODUCTION_SUPPORT 穿透票证注入的两个头同时成立——
   X-System-Bypass-Auth: true          （网关穿透，无业务会话）
   X-Operator-Mode: PRODUCTION_SUPPORT （必须恰为生产运维模式）
 普通业务 Bearer 登录、SANDBOX 穿透（同样 bypass 但 mode=SANDBOX）一律 403。
 
-本模块全部端点只读租户业务库，不产生任何写操作与对外副作用；
-受控写操作（终止盘点/解冻/账号重置等）为后续阶段，届时必须逐笔写 operate_logs。
+巡检/设备/审计端点只读租户业务库；助手发布与强更开关是本模块仅有的写操作，
+每次调用强制写 operate_logs（经 main._log 注入）。
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+import os
+import threading
 import time
+import uuid
+from pathlib import Path
 from types import SimpleNamespace
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from pydantic import BaseModel
 
 logger = logging.getLogger("jewelry.ops")
 
 router = APIRouter(prefix="/api/ops", tags=["ops-console"])
 
+ROOT = Path(__file__).resolve().parent
+
 # main.py 在模块加载末期注入的依赖（避免与 main 循环导入）
 _deps: dict = {}
 
 
-def init(*, open_conn, tenant_of, software_version: str, scan_info) -> None:
-    """由 main.py 调用：注入开库函数、租户解析函数、插件版本与扫描助手包指纹函数。"""
+def init(*, open_conn, tenant_of, software_version: str, scan_info, log_fn) -> None:
+    """由 main.py 调用：注入开库/租户解析/包指纹函数与审计写函数（_log）。"""
     _deps["open_conn"] = open_conn
     _deps["tenant_of"] = tenant_of
     _deps["software_version"] = software_version
     _deps["scan_info"] = scan_info
+    _deps["log_fn"] = log_fn
 
 
 def require_ops(request: Request) -> SimpleNamespace:
@@ -153,5 +163,157 @@ def ops_devices(request: Request):
             })
         info = _deps["scan_info"]()
         return {"items": items, "server_md5": info.get("md5", ""), "force": info.get("force", False)}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------- 助手发布（扫描助手 APK / 打印助手 EXE）
+# 产物存插件级共享可写目录（平台注入 STORAGE_DIR 的 agents/ 子目录，升级仅迁移 {租户}/v{版本}，本目录跨版本持久）；
+# 下载链路「发布目录优先、包内 downloads/ 兜底」。独立运行（无 STORAGE_DIR）回退 dev_storage/agents（gitignore）。
+
+MAX_AGENT_BYTES = 30 * 1024 * 1024  # 30MB
+
+AGENTS = {
+    "scan": {"filename": "scan-assistant-release.apk", "ext": ".apk", "label": "扫描助手 APK"},
+    "print": {"filename": "PrintBridge.exe", "ext": ".exe", "label": "打印助手 EXE"},
+}
+
+_manifest_lock = threading.Lock()
+
+
+def pub_dir() -> Path:
+    """运维端发布的助手产物目录（main.py 下载链路也引用）。"""
+    base = os.environ.get("STORAGE_DIR")
+    d = (Path(base) / "agents") if base else (ROOT / "dev_storage" / "agents")
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _read_manifest() -> list:
+    try:
+        return json.loads((pub_dir() / "manifest.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return []
+    except Exception:
+        logger.exception("发布历史 manifest.json 读取失败，按空处理")
+        return []
+
+
+def _append_manifest(entry: dict) -> None:
+    with _manifest_lock:
+        items = _read_manifest()
+        items.append(entry)
+        tmp = pub_dir() / f".manifest.{uuid.uuid4().hex}.tmp"
+        tmp.write_text(json.dumps(items, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, pub_dir() / "manifest.json")
+
+
+def _file_md5(path: Path) -> str:
+    return hashlib.md5(path.read_bytes()).hexdigest()
+
+
+@router.get("/agents", dependencies=[Depends(require_ops)])
+def ops_agents(request: Request):
+    """两个助手的当前发布状态 + 发布历史（manifest.json）。"""
+    require_ops(request)
+    d = pub_dir()
+    scan_pub = d / AGENTS["scan"]["filename"]
+    print_pub = d / AGENTS["print"]["filename"]
+
+    def _pkg(path: Path, fallback_md5: str = "") -> dict:
+        if not path.is_file():
+            return {"published": False, "md5": fallback_md5, "size": 0, "time": ""}
+        side = Path(str(path) + ".md5")
+        md5 = side.read_text(encoding="utf-8", errors="ignore").split()[0].lower() \
+            if side.is_file() and side.read_text(encoding="utf-8", errors="ignore").split() \
+            else _file_md5(path)
+        return {"published": True, "md5": md5, "size": path.stat().st_size,
+                "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(path.stat().st_mtime))}
+
+    scan_info = _deps["scan_info"]()  # 兜底指纹（发布目录缺失时为包内 downloads/ 的）
+    force = scan_info.get("force", False)
+    return {
+        "scan": {**_pkg(scan_pub, scan_info.get("md5", "")), "force": force},
+        "print": _pkg(print_pub),
+        "history": list(reversed(_read_manifest()))[:100],
+    }
+
+
+@router.post("/agents/publish", dependencies=[Depends(require_ops)])
+async def ops_agents_publish(request: Request, kind: str = Form(...), note: str = Form(""),
+                             file: UploadFile = File(...)):
+    """上传发布助手产物：校验类型/大小 → 算 MD5 → 临时文件原子替换 → 写 .md5 sidecar → 记发布历史 → 强制审计。"""
+    op = require_ops(request)
+    meta = AGENTS.get(kind)
+    if not meta:
+        raise HTTPException(400, f"未知助手类型 kind={kind}（可选 scan/print）")
+    name = file.filename or ""
+    if not name.lower().endswith(meta["ext"]):
+        raise HTTPException(400, f"{meta['label']} 仅接受 {meta['ext']} 文件，收到：{name or '(空)'}")
+    data = await file.read(MAX_AGENT_BYTES + 1)
+    if len(data) > MAX_AGENT_BYTES:
+        raise HTTPException(400, f"文件超过 30MB 上限（{len(data) / 1048576:.1f}MB）")
+    if not data:
+        raise HTTPException(400, "文件内容为空")
+
+    md5 = hashlib.md5(data).hexdigest()
+    d = pub_dir()
+    target = d / meta["filename"]
+    tmp = d / f".{meta['filename']}.{uuid.uuid4().hex}.tmp"
+    tmp.write_bytes(data)
+    os.replace(tmp, target)  # 原子替换：下载链路不会读到半截文件
+    (Path(str(target) + ".md5")).write_text(md5, encoding="utf-8")
+    entry = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "kind": kind, "label": meta["label"],
+             "filename": meta["filename"], "size": len(data), "md5": md5,
+             "operator": op.operator, "note": note.strip()}
+    _append_manifest(entry)
+
+    conn = _conn(request)
+    try:
+        _deps["log_fn"](conn, op.operator, "运维端·发布助手",
+                        f"{meta['label']} md5={md5[:8]} {len(data) // 1024}KB"
+                        + (f" 备注：{entry['note']}" if entry["note"] else ""), "成功")
+    finally:
+        conn.close()
+    return {"ok": True, **{k: entry[k] for k in ("kind", "md5", "size", "time", "operator")}}
+
+
+class ForceIn(BaseModel):
+    enabled: bool
+
+
+@router.post("/agents/scan/force", dependencies=[Depends(require_ops)])
+def ops_agents_force(request: Request, body: ForceIn):
+    """扫描助手强制升级开关：写/删 <apk>.force sidecar（现网 App 已按该标记强更）。"""
+    op = require_ops(request)
+    fmark = pub_dir() / (AGENTS["scan"]["filename"] + ".force")
+    if body.enabled:
+        fmark.write_text("1", encoding="utf-8")
+    else:
+        fmark.unlink(missing_ok=True)
+    conn = _conn(request)
+    try:
+        _deps["log_fn"](conn, op.operator, "运维端·强制升级",
+                        f"扫描助手强更开关 → {'开启' if body.enabled else '关闭'}", "成功")
+    finally:
+        conn.close()
+    return {"ok": True, "force": body.enabled}
+
+
+# ---------------------------------------------------------------- 审计查询（只读）
+
+@router.get("/audit", dependencies=[Depends(require_ops)])
+def ops_audit(request: Request, limit: int = Query(100, ge=1, le=500),
+              offset: int = Query(0, ge=0)):
+    """本租户 operate_logs 查询（含运维端自身写操作的留痕）。"""
+    require_ops(request)
+    conn = _conn(request)
+    try:
+        total = _scalar(conn, "SELECT COUNT(*) FROM operate_logs")
+        rows = conn.execute(
+            "SELECT id,time,operator,store,action,target,result FROM operate_logs "
+            "ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset),
+        ).fetchall()
+        return {"total": total, "items": [dict(r) for r in rows]}
     finally:
         conn.close()

@@ -33,6 +33,12 @@
     return new Date(ts * 1000).toLocaleString("zh-CN", { hour12: false });
   }
   function shortMd5(s) { return s ? s.slice(0, 8) : "—"; }
+  function fmtSize(n) {
+    n = Number(n || 0);
+    if (!n) return "—";
+    if (n >= 1048576) return (n / 1048576).toFixed(1) + " MB";
+    return Math.round(n / 1024) + " KB";
+  }
 
   function showBlocked(detail) {
     el("blocked-reason").textContent = detail || "运维端仅允许平台「生产运维穿透」模式进入。";
@@ -116,11 +122,14 @@
   }
 
   function boot() {
-    Promise.all([api("api/ops/context"), api("api/ops/overview"), api("api/ops/devices")])
+    Promise.all([api("api/ops/context"), api("api/ops/overview"), api("api/ops/devices"),
+                 api("api/ops/agents"), api("api/ops/audit?limit=100")])
       .then(function (rs) {
         renderChips(rs[0]);
         renderOverview(rs[1]);
         renderDevices(rs[2]);
+        renderAgents(rs[3]);
+        renderAudit(rs[4]);
         el("console").style.display = "block";
       })
       .catch(function (e) {
@@ -129,5 +138,142 @@
       });
   }
 
+  // ---------------- 助手发布 ----------------
+
+  function pkgMeta(p) {
+    if (!p.published) {
+      return "未发布 · 当前分发包内兜底产物<br>MD5 <span class='mono'>" + esc(shortMd5(p.md5)) + "</span> · " + fmtSize(p.size);
+    }
+    return "已发布 " + esc(p.time) + "<br>MD5 <span class='mono'>" + esc(p.md5) + "</span> · " + fmtSize(p.size);
+  }
+
+  function renderAgents(a) {
+    el("pub-scan-state").className = "badge " + (a.scan.published ? "ok" : "gray");
+    el("pub-scan-state").textContent = a.scan.published ? "已发布" : "未发布（包内兜底）";
+    el("pub-scan-meta").innerHTML = pkgMeta(a.scan);
+    el("pub-print-state").className = "badge " + (a.print.published ? "ok" : "gray");
+    el("pub-print-state").textContent = a.print.published ? "已发布" : "未发布（包内兜底）";
+    el("pub-print-meta").innerHTML = pkgMeta(a.print);
+    el("force-toggle").checked = !!a.scan.force;
+
+    var rows = a.history || [];
+    var body;
+    if (!rows.length) {
+      body = '<tr><td colspan="6" class="loading">暂无发布记录</td></tr>';
+    } else {
+      var parts = [];
+      for (var i = 0; i < rows.length; i++) {
+        var x = rows[i];
+        parts.push(
+          "<tr>" +
+          "<td class='mono'>" + esc(x.time) + "</td>" +
+          "<td>" + esc(x.label) + "</td>" +
+          "<td>" + esc(x.operator) + "</td>" +
+          "<td class='mono'>" + esc(x.md5) + "</td>" +
+          "<td>" + fmtSize(x.size) + "</td>" +
+          "<td>" + esc(x.note || "—") + "</td>" +
+          "</tr>"
+        );
+      }
+      body = parts.join("");
+    }
+    el("pub-rows").innerHTML = body;
+  }
+
+  function publish(kind) {
+    var fileInput = el(kind === "scan" ? "file-scan" : "file-print");
+    var noteInput = el(kind === "scan" ? "note-scan" : "note-print");
+    var btn = el(kind === "scan" ? "btn-scan" : "btn-print");
+    if (!fileInput.files || !fileInput.files.length) { alert("请先选择要发布的文件"); return; }
+    var f = fileInput.files[0];
+    var label = kind === "scan" ? "扫描助手 APK" : "打印助手 EXE";
+    if (!window.confirm("确认发布 " + label + "？\n文件：" + f.name + "（" + fmtSize(f.size) + "）\n发布后立即对全部租户的下载链路生效。")) return;
+    btn.disabled = true;
+    btn.textContent = "发布中…";
+    var fd = new FormData();
+    fd.append("kind", kind);
+    fd.append("note", noteInput.value || "");
+    fd.append("file", f);
+    fetch(BASE + "api/ops/agents/publish", { method: "POST", body: fd })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok) throw { detail: j && j.detail || ("HTTP " + r.status) };
+          return j;
+        });
+      })
+      .then(function (j) {
+        window.alert("发布成功\nMD5 " + j.md5 + "\n" + j.time + " by " + j.operator);
+        fileInput.value = "";
+        noteInput.value = "";
+        reloadOps();
+      })
+      .catch(function (e) {
+        window.alert("发布失败：" + ((e && e.detail) || e));
+      })
+      .then(function () {
+        btn.disabled = false;
+        btn.textContent = kind === "scan" ? "发布 APK" : "发布 EXE";
+      });
+  }
+
+  function reloadOps() {
+    api("api/ops/agents").then(renderAgents).catch(function () {});
+    api("api/ops/audit?limit=100").then(renderAudit).catch(function () {});
+  }
+
+  function bindPublish() {
+    el("btn-scan").addEventListener("click", function () { publish("scan"); });
+    el("btn-print").addEventListener("click", function () { publish("print"); });
+    el("force-toggle").addEventListener("change", function () {
+      var on = el("force-toggle").checked;
+      fetch(BASE + "api/ops/agents/scan/force", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: on }),
+      }).then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok) throw { detail: j && j.detail || ("HTTP " + r.status) };
+          return j;
+        });
+      }).then(function (j) {
+        window.alert("扫描助手强制升级已" + (j.force ? "开启" : "关闭"));
+        reloadOps();
+      }).catch(function (e) {
+        window.alert("操作失败：" + ((e && e.detail) || e));
+        el("force-toggle").checked = !on;
+      });
+    });
+  }
+
+  // ---------------- 审计 ----------------
+
+  function renderAudit(a) {
+    el("audit-summary").textContent = "共 " + a.total + " 条 · 显示最新 " + a.items.length + " 条";
+    var rows = a.items || [];
+    var body;
+    if (!rows.length) {
+      body = '<tr><td colspan="6" class="loading">暂无审计记录</td></tr>';
+    } else {
+      var parts = [];
+      for (var i = 0; i < rows.length; i++) {
+        var x = rows[i];
+        var ops = String(x.action || "").indexOf("运维端") === 0;
+        parts.push(
+          "<tr>" +
+          "<td class='mono'>" + esc(x.time) + "</td>" +
+          "<td>" + esc(x.operator) + "</td>" +
+          "<td>" + esc(x.store || "—") + "</td>" +
+          "<td>" + (ops ? '<span class="badge red">' + esc(x.action) + "</span>" : esc(x.action)) + "</td>" +
+          "<td>" + esc(x.target || "—") + "</td>" +
+          "<td>" + esc(x.result || "—") + "</td>" +
+          "</tr>"
+        );
+      }
+      body = parts.join("");
+    }
+    el("audit-rows").innerHTML = body;
+  }
+
+  bindPublish();
   boot();
 })();

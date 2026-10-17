@@ -217,8 +217,11 @@ plugins/jewelry/
 
 - **访问路径**：`GET /ops` 与 `GET /ops/{asset_path:path}`（静态壳同样卡模式）；平台网关下为 `/gw/{票据}/ops/`，网关对 HTML 注入 `window.__APP_BASE__`，前端一律相对该基址请求 `api/ops/*`。
 - **唯一准入**：`X-System-Bypass-Auth: true` **且** `X-Operator-Mode: PRODUCTION_SUPPORT` 同时成立（`ops_api.require_ops` 统一依赖）；普通业务 Bearer 登录、SANDBOX 穿透（同为 bypass 但模式不同）一律 403。
-- **端点（P0 全部只读）**：`GET /api/ops/context`（租户/操作者/版本）、`GET /api/ops/overview`（组织/库存/会员/今日+近7日销售/设备在线）、`GET /api/ops/devices`（扫描助手清单：在线只信 `last_seen` 上报帧，APK 指纹与服务端包比对标记待升级）。
-- **后续受控写操作**（终止任务/解冻/账号重置）开放时必须逐笔写 `operate_logs`，并在页面二次确认；本阶段无任何写端点。
+- **端点**：
+  - 只读巡检：`GET /api/ops/context`（租户/操作者/版本）、`GET /api/ops/overview`（组织/库存/会员/今日+近7日销售/设备在线）、`GET /api/ops/devices`（扫描助手清单：在线只信 `last_seen` 上报帧，APK 指纹与服务端包比对标记待升级）、`GET /api/ops/audit`（本租户 `operate_logs` 查询）。
+  - 助手发布（写操作，强制审计）：`GET /api/ops/agents`（当前发布状态+发布历史）、`POST /api/ops/agents/publish`（multipart 上传：校验扩展名/≤30MB/空文件 → MD5 → 临时文件原子替换 → `.md5` sidecar → manifest.json 历史 → `operate_logs`）、`POST /api/ops/agents/scan/force`（强更开关，写/删 `.force` sidecar）。
+- **助手产物目录**：平台注入的 `STORAGE_DIR/agents/`（插件级共享存储根，升级仅迁移 `{租户}/v{版本}` 子目录，本目录跨版本持久）；独立运行回退 `dev_storage/agents/`（gitignore）。下载链路「发布目录优先、包内 `downloads/` 兜底」——`_scan_app_apk()` 与 `GET /api/print-agent/download` 已接入；发布后立即对全租户生效。
+- **后续受控写操作**（终止任务/解冻/账号重置）开放时必须逐笔写 `operate_logs`，并在页面二次确认。
 - **打包**：`ops/` 与顶层 `ops_api.py` 随插件包发布；与业务端同一次插件升级生效。
 
 ---

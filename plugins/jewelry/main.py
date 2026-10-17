@@ -3818,8 +3818,10 @@ def print_agent_status(request: Request):
 
 @app.get("/api/print-agent/download")
 def print_agent_download():
-    """下载打印助手：优先返回包内 downloads/PrintBridge.exe，缺失时回退构建产物 exe，再退 py 源码。"""
-    exe = ROOT / "downloads" / "PrintBridge.exe"
+    """下载打印助手：运维端发布目录优先，包内 downloads/ 兜底，再退构建产物 exe、py 源码。"""
+    exe = ops_api.pub_dir() / "PrintBridge.exe"
+    if not exe.is_file():
+        exe = ROOT / "downloads" / "PrintBridge.exe"
     if not exe.is_file():
         exe = ROOT / "agents" / "print" / "dist" / "PrintBridge.exe"
     if exe.is_file():
@@ -3830,8 +3832,10 @@ def print_agent_download():
 
 
 def _scan_app_apk() -> Path | None:
-    """扫描助手 APK 路径：插件包内 downloads/ 优先，回退 agents/scan 构建产物。"""
-    apk = ROOT / "downloads" / "scan-assistant-release.apk"
+    """扫描助手 APK 路径：运维端发布目录优先（跨版本持久），包内 downloads/ 兜底，再退开发构建产物。"""
+    apk = ops_api.pub_dir() / "scan-assistant-release.apk"
+    if not apk.is_file():
+        apk = ROOT / "downloads" / "scan-assistant-release.apk"
     if not apk.is_file():
         apk = (ROOT / "agents" / "scan" / "app" / "build" / "outputs" / "apk"
                / "release" / "app-release.apk")
@@ -7643,7 +7647,7 @@ async def _security_startup():
 # ---------------------------------------------------------------- 运维端（仅 PRODUCTION_SUPPORT 穿透）
 
 ops_api.init(open_conn=_open, tenant_of=_tenant_of,
-             software_version=SOFT_VERSION, scan_info=_scan_app_info)
+             software_version=SOFT_VERSION, scan_info=_scan_app_info, log_fn=_log)
 app.include_router(ops_api.router)
 
 

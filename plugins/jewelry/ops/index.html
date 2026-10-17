@@ -53,8 +53,56 @@
         </div>
       </section>
 
+      <section class="section">
+        <h3>助手发布 <span class="sub">发布后立即对全租户生效；插件包内 downloads/ 仅作首包兜底</span></h3>
+        <div class="pub-grid">
+          <div class="pub-card">
+            <div class="pub-head">扫描助手（Android APK）<span class="badge gray" id="pub-scan-state">…</span></div>
+            <div class="pub-meta" id="pub-scan-meta">加载中…</div>
+            <div class="pub-force">
+              <label><input type="checkbox" id="force-toggle"> 强制升级（设备下次启动立即更新）</label>
+            </div>
+            <div class="pub-form">
+              <input type="file" id="file-scan" accept=".apk">
+              <input type="text" id="note-scan" placeholder="发布备注（选填）" maxlength="100">
+              <button class="btn-danger" id="btn-scan">发布 APK</button>
+            </div>
+          </div>
+          <div class="pub-card">
+            <div class="pub-head">打印助手（Windows EXE）<span class="badge gray" id="pub-print-state">…</span></div>
+            <div class="pub-meta" id="pub-print-meta">加载中…</div>
+            <div class="pub-form">
+              <input type="file" id="file-print" accept=".exe">
+              <input type="text" id="note-print" placeholder="发布备注（选填）" maxlength="100">
+              <button class="btn-danger" id="btn-print">发布 EXE</button>
+            </div>
+          </div>
+        </div>
+        <h3 class="sub-head">发布历史</h3>
+        <div class="table-wrap">
+          <table class="dev-table">
+            <thead>
+              <tr><th>时间</th><th>类型</th><th>操作者</th><th>MD5</th><th>大小</th><th>备注</th></tr>
+            </thead>
+            <tbody id="pub-rows"><tr><td colspan="6" class="loading">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section">
+        <h3>操作审计 <span class="sub" id="audit-summary"></span></h3>
+        <div class="table-wrap">
+          <table class="dev-table">
+            <thead>
+              <tr><th>时间</th><th>操作者</th><th>门店</th><th>动作</th><th>对象</th><th>结果</th></tr>
+            </thead>
+            <tbody id="audit-rows"><tr><td colspan="6" class="loading">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
       <footer class="foot">
-        运维端为独立只读站点；受控写操作（终止任务/解冻/账号重置）将在后续版本开放并逐笔审计。
+        巡检数据只读；助手发布与强更为唯一写操作，逐笔写入操作审计。
       </footer>
     </main>
   </div>

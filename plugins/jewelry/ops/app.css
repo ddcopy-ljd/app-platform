@@ -83,3 +83,25 @@ body {
 .mono { font-family: Consolas, monospace; font-size: 12px; color: #475467; }
 
 .foot { text-align: center; color: #98a2b3; font-size: 12px; padding: 8px 0 16px; }
+
+/* ---------- 助手发布 ---------- */
+.sub-head { margin-top: 18px; }
+.pub-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
+.pub-card { border: 1px solid #eaecf0; border-radius: 8px; padding: 14px 16px; background: #fafbfc; }
+.pub-head { font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.pub-meta { font-size: 12px; color: #475467; line-height: 1.9; }
+.pub-meta .mono { font-size: 11px; }
+.pub-force { margin: 8px 0; font-size: 13px; }
+.pub-force label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.pub-force input { accent-color: #d92d20; }
+.pub-form { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.pub-form input[type="text"] {
+  border: 1px solid #d0d5dd; border-radius: 6px; padding: 7px 10px; font-size: 13px;
+}
+.pub-form input[type="file"] { font-size: 12px; }
+.btn-danger {
+  background: #d92d20; color: #fff; border: 0; border-radius: 6px;
+  padding: 8px 12px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.btn-danger:hover { background: #b42318; }
+.btn-danger:disabled { background: #d0d5dd; cursor: not-allowed; }
