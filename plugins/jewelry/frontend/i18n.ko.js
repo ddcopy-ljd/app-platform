@@ -1240,4 +1240,10 @@ registerLang('ko', {
     'rank.customer': '최다 구매 회원', 'rank.clerk': '최고 매출 직원', 'rank.slow': '부진 재고',
     'rank.slowHint': '현재 재고 일수', 'rank.category': '카테고리 매출 최고',
     'rank.days': '일', 'rank.bills': '건', 'rank.empty': '데이터 없음',
-  });
+      // 강제 비밀번호 변경
+    'fpwd.title': '비밀번호 변경(필수)', 'fpwd.tip': '비밀번호가 관리자에 의해 재설정되었습니다. 새 비밀번호를 설정한 후 계속 이용하세요.',
+    'fpwd.new': '새 비밀번호', 'fpwd.confirm': '새 비밀번호 확인', 'fpwd.submit': '저장 후 계속',
+    'fpwd.mismatch': '두 비밀번호가 일치하지 않습니다', 'fpwd.same': '새 비밀번호는 기존 비밀번호와 같을 수 없습니다',
+    'fpwd.ok': '비밀번호가 변경되었습니다. 환영합니다!', 'fpwd.need': '먼저 비밀번호를 변경하세요',
+    'fpwd.err': '변경에 실패했습니다. 다시 시도하세요',
+});

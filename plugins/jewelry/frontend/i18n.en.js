@@ -767,4 +767,10 @@ registerLang('en', {
     'rank.customer': 'Top Spending Members', 'rank.clerk': 'Top Sales Clerks', 'rank.slow': 'Slow-Moving',
     'rank.slowHint': 'In-stock age', 'rank.category': 'Top Categories by Sales',
     'rank.days': 'd', 'rank.bills': 'bills', 'rank.empty': 'No data',
+    // force password change
+    'fpwd.title': 'Force Password Change', 'fpwd.tip': 'Your password was reset by the administrator. Set a new password to continue.',
+    'fpwd.new': 'New password', 'fpwd.confirm': 'Confirm new password', 'fpwd.submit': 'Save & Continue',
+    'fpwd.mismatch': 'The two passwords do not match', 'fpwd.same': 'New password must differ from the old one',
+    'fpwd.ok': 'Password updated. Welcome back!', 'fpwd.need': 'Change your password before continuing',
+    'fpwd.err': 'Failed to update. Please retry.',
 });

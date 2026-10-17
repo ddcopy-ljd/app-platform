@@ -213,15 +213,16 @@ plugins/jewelry/
 
 ### 5.2 运维端（`ops/` + `ops_api.py`）
 
-运营者专用的**只读巡检**独立站点，红色危险主题，与业务端完全隔离；经平台网关调试票证进入，不提供任何登录表单。
+运营者专用的独立站点（红色危险主题，与业务端完全隔离），默认只读巡检 + 少量受控写操作；经平台网关调试票证进入，不提供任何登录表单。
 
 - **访问路径**：`GET /ops` 与 `GET /ops/{asset_path:path}`（静态壳同样卡模式）；平台网关下为 `/gw/{票据}/ops/`，网关对 HTML 注入 `window.__APP_BASE__`，前端一律相对该基址请求 `api/ops/*`。
 - **唯一准入**：`X-System-Bypass-Auth: true` **且** `X-Operator-Mode: PRODUCTION_SUPPORT` 同时成立（`ops_api.require_ops` 统一依赖）；普通业务 Bearer 登录、SANDBOX 穿透（同为 bypass 但模式不同）一律 403。
 - **端点**：
   - 只读巡检：`GET /api/ops/context`（租户/操作者/版本）、`GET /api/ops/overview`（组织/库存/会员/今日+近7日销售/设备在线）、`GET /api/ops/devices`（扫描助手清单：在线只信 `last_seen` 上报帧，APK 指纹与服务端包比对标记待升级）、`GET /api/ops/audit`（本租户 `operate_logs` 查询）。
   - 助手发布（写操作，强制审计）：`GET /api/ops/agents`（当前发布状态+发布历史）、`POST /api/ops/agents/publish`（multipart 上传：校验扩展名/≤30MB/空文件 → MD5 → 临时文件原子替换 → `.md5` sidecar → manifest.json 历史 → `operate_logs`）、`POST /api/ops/agents/scan/force`（强更开关，写/删 `.force` sidecar）。
+  - 受控写操作（main.py 内实现，复用业务引擎，每笔二次确认 + 强制审计，action 前缀「运维端·」）：`GET /api/ops/tasks/active`（进行中任务，盘点任务=库存冻结来源）、`POST /api/ops/tasks/{tid}/terminate`（强制终止：抢占终态 `closed_by='ops'` → 有扫描生成部分盘点报告 → 释放设备 → 立即解冻；非进行中 409）、`GET /api/ops/users`（业务账号列表，永不回显密码）、`POST /api/ops/users/{uid}/reset-password`（生成 8 位随机密码仅响应回显一次，置 `users.must_change_pwd=1` 强制用户登录后改密）。
 - **助手产物目录**：平台注入的 `STORAGE_DIR/agents/`（插件级共享存储根，升级仅迁移 `{租户}/v{版本}` 子目录，本目录跨版本持久）；独立运行回退 `dev_storage/agents/`（gitignore）。下载链路「发布目录优先、包内 `downloads/` 兜底」——`_scan_app_apk()` 与 `GET /api/print-agent/download` 已接入；发布后立即对全租户生效。
-- **后续受控写操作**（终止任务/解冻/账号重置）开放时必须逐笔写 `operate_logs`，并在页面二次确认。
+- **强制改密（dataVersion 1.2.22 起）**：`users.must_change_pwd=1` 时 `_require_auth` 仅放行 `/api/auth/logout`、`/api/auth/me`、`/api/auth/change-password`，其余接口一律 403「请先修改密码」；PC 端登录/恢复会话即弹出强制改密遮罩（不可关闭，仅「修改并继续 / 退出登录」两个出口）；自助改密 `POST /api/auth/change-password`（校验原密码、新旧不同、成功清旗标并写 `operate_logs`「修改密码」）；管理员在账号管理设置密码同样清旗标（管理员知情设密不强制改）。
 - **打包**：`ops/` 与顶层 `ops_api.py` 随插件包发布；与业务端同一次插件升级生效。
 
 ---

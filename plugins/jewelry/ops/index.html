@@ -90,6 +90,28 @@
       </section>
 
       <section class="section">
+        <h3>受控写操作 <span class="sub">救急专用：每笔均需二次确认并写入操作审计；日常业务请在业务端操作</span></h3>
+        <h4 class="sub-head">进行中任务 <span class="sub">盘点任务进行中会冻结全店库存变更，卡死任务可在此强制终止解冻</span></h4>
+        <div class="table-wrap">
+          <table class="dev-table">
+            <thead>
+              <tr><th>任务号</th><th>类型</th><th>标题</th><th>门店</th><th>发起人</th><th>扫描数</th><th>发起时间</th><th>操作</th></tr>
+            </thead>
+            <tbody id="task-rows"><tr><td colspan="8" class="loading">加载中…</td></tr></tbody>
+          </table>
+        </div>
+        <h4 class="sub-head">业务账号 <span class="sub">重置后生成 8 位随机密码（仅回显一次），用户登录后强制改密</span></h4>
+        <div class="table-wrap">
+          <table class="dev-table">
+            <thead>
+              <tr><th>账号</th><th>姓名</th><th>角色</th><th>待强制改密</th><th>操作</th></tr>
+            </thead>
+            <tbody id="user-rows"><tr><td colspan="5" class="loading">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section">
         <h3>操作审计 <span class="sub" id="audit-summary"></span></h3>
         <div class="table-wrap">
           <table class="dev-table">
@@ -102,9 +124,20 @@
       </section>
 
       <footer class="foot">
-        巡检数据只读；助手发布与强更为唯一写操作，逐笔写入操作审计。
+        巡检数据只读；助手发布、强更与受控写操作为仅有写操作，逐笔写入操作审计。
       </footer>
     </main>
+  </div>
+
+  <!-- 新密码回显弹窗（仅显示一次） -->
+  <div id="pwd-modal" class="modal-mask" style="display:none">
+    <div class="modal-box">
+      <h4>密码已重置（仅本次显示）</h4>
+      <p class="muted" id="pwd-modal-user"></p>
+      <div class="pwd-show" id="pwd-modal-value"></div>
+      <p class="muted">请立即抄送给门店用户。该账号下次登录将被强制要求修改密码。</p>
+      <button class="btn-primary" id="pwd-modal-close">我已记录</button>
+    </div>
   </div>
 
 </div>

@@ -228,6 +228,10 @@ def _require_auth(request: Request) -> dict:
         with _lock:
             _sessions.pop(token, None)
         raise HTTPException(status_code=401, detail="登录已过期（手持机会话当天有效），请重新扫码登录")
+    # 运维端重置密码后的账号：改密完成前仅放行 登出/取会话/改密 三个接口
+    if sess.get("must_change_pwd") and request.url.path not in (
+            "/api/auth/logout", "/api/auth/me", "/api/auth/change-password"):
+        raise HTTPException(status_code=403, detail="密码已被运维端重置，请先修改密码后再继续操作")
     return sess
 
 
@@ -995,7 +999,8 @@ def api_login(body: LoginReq, request: Request):
         token = secrets.token_urlsafe(24)
         info = {"username": user["username"], "display_name": user["display_name"], "role": user["role"],
                 "can_view_cost": bool(user["can_view_cost"]) if "can_view_cost" in user.keys()
-                else user["role"] in _COST_FORCE_VISIBLE_ROLES}
+                else user["role"] in _COST_FORCE_VISIBLE_ROLES,
+                "must_change_pwd": bool(user["must_change_pwd"]) if "must_change_pwd" in user.keys() else False}
         store_rows = _accessible_store_rows(conn, info)
         # 新租户/沙箱首次登录：stores 为空 → 自动建「总店」并授权当前用户
         if not store_rows:
@@ -1021,6 +1026,31 @@ def api_login(body: LoginReq, request: Request):
 
 class SwitchStoreIn(BaseModel):
     store_id: int
+
+
+class ChangePwdIn(BaseModel):
+    old: str = Field(min_length=1, max_length=128)
+    new: str = Field(min_length=1, max_length=128)
+
+
+@app.post("/api/auth/change-password")
+def api_change_password(body: ChangePwdIn, request: Request):
+    """自助改密：校验原密码后更新；运维端重置（must_change_pwd=1）的账号改完即放行。"""
+    sess = _require_auth(request)
+    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    with _db(request) as conn:
+        row = conn.execute("SELECT * FROM users WHERE username=?", (sess["username"],)).fetchone()
+        if not row or row["password"] != body.old:
+            raise HTTPException(status_code=400, detail="原密码不正确")
+        if body.new == body.old:
+            raise HTTPException(status_code=400, detail="新密码不能与原密码相同")
+        conn.execute("UPDATE users SET password=?, must_change_pwd=0 WHERE id=?", (body.new, row["id"]))
+        conn.commit()
+        _log(conn, sess["username"], "修改密码", sess["username"])
+    with _lock:
+        if token in _sessions:
+            _sessions[token]["must_change_pwd"] = False
+    return {"ok": True}
 
 
 @app.post("/api/auth/switch-store")
@@ -6093,7 +6123,7 @@ def admin_user_update(uid: int, body: AdminUserIn, request: Request):
         if body.display_name.strip():
             conn.execute("UPDATE users SET display_name=? WHERE id=?", (body.display_name.strip(), uid))
         if body.password:
-            conn.execute("UPDATE users SET password=? WHERE id=?", (body.password, uid))
+            conn.execute("UPDATE users SET password=?, must_change_pwd=0 WHERE id=?", (body.password, uid))
         if body.role in ("TENANT_ADMIN", "EXECUTIVE", "EMPLOYEE"):
             conn.execute("UPDATE users SET role=? WHERE id=?", (body.role, uid))
             # 店长/高管自动拥有全部门店，转任这两类角色时清掉残留的逐店授权
@@ -7678,6 +7708,102 @@ def ops_asset(request: Request, asset_path: str = ""):
     if idx.is_file() and "." not in Path(asset_path).name:
         return FileResponse(str(idx), headers={"Cache-Control": "no-store"})
     return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+
+# ---------------------------------------------------------------- 运维端受控写操作（复用业务引擎，每笔强审计）
+
+def _ops_active_tasks(request: Request) -> dict:
+    """进行中任务列表：盘点任务=库存冻结唯一来源，运维端据此识别「卡死冻结」。"""
+    ops_api.require_ops(request)
+    with _open(request) as conn:
+        rows = conn.execute(
+            "SELECT t.id, t.task_no, t.type, t.title, t.initiator, t.store_id, t.created, "
+            "(SELECT COUNT(*) FROM task_scans s WHERE s.task_id=t.id) AS scans "
+            "FROM tasks t WHERE t.status='进行中' ORDER BY t.id DESC").fetchall()
+        items = []
+        for r in rows:
+            st = conn.execute("SELECT name FROM stores WHERE id=?", (r["store_id"],)).fetchone()
+            items.append({
+                "id": r["id"], "task_no": r["task_no"], "type": r["type"], "title": r["title"],
+                "initiator": r["initiator"], "created": r["created"],
+                "store": st["name"] if st else ("全部门店" if r["store_id"] == 0 else f"门店{r['store_id']}"),
+                "scans": r["scans"], "freezes": r["type"] == "stocktake",
+            })
+        return {"items": items}
+
+
+def _ops_terminate_task(tid: int, request: Request) -> dict:
+    """运维端强制终止进行中任务：立即解冻库存/释放设备；有扫描数据时生成部分盘点报告。
+    与发起端终止同引擎（抢占终态 → 部分报告 → 释放设备），closed_by='ops' 标记运维来源。"""
+    op = ops_api.require_ops(request)
+    with _open(request) as conn:
+        t = _task_by_id(conn, tid)
+        cur = conn.execute(
+            "UPDATE tasks SET status='已终止', ended=datetime('now','localtime'), closed_by='ops' "
+            "WHERE id=? AND status='进行中'", (tid,))
+        if cur.rowcount == 0:
+            now_status = conn.execute("SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()
+            raise HTTPException(409, f"任务已{now_status['status'] if now_status else t['status']}，无法终止")
+        epcs = [r["epc"] for r in conn.execute(
+            "SELECT epc FROM task_scans WHERE task_id=? ORDER BY id", (tid,)).fetchall()]
+        result = _run_stocktake(
+            conn, epcs, f"任务{t['task_no']}", op.operator, commit=False,
+            store_id=t["store_id"] or 0) if (epcs and t["type"] == "stocktake") else None
+        if result:
+            conn.execute("UPDATE tasks SET result_id=? WHERE id=?", (result["id"], tid))
+        _free_task_devices(conn, tid)
+        _task_event(conn, tid, "ops-terminate", op.operator,
+                    f"运维端强制终止：扫描{len(epcs)}条" + ("，已生成部分报告" if result else ""))
+        conn.commit()
+        st = conn.execute("SELECT name FROM stores WHERE id=?", (t["store_id"],)).fetchone()
+        _log(conn, op.operator, "运维端·终止任务",
+             f"{t['task_no']}（{t['type']}）门店{(st['name'] if st else t['store_id'])}"
+             + (f" 扫描{len(epcs)}，已生成部分报告" if result else f" 扫描{len(epcs)}，立即解冻"))
+        _push_task_closed(t, "已终止")
+        return {"ok": True, "scans": len(epcs),
+                "result": {"id": result["id"], "scannedCount": result["scannedCount"],
+                           "matchedCount": result["matchedCount"],
+                           "shortageCount": result["shortageCount"],
+                           "abnormalCount": result["abnormalCount"]} if result else None}
+
+
+def _ops_users(request: Request) -> dict:
+    """业务账号列表（不回显密码）：供运维端选择重置目标。"""
+    ops_api.require_ops(request)
+    with _open(request) as conn:
+        rows = conn.execute(
+            "SELECT id, username, display_name, role, IFNULL(must_change_pwd,0) AS must_change_pwd "
+            "FROM users ORDER BY id").fetchall()
+        return {"items": [dict(r) for r in rows]}
+
+
+_PWD_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # 去易混字符（i/l/o/0/1）
+
+
+def _ops_reset_password(uid: int, request: Request) -> dict:
+    """运维端重置业务账号密码：生成 8 位随机密码（仅本次响应回显一次），
+    置 must_change_pwd=1 强制用户登录后改密。"""
+    op = ops_api.require_ops(request)
+    new_pwd = "".join(secrets.choice(_PWD_ALPHABET) for _ in range(8))
+    with _open(request) as conn:
+        row = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "账号不存在")
+        conn.execute("UPDATE users SET password=?, must_change_pwd=1 WHERE id=?", (new_pwd, uid))
+        conn.commit()
+        _log(conn, op.operator, "运维端·重置密码",
+             f"{row['username']}（{row['display_name'] or row['username']}）密码已重置，登录后须修改")
+    return {"ok": True, "username": row["username"], "password": new_pwd}
+
+
+app.add_api_route("/api/ops/tasks/active", _ops_active_tasks, methods=["GET"],
+                  tags=["ops-console"], include_in_schema=False)
+app.add_api_route("/api/ops/tasks/{tid}/terminate", _ops_terminate_task, methods=["POST"],
+                  tags=["ops-console"], include_in_schema=False)
+app.add_api_route("/api/ops/users", _ops_users, methods=["GET"],
+                  tags=["ops-console"], include_in_schema=False)
+app.add_api_route("/api/ops/users/{uid}/reset-password", _ops_reset_password, methods=["POST"],
+                  tags=["ops-console"], include_in_schema=False)
 
 
 # ---------------------------------------------------------------- 静态资源（最后注册）

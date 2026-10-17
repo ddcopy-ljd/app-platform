@@ -761,4 +761,10 @@ registerLang('it', {
     'rank.customer': 'Membri con più acquisti', 'rank.clerk': 'Commessi top', 'rank.slow': 'Giacenze lente',
     'rank.slowHint': 'Giorni di giacenza', 'rank.category': 'Categorie top per fatturato',
     'rank.days': 'gg', 'rank.bills': 'scontrini', 'rank.empty': 'Nessun dato',
+    // modifica password forzata
+    'fpwd.title': 'Modifica password obbligatoria', 'fpwd.tip': "La password \u00e8 stata reimpostata dall'amministratore. Imposta una nuova password per continuare.",
+    'fpwd.new': 'Nuova password', 'fpwd.confirm': 'Conferma nuova password', 'fpwd.submit': 'Salva e continua',
+    'fpwd.mismatch': 'Le due password non corrispondono', 'fpwd.same': 'La nuova password deve essere diversa dalla precedente',
+    'fpwd.ok': 'Password aggiornata. Bentornato!', 'fpwd.need': 'Modifica la password prima di continuare',
+    'fpwd.err': 'Aggiornamento non riuscito. Riprova.',
 });

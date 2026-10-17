@@ -22,6 +22,8 @@
   七列，以及扫描助手自升级：devices.apk_md5 设备上报的已安装 APK 指纹
   （migrate_schema 幂等补列，老库自动补默认值））；
   dataVersion 1.2.21 商品标签分组：product_tags.group_name 分组列（migrate_schema 幂等补列）；
+  dataVersion 1.2.22 运维端受控写操作：users.must_change_pwd 强制改密旗标列
+  （migrate_schema 幂等补列；运维端重置密码置 1，用户改密后清零）；
   标签种子 _SEED_PRODUCT_TAGS 常量化，ensure_new_seeds 仅全新演示库（products 本次新灌）
   联动灌入——外网沙箱基线库可得演示标签，真实租户删光标签后升级不复活（TC-40）；
 - 幂等执行 EPC 现行规则化（前缀+门店段+品类码+序号）与材质英文长码收敛为简写。

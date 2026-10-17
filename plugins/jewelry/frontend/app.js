@@ -41,6 +41,8 @@ var ST = Vue.reactive({
   dictVer: 0,   // 语言字典加载版本号：异步字典载入完成后 +1，驱动 t() 依赖方重渲染
   cfm: null,    // 通用确认面板：{ title, lines:[{k,v}], warn, danger, okText, fn }
   loginUser: 'admin', loginPwd: '123456',
+  // 强制改密弹窗（运维端重置密码后 must_change_pwd=1，登录/恢复会话即弹出，改完才可进入系统）
+  mustPwdOpen: false, mustPwdOld: '', mustPwdNew: '', mustPwdNew2: '',
   // data
   dashData: null, trendData: null, trendRange: '30d', bizAnalysis: null, remindData: null, showRemind: true, catSales: null,
   trendShift: 0, trendDragX: 0, trendDragOn: false,  // 趋势图平移时间单位数(天/月) / 拖动中位移(px) / 拖动中
@@ -1836,7 +1838,24 @@ function applySession(r) {
   if (typeof r.store_id !== 'undefined') ST.curStoreId = r.store_id || 0;
   // 注意：stores 为空数组时也要覆盖（账号被收权后必须清空旧列表，否则遮罩不显示）
   if (Array.isArray(r.stores)) ST.stores = r.stores;
+  // 运维端重置密码后的账号：弹出强制改密遮罩（登录时预填登录用的原密码）
+  ST.mustPwdOpen = !!(ST.user && ST.user.must_change_pwd);
+  if (ST.mustPwdOpen && ST.loginPwd) ST.mustPwdOld = ST.loginPwd;
   syncDocTitle();
+}
+
+// ---- 强制改密（遮罩不可关闭，仅「修改并继续」或「退出登录」两个出口）----
+function mustPwdSubmit() {
+  if (!ST.mustPwdNew || !ST.mustPwdNew2) { toast(t('fpwd.mismatch'), 'error'); return; }
+  if (ST.mustPwdNew !== ST.mustPwdNew2) { toast(t('fpwd.mismatch'), 'error'); return; }
+  if (ST.mustPwdNew === ST.mustPwdOld) { toast(t('fpwd.same'), 'error'); return; }
+  api('POST', '/api/auth/change-password', { old: ST.mustPwdOld, new: ST.mustPwdNew }).then(function () {
+    if (ST.user) ST.user.must_change_pwd = false;
+    ST.mustPwdOpen = false;
+    ST.mustPwdOld = ST.mustPwdNew = ST.mustPwdNew2 = '';
+    toast(t('fpwd.ok'));
+    refreshAll();
+  }).catch(function (e) { toast(e.message || t('fpwd.err'), 'error'); });
 }
 
 function switchStore(sid) {
@@ -1869,6 +1888,8 @@ function doLogin() {
     ST.token = r.token;
     applySession(r);
     syncToken();
+    // 运维端重置密码后的账号：先改密，暂不拉取业务数据（后端也只放行改密相关接口）
+    if (ST.mustPwdOpen) { toast(t('fpwd.need'), 'error'); return; }
     toast(t('login.success'));
     refreshAll();
   }).catch(function (e) { toast(e.message || t('login.err'), 'error'); });
@@ -1878,6 +1899,7 @@ function doLogout() {
   api('POST', '/api/auth/logout').catch(function () {});
   scanPageWsDisconnect();
   ST.token = ''; ST.user = null; ST.mode = 'NORMAL'; ST.tab = 'dashboard'; ST.subView = '';
+  ST.mustPwdOpen = false; ST.mustPwdOld = ST.mustPwdNew = ST.mustPwdNew2 = '';
   syncDocTitle();
   syncToken();
 }
@@ -5529,7 +5551,7 @@ var app = Vue.createApp({
     catDonutSegments: catDonutSegments, donutColor: donutColor, loadGold: loadGold,
     reportPageUrl: reportPageUrl, openReportWindow: openReportWindow,
     fieldLabelText: fieldLabelText, labelFieldText: labelFieldText,
-    doLogin: doLogin, doLogout: doLogout,
+    doLogin: doLogin, doLogout: doLogout, mustPwdSubmit: mustPwdSubmit,
     openHandheldLogin: openHandheldLogin, closeHandheldLogin: closeHandheldLogin,
     copyHqUrl: copyHqUrl, yzScan: yzScan,
     go: go, openSubView: openSubView, goInvStatus: goInvStatus, clearInvStatusFilter: clearInvStatusFilter, setLang: setLang,

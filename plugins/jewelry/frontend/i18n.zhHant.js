@@ -1240,4 +1240,10 @@ registerLang('zhHant', {
     'rank.customer': '會員消費最多', 'rank.clerk': '店員銷售最多', 'rank.slow': '滯銷品',
     'rank.slowHint': '當前在庫庫齡', 'rank.category': '品類銷售額最高',
     'rank.days': '天', 'rank.bills': '單', 'rank.empty': '暫無資料',
-  });
+      // 強制改密（運維端重置後）
+    'fpwd.title': '強制修改密碼', 'fpwd.tip': '密碼已被運維端重置，為保障安全請設置新密碼後繼續使用。',
+    'fpwd.new': '新密碼', 'fpwd.confirm': '確認新密碼', 'fpwd.submit': '修改密碼並繼續',
+    'fpwd.mismatch': '兩次輸入的新密碼不一致', 'fpwd.same': '新密碼不能與原密碼相同',
+    'fpwd.ok': '密碼已修改，歡迎繼續使用', 'fpwd.need': '請先修改密碼再繼續操作',
+    'fpwd.err': '修改失敗，請重試',
+});

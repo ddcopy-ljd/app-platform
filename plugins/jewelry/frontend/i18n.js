@@ -643,7 +643,13 @@ var I18N = {
     'rank.turnover': '周转最快', 'rank.profit': '利润率最高', 'rank.qty': '销量最多',
     'rank.customer': '会员消费最多', 'rank.clerk': '店员销售最多', 'rank.slow': '滞销品',
     'rank.slowHint': '当前在库库龄', 'rank.category': '品类销售额最高',
-    'rank.days': '天', 'rank.bills': '单', 'rank.empty': '暂无数据',
+    'rank.days': '天', 'rank.bills': '单', 'rank.empty': '暂无数据',    // 强制改密（运维端重置后）
+    'fpwd.title': '强制修改密码', 'fpwd.tip': '密码已被运维端重置，为保障安全请设置新密码后继续使用。',
+    'fpwd.new': '新密码', 'fpwd.confirm': '确认新密码', 'fpwd.submit': '修改密码并继续',
+    'fpwd.mismatch': '两次输入的新密码不一致', 'fpwd.same': '新密码不能与原密码相同',
+    'fpwd.ok': '密码已修改，欢迎继续使用', 'fpwd.need': '请先修改密码再继续操作',
+    'fpwd.err': '修改失败，请重试',
+
   }
 };
 var currentLang = 'zh';

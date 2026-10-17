@@ -365,7 +365,8 @@ CREATE TABLE IF NOT EXISTS users (
   password TEXT NOT NULL,
   display_name TEXT DEFAULT '',
   role TEXT DEFAULT 'EMPLOYEE',
-  can_view_cost INTEGER NOT NULL DEFAULT 0  -- 列级权限：成本查看（店长/高管默认 1，店员默认 0 可逐账号授予）
+  can_view_cost INTEGER NOT NULL DEFAULT 0,  -- 列级权限：成本查看（店长/高管默认 1，店员默认 0 可逐账号授予）
+  must_change_pwd INTEGER NOT NULL DEFAULT 0  -- 运维端重置密码后置 1：登录后强制改密，改完清零
 );
 
 -- 用户-门店授权：EMPLOYEE 仅可访问被授予的门店；TENANT_ADMIN 自动拥有全部门店（不落记录）
@@ -844,6 +845,8 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("customers", "store_id", "INTEGER DEFAULT 0"),
         # 1.0.8 列级权限：成本查看开关（店长/高管强制 1；店员默认 0，可由店长逐账号授予）
         ("users", "can_view_cost", "INTEGER NOT NULL DEFAULT 0"),
+        # 1.2.22 运维端重置密码：置 1 后该账号登录即强制改密（改完清零）
+        ("users", "must_change_pwd", "INTEGER NOT NULL DEFAULT 0"),
         # 1.0.9 快速开单增强：品类计价方式 / 当日金价
         ("product_types", "pricing_mode", "TEXT DEFAULT 'piece'"),
         ("biz_config", "gold_price", "REAL DEFAULT 0"),

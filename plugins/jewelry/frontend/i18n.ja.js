@@ -1240,4 +1240,10 @@ registerLang('ja', {
     'rank.customer': '購入額トップ会員', 'rank.clerk': '売上トップ店員', 'rank.slow': '滞留在庫',
     'rank.slowHint': '現在の在庫日数', 'rank.category': 'カテゴリ売上トップ',
     'rank.days': '日', 'rank.bills': '件', 'rank.empty': 'データなし',
-  });
+      // 強制パスワード変更
+    'fpwd.title': 'パスワード変更（必須）', 'fpwd.tip': 'パスワードは管理者によってリセットされました。新しいパスワードを設定してご利用ください。',
+    'fpwd.new': '新しいパスワード', 'fpwd.confirm': '確認用入力', 'fpwd.submit': '保存して続行',
+    'fpwd.mismatch': '2回の入力が一致しません', 'fpwd.same': '新しいパスワードは元のパスワードと同じにできません',
+    'fpwd.ok': 'パスワードを変更しました。ようこそ！', 'fpwd.need': '先にパスワードを変更してください',
+    'fpwd.err': '変更に失敗しました。もう一度お試しください',
+});

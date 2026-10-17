@@ -3877,6 +3877,24 @@ Content-Type: application/json
   </div>
 
   <div class="toast" :class="['toast-'+toast.type, {show:toast.show}]">{{ toast.text }}</div>
+
+  <!-- 强制改密遮罩：运维端重置密码后的账号，改密完成前不可进入系统 -->
+  <div class="modal-mask" v-if="token && mustPwdOpen">
+    <div class="modal-box" @click.stop style="width:360px;max-width:92vw">
+      <div class="modal-head"><span>{{ t('fpwd.title') }}</span></div>
+      <div style="font-size:13px;color:#667085;line-height:1.7;margin:6px 0 12px">{{ t('fpwd.tip') }}</div>
+      <label style="display:block;font-size:12px;color:#475467;margin-bottom:4px">{{ t('login.pass') }}</label>
+      <input v-model="mustPwdOld" type="password" style="width:100%;box-sizing:border-box;border:1px solid #d0d5dd;border-radius:6px;padding:8px 10px;margin-bottom:10px">
+      <label style="display:block;font-size:12px;color:#475467;margin-bottom:4px">{{ t('fpwd.new') }}</label>
+      <input v-model="mustPwdNew" type="password" style="width:100%;box-sizing:border-box;border:1px solid #d0d5dd;border-radius:6px;padding:8px 10px;margin-bottom:10px">
+      <label style="display:block;font-size:12px;color:#475467;margin-bottom:4px">{{ t('fpwd.confirm') }}</label>
+      <input v-model="mustPwdNew2" type="password" style="width:100%;box-sizing:border-box;border:1px solid #d0d5dd;border-radius:6px;padding:8px 10px" @keyup.enter="mustPwdSubmit">
+      <div class="modal-foot" style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+        <button class="btn btn-sm btn-outline" @click="doLogout">{{ t('nav.logout') }}</button>
+        <button class="btn btn-sm btn-primary" @click="mustPwdSubmit">{{ t('fpwd.submit') }}</button>
+      </div>
+    </div>
+  </div>
 </div>
 <script src="./vendor/vue.global.prod.js"></script>
 <script src="./vendor/qrcode.min.js"></script>
