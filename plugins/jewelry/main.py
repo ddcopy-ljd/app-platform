@@ -36,6 +36,7 @@ from pydantic import BaseModel, Field
 import uvicorn
 
 import db
+import ops_api
 import rfid_print
 import sensors
 
@@ -45,6 +46,7 @@ logger = logging.getLogger("jewelry")
 ROOT = Path(__file__).resolve().parent
 FRONTEND_DIR = ROOT / "frontend"
 MOBILE_DIR = ROOT / "mobile"
+OPS_DIR = ROOT / "ops"
 LOGO_DIR = ROOT / "logo"
 
 HOST = os.environ.get("HOST", "127.0.0.1")
@@ -7636,6 +7638,42 @@ async def _security_startup():
     except Exception as e:
         logger.warning("启动日志清理异常: %s", e)
     asyncio.create_task(_log_cleanup_loop())
+
+
+# ---------------------------------------------------------------- 运维端（仅 PRODUCTION_SUPPORT 穿透）
+
+ops_api.init(open_conn=_open, tenant_of=_tenant_of,
+             software_version=SOFT_VERSION, scan_info=_scan_app_info)
+app.include_router(ops_api.router)
+
+
+def _ops_allowed(request: Request) -> bool:
+    """运维端静态壳同样卡模式：普通业务登录/沙箱穿透都拿不到页面。"""
+    return (_bypass(request) and _operator_mode(request) == "PRODUCTION_SUPPORT")
+
+
+_OPS_ASSET_SUFFIXES = (".js", ".css", ".map", ".png", ".svg", ".ico", ".jpg", ".jpeg",
+                       ".webp", ".json", ".webmanifest", ".woff2", ".html")
+
+
+@app.get("/ops")
+@app.get("/ops/{asset_path:path}")
+def ops_asset(request: Request, asset_path: str = ""):
+    """运维端独立站点（ops/）：经平台 /gw/{票据}/ops/ 访问，网关对 HTML 注入 __APP_BASE__。"""
+    if not _ops_allowed(request):
+        return JSONResponse({"detail": "运维端仅允许平台「生产运维穿透」模式访问"}, status_code=403)
+    idx = OPS_DIR / "index.html"
+    if not asset_path:
+        if idx.is_file():
+            return FileResponse(str(idx), headers={"Cache-Control": "no-store"})
+        return JSONResponse({"detail": "运维端尚未部署"}, status_code=404)
+    f = (OPS_DIR / asset_path).resolve()
+    if f.is_file() and _safe_relative(f, OPS_DIR.resolve()) and f.suffix.lower() in _OPS_ASSET_SUFFIXES:
+        nocache = {"Cache-Control": "no-cache"} if f.suffix.lower() in (".js", ".css", ".html") else None
+        return FileResponse(str(f), headers=nocache)
+    if idx.is_file() and "." not in Path(asset_path).name:
+        return FileResponse(str(idx), headers={"Cache-Control": "no-store"})
+    return JSONResponse({"detail": "Not Found"}, status_code=404)
 
 
 # ---------------------------------------------------------------- 静态资源（最后注册）

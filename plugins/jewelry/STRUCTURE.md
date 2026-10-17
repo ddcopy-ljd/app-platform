@@ -40,6 +40,7 @@ plugins/jewelry/
 ├── main.py                  # FastAPI 入口，暴露 /api/* 与 /ws/*
 ├── db.py                    # SCHEMA 定义 + 建库 + 迁移辅助 + _db 连接器
 ├── sensors.py               # 设备驱动注册表（抽象基类 + @register + DRIVERS dict）
+├── ops_api.py               # 运维端 API（/api/ops/*，仅 PRODUCTION_SUPPORT 穿透，只读巡检，见第 5.2 章）
 ├── rfid_print.py            # RFID 标签写入 / 打印扩展模块
 ├── test_printer.py          # 打印桥接测试脚本（不入包）
 ├── build_package.py         # 打包脚本（自动发现顶层 .py + 校验 import 链）
@@ -72,6 +73,10 @@ plugins/jewelry/
 │   ├── manifest.webmanifest # PWA 清单（可"添加到主屏幕"）
 │   ├── vendor/              # vue.global.prod.js
 │   └── icons/               # 启动图标
+├── ops/                     # 运维端独立站点（红色危险主题，仅穿透模式可进，见第 5.2 章）
+│   ├── index.html           # 运维端入口（红框壳 + 未授权遮罩）
+│   ├── app.js               # 只读巡检渲染（原生 JS，相对 __APP_BASE__ 取数）
+│   └── app.css              # 危险主题样式
 ├── promo/                   # 推广页（纯静态）
 │   ├── index.html
 │   ├── style.css
@@ -205,6 +210,16 @@ plugins/jewelry/
 - **多语言**：`mobile/i18n.js`（zh/zhHant/en/it/ja/ko 六语言，navigator.language 自动识别），`t(key)` 缺键回退简中。
 - **PWA**：`manifest.webmanifest` 可"添加到主屏幕"；不使用 Service Worker（历史 sw.js 已移除，接口与静态资源一律直连，避免缓存错配）。
 - **打包**：`build_package.py` 的 `INCLUDE_DIRS` 已含 `mobile`，随插件包发布。
+
+### 5.2 运维端（`ops/` + `ops_api.py`）
+
+运营者专用的**只读巡检**独立站点，红色危险主题，与业务端完全隔离；经平台网关调试票证进入，不提供任何登录表单。
+
+- **访问路径**：`GET /ops` 与 `GET /ops/{asset_path:path}`（静态壳同样卡模式）；平台网关下为 `/gw/{票据}/ops/`，网关对 HTML 注入 `window.__APP_BASE__`，前端一律相对该基址请求 `api/ops/*`。
+- **唯一准入**：`X-System-Bypass-Auth: true` **且** `X-Operator-Mode: PRODUCTION_SUPPORT` 同时成立（`ops_api.require_ops` 统一依赖）；普通业务 Bearer 登录、SANDBOX 穿透（同为 bypass 但模式不同）一律 403。
+- **端点（P0 全部只读）**：`GET /api/ops/context`（租户/操作者/版本）、`GET /api/ops/overview`（组织/库存/会员/今日+近7日销售/设备在线）、`GET /api/ops/devices`（扫描助手清单：在线只信 `last_seen` 上报帧，APK 指纹与服务端包比对标记待升级）。
+- **后续受控写操作**（终止任务/解冻/账号重置）开放时必须逐笔写 `operate_logs`，并在页面二次确认；本阶段无任何写端点。
+- **打包**：`ops/` 与顶层 `ops_api.py` 随插件包发布；与业务端同一次插件升级生效。
 
 ---
 

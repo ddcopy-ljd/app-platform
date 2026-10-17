@@ -368,14 +368,17 @@ createApp({
       detail.value && gw.mode === 'NORMAL' && !gw.version && gw.tenant_id
         ? `/app/${detail.value.id}/${gw.tenant_id}/` : '');
 
-    async function openEntry() {
+    async function openEntry(target) {
       if (gw.mode !== 'SANDBOX' && !gw.tenant_id) return toast('请先选择企业租户', true);
-      if (fixedUrl.value) return window.open(fixedUrl.value, '_blank');
+      // 运维端只在生产运维穿透模式下开放（插件 /ops/ 静态与 /api/ops/* 双重卡模式）
+      if (target === 'ops' && gw.mode !== 'PRODUCTION_SUPPORT') return;
+      if (!target && fixedUrl.value) return window.open(fixedUrl.value, '_blank');
       // 先同步打开窗口，避免异步后被浏览器拦截弹窗
       const win = window.open('about:blank', '_blank');
       try {
         const r = await api(`/api/plugins/${detail.value.id}/gateway/ticket`, { method: 'POST', json: gwBody() });
-        if (win) win.location.href = r.url; else toast('浏览器拦截了新窗口，请允许弹出窗口后重试', true);
+        const url = target === 'ops' ? r.url + 'ops/' : r.url;
+        if (win) win.location.href = url; else toast('浏览器拦截了新窗口，请允许弹出窗口后重试', true);
         if (gw.mode === 'PRODUCTION_SUPPORT') await refresh();
       } catch (e) {
         if (win) win.close();

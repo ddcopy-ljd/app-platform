@@ -198,11 +198,15 @@
                 v{{ v.software_version }}{{ v.is_current ? ' · 正式' : '' }}{{ v.service.state === 'running' ? ' · 运行中' : ' · 未启动' }}
               </option>
             </select>
-            <button class="btn primary sm" @click="openEntry">↗ 打开入口网址</button>
+            <button class="btn primary sm" @click="openEntry()">↗ 打开入口网址</button>
+            <button v-if="gw.mode === 'PRODUCTION_SUPPORT' && detail.id === 'jewelry'"
+                    class="btn danger sm" title="进入珠宝云运维端：真实租户库只读巡检，红色危险边框防呆"
+                    @click="openEntry('ops')">🛠 打开运维端</button>
           </div>
           <div class="tip" style="margin-top:10px">
             <template v-if="fixedUrl">固定网址：<a class="mono" :href="fixedUrl" target="_blank" rel="noopener">{{ fixedUrl }}</a>（始终指向正式版本，可收藏）</template>
             <template v-else>常规模式 + 自动路由使用固定网址 /app/{插件ID}/{租户ID}/；其余组合为 30 分钟有效的临时调试网址。</template>
+            <template v-if="gw.mode === 'PRODUCTION_SUPPORT' && detail.id === 'jewelry'"><br>「打开运维端」进入插件 /ops/ 只读巡检台（仅生产运维穿透可进，沙箱/普通登录一律 403）。</template>
           </div>
         </section>
 

@@ -1,0 +1,85 @@
+/* 懿臻珠宝云 · 运维端（红色危险主题，区别于业务端） */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  background: #f4f5f7;
+  color: #1f2329;
+  font-size: 14px;
+}
+#app { min-height: 100vh; border: 4px solid #d92d20; }
+
+/* ---------- 未授权 ---------- */
+.blocked {
+  position: fixed; inset: 4px; z-index: 50;
+  background: #fff5f5;
+  display: flex; align-items: center; justify-content: center;
+}
+.blocked-box {
+  text-align: center; max-width: 520px; padding: 40px;
+  border: 2px solid #f0a9a4; border-radius: 12px; background: #fff;
+}
+.blocked-icon { font-size: 56px; }
+.blocked-box h2 { color: #b42318; margin: 12px 0; }
+.blocked-box p { line-height: 1.8; }
+.muted { color: #8a8f99; font-size: 13px; }
+
+/* ---------- 红色顶栏 ---------- */
+.danger-bar {
+  background: linear-gradient(90deg, #b42318, #d92d20);
+  color: #fff; padding: 12px 20px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+}
+.danger-title { display: flex; align-items: center; gap: 12px; }
+.warn-icon {
+  font-size: 28px; background: rgba(255,255,255,.18);
+  width: 44px; height: 44px; line-height: 44px; text-align: center; border-radius: 10px;
+}
+.t1 { font-size: 17px; font-weight: 700; letter-spacing: 1px; }
+.t2 { font-size: 12px; opacity: .88; margin-top: 2px; }
+.danger-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip {
+  background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.35);
+  padding: 4px 10px; border-radius: 999px; font-size: 12px;
+}
+.chip b { font-weight: 700; }
+
+/* ---------- 内容 ---------- */
+.content { padding: 20px; max-width: 1280px; margin: 0 auto; }
+.section { background: #fff; border-radius: 10px; padding: 16px 20px; margin-bottom: 18px;
+  box-shadow: 0 1px 3px rgba(16,24,40,.06); }
+.section h3 { font-size: 15px; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+.sub { font-size: 12px; color: #8a8f99; font-weight: 400; }
+.loading { color: #8a8f99; padding: 18px 0; text-align: center; }
+
+/* ---------- 指标卡 ---------- */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.card {
+  border: 1px solid #eaecf0; border-radius: 8px; padding: 12px 14px;
+  background: #fafbfc;
+}
+.card .k { font-size: 12px; color: #667085; }
+.card .v { font-size: 22px; font-weight: 700; margin-top: 4px; color: #101828; }
+.card .v small { font-size: 12px; font-weight: 400; color: #8a8f99; margin-left: 2px; }
+.card.accent { background: #fff7ed; border-color: #fed7aa; }
+.card.danger { background: #fef3f2; border-color: #fecdca; }
+
+/* ---------- 设备表 ---------- */
+.table-wrap { overflow-x: auto; }
+.dev-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dev-table th, .dev-table td {
+  padding: 9px 10px; border-bottom: 1px solid #f0f1f3; text-align: left; white-space: nowrap;
+}
+.dev-table th { color: #667085; font-weight: 600; background: #fafbfc; }
+.dev-table tr:hover td { background: #fcfcfd; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.dot.on { background: #12b76a; }
+.dot.off { background: #d0d5dd; }
+.badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+.badge.ok { background: #ecfdf3; color: #027a48; }
+.badge.warn { background: #fffaeb; color: #b54708; }
+.badge.gray { background: #f2f4f7; color: #475467; }
+.badge.red { background: #fef3f2; color: #b42318; }
+.mono { font-family: Consolas, monospace; font-size: 12px; color: #475467; }
+
+.foot { text-align: center; color: #98a2b3; font-size: 12px; padding: 8px 0 16px; }

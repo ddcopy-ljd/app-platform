@@ -23,7 +23,7 @@ OUT_DIR = ROOT / "dist"
 TOP_PY_MODULES = []          # 留空即自动发现（glob 全部顶层 .py）
 OTHER_FILES = ["plugin.json", "requirements.txt"]
 # 注意：agents/（扫描助手 Android 工程 + 打印助手源码）是独立构建线，绝不入插件包，禁止加入本白名单
-INCLUDE_DIRS = ["scripts", "frontend", "mobile", "promo", "logo", "downloads"]
+INCLUDE_DIRS = ["scripts", "frontend", "mobile", "ops", "promo", "logo", "downloads"]
 EXCLUDE_PARTS = ("__pycache__", ".pyc", "build", "dist")  # agents/print/build、agents/print/dist 为打印助手构建中间产物；分发的 exe 已复制到 downloads/
 EXCLUDE_NAMES = ("print_agent.json",)  # 门店本地运行配置，不入包
 
