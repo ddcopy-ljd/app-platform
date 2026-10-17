@@ -60,6 +60,14 @@ plugins/jewelry/
 │   ├── stock.html           # 库存盘点页
 │   ├── sale.html            # 销售开单页
 │   └── vendor/              # 第三方库（vue.global.prod.js / qrcode.min.js / zxing.min.js）
+├── mobile/                  # 网页版手机应用（免安装 H5/PWA，独立静态站点，见第 5.1 章）
+│   ├── index.html           # 移动端 SPA 入口
+│   ├── app.js               # 状态 ST + methods
+│   ├── app.css              # 移动端设计系统（与主站同色系）
+│   ├── i18n.js              # 移动端多语言字典（zh/zhHant/en/it/ja/ko）
+│   ├── manifest.webmanifest # PWA 清单（可"添加到主屏幕"）
+│   ├── vendor/              # vue.global.prod.js
+│   └── icons/               # 启动图标
 ├── promo/                   # 推广页（纯静态）
 │   ├── index.html
 │   ├── style.css
@@ -182,6 +190,16 @@ plugins/jewelry/
 | `app.css` | 全局样式（移动端用 `.app-shell.mobile` 前缀，禁通用 `@media max-width`） |
 
 前端禁止绝对路径请求 API（网关下 404），统一相对路径 + 封装的 `api()`。带鉴权的图片（如激活码二维码 `<img>`）必须携带登录凭证。物理尺寸预览用 CSS 物理单位（如标签 `width:70mm;height:35mm`）。
+
+### 5.1 网页版手机应用（`mobile/`）
+
+面向手机浏览器、**免安装**的独立移动端站点（非原生 App），安卓/苹果通用，可"添加到主屏幕"（PWA）。与主 SPA 同色系（金 `#C9A961` + 酒红 `#5C2233`），独立实现移动 UI，复用后端同一套 REST API。
+
+- **访问路径**：后端 `main.py` 新增 `GET /mobile` 与 `GET /mobile/{asset_path:path}` 静态路由伺服 `mobile/`；平台网关下为 `/app/jewelry/{tenant}/mobile/`。
+- **API 基地址**：`window.__APP_BASE__`（网关注入）或按当前路径自动推导（去掉 `/mobile` 前缀）→ 独立部署为 `''`（相对路径），网关下指向租户根。
+- **多语言**：`mobile/i18n.js`（zh/zhHant/en/it/ja/ko 六语言，navigator.language 自动识别），`t(key)` 缺键回退简中。
+- **PWA**：`manifest.webmanifest` 可"添加到主屏幕"；不使用 Service Worker（历史 sw.js 已移除，接口与静态资源一律直连，避免缓存错配）。
+- **打包**：`build_package.py` 的 `INCLUDE_DIRS` 已含 `mobile`，随插件包发布。
 
 ---
 

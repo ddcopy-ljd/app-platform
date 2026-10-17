@@ -22,7 +22,7 @@ OUT_DIR = ROOT / "dist"
 # 顶层 .py 模块：自动扫描 ROOT/*.py，避免新增模块时漏加
 TOP_PY_MODULES = []          # 留空即自动发现（glob 全部顶层 .py）
 OTHER_FILES = ["plugin.json", "requirements.txt"]
-INCLUDE_DIRS = ["scripts", "frontend", "promo", "logo", "downloads"]
+INCLUDE_DIRS = ["scripts", "frontend", "mobile", "promo", "logo", "downloads"]
 EXCLUDE_PARTS = ("__pycache__", ".pyc", "build", "dist")  # scripts/build、scripts/dist 为打印桥接构建中间产物；分发的 exe 已复制到 downloads/
 EXCLUDE_NAMES = ("print_agent.json",)  # 门店本地运行配置，不入包
 

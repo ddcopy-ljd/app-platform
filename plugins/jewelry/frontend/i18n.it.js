@@ -186,6 +186,7 @@ registerLang('it', {
     'support.banner': 'Modalità Supporto Produzione · Tutte le modifiche vengono registrate nel log di audit',
     'mode.sandbox': 'Ambiente di prova (Sandbox)',
     'mode.sandboxTip': 'Dati isolati. SMS, email e altre azioni esterne sono simulati e non vengono realmente inviati.',
+    'mtip.text': 'Telefono rilevato — la versione web mobile è più comoda', 'mtip.go': 'Apri versione mobile',
     // misc
     'misc.unit': '€', 'misc.pcs': 'pz', 'misc.bills': 'ordini',
     'misc.tenant': 'Tenant', 'misc.operator': 'Operatore', 'misc.action': 'Azione', 'misc.target': 'Obiettivo',
@@ -750,7 +751,8 @@ registerLang('it', {
     'tag.noneHint': 'Nessun tag. Aggiungili in Gestione HQ → Tag Prodotto',
     'tag.salesStatsTitle': 'Statistiche vendite', 'tag.dimCategory': 'Categoria', 'tag.dimTag': 'Tag',
     'rg.3m': 'Ultimi 3 mesi', 'rg.6m': 'Ultimi 6 mesi', 'rg.year': "Quest'anno",
-    'tag.statsTitle': 'Statistiche Tag', 'tag.pieceUnit': 'pz', 'tag.inStock': 'In magazzino',
+    'tag.statsTitle': 'Statistiche Tag', 'tag.pieceUnit': 'pz', 'tag.inStock': 'In magazzino', 'tag.salesAmt': 'Vendite',
+    'tag.expand': 'Mostra tag', 'tag.collapse': 'Nascondi tag',
     'tag.dupNote': 'I prodotti con più tag vengono conteggiati in ogni gruppo; il denominatore della percentuale è la somma di tutti i gruppi',
     'tag.group': 'Gruppo', 'tag.groupPh': 'Es: Vintage', 'tag.ungrouped': 'Senza gruppo',
     'tag.share': 'Quota', 'inv.tagShare': 'Quota scorte per tag', 'sale.tagShare': 'Quota vendite per tag',

@@ -1,0 +1,15 @@
+{
+  "name": "懿臻珠宝云",
+  "short_name": "珠宝云",
+  "description": "珠宝门店掌上经营 · 商品 · 库存 · 销售 · 客户",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FBF6EC",
+  "theme_color": "#5C2233",
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

@@ -6,16 +6,24 @@
 // （//api/... 会落到静态服务的 SPA 回退，GET 返回 HTML、POST 报 405）。
 var API = (window.__APP_BASE__ || '').replace(/\/+$/, '');
 
-// ---- 响应式布局判定 ----
-// 判断 PC / mobile 布局：纯 UA + 屏宽兜底。
-// pointer: fine 在部分安卓定制浏览器（微信/UC/QQ/华为/小米等）上会误判为 true，
-// 彻底不用 pointer，UA 里带 Android|iPhone|iPad|Mobile 就判 mobile，否则走屏宽。
+// ---- 布局判定 ----
+// 主 SPA 仅按设备类型定布局：UA 带 Android|iPhone|iPad|iPod|Mobile → 手机布局，其余恒为 PC 布局。
+// 窗口宽度不再是切换因子：PC 收窄窗口保持 PC 布局，不再退化为手机版（手机版已独立为 /mobile/）。
 function isPcLayout() {
   try {
     var ua = navigator.userAgent || '';
     if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return false;
   } catch (e) {}
-  return window.innerWidth >= 900;
+  return true;
+}
+
+// ---- 手机版引导：移动设备访问时顶部横幅提示前往 mobile/ 手机网页版（可关闭，localStorage 记住）----
+var MTIP_OFF = false;
+try { MTIP_OFF = localStorage.getItem('yz_m_tip_off') === '1'; } catch (e) {}
+function mtipUrl() { return API + '/mobile/'; }
+function mtipClose() {
+  ST.mobileTip = false;
+  try { localStorage.setItem('yz_m_tip_off', '1'); } catch (e) {}
 }
 
 // ---- 响应式状态 ----
@@ -26,6 +34,7 @@ var ST = Vue.reactive({
   reportBeautify: true,   // 问题上报「美观输出」：勾选=上报页跟随本应用主题配色，不勾选=BugTracker 默认样式
   custDetail: null,   // 客户档案详情（必须放 ST 内才响应式；曾是模块级 var 导致 PC 详情空白）
   isPc: isPcLayout(),
+  mobileTip: !isPcLayout() && !MTIP_OFF,   // 手机访问引导横幅（关闭后不再显示）
   // 列表排序状态：{ 表key: { key: 排序列, dir: 1升/-1降 } }
   tblSort: { products: { key: '', dir: 1 }, stock: { key: '', dir: 1 } },
   lang: currentLang, langKeys: LANG_KEYS, langLabels: LANG_LABELS,
@@ -51,6 +60,7 @@ var ST = Vue.reactive({
   tagList: [], prodTags: [],   // 标签字典 / 商品页标签筛选（多选=命中任一）
   tagEdit: { id: 0, name: '', color: '#C9A227', sort_order: 0, group_name: '' }, tagEditMode: 'new',
   tagStats: null, tagSel: [],  // 销售额统计结果 / 标签维度下选中标签 id（空=全部）
+  tagsExpanded: false,   // 商品列表标签列：默认收起，点「展开标签」后同行显示全部标签
   saleStatsDim: 'category', saleStatsRange: '6m',  // 销售额统计卡：维度(category品类/tag标签) / 独立时间预设(today/week/month/3m/6m/year)
   rankData: null, rankRange: '6m',   // 看板 TOP5 排行榜（7 榜）/ 独立时间预设
   tagGroupList: [],            // 标签分组枚举（后端 TAG_GROUPS；管理页下拉 + 各标签选择处分组块渲染）
@@ -5160,9 +5170,6 @@ function labelStoreBridge() {
   return ST.bridges.find(function (b) { return b.store_id === sid; }) || null;
 }
 
-// ---- resize ----
-window.addEventListener('resize', function () { ST.isPc = isPcLayout(); });
-
 // ---- 软件名称（源自 plugin.json，经 /api/health 下发）----
 (function loadSoftName() {
   fetch(API + '/api/health').then(function (r) { return r.json(); }).then(function (r) {
@@ -5485,7 +5492,7 @@ var app = Vue.createApp({
     detailRows: detailRows,
   },
   methods: {
-    go: go, switchAdminSub: switchAdminSub, goInvStatus: goInvStatus, clearInvStatusFilter: clearInvStatusFilter,
+    go: go, mtipUrl: mtipUrl, mtipClose: mtipClose, switchAdminSub: switchAdminSub, goInvStatus: goInvStatus, clearInvStatusFilter: clearInvStatusFilter,
     openLockedItems: openLockedItems, closeLockedItems: closeLockedItems,
     invCatDonut: invCatDonut, invCatPct: invCatPct,
     invPtypeDonut: invPtypeDonut, invPtypePct: invPtypePct,

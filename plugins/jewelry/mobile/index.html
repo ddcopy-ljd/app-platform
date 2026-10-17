@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#5C2233">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="懿臻珠宝云">
+<meta name="mobile-web-app-capable" content="yes">
+<title>懿臻珠宝云 · 手机版</title>
+<link rel="icon" href="../logo/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="stylesheet" href="./app.css?v=20261016b5">
+</head>
+<body>
+<div id="app">
+  <div class="phone" :key="ST.lang" v-cloak>
+
+    <!-- ================= 登录 ================= -->
+    <div v-if="!ST.token" class="login-page">
+      <div class="login-brand">
+        <div class="login-logo">懿</div>
+        <div class="login-name">{{ t('login.title') }}</div>
+        <div class="login-sub">{{ t('login.sub') }}</div>
+      </div>
+      <div class="login-card">
+        <div class="login-field">
+          <label>{{ t('login.user') }}</label>
+          <input v-model="ST.loginForm.username" autocomplete="username" placeholder="admin" @keyup.enter="login">
+        </div>
+        <div class="login-field">
+          <label>{{ t('login.pass') }}</label>
+          <input v-model="ST.loginForm.password" type="password" autocomplete="current-password" placeholder="••••••" @keyup.enter="login">
+        </div>
+        <button class="btn btn-gold btn-block" :disabled="ST.logging" @click="login">
+          {{ ST.logging ? t('common.loading') : t('login.btn') }}
+        </button>
+      </div>
+      <div class="login-tip">{{ t('login.tip') }}</div>
+      <div class="login-lang">
+        <button v-for="l in LANGS" :key="l" :class="{on: ST.lang === l}" @click="setLang(l)">{{ LANG_LABELS[l] }}</button>
+      </div>
+    </div>
+
+    <!-- ================= 应用主体 ================= -->
+    <template v-else>
+      <!-- 顶栏 -->
+      <div class="app-bar">
+        <div class="app-bar-logo">懿</div>
+        <div class="app-bar-title">
+          <div class="app-bar-name">{{ t('app.name') }}</div>
+          <div class="app-bar-store" @click="ST.sheet = 'store'">
+            <span>📍</span><span class="nm">{{ curStoreName() }}</span><span>▾</span>
+          </div>
+        </div>
+        <div class="app-bar-icons">
+          <button class="ab-icon" @click="go('dashboard')">
+            🔔<span v-if="reminderCount() > 0" class="dot"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 运行模式横幅（沙箱/生产运维穿透，NORMAL 不显示） -->
+      <div v-if="ST.mode === 'SANDBOX'" class="mode-banner sandbox">🧪 {{ t('mode.sandbox') }}<template v-if="ST.version"> · v{{ ST.version }}</template> · {{ t('mode.sandboxTip') }}</div>
+      <div v-else-if="ST.mode === 'PRODUCTION_SUPPORT'" class="mode-banner support">{{ t('support.banner') }}</div>
+
+      <!-- 页面 -->
+      <div class="page" @scroll="onScroll">
+
+        <!-- ========== 看板 ========== -->
+        <template v-if="ST.sub === '' && ST.tab === 'dashboard'">
+          <div class="stats-grid">
+            <div class="stat">
+              <div class="stat-label">💎 {{ t('dash.onSale') }}</div>
+              <div class="stat-value">{{ dStock().count || 0 }}<small>{{ t('dash.items') }}</small></div>
+              <div class="stat-foot">已定 {{ dStock().reserved || 0 }} · 借出 {{ dStock().loaned || 0 }}</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">🏦 {{ t('dash.stockCost') }}</div>
+              <div class="stat-value serif">{{ money(dStock().cost) }}</div>
+              <div class="stat-foot">零售 {{ money(dStock().price) }}</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">🧾 {{ t('dash.todaySales') }}</div>
+              <div class="stat-value serif">{{ money(dToday().amount) }}</div>
+              <div class="stat-foot">{{ dToday().count || 0 }} {{ t('dash.bills') }}</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">⏳ {{ t('dash.receivable') }}</div>
+              <div class="stat-value serif">{{ money(dDue().amount) }}</div>
+              <div class="stat-foot">{{ t('date.month') }} {{ money(dMonth().amount) }}</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-accent"></div>
+            <div class="card-head"><div class="card-title">{{ t('dash.quick') }}</div></div>
+            <div class="quick-grid">
+              <div class="quick-item" @click="openSub('sale-new')"><div class="quick-ico">🧾</div><div class="quick-label">{{ t('q.sale') }}</div></div>
+              <div class="quick-item" @click="openSub('dep-new')"><div class="quick-ico">💰</div><div class="quick-label">{{ t('q.deposit') }}</div></div>
+              <div class="quick-item" @click="inboundForm()"><div class="quick-ico">📥</div><div class="quick-label">{{ t('q.inbound') }}</div></div>
+              <div class="quick-item" @click="openSub('inventory')"><div class="quick-ico">📦</div><div class="quick-label">{{ t('inv.title') }}</div></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-accent"></div>
+            <div class="card-head">
+              <div class="card-title">{{ t('dash.reminders') }}</div>
+              <span class="card-more">{{ reminderCount() }}</span>
+            </div>
+            <div v-if="reminderCount() === 0" class="empty" style="padding:26px 10px">
+              <div class="empty-ico">✅</div>
+              <div class="empty-text">{{ t('dash.noReminder') }}</div>
+            </div>
+            <div v-else>
+              <div class="remind" v-if="remDeposits().length" @click="openSub('deposits')">
+                <div class="remind-ico due">💰</div>
+                <div class="remind-body"><div class="remind-title">{{ t('dash.dueDeposit') }}</div><div class="remind-sub">{{ t('dep.title') }}</div></div>
+                <div class="remind-count">{{ remDeposits().length }}</div>
+              </div>
+              <div class="remind" v-if="remLoans().length" @click="openSub('loans')">
+                <div class="remind-ico blue">🔁</div>
+                <div class="remind-body"><div class="remind-title">{{ t('dash.loansOverdue') }}</div><div class="remind-sub">{{ t('loan.title') }}</div></div>
+                <div class="remind-count">{{ remLoans().length }}</div>
+              </div>
+              <div class="remind" v-if="remRepairs().length" @click="openSub('repairs')">
+                <div class="remind-ico purple">🛠</div>
+                <div class="remind-body"><div class="remind-title">{{ t('dash.repairs') }}</div><div class="remind-sub">{{ t('rep.title') }}</div></div>
+                <div class="remind-count">{{ remRepairs().length }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-accent"></div>
+            <div class="card-head"><div class="card-title">{{ t('dash.trend') }}</div></div>
+            <div class="mini-chart">
+              <div class="mini-bar-group" v-for="(lb, i) in dTrendLabels()" :key="i">
+                <div class="mini-bar" :style="{height: barH(i)}"></div>
+                <div class="mini-bar-label">{{ lb }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-accent"></div>
+            <div class="card-head">
+              <div class="card-title">{{ t('dash.recent') }}</div>
+              <span class="card-more" @click="openSub('sales')">{{ t('dash.viewAll') }}</span>
+            </div>
+            <div v-if="!dRecent().length" class="empty" style="padding:22px 10px"><div class="empty-text">{{ t('common.empty') }}</div></div>
+            <div class="list-card" v-else style="margin:0;border:none;box-shadow:none">
+              <div class="list-item" v-for="s in dRecent()" :key="s.bill_no">
+                <div class="list-item-ico">🧾</div>
+                <div class="list-item-body">
+                  <div class="list-item-title"><span class="name">{{ s.customer || '—' }}</span></div>
+                  <div class="list-item-sub">{{ s.bill_no }} · {{ s.biz_date }}</div>
+                </div>
+                <div class="list-item-tail"><div class="list-item-amount">{{ money(s.amount) }}</div></div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- ========== 商品 ========== -->
+        <template v-else-if="ST.sub === '' && ST.tab === 'products'">
+          <div class="back-head" style="margin-bottom:10px">
+            <div class="back-title">{{ t('prod.title') }}</div>
+            <button class="btn btn-gold btn-sm" @click="newProduct()">＋ {{ t('prod.new') }}</button>
+          </div>
+          <div class="search-bar">
+            <input v-model="ST.products.q" :placeholder="t('prod.searchPh')" @keyup.enter="loadProducts(true)">
+          </div>
+          <div class="chips">
+            <div class="chip" :class="{active: ST.products.status === ''}" @click="ST.products.status=''; loadProducts(true)">{{ t('common.all') }}</div>
+            <div class="chip" :class="{active: ST.products.status === '在库'}" @click="ST.products.status='在库'; loadProducts(true)">{{ t('st.inStock') }}</div>
+            <div class="chip" :class="{active: ST.products.status === '已定'}" @click="ST.products.status='已定'; loadProducts(true)">{{ t('st.reserved') }}</div>
+            <div class="chip" :class="{active: ST.products.status === '借出'}" @click="ST.products.status='借出'; loadProducts(true)">{{ t('st.loaned') }}</div>
+          </div>
+          <div class="list-card">
+            <div class="list-item tap" v-for="p in ST.products.items" :key="p.id" @click="viewProduct(p.id)">
+              <div class="list-item-ico">💎</div>
+              <div class="list-item-body">
+                <div class="list-item-title">
+                  <span class="name">{{ p.name }}</span>
+                  <span class="state" :class="statusClass(p.status)">{{ t(statusKey(p.status)) }}</span>
+                </div>
+                <div class="list-item-sub">{{ p.code }} · {{ p.material || '—' }}<template v-if="p.weight"> · {{ p.weight }}g</template></div>
+              </div>
+              <div class="list-item-tail">
+                <div class="list-item-amount">{{ money(p.price) }}</div>
+                <div class="chev">›</div>
+              </div>
+            </div>
+          </div>
+          <div v-if="!ST.loading && !ST.products.items.length" class="empty"><div class="empty-ico">📦</div><div class="empty-text">{{ t('common.empty') }}</div></div>
+          <div v-if="ST.loading" class="empty"><div class="empty-text">{{ t('common.loading') }}</div></div>
+          <div v-if="!ST.loading && ST.products.items.length < ST.products.total" class="empty" style="padding:12px" @click="loadMoreProducts()"><div class="empty-text" style="color:var(--gold-dark)">{{ t('common.more') }} ›</div></div>
+        </template>
+
+        <!-- ========== 客户 ========== -->
+        <template v-else-if="ST.sub === '' && ST.tab === 'customers'">
+          <div class="back-head" style="margin-bottom:10px">
+            <div class="back-title">{{ t('cust.title') }}</div>
+            <button class="btn btn-gold btn-sm" @click="newCustomer()">＋ {{ t('cust.new') }}</button>
+          </div>
+          <div class="search-bar"><input v-model="ST.customers.q" :placeholder="t('cust.searchPh')" @keyup.enter="loadCustomers(true)"></div>
+          <div class="list-card">
+            <div class="list-item tap" v-for="c in ST.customers.items" :key="c.id" @click="viewCustomer(c.id)">
+              <div class="list-item-ico">👤</div>
+              <div class="list-item-body">
+                <div class="list-item-title"><span class="name">{{ c.name }}</span><span class="tag tag-gold">{{ c.level || '普通' }}</span></div>
+                <div class="list-item-sub">{{ c.phone || '—' }}</div>
+              </div>
+              <div class="list-item-tail">
+                <div class="list-item-amount">{{ money(c.total_amount) }}</div>
+                <div v-if="num(c.due_amount) > 0" style="font-size:11px;color:var(--red);font-weight:600">{{ t('cust.due') }} {{ money(c.due_amount) }}</div>
+              </div>
+            </div>
+          </div>
+          <div v-if="!ST.loading && !ST.customers.items.length" class="empty"><div class="empty-ico">👥</div><div class="empty-text">{{ t('common.empty') }}</div></div>
+          <div v-if="ST.loading" class="empty"><div class="empty-text">{{ t('common.loading') }}</div></div>
+          <div v-if="!ST.loading && ST.customers.items.length < ST.customers.total" class="empty" style="padding:12px" @click="loadMoreCustomers()"><div class="empty-text" style="color:var(--gold-dark)">{{ t('common.more') }} ›</div></div>
+        </template>
+
+        <!-- ========== 我的 ========== -->
+        <template v-else-if="ST.sub === '' && ST.tab === 'mine'">
+          <div class="profile-head">
+            <div class="profile-avatar">{{ userInitial() }}</div>
+            <div style="flex:1;min-width:0">
+              <div class="profile-name">{{ userName() }}</div>
+              <div class="profile-role">{{ roleName() }} · {{ curStoreName() }}</div>
+            </div>
+          </div>
+
+          <div class="menu-group">
+            <div class="menu-group-title">{{ t('pf.business') }}</div>
+            <div class="menu-item" @click="openSub('sales')"><div class="menu-ico">🧾</div><div class="menu-label">{{ t('sale.title') }}</div><div class="chev">›</div></div>
+            <div class="menu-item" @click="openSub('deposits')"><div class="menu-ico">💰</div><div class="menu-label">{{ t('dep.title') }}</div><div class="chev">›</div></div>
+            <div class="menu-item" @click="openSub('inventory')"><div class="menu-ico">📦</div><div class="menu-label">{{ t('inv.title') }}</div><div class="chev">›</div></div>
+            <div class="menu-item" @click="openSub('loans')"><div class="menu-ico">🔁</div><div class="menu-label">{{ t('loan.title') }}</div><div class="chev">›</div></div>
+          </div>
+
+          <div class="menu-group">
+            <div class="menu-group-title">{{ t('pf.supply') }}</div>
+            <div class="menu-item" @click="openSub('repairs')"><div class="menu-ico">🛠</div><div class="menu-label">{{ t('rep.title') }}</div><div class="chev">›</div></div>
+            <div class="menu-item" @click="openSub('purchases')"><div class="menu-ico">📥</div><div class="menu-label">{{ t('pur.title') }}</div><div class="chev">›</div></div>
+            <div class="menu-item" @click="openSub('outsourcings')"><div class="menu-ico">⚙️</div><div class="menu-label">{{ t('out.title') }}</div><div class="chev">›</div></div>
+          </div>
+
+          <div class="menu-group">
+            <div class="menu-group-title">{{ t('pf.system') }}</div>
+            <div class="menu-item" @click="openSub('appointments')"><div class="menu-ico">📅</div><div class="menu-label">{{ t('appt.title') }}</div><div class="chev">›</div></div>
+            <div class="menu-item" @click="openSub('store-profile')"><div class="menu-ico">🏪</div><div class="menu-label">{{ t('store.title') }}</div><div class="chev">›</div></div>
+            <div class="menu-item" @click="openSub('logs')"><div class="menu-ico">📋</div><div class="menu-label">{{ t('log.title') }}</div><div class="chev">›</div></div>
+            <div class="menu-item" @click="ST.sheet = 'lang'"><div class="menu-ico">🌐</div><div class="menu-label">{{ t('pf.language') }}</div><div class="menu-value">{{ LANG_LABELS[ST.lang] }}</div><div class="chev">›</div></div>
+            <div class="menu-item" @click="ST.sheet = 'store'"><div class="menu-ico">📍</div><div class="menu-label">{{ t('pf.storeSwitch') }}</div><div class="menu-value">{{ curStoreName() }}</div><div class="chev">›</div></div>
+          </div>
+
+          <button class="btn btn-ghost btn-block" style="color:var(--red);border-color:#E8C4C0" @click="logout()">{{ t('pf.logout') }}</button>
+          <div class="login-tip" style="color:var(--text3)">{{ t('pf.version') }} {{ ST.version || '—' }}</div>
+        </template>
+
+        <!-- ========== 二级：商品详情 ========== -->
+        <template v-else-if="ST.sub === 'product-view'">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('prod.detail') }}</div></div>
+          <div v-if="ST.productView">
+            <div class="card">
+              <div class="card-accent"></div>
+              <div class="card-head">
+                <div class="card-title">{{ ST.productView.name }}</div>
+                <span class="state" :class="statusClass(ST.productView.status)">{{ t(statusKey(ST.productView.status)) }}</span>
+              </div>
+              <div class="kv"><span class="kv-k">{{ t('prod.code') }}</span><span class="kv-v">{{ ST.productView.code }}</span></div>
+              <div class="kv"><span class="kv-k">{{ t('prod.category') }}</span><span class="kv-v">{{ ST.productView.category || '—' }}</span></div>
+              <div class="kv"><span class="kv-k">{{ t('prod.material') }}</span><span class="kv-v">{{ ST.productView.material || '—' }}</span></div>
+              <div class="kv"><span class="kv-k">{{ t('prod.weight') }}</span><span class="kv-v">{{ ST.productView.weight || '—' }}</span></div>
+              <div class="kv"><span class="kv-k">{{ t('prod.size') }}</span><span class="kv-v">{{ ST.productView.size || '—' }}</span></div>
+              <div class="kv"><span class="kv-k">{{ t('prod.cert') }}</span><span class="kv-v">{{ ST.productView.cert || '—' }}</span></div>
+              <div class="kv"><span class="kv-k">{{ t('prod.location') }}</span><span class="kv-v">{{ ST.productView.location_name || '—' }}</span></div>
+              <div class="kv"><span class="kv-k">{{ t('prod.epc') }}</span><span class="kv-v" style="font-size:11px">{{ ST.productView.rfid_epc || '—' }}</span></div>
+              <div class="divider"></div>
+              <div class="kv"><span class="kv-k">{{ t('common.cost') }}</span><span class="kv-v">{{ money(ST.productView.cost) }}</span></div>
+              <div class="kv"><span class="kv-k">{{ t('common.price') }}</span><span class="kv-v serif" style="color:var(--wine);font-size:16px">{{ money(ST.productView.price) }}</span></div>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-ghost" @click="copyProduct()">{{ t('prod.copy') }}</button>
+              <button class="btn btn-wine" @click="editProduct()">{{ t('common.edit') }}</button>
+            </div>
+          </div>
+        </template>
+
+        <!-- ========== 二级：商品编辑 / 入库 ========== -->
+        <template v-else-if="ST.sub === 'product-edit' || ST.sub === 'inbound'">
+          <div class="back-head">
+            <div class="back-btn" @click="closeSub()">‹</div>
+            <div class="back-title">{{ ST.sub === 'inbound' ? t('inv.inbound') : (ST.productEdit ? t('prod.edit') : t('prod.new')) }}</div>
+          </div>
+          <div v-if="ST.sub === 'inbound'" class="form-hint">{{ t('inv.inboundTip') }}</div>
+          <div class="card" v-if="ST.productForm">
+            <div class="form-group">
+              <label>{{ t('common.name') }}<span class="req">*</span></label>
+              <input v-model="ST.productForm.name" :placeholder="t('common.name')">
+            </div>
+            <div class="form-grid-2">
+              <div class="form-group" v-if="ST.sub !== 'inbound'">
+                <label>{{ t('prod.code') }}<span class="req" v-if="!ST.productEdit">*</span></label>
+                <input v-model="ST.productForm.code" :disabled="ST.productEdit" placeholder="A0001">
+              </div>
+              <div class="form-group"><label>{{ t('prod.category') }}</label><input v-model="ST.productForm.category" placeholder="黄金"></div>
+            </div>
+            <div class="form-grid-2">
+              <div class="form-group"><label>{{ t('prod.material') }}</label><input v-model="ST.productForm.material" placeholder="AU"></div>
+              <div class="form-group"><label>{{ t('prod.weight') }}</label><input v-model="ST.productForm.weight" type="number" placeholder="0"></div>
+            </div>
+            <div class="form-grid-2">
+              <div class="form-group"><label>{{ t('prod.size') }}</label><input v-model="ST.productForm.size" placeholder="—"></div>
+              <div class="form-group"><label>{{ t('prod.cert') }}</label><input v-model="ST.productForm.cert" placeholder="—"></div>
+            </div>
+            <div class="form-grid-2">
+              <div class="form-group"><label>{{ t('common.cost') }}</label><input v-model="ST.productForm.cost" type="number" placeholder="0"></div>
+              <div class="form-group"><label>{{ t('common.price') }}</label><input v-model="ST.productForm.price" type="number" placeholder="0"></div>
+            </div>
+            <div class="form-group" v-if="ST.sub !== 'inbound'">
+              <label>{{ t('common.status') }}</label>
+              <select v-model="ST.productForm.status">
+                <option value="在库">{{ t('st.inStock') }}</option>
+                <option value="已定">{{ t('st.reserved') }}</option>
+                <option value="借出">{{ t('st.loaned') }}</option>
+                <option value="在途">{{ t('st.inTransit') }}</option>
+                <option value="已售">{{ t('st.sold') }}</option>
+              </select>
+            </div>
+            <div class="form-group"><label>{{ t('prod.epc') }}</label><input v-model="ST.productForm.rfid_epc" placeholder="留空自动生成"></div>
+          </div>
+          <button class="btn btn-gold btn-block" @click="ST.sub === 'inbound' ? submitInbound() : saveProduct()">
+            {{ t('common.save') }}
+          </button>
+        </template>
+
+        <!-- ========== 二级：库存 ========== -->
+        <template v-else-if="ST.sub === 'inventory'">
+          <div class="back-head">
+            <div class="back-btn" @click="closeSub()">‹</div>
+            <div class="back-title">{{ t('inv.title') }}</div>
+            <button class="btn btn-gold btn-sm" @click="inboundForm()">＋ {{ t('inv.inbound') }}</button>
+          </div>
+          <div class="stats-grid" v-if="ST.inventory">
+            <div class="stat"><div class="stat-label">{{ t('inv.inStock') }}</div><div class="stat-value">{{ iStock().count || 0 }}<small>{{ t('dash.items') }}</small></div><div class="stat-foot">{{ money(iStock().cost) }}</div></div>
+            <div class="stat"><div class="stat-label">{{ t('inv.reserved') }}</div><div class="stat-value">{{ iReserved().count || 0 }}<small>{{ t('dash.items') }}</small></div><div class="stat-foot">{{ money(iReserved().cost) }}</div></div>
+            <div class="stat"><div class="stat-label">{{ t('inv.loaned') }}</div><div class="stat-value">{{ iLoaned().count || 0 }}<small>{{ t('dash.items') }}</small></div><div class="stat-foot">{{ money(iLoaned().cost) }}</div></div>
+            <div class="stat"><div class="stat-label">{{ t('inv.cost') }}</div><div class="stat-value serif">{{ money(iMetrics().stockCost) }}</div><div class="stat-foot">{{ t('inv.price') }} {{ money(iMetrics().stockPrice) }}</div></div>
+          </div>
+          <div class="card" v-if="ST.lockedItems.length">
+            <div class="card-accent"></div>
+            <div class="card-head"><div class="card-title">{{ t('inv.locked') }} <small>{{ ST.lockedItems.length }}</small></div></div>
+            <div class="list-item" v-for="it in ST.lockedItems" :key="it.id">
+              <div class="list-item-ico">🔒</div>
+              <div class="list-item-body">
+                <div class="list-item-title"><span class="name">{{ it.name }}</span></div>
+                <div class="list-item-sub">{{ it.code }} · {{ it.lockReason || '' }} {{ it.customer || '' }}</div>
+              </div>
+              <div class="list-item-tail"><div class="list-item-amount">{{ money(it.price) }}</div></div>
+            </div>
+          </div>
+        </template>
+
+        <!-- ========== 二级：销售列表 ========== -->
+        <template v-else-if="ST.sub === 'sales'">
+          <div class="back-head">
+            <div class="back-btn" @click="closeSub()">‹</div>
+            <div class="back-title">{{ t('sale.list') }}</div>
+            <button class="btn btn-wine btn-sm" @click="openSub('sale-new')">＋ {{ t('sale.new') }}</button>
+          </div>
+          <div class="list-card">
+            <div class="list-item" v-for="s in ST.sales.items" :key="s.id">
+              <div class="list-item-ico">🧾</div>
+              <div class="list-item-body">
+                <div class="list-item-title">
+                  <span class="name">{{ s.customer || '—' }}</span>
+                  <span class="state" :class="statusClass(s.status)">{{ t(statusKey(s.status)) }}</span>
+                </div>
+                <div class="list-item-sub">{{ s.bill_no }} · {{ s.biz_date }}<template v-if="s.item_count"> · {{ s.item_count }}{{ t('dash.items') }}</template></div>
+              </div>
+              <div class="list-item-tail">
+                <div class="list-item-amount">{{ money(s.amount) }}</div>
+                <button v-if="s.status !== '已冲红'" class="btn btn-ghost btn-sm" style="min-height:28px;padding:3px 10px;font-size:11px" @click.stop="voidSale(s.id)">{{ t('sale.void') }}</button>
+              </div>
+            </div>
+          </div>
+          <div v-if="ST.loading" class="empty"><div class="empty-text">{{ t('common.loading') }}</div></div>
+          <div v-else-if="!ST.sales.items.length" class="empty"><div class="empty-ico">🧾</div><div class="empty-text">{{ t('common.empty') }}</div></div>
+        </template>
+
+        <!-- ========== 二级：开单 ========== -->
+        <template v-else-if="ST.sub === 'sale-new'">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('sale.new') }}</div></div>
+          <div class="card">
+            <div class="card-accent"></div>
+            <div class="card-head"><div class="card-title">{{ t('sale.products') }}</div><button class="card-more" @click="openPicker('sale')">＋ {{ t('sale.selectProducts') }}</button></div>
+            <div v-if="!ST.saleItems.length" class="empty" style="padding:20px 10px"><div class="empty-text">{{ t('sale.pickTip') }}</div></div>
+            <div v-else>
+              <span class="sel-chip" v-for="(it, i) in ST.saleItems" :key="it.product_id">
+                {{ it.name }} {{ money(it.price) }} <span class="x" @click="removeSaleItem(i)">✕</span>
+              </span>
+            </div>
+          </div>
+          <div class="card">
+            <div class="form-grid-2">
+              <div class="form-group"><label>{{ t('sale.customer') }}</label><input v-model="ST.saleForm.customer" :placeholder="t('sale.customer')"></div>
+              <div class="form-group"><label>{{ t('sale.phone') }}</label><input v-model="ST.saleForm.phone" type="tel" placeholder="—"></div>
+            </div>
+            <div class="form-grid-2">
+              <div class="form-group"><label>{{ t('sale.method') }}</label>
+                <select v-model="ST.saleForm.method">
+                  <option value="现金">{{ t('sale.payCash') }}</option>
+                  <option value="微信">{{ t('sale.payWechat') }}</option>
+                  <option value="刷卡">{{ t('sale.payCard') }}</option>
+                  <option value="转账">{{ t('sale.payTransfer') }}</option>
+                </select>
+              </div>
+              <div class="form-group"><label>{{ t('sale.discount') }}</label><input v-model="ST.saleForm.discount" type="number" placeholder="0"></div>
+            </div>
+            <div class="form-group"><label>{{ t('sale.paid') }}</label><input v-model="ST.saleForm.paid" type="number" placeholder="0"></div>
+            <div class="divider"></div>
+            <div class="kv"><span class="kv-k">{{ t('sale.receivable') }}</span><span class="kv-v serif">{{ money(saleReceivable()) }}</span></div>
+            <div class="kv"><span class="kv-k">{{ t('sale.due') }}</span><span class="kv-v" :style="{color: saleDue() > 0 ? 'var(--red)' : 'var(--green)'}">{{ money(saleDue()) }}</span></div>
+          </div>
+          <button class="btn btn-gold btn-block" @click="createSale()">{{ t('sale.create') }}</button>
+        </template>
+
+        <!-- ========== 二级：定金列表 ========== -->
+        <template v-else-if="ST.sub === 'deposits'">
+          <div class="back-head">
+            <div class="back-btn" @click="closeSub()">‹</div>
+            <div class="back-title">{{ t('dep.list') }}</div>
+            <button class="btn btn-wine btn-sm" @click="openSub('dep-new')">＋ {{ t('dep.new') }}</button>
+          </div>
+          <div class="card" v-for="d in ST.deposits.items" :key="d.id" style="border-left:3px solid var(--gold)">
+            <div class="card-head" style="margin-bottom:8px">
+              <div class="card-title" style="font-size:14px">{{ d.customer }} <small>{{ d.product || '' }}</small></div>
+              <span class="state" :class="statusClass(d.status)">{{ t(statusKey(d.status)) }}</span>
+            </div>
+            <div class="kv"><span class="kv-k">{{ t('dep.total') }}</span><span class="kv-v serif">{{ money(d.total) }}</span></div>
+            <div class="kv"><span class="kv-k">{{ t('dep.deposit') }}</span><span class="kv-v" style="color:var(--green)">{{ money(d.deposit) }}</span></div>
+            <div class="kv"><span class="kv-k">{{ t('dep.balance') }}</span><span class="kv-v" style="color:var(--red)">{{ money(d.balance) }}</span></div>
+            <div class="kv"><span class="kv-k">{{ t('dep.promised') }}</span><span class="kv-v">{{ d.promised_date || '—' }}</span></div>
+            <div class="btn-row" style="margin-top:10px" v-if="d.status !== '已冲红' && d.status !== '已完成'">
+              <button class="btn btn-ghost btn-sm" @click="voidDeposit(d.id)">{{ t('dep.void') }}</button>
+              <button class="btn btn-gold btn-sm" @click="payDeposit(d.id)">{{ t('dep.pay') }}</button>
+            </div>
+          </div>
+          <div v-if="ST.loading" class="empty"><div class="empty-text">{{ t('common.loading') }}</div></div>
+          <div v-else-if="!ST.deposits.items.length" class="empty"><div class="empty-ico">💰</div><div class="empty-text">{{ t('common.empty') }}</div></div>
+        </template>
+
+        <!-- ========== 二级：定金下单 ========== -->
+        <template v-else-if="ST.sub === 'dep-new'">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('dep.new') }}</div></div>
+          <div class="card">
+            <div class="form-grid-2">
+              <div class="form-group"><label>{{ t('sale.customer') }}<span class="req">*</span></label><input v-model="ST.depForm.customer"></div>
+              <div class="form-group"><label>{{ t('sale.phone') }}</label><input v-model="ST.depForm.phone" type="tel"></div>
+            </div>
+            <div class="form-group">
+              <label>{{ t('dep.product') }}</label>
+              <div style="display:flex;gap:8px">
+                <input v-model="ST.depForm.product" :placeholder="t('sale.selectProducts')" readonly style="flex:1">
+                <button class="btn btn-ghost btn-sm" @click="openPicker('deposit')">{{ t('common.detail') }}</button>
+              </div>
+            </div>
+            <div class="form-grid-2">
+              <div class="form-group"><label>{{ t('dep.total') }}</label><input v-model="ST.depForm.total" type="number"></div>
+              <div class="form-group"><label>{{ t('dep.deposit') }}</label><input v-model="ST.depForm.deposit" type="number"></div>
+            </div>
+            <div class="form-grid-2">
+              <div class="form-group"><label>{{ t('dep.promised') }}</label><input v-model="ST.depForm.promised_date" type="date"></div>
+              <div class="form-group"><label>{{ t('dep.reminder') }}</label><input v-model="ST.depForm.reminder_days" type="number"></div>
+            </div>
+            <div class="divider"></div>
+            <div class="kv"><span class="kv-k">{{ t('dep.balance') }}</span><span class="kv-v" style="color:var(--red)">{{ money(depBalance()) }}</span></div>
+          </div>
+          <button class="btn btn-gold btn-block" @click="createDeposit()">{{ t('dep.create') }}</button>
+        </template>
+
+        <!-- ========== 二级：客户详情 ========== -->
+        <template v-else-if="ST.sub === 'cust-view' && ST.custDetail">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('cust.detail') }}</div><button class="btn btn-ghost btn-sm" @click="editCustomer()">{{ t('common.edit') }}</button></div>
+          <div class="card">
+            <div class="card-accent"></div>
+            <div class="card-head"><div class="card-title">{{ ST.custDetail.name }} <span class="tag tag-gold">{{ ST.custDetail.level || '普通' }}</span></div></div>
+            <div class="kv"><span class="kv-k">{{ t('common.phone') }}</span><span class="kv-v">{{ ST.custDetail.phone || '—' }}</span></div>
+            <div class="kv"><span class="kv-k">{{ t('cust.total') }}</span><span class="kv-v serif">{{ money(ST.custDetail.total_amount) }}</span></div>
+            <div class="kv"><span class="kv-k">{{ t('cust.due') }}</span><span class="kv-v" style="color:var(--red)">{{ money(ST.custDetail.due_amount) }}</span></div>
+            <div class="kv"><span class="kv-k">{{ t('cust.salesCount') }}</span><span class="kv-v">{{ ST.custDetail.salesCount || 0 }}</span></div>
+            <div class="kv"><span class="kv-k">{{ t('cust.birthday') }}</span><span class="kv-v">{{ ST.custDetail.birthday || '—' }}</span></div>
+            <div class="kv"><span class="kv-k">{{ t('cust.preference') }}</span><span class="kv-v">{{ ST.custDetail.preference || '—' }}</span></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">{{ t('cust.sales') }}</div></div>
+            <div v-if="!custSales().length" class="empty" style="padding:16px"><div class="empty-text">{{ t('common.empty') }}</div></div>
+            <div class="list-item" v-for="s in custSales()" :key="s.id">
+              <div class="list-item-ico">🧾</div>
+              <div class="list-item-body"><div class="list-item-title"><span class="name">{{ s.product || s.bill_no }}</span></div><div class="list-item-sub">{{ s.biz_date }}</div></div>
+              <div class="list-item-tail"><div class="list-item-amount">{{ money(s.amount) }}</div></div>
+            </div>
+          </div>
+        </template>
+
+        <!-- ========== 二级：客户编辑 ========== -->
+        <template v-else-if="ST.sub === 'cust-edit' && ST.custForm">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('cust.new') }}</div></div>
+          <div class="card">
+            <div class="form-group"><label>{{ t('common.name') }}<span class="req">*</span></label><input v-model="ST.custForm.name"></div>
+            <div class="form-group"><label>{{ t('common.phone') }}</label><input v-model="ST.custForm.phone" type="tel"></div>
+            <div class="form-group"><label>{{ t('cust.level') }}</label>
+              <select v-model="ST.custForm.level"><option>普通</option><option>银卡</option><option>金卡</option></select>
+            </div>
+            <div class="form-group"><label>{{ t('cust.birthday') }}</label><input v-model="ST.custForm.birthday" type="date"></div>
+            <div class="form-group"><label>{{ t('cust.preference') }}</label><input v-model="ST.custForm.preference"></div>
+          </div>
+          <button class="btn btn-gold btn-block" @click="saveCustomer()">{{ t('common.save') }}</button>
+        </template>
+
+        <!-- ========== 二级：借货 ========== -->
+        <template v-else-if="ST.sub === 'loans'">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('loan.title') }}</div><button class="btn btn-wine btn-sm" @click="newLoan()">＋ {{ t('common.add') }}</button></div>
+          <div class="list-card">
+            <div class="list-item" v-for="l in ST.loans.items" :key="l.id">
+              <div class="list-item-ico">{{ l.direction === 'out' ? '↗' : '↙' }}</div>
+              <div class="list-item-body">
+                <div class="list-item-title"><span class="name">{{ l.product || l.code }}</span><span class="tag tag-wine">{{ l.direction === 'out' ? t('loan.out') : t('loan.in') }}</span></div>
+                <div class="list-item-sub">{{ l.party }} · {{ t('loan.dueDate') }} {{ l.due_date || '—' }}</div>
+              </div>
+              <div class="list-item-tail">
+                <span class="state" :class="statusClass(l.status)">{{ t(statusKey(l.status)) }}</span>
+                <button v-if="l.status === '借出中' || l.status === '借入中'" class="btn btn-ghost btn-sm" style="min-height:28px;padding:3px 10px;font-size:11px" @click="returnLoan(l.id)">{{ t('loan.return') }}</button>
+              </div>
+            </div>
+          </div>
+          <div v-if="ST.loading" class="empty"><div class="empty-text">{{ t('common.loading') }}</div></div>
+          <div v-else-if="!ST.loans.items.length" class="empty"><div class="empty-ico">🔁</div><div class="empty-text">{{ t('common.empty') }}</div></div>
+        </template>
+
+        <template v-else-if="ST.sub === 'loan-new'">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('loan.new') }}</div></div>
+          <div class="card">
+            <div class="form-group"><label>{{ t('loan.direction') }}</label>
+              <select v-model="ST.form.direction"><option value="out">{{ t('loan.out') }}</option><option value="in">{{ t('loan.in') }}</option></select>
+            </div>
+            <div class="form-group"><label>{{ t('loan.product') }}<span class="req">*</span></label><input v-model="ST.form.product"></div>
+            <div class="form-group"><label>{{ t('loan.party') }}<span class="req">*</span></label><input v-model="ST.form.party"></div>
+            <div class="form-grid-2">
+              <div class="form-group"><label>{{ t('loan.loanDate') }}</label><input v-model="ST.form.loan_date" type="date"></div>
+              <div class="form-group"><label>{{ t('loan.dueDate') }}</label><input v-model="ST.form.due_date" type="date"></div>
+            </div>
+          </div>
+          <button class="btn btn-gold btn-block" @click="createLoan()">{{ t('common.save') }}</button>
+        </template>
+
+        <!-- ========== 二级：维修 ========== -->
+        <template v-else-if="ST.sub === 'repairs'">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('rep.title') }}</div><button class="btn btn-wine btn-sm" @click="newRepair()">＋ {{ t('rep.new') }}</button></div>
+          <div class="card" v-for="r in ST.repairs.items" :key="r.id">
+            <div class="card-head" style="margin-bottom:8px">
+              <div class="card-title" style="font-size:14px">{{ r.customer }} <small>{{ r.item || '' }}</small></div>
+              <span class="state" :class="statusClass(r.status)">{{ t(statusKey(r.status)) }}</span>
+            </div>
+            <div class="kv"><span class="kv-k">{{ t('rep.issue') }}</span><span class="kv-v">{{ r.issue || '—' }}</span></div>
+            <div class="kv"><span class="kv-k">{{ t('rep.estFee') }}</span><span class="kv-v">{{ money(r.est_fee) }}</span></div>
+            <div class="kv"><span class="kv-k">{{ t('rep.promised') }}</span><span class="kv-v">{{ r.promised_date || '—' }}</span></div>
+            <button class="btn btn-ghost btn-sm btn-block" style="margin-top:10px" @click="repairEdit(r)">{{ t('rep.update') }}</button>
+          </div>
+          <div v-if="ST.loading" class="empty"><div class="empty-text">{{ t('common.loading') }}</div></div>
+          <div v-else-if="!ST.repairs.items.length" class="empty"><div class="empty-ico">🛠</div><div class="empty-text">{{ t('common.empty') }}</div></div>
+        </template>
+
+        <template v-else-if="ST.sub === 'repair-new'">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('rep.new') }}</div></div>
+          <div class="card">
+            <div class="form-group"><label>{{ t('rep.customer') }}<span class="req">*</span></label><input v-model="ST.form.customer"></div>
+            <div class="form-group"><label>{{ t('common.phone') }}</label><input v-model="ST.form.phone" type="tel"></div>
+            <div class="form-group"><label>{{ t('rep.item') }}<span class="req">*</span></label><input v-model="ST.form.item"></div>
+            <div class="form-group"><label>{{ t('rep.issue') }}</label><textarea v-model="ST.form.issue"></textarea></div>
+            <div class="form-grid-2">
+              <div class="form-group"><label>{{ t('rep.estFee') }}</label><input v-model="ST.form.est_fee" type="number"></div>
+              <div class="form-group"><label>{{ t('rep.promised') }}</label><input v-model="ST.form.promised_date" type="date"></div>
+            </div>
+            <div class="form-group"><label>{{ t('rep.update') }}</label>
+              <select v-model="ST.form.status"><option>待维修</option><option>维修中</option><option>已完成</option><option>已取走</option></select>
+            </div>
+            <div class="form-group" v-if="ST.form.id"><label>{{ t('rep.actualFee') }}</label><input v-model="ST.form.actual_fee" type="number"></div>
+            <div class="form-group"><label>{{ t('rep.tech') }}</label><input v-model="ST.form.technician"></div>
+          </div>
+          <button class="btn btn-gold btn-block" @click="ST.form.id ? saveRepair() : createRepair()">{{ t('common.save') }}</button>
+        </template>
+
+        <!-- ========== 二级：采购 ========== -->
+        <template v-else-if="ST.sub === 'purchases'">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('pur.title') }}</div><button class="btn btn-wine btn-sm" @click="newPurchase()">＋ {{ t('pur.new') }}</button></div>
+          <div class="card" v-for="p in ST.purchases.items" :key="p.id">
+            <div class="card-head" style="margin-bottom:8px">
+              <div class="card-title" style="font-size:14px">{{ p.supplier }} <small>{{ p.product || '' }}</small></div>
+              <span class="state" :class="statusClass(p.status)">{{ t(statusKey(p.status)) }}</span>
+            </div>
+            <div class="kv"><span class="kv-k">{{ t('common.qty') }}</span><span class="kv-v">{{ p.qty }}</span></div>
+            <div class="kv"><span class="kv-k">{{ t('common.cost') }}</span><span class="kv-v">{{ money(p.cost) }}</span></div>
+            <div class="kv"><span class="kv-k">{{ t('pur.expected') }}</span><span class="kv-v">{{ p.expected_date || '—' }}</span></div>
+            <button v-if="p.status !== '已入库'" class="btn btn-gold btn-sm btn-block" style="margin-top:10px" @click="receivePurchase(p.id)">{{ t('pur.receive') }}</button>
+          </div>
+          <div v-if="ST.loading" class="empty"><div class="empty-text">{{ t('common.loading') }}</div></div>
+          <div v-else-if="!ST.purchases.items.length" class="empty"><div class="empty-ico">📥</div><div class="empty-text">{{ t('common.empty') }}</div></div>
+        </template>
+
+        <template v-else-if="ST.sub === 'purchase-new'">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('pur.new') }}</div></div>
+          <div class="card">
+            <div class="form-group"><label>{{ t('pur.supplier') }}<span class="req">*</span></label><input v-model="ST.form.supplier"></div>
+            <div class="form-group"><label>{{ t('pur.product') }}<span class="req">*</span></label><input v-model="ST.form.product"></div>
+            <div class="form-grid-2">
+              <div class="form-group"><label>{{ t('common.qty') }}</label><input v-model="ST.form.qty" type="number"></div>
+              <div class="form-group"><label>{{ t('common.cost') }}</label><input v-model="ST.form.cost" type="number"></div>
+            </div>
+            <div class="form-grid-2">
+              <div class="form-group"><label>{{ t('pur.orderDate') }}</label><input v-model="ST.form.order_date" type="date"></div>
+              <div class="form-group"><label>{{ t('pur.expected') }}</label><input v-model="ST.form.expected_date" type="date"></div>
+            </div>
+            <div class="form-group"><label>{{ t('pur.paid') }}</label><input v-model="ST.form.paid" type="number"></div>
+          </div>
+          <button class="btn btn-gold btn-block" @click="createPurchase()">{{ t('common.save') }}</button>
+        </template>
+
+        <!-- ========== 二级：委外 ========== -->
+        <template v-else-if="ST.sub === 'outsourcings'">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('out.title') }}</div><button class="btn btn-wine btn-sm" @click="newOutsourcing()">＋ {{ t('out.new') }}</button></div>
+          <div class="card" v-for="o in ST.outsourcings.items" :key="o.id">
+            <div class="card-head" style="margin-bottom:8px">
+              <div class="card-title" style="font-size:14px">{{ o.factory }} <small>{{ o.product || '' }}</small></div>
+              <span class="state" :class="statusClass(o.status)">{{ t(statusKey(o.status)) }}</span>
+            </div>
+            <div class="kv"><span class="kv-k">{{ t('out.material') }}</span><span class="kv-v">{{ o.material || '—' }}</span></div>
+            <div class="kv"><span class="kv-k">{{ t('out.expected') }}</span><span class="kv-v">{{ o.expected_date || '—' }}</span></div>
+            <button v-if="o.status !== '已收货'" class="btn btn-gold btn-sm btn-block" style="margin-top:10px" @click="receiveOutsourcing(o.id)">{{ t('out.receive') }}</button>
+          </div>
+          <div v-if="ST.loading" class="empty"><div class="empty-text">{{ t('common.loading') }}</div></div>
+          <div v-else-if="!ST.outsourcings.items.length" class="empty"><div class="empty-ico">⚙️</div><div class="empty-text">{{ t('common.empty') }}</div></div>
+        </template>
+
+        <template v-else-if="ST.sub === 'outsource-new'">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('out.new') }}</div></div>
+          <div class="card">
+            <div class="form-group"><label>{{ t('out.factory') }}<span class="req">*</span></label><input v-model="ST.form.factory"></div>
+            <div class="form-group"><label>{{ t('out.product') }}<span class="req">*</span></label><input v-model="ST.form.product"></div>
+            <div class="form-grid-2">
+              <div class="form-group"><label>{{ t('out.material') }}</label><input v-model="ST.form.material"></div>
+              <div class="form-group"><label>{{ t('prod.weight') }}</label><input v-model="ST.form.weight" type="number"></div>
+            </div>
+            <div class="form-grid-2">
+              <div class="form-group"><label>{{ t('out.goldPrice') }}</label><input v-model="ST.form.gold_price" type="number"></div>
+              <div class="form-group"><label>{{ t('out.labor') }}</label><input v-model="ST.form.labor_fee" type="number"></div>
+            </div>
+            <div class="form-grid-2">
+              <div class="form-group"><label>{{ t('out.sendDate') }}</label><input v-model="ST.form.send_date" type="date"></div>
+              <div class="form-group"><label>{{ t('out.expected') }}</label><input v-model="ST.form.expected_date" type="date"></div>
+            </div>
+          </div>
+          <button class="btn btn-gold btn-block" @click="createOutsourcing()">{{ t('common.save') }}</button>
+        </template>
+
+        <!-- ========== 二级：预约 ========== -->
+        <template v-else-if="ST.sub === 'appointments'">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('appt.title') }}</div></div>
+          <div class="card" v-for="a in ST.appointments" :key="a.id">
+            <div class="card-head" style="margin-bottom:8px">
+              <div class="card-title" style="font-size:14px">{{ a.name }} <small>{{ a.contact || '' }}</small></div>
+              <span class="state" :class="statusClass(a.status === 'pending' ? '待处理' : (a.status === 'confirmed' ? '已确认' : (a.status === 'arrived' ? '已到店' : '已取消')))">
+                {{ a.status === 'pending' ? t('appt.pending') : (a.status === 'confirmed' ? t('appt.confirmed') : (a.status === 'arrived' ? t('appt.arrived') : t('appt.canceled'))) }}
+              </span>
+            </div>
+            <div class="kv"><span class="kv-k">{{ t('appt.wantDate') }}</span><span class="kv-v">{{ a.want_date || '—' }} {{ a.want_slot || '' }}</span></div>
+            <div class="kv"><span class="kv-k">{{ t('common.remark') }}</span><span class="kv-v">{{ a.remark || '—' }}</span></div>
+            <div class="btn-row" style="margin-top:10px" v-if="a.status === 'pending' || a.status === 'contacted'">
+              <button class="btn btn-ghost btn-sm" @click="setAppt(a.id, 'closed')">{{ t('appt.cancel') }}</button>
+              <button class="btn btn-gold btn-sm" @click="setAppt(a.id, 'confirmed')">{{ t('appt.confirm') }}</button>
+            </div>
+          </div>
+          <div v-if="ST.loading" class="empty"><div class="empty-text">{{ t('common.loading') }}</div></div>
+          <div v-else-if="!ST.appointments.length" class="empty"><div class="empty-ico">📅</div><div class="empty-text">{{ t('common.empty') }}</div></div>
+        </template>
+
+        <!-- ========== 二级：操作日志 ========== -->
+        <template v-else-if="ST.sub === 'logs'">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('log.title') }}</div></div>
+          <div class="list-card">
+            <div class="list-item" v-for="g in ST.logs.items" :key="g.id">
+              <div class="list-item-ico">{{ g.result === '成功' || g.result === 'ok' || g.result === '1' ? '✅' : '📋' }}</div>
+              <div class="list-item-body">
+                <div class="list-item-title"><span class="name">{{ g.action }}</span></div>
+                <div class="list-item-sub">{{ g.operator }} · {{ g.time }}</div>
+              </div>
+              <div class="list-item-tail"><div style="font-size:11px;color:var(--text3)">{{ g.target || '' }}</div></div>
+            </div>
+          </div>
+          <div v-if="ST.loading" class="empty"><div class="empty-text">{{ t('common.loading') }}</div></div>
+          <div v-else-if="!ST.logs.items.length" class="empty"><div class="empty-ico">📋</div><div class="empty-text">{{ t('common.empty') }}</div></div>
+        </template>
+
+        <!-- ========== 二级：店铺资料 ========== -->
+        <template v-else-if="ST.sub === 'store-profile' && ST.profile">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('store.title') }}</div></div>
+          <div class="card">
+            <div class="form-group"><label>{{ t('store.name') }}</label><input v-model="ST.profile.name"></div>
+            <div class="form-grid-2">
+              <div class="form-group"><label>{{ t('store.short') }}</label><input v-model="ST.profile.short_name"></div>
+              <div class="form-group"><label>{{ t('store.contact') }}</label><input v-model="ST.profile.contact"></div>
+            </div>
+            <div class="form-group"><label>{{ t('store.slogan') }}</label><input v-model="ST.profile.slogan"></div>
+            <div class="form-group"><label>{{ t('store.intro') }}</label><textarea v-model="ST.profile.intro"></textarea></div>
+            <div class="form-group"><label>{{ t('store.phone') }}</label><input v-model="ST.profile.phone" type="tel"></div>
+            <div class="form-group"><label>{{ t('store.address') }}</label><input v-model="ST.profile.address"></div>
+            <div class="form-group"><label>{{ t('store.hours') }}</label><input v-model="ST.profile.hours"></div>
+            <div class="switch-row">
+              <span style="font-size:14px">{{ t('store.published') }}</span>
+              <div class="switch" :class="{on: ST.profile.published}" @click="ST.profile.published = ST.profile.published ? 0 : 1"></div>
+            </div>
+          </div>
+          <button class="btn btn-gold btn-block" @click="saveProfile()">{{ t('common.save') }}</button>
+        </template>
+
+      </div>
+
+      <!-- 底部 Tab -->
+      <div class="tab-bar">
+        <div class="tab" :class="{active: ST.tab === 'dashboard' && ST.sub === ''}" @click="go('dashboard')">
+          <div class="tab-ico">📊</div><div class="tab-txt">{{ t('tab.dashboard') }}</div>
+          <span v-if="reminderCount() > 0" class="tab-dot"></span>
+        </div>
+        <div class="tab" :class="{active: ST.tab === 'products' && ST.sub === ''}" @click="go('products')">
+          <div class="tab-ico">💎</div><div class="tab-txt">{{ t('tab.products') }}</div>
+        </div>
+        <div class="tab-center" @click="ST.sheet = 'quick'">
+          <div class="tab-center-btn">＋</div>
+          <div class="tab-center-label">{{ t('tab.center') }}</div>
+        </div>
+        <div class="tab" :class="{active: ST.tab === 'customers' && ST.sub === ''}" @click="go('customers')">
+          <div class="tab-ico">👥</div><div class="tab-txt">{{ t('tab.customers') }}</div>
+        </div>
+        <div class="tab" :class="{active: ST.tab === 'mine' && ST.sub === ''}" @click="go('mine')">
+          <div class="tab-ico">👤</div><div class="tab-txt">{{ t('tab.mine') }}</div>
+        </div>
+      </div>
+
+      <!-- 快捷面板 -->
+      <div v-if="ST.sheet === 'quick'" class="sheet-mask" @click.self="ST.sheet = ''">
+        <div class="sheet">
+          <div class="sheet-head"><h3>{{ t('q.title') }}</h3><div class="sheet-close" @click="ST.sheet = ''">✕</div></div>
+          <div class="sheet-body">
+            <div class="quick-grid">
+              <div class="quick-item" @click="quickGo('sale')"><div class="quick-ico">🧾</div><div class="quick-label">{{ t('q.sale') }}</div></div>
+              <div class="quick-item" @click="quickGo('deposit')"><div class="quick-ico">💰</div><div class="quick-label">{{ t('q.deposit') }}</div></div>
+              <div class="quick-item" @click="quickGo('inbound')"><div class="quick-ico">📥</div><div class="quick-label">{{ t('q.inbound') }}</div></div>
+              <div class="quick-item" @click="quickGo('product')"><div class="quick-ico">💎</div><div class="quick-label">{{ t('q.products') }}</div></div>
+              <div class="quick-item" @click="quickGo('repair')"><div class="quick-ico">🛠</div><div class="quick-label">{{ t('q.repair') }}</div></div>
+              <div class="quick-item" @click="quickGo('purchase')"><div class="quick-ico">📦</div><div class="quick-label">{{ t('q.purchase') }}</div></div>
+              <div class="quick-item" @click="quickGo('outsource')"><div class="quick-ico">⚙️</div><div class="quick-label">{{ t('q.outsource') }}</div></div>
+              <div class="quick-item" @click="quickGo('stocktake')"><div class="quick-ico">📡</div><div class="quick-label">{{ t('q.stocktake') }}</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 门店切换 -->
+      <div v-if="ST.sheet === 'store'" class="sheet-mask" @click.self="ST.sheet = ''">
+        <div class="sheet">
+          <div class="sheet-head"><h3>{{ t('pf.switchStore') }}</h3><div class="sheet-close" @click="ST.sheet = ''">✕</div></div>
+          <div class="sheet-body">
+            <div class="list-card" style="box-shadow:none">
+              <div class="list-item tap" v-for="s in ST.stores" :key="s.id" @click="switchStore(s.id)">
+                <div class="list-item-ico">🏪</div>
+                <div class="list-item-body"><div class="list-item-title"><span class="name">{{ s.name }}</span></div><div class="list-item-sub">{{ s.code || '' }}</div></div>
+                <div class="list-item-tail"><span v-if="s.id === ST.storeId" class="state state-ok">{{ t('pf.storeSwitch') }}</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 语言切换 -->
+      <div v-if="ST.sheet === 'lang'" class="sheet-mask" @click.self="ST.sheet = ''">
+        <div class="sheet">
+          <div class="sheet-head"><h3>{{ t('pf.language') }}</h3><div class="sheet-close" @click="ST.sheet = ''">✕</div></div>
+          <div class="sheet-body">
+            <div class="list-card" style="box-shadow:none">
+              <div class="list-item tap" v-for="l in LANGS" :key="l" @click="setLang(l); ST.sheet = ''">
+                <div class="list-item-ico">🌐</div>
+                <div class="list-item-body"><div class="list-item-title"><span class="name">{{ LANG_LABELS[l] }}</span></div></div>
+                <div class="list-item-tail"><span v-if="ST.lang === l" class="state state-ok">✓</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 商品选择 -->
+      <div v-if="ST.sheet === 'pick'" class="sheet-mask" @click.self="ST.sheet = ''">
+        <div class="sheet">
+          <div class="sheet-head"><h3>{{ t('sale.selectProducts') }}</h3><div class="sheet-close" @click="ST.sheet = ''">✕</div></div>
+          <div class="sheet-body">
+            <div v-if="ST.pickLoading" class="empty"><div class="empty-text">{{ t('common.loading') }}</div></div>
+            <div v-else-if="!ST.pickOptions.length" class="empty"><div class="empty-text">{{ t('common.empty') }}</div></div>
+            <div class="list-card" v-else style="box-shadow:none">
+              <div class="list-item tap" v-for="p in ST.pickOptions" :key="p.id" @click="pickProduct(p)">
+                <div class="list-item-ico">💎</div>
+                <div class="list-item-body">
+                  <div class="list-item-title"><span class="name">{{ p.name }}</span></div>
+                  <div class="list-item-sub">{{ p.code }} · {{ p.weight || '—' }}g</div>
+                </div>
+                <div class="list-item-tail"><div class="list-item-amount">{{ money(p.price) }}</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Toast -->
+    <div class="toast" :class="{show: ST.toast.show, error: ST.toast.type === 'error'}">{{ ST.toast.text }}</div>
+  </div>
+</div>
+
+<script src="./vendor/vue.global.prod.js"></script>
+<script src="./i18n.js?v=20261016b4"></script>
+<script>
+(function () {
+  if (!window.__APP_BASE__) {
+    var p = location.pathname;
+    var i = p.indexOf("/mobile");
+    if (i >= 0) p = p.slice(0, i) + "/";
+    else p = p.replace(/[^/]*$/, "");
+    window.__APP_BASE__ = p.replace(/\/+$/, "");
+  }
+})();
+</script>
+<script src="./app.js?v=20261016b4"></script>
+<script>
+// 依据可视高度动态设定容器高度：解决手机浏览器底部工具栏遮挡 tab 栏的问题
+(function () {
+  function setAppHeight() {
+    document.documentElement.style.setProperty("--app-h", window.innerHeight + "px");
+  }
+  setAppHeight();
+  window.addEventListener("resize", setAppHeight);
+  window.addEventListener("orientationchange", function () { setTimeout(setAppHeight, 250); });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", setAppHeight);
+  }
+})();
+// 清理历史 Service Worker（曾导致静态资源缓存错配、脚本失效白屏），并做挂载失败兜底
+(function () {
+  if ("serviceWorker" in navigator && navigator.serviceWorker.getRegistrations) {
+    navigator.serviceWorker.getRegistrations().then(function (rs) {
+      for (var i = 0; i < rs.length; i++) { rs[i].unregister(); }
+    }).catch(function () {});
+  }
+  setTimeout(function () {
+    var el = document.querySelector(".phone");
+    if (el && el.hasAttribute("v-cloak")) {
+      el.removeAttribute("v-cloak");
+      el.innerHTML = '<div style="padding:48px 24px;text-align:center;color:#5C2233;font-size:15px;line-height:1.8">页面加载失败，请下拉刷新重试</div>';
+    }
+  }, 5000);
+})();
+</script>
+</body>
+</html>

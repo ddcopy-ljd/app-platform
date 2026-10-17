@@ -178,6 +178,7 @@ var I18N = {
     'support.banner': '生产运维穿透模式 · 所有修改将写入审计日志',
     'mode.sandbox': '沙箱试运行环境',
     'mode.sandboxTip': '当前为隔离快照数据，短信、邮件等外部动作均已拦截，不会真实发出',
+    'mtip.text': '检测到手机访问，手机网页版体验更佳', 'mtip.go': '前往手机版',
     // misc
     'misc.unit': '元', 'misc.pcs': '件', 'misc.bills': '笔',
     'misc.tenant': '租户', 'misc.operator': '操作人', 'misc.action': '操作', 'misc.target': '目标',
@@ -633,7 +634,8 @@ var I18N = {
     'tag.noneHint': '暂无标签，请到「总部管理 → 商品标签」添加',
     'tag.salesStatsTitle': '销售额统计', 'tag.dimCategory': '品类', 'tag.dimTag': '标签',
     'rg.3m': '近3月', 'rg.6m': '近6月', 'rg.year': '今年',
-    'tag.statsTitle': '标签统计', 'tag.pieceUnit': '件', 'tag.inStock': '在库',
+    'tag.statsTitle': '标签统计', 'tag.pieceUnit': '件', 'tag.inStock': '在库', 'tag.salesAmt': '销售额',
+    'tag.expand': '展开标签', 'tag.collapse': '收起标签',
     'tag.dupNote': '多标签商品在各标签组重复计入，占比分母为各组合计',
     'tag.group': '分组', 'tag.groupPh': '如：古董款', 'tag.ungrouped': '未分组',
     'tag.share': '占比', 'inv.tagShare': '标签库存占比', 'sale.tagShare': '标签销售占比',

@@ -5,12 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>懿臻珠宝云</title>
 <link rel="icon" href="/logo/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./app.css?v=20261016a108">
+<link rel="stylesheet" href="./app.css?v=20261016a113">
 </head>
 <body>
 <div id="app">
   <div v-if="mode==='PRODUCTION_SUPPORT'" class="support-banner">{{ t('support.banner') }}</div>
   <div v-if="mode==='SANDBOX'" class="sandbox-banner">🧪 {{ t('mode.sandbox') }}<template v-if="version"> · v{{ version }}</template> · {{ t('mode.sandboxTip') }}</div>
+  <div v-if="mobileTip" class="mtip-banner">
+    <span class="mtip-text">📱 {{ t('mtip.text') }}</span>
+    <a class="mtip-go" :href="mtipUrl()">{{ t('mtip.go') }}</a>
+    <button class="mtip-x" @click="mtipClose" :title="t('mtip.go')">✕</button>
+  </div>
 
   <div v-if="!token" class="login-page">
     <div class="login-logo"><img src="/logo/logo_notext.png" alt=""></div>
@@ -225,6 +230,8 @@
             </div>
             </div>
           </div>
+          </div><!-- /dash-row 趋势图独占一行 -->
+          <div class="dash-row">
           <div class="mini-chart" v-if="catSales && catSales.items && catSales.items.length">
             <div class="mini-chart-title"><span>{{ t('kpi.catSales') }}</span></div>
             <div class="donut-wrap">
@@ -241,7 +248,7 @@
                 <div class="dl-row" v-for="(c,i) in catSales.items" :key="c.category">
                   <span class="dl-dot" :style="{background: donutColor(i%6)}"></span>
                   <span class="dl-name">{{ catText(c.category) }}</span>
-                  <span class="dl-val">￥{{ fmt(c.amount) }} · {{ c.pct }}%</span>
+                  <span class="dl-val">￥{{ fmt(c.amount) }} · {{ c.pct }}% · {{ t('tag.inStock') }} {{ c.stock_count || 0 }} {{ t('tag.pieceUnit') }}</span>
                 </div>
               </div>
             </div>
@@ -251,6 +258,7 @@
               <span class="trend-head-right">
                 <span class="cat-chips">
                   <div class="cat-chip" :class="{active:saleStatsDim==='category'}" @click="setSaleStatsDim('category')">{{ t('tag.dimCategory') }}</div>
+                  <div class="cat-chip" :class="{active:saleStatsDim==='tag'}" @click="setSaleStatsDim('tag')">{{ t('tag.dimTag') }}</div>
                 </span>
                 <select class="trend-range-select" :value="saleStatsRange" @change="setSaleStatsRange($event.target.value)">
                   <option value="today">{{ t('dash.today') }}</option>
@@ -279,8 +287,8 @@
                   <span class="tag-stats-name"><span class="dl-dot" :style="{background: g.color || donutColor(i%6)}"></span>{{ g.name }}</span>
                   <div class="tag-stats-bar-wrap"><div class="tag-stats-bar" :style="tagBarStyle(g, i)"></div></div>
                 </div>
-                <div class="tag-stats-val" v-if="saleStatsDim==='category'">￥{{ fmt(g.sale_amount) }} · {{ g.sale_count }} {{ t('tag.pieceUnit') }} · {{ g.sale_pct }}%</div>
-                <div class="tag-stats-val" v-else>￥{{ fmt(g.sale_amount) }} · {{ g.sale_count }} {{ t('tag.pieceUnit') }} · {{ t('tag.inStock') }} {{ g.stock_count }} {{ t('tag.pieceUnit') }}<span v-if="g.stock_cost != null"> · {{ t('kpi.stockCost') }} ￥{{ fmt(g.stock_cost) }}</span></div>
+                <div class="tag-stats-val" v-if="saleStatsDim==='category'">{{ t('tag.salesAmt') }} ￥{{ fmt(g.sale_amount) }} · {{ g.sale_count }} {{ t('tag.pieceUnit') }} · {{ g.sale_pct }}% · {{ t('tag.inStock') }} {{ g.stock_count || 0 }} {{ t('tag.pieceUnit') }}</div>
+                <div class="tag-stats-val" v-else>{{ t('tag.salesAmt') }} ￥{{ fmt(g.sale_amount) }} · {{ g.sale_count }} {{ t('tag.pieceUnit') }} · {{ g.sale_pct }}% · {{ t('tag.inStock') }} {{ g.stock_count }} {{ t('tag.pieceUnit') }}<span v-if="g.stock_cost != null"> · {{ t('kpi.stockCost') }} ￥{{ fmt(g.stock_cost) }}</span></div>
               </div>
             </div>
             <div class="tag-stats-note" v-if="saleStatsDim==='tag' && tagStats.note">{{ t('tag.dupNote') }}</div>
@@ -448,6 +456,9 @@
               </div>
             </div>
           </div>
+          <div class="prod-tags-toggle" v-if="tagList.length">
+            <button class="btn btn-sm btn-outline" @click="tagsExpanded = !tagsExpanded">🏷 {{ tagsExpanded ? t('tag.collapse') : t('tag.expand') }}</button>
+          </div>
           <div class="table-wrap table-wide" v-if="isPc">
             <table class="data-table table-products">
               <thead><tr>
@@ -459,7 +470,7 @@
                 <th class="th-barcode">{{ t('lbl.barcode') }}</th>
                 <th class="th-name" :class="sortCls('products','name')" @click="sortTbl('products','name')">{{ t('lbl.name') }}</th>
                 <th class="th-type" :class="sortCls('products','type')" @click="sortTbl('products','type')">{{ t('lbl.category') }}</th>
-                <th class="th-tags">{{ t('tag.field') }}</th>
+                <th class="th-tags" v-if="tagsExpanded">{{ t('tag.field') }}</th>
                 <th class="th-mat" :class="sortCls('products','mat')" @click="sortTbl('products','mat')">{{ t('lbl.material') }}</th>
                 <th class="th-num" :class="sortCls('products','weight')" @click="sortTbl('products','weight')">{{ t('lbl.weight') }}</th>
                 <th class="th-num" :class="sortCls('products','price')" @click="sortTbl('products','price')">{{ t('lbl.price') }}</th>
@@ -478,9 +489,9 @@
                   <td class="cell-img"><img v-if="p.image_ts" :src="productImageUrl(p)" class="prod-thumb-img" alt=""><span v-else class="prod-thumb-ph">💎</span></td>
                   <td class="cell-code mono">{{ p.code }}</td>
                   <td class="cell-barcode mono">{{ p.barcode || '—' }}</td>
-                  <td class="cell-name">{{ p.name }}<div class="ptag-row" v-if="p.tags && p.tags.length"><span class="ptag" v-for="tg in p.tags" :key="'pt'+p.id+'-'+tg.id" :style="tagChipStyle(tg)">{{ tg.name }}</span></div><div class="cell-sub" v-if="p.location_name" :title="t('loc.where')">{{ p.location_name }}</div></td>
+                  <td class="cell-name">{{ p.name }}<div class="cell-sub" v-if="p.location_name" :title="t('loc.where')">{{ p.location_name }}</div></td>
                   <td class="cell-type">{{ productTypeName(p) }}</td>
-                  <td class="cell-tags"><span class="ptag" v-for="tg in p.tags" :key="'ct'+p.id+'-'+tg.id" :style="tagChipStyle(tg)">{{ tg.name }}</span></td>
+                  <td class="cell-tags" v-if="tagsExpanded"><div class="ptag-row"><span class="ptag" v-for="tg in p.tags" :key="'ct'+p.id+'-'+tg.id" :style="tagChipStyle(tg)">{{ tg.name }}</span></div></td>
                   <td class="cell-mat mono" :title="p.material ? t('mat.cn.'+materialText(p.material)) : ''">{{ materialText(p.material) || '—' }}</td>
                   <td class="cell-num">{{ p.weight }}g</td>
                   <td class="cell-num">￥{{ fmt(p.price) }}</td>
@@ -503,7 +514,7 @@
                 <div class="prod-thumb"><img v-if="p.image_ts" :src="productImageUrl(p)" class="prod-thumb-img" alt=""><template v-else>💎</template></div>
                 <div class="prod-info">
                   <div class="prod-name">{{ p.name }}<span class="tag tag-printed" v-if="p.label_print_count" :title="printedTip(p)">🖨{{ p.label_print_count }}</span><span class="tag tag-hv" v-if="p.high_value">⭐{{ t('lbl.highValue') }}</span><span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span></div>
-                  <div class="ptag-row" v-if="p.tags && p.tags.length"><span class="ptag" v-for="tg in p.tags" :key="'mt'+p.id+'-'+tg.id" :style="tagChipStyle(tg)">{{ tg.name }}</span></div>
+                  <div class="ptag-row" v-if="tagsExpanded && p.tags && p.tags.length"><span class="ptag" v-for="tg in p.tags" :key="'mt'+p.id+'-'+tg.id" :style="tagChipStyle(tg)">{{ tg.name }}</span></div>
                   <div class="prod-meta">{{ t('lbl.huohao') }}：{{ p.code }} · {{ productTypeName(p) }} · {{ materialText(p.material) || '—' }} · {{ p.weight }}g<span v-if="p.location_name"> · {{ p.location_name }}</span></div>
                   <div class="prod-meta mono" v-if="p.barcode">🏷 {{ p.barcode }}</div>
                 </div>
@@ -2984,19 +2995,19 @@ Content-Type: application/json
                   <label class="ms-opt"><input type="radio" v-model="sheetData.price_mode" value="fixed">{{ t('price.fixed') }}</label>
                 </div>
               </div>
-              <div class="form-group" v-if="sheetData.price_mode==='percent'">
-                <label>{{ t('price.discount') }}</label>
-                <input v-model.number="sheetData.discount" type="number" min="0" max="100">
-              </div>
-              <div class="form-group" v-else>
-                <label>{{ t('price.discountPrice') }}</label>
-                <input v-model.number="sheetData.discount_price" type="number" min="0" step="0.01">
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>{{ t('price.memberPrice') }}</label>
-                <input v-model.number="sheetData.member_price" type="number" min="0" step="0.01" placeholder="0 = 不设">
+              <div class="fs-price-right">
+                <div class="form-group inline" v-if="sheetData.price_mode==='percent'">
+                  <label>{{ t('price.discount') }}</label>
+                  <input v-model.number="sheetData.discount" type="number" min="0" max="100">
+                </div>
+                <div class="form-group inline" v-else>
+                  <label>{{ t('price.discountPrice') }}</label>
+                  <input v-model.number="sheetData.discount_price" type="number" min="0" step="0.01">
+                </div>
+                <div class="form-group inline">
+                  <label>{{ t('price.memberPrice') }}</label>
+                  <input v-model.number="sheetData.member_price" type="number" min="0" step="0.01" placeholder="0 = 不设">
+                </div>
               </div>
             </div>
           </div>
@@ -3870,14 +3881,14 @@ Content-Type: application/json
 <script src="./vendor/vue.global.prod.js"></script>
 <script src="./vendor/qrcode.min.js"></script>
 <script src="./vendor/zxing.min.js"></script>
-<script src="./i18n.js?v=20261016a108"></script>
+<script src="./i18n.js?v=20261016a113"></script>
 <script>
 // 非中文时同步加载对应语言字典（i18n.<dict>.js），确保 app.js 挂载前字典就绪
 (function () {
   var _dict = (typeof i18nDictFile === 'function') ? i18nDictFile() : '';
-  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261016a108"><\/script>');
+  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261016a113"><\/script>');
 })();
 </script>
-<script src="./app.js?v=20261016a108"></script>
+<script src="./app.js?v=20261016a113"></script>
 </body>
 </html>

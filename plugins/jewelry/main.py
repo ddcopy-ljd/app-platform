@@ -44,6 +44,7 @@ logger = logging.getLogger("jewelry")
 
 ROOT = Path(__file__).resolve().parent
 FRONTEND_DIR = ROOT / "frontend"
+MOBILE_DIR = ROOT / "mobile"
 LOGO_DIR = ROOT / "logo"
 
 HOST = os.environ.get("HOST", "127.0.0.1")
@@ -1456,8 +1457,12 @@ def dashboard_category_sales(request: Request, start: str = Query(default=""), e
                 GROUP BY cat ORDER BY a DESC
             """, (sid,)).fetchall()
         total = sum(r["a"] for r in rows) or 1
+        stock_by = {r["cat"]: r["n"] for r in conn.execute(
+            "SELECT COALESCE(NULLIF(product_type,''),'其他') cat, COUNT(*) n "
+            "FROM products WHERE status='在库' AND store_id=? GROUP BY cat", [sid]).fetchall()}
         return {"total": round(sum(r["a"] for r in rows), 2), "items": [
-            {"category": r["cat"], "amount": round(r["a"], 2), "count": r["n"], "pct": round(r["a"] * 100 / total, 1)}
+            {"category": r["cat"], "amount": round(r["a"], 2), "count": r["n"], "pct": round(r["a"] * 100 / total, 1),
+             "stock_count": stock_by.get(r["cat"], 0)}
             for r in rows
         ]}
 
@@ -1489,9 +1494,12 @@ def dashboard_tag_stats(request: Request, start: str = Query(default=""), end: s
                 "WHERE s.status!='已冲红' AND (s.store_id=? OR s.store_id=0) AND " + date_cond +
                 " GROUP BY k ORDER BY a DESC, n DESC LIMIT 10", [sid] + date_args).fetchall()
             total = sum(r["a"] for r in rows) or 1
+            stock_by = {r["k"]: r["n"] for r in conn.execute(
+                "SELECT COALESCE(NULLIF(product_type,''),'未分类') k, COUNT(*) n "
+                "FROM products WHERE status='在库' AND store_id=? GROUP BY k", [sid]).fetchall()}
             return {"dim": "category", "start": rs, "end": re_, "items": [
                 {"name": r["k"], "color": "", "sale_amount": round(r["a"], 2), "sale_count": r["n"],
-                 "sale_pct": round(r["a"] * 100 / total, 1)} for r in rows]}
+                 "sale_pct": round(r["a"] * 100 / total, 1), "stock_count": stock_by.get(r["k"], 0)} for r in rows]}
         ids = [int(x) for x in tag_ids.replace(" ", "").split(",") if x.isdigit()]
         sel = (" AND t.id IN (" + ",".join("?" * len(ids)) + ")") if ids else ""
         tags = conn.execute(
@@ -7631,6 +7639,27 @@ async def _security_startup():
 
 
 # ---------------------------------------------------------------- 静态资源（最后注册）
+
+_MOBILE_ASSET_SUFFIXES = (".js", ".css", ".map", ".png", ".svg", ".ico", ".jpg", ".jpeg",
+                          ".webp", ".json", ".webmanifest", ".woff2")
+
+
+@app.get("/mobile")
+@app.get("/mobile/{asset_path:path}")
+def mobile_asset(asset_path: str = ""):
+    """网页版手机应用：伺服 mobile/ 目录（免安装 H5/PWA）。"""
+    idx = MOBILE_DIR / "index.html"
+    if not asset_path:
+        if idx.is_file():
+            return FileResponse(str(idx), headers={"Cache-Control": "no-cache"})
+    f = (MOBILE_DIR / asset_path).resolve()
+    if f.is_file() and _safe_relative(f, MOBILE_DIR.resolve()) and f.suffix.lower() in _MOBILE_ASSET_SUFFIXES:
+        nocache = {"Cache-Control": "no-cache"} if f.suffix.lower() in (".js", ".css", ".html") else None
+        return FileResponse(str(f), headers=nocache)
+    if idx.is_file() and "." not in Path(asset_path).name:
+        return FileResponse(str(idx), headers={"Cache-Control": "no-cache"})
+    return JSONResponse({"detail": "Not Found"}, status_code=404)
+
 
 @app.get("/{asset_path:path}")
 def spa_asset(asset_path: str):

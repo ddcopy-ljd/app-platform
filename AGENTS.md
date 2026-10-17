@@ -79,6 +79,7 @@
    - 断言文案**禁止臆测**：区块标题/按钮文案先查 i18n.js 键值与模板（如 `sale.tagShare`=「标签销售占比」非「标签实销占比」、商品弹层保存=`act.submit`「确认提交」非「保存」）。
    - `browser_console_messages` 会**累积跨会话历史报错**（含旧版本号资源、子代理自身 evaluate 探针触发的 `<anonymous>` SyntaxError/TypeError、服务重启间隙的 ERR_CONNECTION_REFUSED）；判断"本次改动是否引入前端报错"必须看错误堆栈里的资源版本号（`app.js?v=...`）是否当前版本，历史残留不得当作本次回归失败证据（2026-10-16 销售额统计卡走查实踩：3 轮子代理均把历史残留误报为"console 有红色报错"）。
    - **禁止用「再注入一份 `<script src=app.js?v=新>`」的方式硬刷静态资源版本**：重新执行脚本会重置模块状态（如 ST 初始值），Vue 绑定与状态可能错配，导致拖动/渲染行为按旧状态误判；硬刷一律重新导航页面（browser_navigate）后确认 `document.scripts` 中的版本号（2026-10-16 趋势图连续拖动走查实踩）。
+   - **窄手机壳（mobile/ 430px）内 browser_click 坐标点击 tab 栏/小按钮极不可靠**（常点到相邻 tab 或落空，子代理还会臆造 `.last .tab` 这类不存在的选择器）；此时改用 `browser_evaluate` 读 `querySelectorAll` 定位索引后执行 DOM `.click()`，再读 DOM 文本验证（2026-10-16 mobile/ 语言切换走查实踩：坐标点击 3 轮 FAIL 误报"我的页未渲染"，evaluate 驱动一轮全 PASS）。
 
 ---
 

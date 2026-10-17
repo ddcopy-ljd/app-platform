@@ -187,6 +187,7 @@ registerLang('en', {
     'support.banner': 'Production Support Mode · All changes are audit-logged',
     'mode.sandbox': 'Sandbox Trial',
     'mode.sandboxTip': 'Isolated snapshot data. SMS, email and other external actions are mocked and never sent for real.',
+    'mtip.text': 'Phone detected — the mobile web version offers a better experience', 'mtip.go': 'Open mobile version',
     // misc
     'misc.unit': '', 'misc.pcs': 'items', 'misc.bills': 'orders',
     'misc.tenant': 'Tenant', 'misc.operator': 'Operator', 'misc.action': 'Action', 'misc.target': 'Target',
@@ -756,7 +757,8 @@ registerLang('en', {
     'tag.noneHint': 'No tags yet. Add them in HQ Management → Product Tags',
     'tag.salesStatsTitle': 'Sales Stats', 'tag.dimCategory': 'Category', 'tag.dimTag': 'Tag',
     'rg.3m': 'Last 3M', 'rg.6m': 'Last 6M', 'rg.year': 'This year',
-    'tag.statsTitle': 'Tag Stats', 'tag.pieceUnit': 'pcs', 'tag.inStock': 'In stock',
+    'tag.statsTitle': 'Tag Stats', 'tag.pieceUnit': 'pcs', 'tag.inStock': 'In stock', 'tag.salesAmt': 'Sales',
+    'tag.expand': 'Show tags', 'tag.collapse': 'Hide tags',
     'tag.dupNote': 'Multi-tag products are counted in each tag group; the percentage denominator is the sum of all groups',
     'tag.group': 'Group', 'tag.groupPh': 'e.g. Antique', 'tag.ungrouped': 'Ungrouped',
     'tag.share': 'Share', 'inv.tagShare': 'Stock Share by Tag', 'sale.tagShare': 'Sales Share by Tag',
