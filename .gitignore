@@ -58,3 +58,11 @@ plugins/jewelry/demo/demo1.html
 plugins/jewelry/test_printer.py
 .trae/documents/inventory-analysis-pc-rework.md
 
+# 本地 Agent 工具缓存（不入库）
+.hbuilderv/
+.uni-agent/
+.trae/tmp/
+
+# 插件本地开发库（不入库）
+plugins/jewelry/jewelry.db
+
