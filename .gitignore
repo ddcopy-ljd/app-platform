@@ -34,6 +34,9 @@ Thumbs.db
 # 本地下载的构建产物
 scanner-apk/
 
+# 扫描助手签名 keystore（构建用，私钥绝不入库）
+scanner-app/
+
 
 node_modules/
 .git/

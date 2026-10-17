@@ -3764,7 +3764,7 @@ def _biz_printer_map(conn, sid: int) -> dict:
 
 
 class _Bridge:
-    __slots__ = ("ws", "loop", "name", "printers", "last_seen", "last_job")
+    __slots__ = ("ws", "loop", "name", "printers", "last_seen", "last_job", "agent_type")
 
     def __init__(self, ws, loop, name: str):
         self.ws = ws
@@ -3773,6 +3773,7 @@ class _Bridge:
         self.printers: list[str] = []
         self.last_seen = time.time()
         self.last_job: dict | None = None
+        self.agent_type: str = "legacy"  # "legacy"=旧 Python 桥, "csharp"=新 C# PrintAgent
 
 
 _bridges: dict[int, _Bridge] = {}              # store_id -> 代理连接
@@ -3798,9 +3799,33 @@ def _bridge_enqueue(sid: int, zpl: str, count: int,
     with _bridges_lock:
         _bridge_seq[0] += 1
         jid = f"PJ{_bridge_seq[0]:06d}"
-    _bridge_send(sid, {"type": "job", "job": {"job_id": jid, "zpl": zpl,
-                                              "title": "jewelry-labels", "count": count,
-                                              "biz": biz, "printer": printer}})
+        b = _bridges.get(sid)
+    agent_type = b.agent_type if b else "legacy"
+
+    if agent_type == "csharp":
+        # 新 C# PrintAgent 协议: print_task + raw_passthrough
+        # ZPL 自带 ^PQ 控制份数(^PQ{count})
+        zpl_with_pq = zpl
+        if count and count > 1:
+            # 在 ^XA 后插入 ^PQ{count},0,1,Y
+            zpl_with_pq = zpl.replace("^XA", f"^XA\n^PQ{count},0,1,Y", 1) if "^XA" in zpl else zpl
+        payload = {
+            "type": "print_task",
+            "taskId": jid,
+            "printerType": "raw_passthrough",
+            "brand": "zmin",
+            "interface": "DRIVER",
+            "printerIp": "",
+            "printerName": printer or "Default",
+            "storeId": str(sid),
+            "content": {"rawCommands": zpl_with_pq},
+        }
+    else:
+        # 旧 Python PrintBridge 协议: job 嵌套
+        payload = {"type": "job", "job": {"job_id": jid, "zpl": zpl,
+                                           "title": "jewelry-labels", "count": count,
+                                           "biz": biz, "printer": printer}}
+    _bridge_send(sid, payload)
     return jid
 
 
@@ -3825,14 +3850,21 @@ def print_agent_status(request: Request):
     out = []
     with _db(request) as conn:
         rows = conn.execute(
-            "SELECT id,name,code,printer_name,bridge_key FROM stores ORDER BY id").fetchall()
-        # 连接关闭前预取每店的业务指派
+            "SELECT id,name,code,printer_name FROM stores ORDER BY id").fetchall()
         biz_maps = {r["id"]: _biz_printer_map(conn, r["id"]) for r in rows}
+        # 每店打印代理实例及在线状态(last_seen 来自 print_agents 表)
+        agents = {}
+        for r in rows:
+            alist = conn.execute(
+                "SELECT id,name,status,last_seen FROM print_agents "
+                "WHERE store_id=? ORDER BY id DESC", (r["id"],)).fetchall()
+            agents[r["id"]] = [dict(a) for a in alist]
     with _bridges_lock:
         for r in rows:
             b = _bridges.get(r["id"])
             online = bool(b and now - b.last_seen < 15)
             biz_map = biz_maps[r["id"]]
+            alist = agents.get(r["id"], [])
             out.append({
                 "store_id": r["id"], "store_name": r["name"], "code": r["code"],
                 "online": online, "agent_name": (b.name if online else ""),
@@ -3840,7 +3872,10 @@ def print_agent_status(request: Request):
                 "printer_name": biz_map.get("label_product", "") or r["printer_name"] or "",
                 "biz": [{"code": c0, "printer": biz_map.get(c0, "")}
                         for c0 in db.PRINT_BIZ_CODES],
-                "has_key": bool((r["bridge_key"] or "").strip()),
+                "has_key": len(alist) > 0,
+                "agents": [{"id": a["id"], "name": a["name"], "status": a["status"],
+                            "online": bool(a["last_seen"]) and (now - a["last_seen"]) < 15}
+                           for a in alist],
                 "last_job": (dict(b.last_job) if online and b.last_job else None),
             })
     return {"bridges": out}
@@ -3848,17 +3883,17 @@ def print_agent_status(request: Request):
 
 @app.get("/api/print-agent/download")
 def print_agent_download():
-    """下载打印助手：运维端发布目录优先，包内 downloads/ 兜底，再退构建产物 exe、py 源码。"""
+    """下载打印助手：运维端发布目录优先，包内 downloads/ 兜底，再退 C# 开发构建产物。"""
     exe = ops_api.pub_dir() / "PrintBridge.exe"
     if not exe.is_file():
         exe = ROOT / "downloads" / "PrintBridge.exe"
     if not exe.is_file():
-        exe = ROOT / "agents" / "print" / "dist" / "PrintBridge.exe"
+        exe = (ROOT / "agents" / "print" / "bin" / "Release"
+               / "net8.0-windows10.0.19041.0" / "win-x64" / "publish" / "PrintAgent.exe")
     if exe.is_file():
         return FileResponse(exe, filename="PrintBridge.exe",
                             media_type="application/vnd.microsoft.portable-executable")
-    src = ROOT / "agents" / "print" / "print_agent.py"
-    return FileResponse(src, filename="print_agent.py", media_type="text/x-python")
+    raise HTTPException(404, "打印助手尚未发布")
 
 
 def _scan_app_apk() -> Path | None:
@@ -4019,17 +4054,44 @@ def store_create(body: dict, request: Request):
     return {"ok": True, "id": sid, "code": code}
 
 
-@app.post("/api/stores/{sid}/bridge-key")
-def store_bridge_key_rotate(sid: int, request: Request):
-    """生成/重置门店 Token（旧 Token 立即失效）。"""
+@app.post("/api/stores/{sid}/print-agent-key")
+def store_print_agent_key(sid: int, request: Request):
+    """生成一个新的打印代理实例 Key（插入 print_agents, 每个打印助手一个）。"""
     _require_auth(request)
     key = secrets.token_urlsafe(18)
     with _db(request) as conn:
         if not conn.execute("SELECT id FROM stores WHERE id=?", (sid,)).fetchone():
             raise HTTPException(404, "门店不存在")
-        conn.execute("UPDATE stores SET bridge_key=? WHERE id=?", (key, sid))
+        cur = conn.execute(
+            "INSERT INTO print_agents(store_id,agent_key,name) VALUES(?,?,?)",
+            (sid, key, f"打印代理-{sid}"))
         conn.commit()
-    return {"key": key, "store_id": sid}
+    return {"agent_key": key, "store_id": sid, "agent_id": cur.lastrowid}
+
+
+@app.get("/api/stores/{sid}/print-agents")
+def store_print_agents(sid: int, request: Request):
+    """列出门店所有打印代理实例(含 key, 仅回显)。"""
+    _require_auth(request)
+    with _db(request) as conn:
+        rows = conn.execute(
+            "SELECT id,agent_key,name,status,last_seen,created FROM print_agents "
+            "WHERE store_id=? ORDER BY id DESC", (sid,)).fetchall()
+    now = int(time.time())
+    return [{"id": r["id"], "agent_key": r["agent_key"], "name": r["name"],
+             "status": r["status"],
+             "online": bool(r["last_seen"]) and (now - r["last_seen"]) < 15,
+             "created": r["created"]} for r in rows]
+
+
+@app.post("/api/print-agents/{aid}/revoke")
+def print_agent_revoke(aid: int, request: Request):
+    """吊销打印代理实例(旧 Key 立即失效)。"""
+    _require_auth(request)
+    with _db(request) as conn:
+        conn.execute("UPDATE print_agents SET status='revoked' WHERE id=?", (aid,))
+        conn.commit()
+    return {"ok": True, "agent_id": aid}
 
 
 @app.post("/api/stores/{sid}/bind-printer")
@@ -4091,29 +4153,45 @@ async def store_print_control(sid: int, body: dict, request: Request):
     if not online:
         raise HTTPException(400, f"门店「{s['name']}」打印代理不在线")
     target_printer = bmap.get(biz, "") if action == "test" else bmap.get("label_product", "")
-    payload: dict = {"type": "control", "action": action,
-                     "biz": biz, "printer": target_printer}
-    if action == "test":
-        payload["zpl"] = _build_test_zpl(s["name"], target_printer)
-    if action != "refresh":
+    with _bridges_lock:
+        is_csharp = b.agent_type == "csharp" if b else False
+    if is_csharp and action == "test":
+        # C# 代理不识别 control 消息, 测试页改用 print_task + raw_passthrough
         with _bridges_lock:
             _bridge_seq[0] += 1
-            payload["control_id"] = f"C{_bridge_seq[0]:06d}"
+            cid = f"C{_bridge_seq[0]:06d}"
+        payload = {
+            "type": "print_task", "taskId": cid,
+            "printerType": "raw_passthrough", "interface": "DRIVER",
+            "printerName": target_printer or "Default", "storeId": str(sid),
+            "content": {"rawCommands": _build_test_zpl(s["name"], target_printer)},
+        }
+    else:
+        payload: dict = {"type": "control", "action": action,
+                         "biz": biz, "printer": target_printer}
+        if action == "test":
+            payload["zpl"] = _build_test_zpl(s["name"], target_printer)
+        if action != "refresh":
+            with _bridges_lock:
+                _bridge_seq[0] += 1
+                payload["control_id"] = f"C{_bridge_seq[0]:06d}"
+            cid = payload["control_id"]
+    if action != "refresh":
         ev = threading.Event()
         with _bridges_lock:
-            _bridge_waiters[payload["control_id"]] = ev
+            _bridge_waiters[cid] = ev
     try:
         await b.ws.send_text(json.dumps(payload, ensure_ascii=False))
     except Exception as e:
         with _bridges_lock:
-            _bridge_waiters.pop(payload.get("control_id"), None)
+            _bridge_waiters.pop(cid, None)
         raise HTTPException(400, f"发送失败：{e}")
     if action == "refresh":
         return {"ok": True, "action": action}
-    ok = await asyncio.to_thread(_bridge_waiters[payload["control_id"]].wait, 12)
+    ok = await asyncio.to_thread(_bridge_waiters[cid].wait, 12)
     with _bridges_lock:
-        res = _bridge_results.pop(payload["control_id"], None)
-        _bridge_waiters.pop(payload["control_id"], None)
+        res = _bridge_results.pop(cid, None)
+        _bridge_waiters.pop(cid, None)
     if not ok or not res:
         raise HTTPException(400, "打印桥未响应（超时 12 秒）")
     if not res.get("ok"):
@@ -4127,23 +4205,39 @@ async def print_agent_ws(websocket: WebSocket, key: str = "", name: str = ""):
 
     连接即上报本机打印机（hello）；云端回推绑定打印机（config）；
     任务/控制指令实时推送，回执经同一连接返回。
+
+    兼容两种鉴权: ?key= 查询参数(旧 Python 桥) 或 X-Store-Key 请求头(新 C# PrintAgent)。
+    兼容两种代理: hello(legacy) / register(csharp) 注册消息, job/print_task 推送, ack/task_ack 回执。
     """
+    # 鉴权: 查询参数优先, 其次 X-Store-Key 请求头(C# 代理); 精确匹配 print_agents.agent_key
     key = (key or "").strip()
+    if not key:
+        key = (websocket.headers.get("X-Store-Key") or "").strip()
     store = None
+    agent = None
     biz_map: dict = {}
     if key:
         with _db(websocket) as conn:
-            store = conn.execute(
-                "SELECT id,name,printer_name FROM stores WHERE bridge_key=?", (key,)).fetchone()
-            if store:
-                biz_map = _biz_printer_map(conn, store["id"])
+            agent = conn.execute(
+                "SELECT pa.id AS agent_id, pa.name AS agent_name, pa.store_id, "
+                "s.name AS store_name, s.printer_name "
+                "FROM print_agents pa JOIN stores s ON s.id=pa.store_id "
+                "WHERE pa.agent_key=? AND pa.status='active'", (key,)).fetchone()
+            if agent:
+                store = {"id": agent["store_id"], "name": agent["store_name"],
+                         "printer_name": agent["printer_name"]}
+                biz_map = _biz_printer_map(conn, agent["store_id"])
+                conn.execute("UPDATE print_agents SET last_seen=? WHERE id=?",
+                             (int(time.time()), agent["agent_id"]))
+                conn.commit()
     await websocket.accept()
     if not store:
         await websocket.close(code=4401)
         return
     sid = store["id"]
+    agent_id = agent["agent_id"] if agent else 0
     b = _Bridge(websocket, asyncio.get_running_loop(),
-                (name or "").strip() or f"{store['name']}打印桥")
+                (name or "").strip() or agent["agent_name"] or f"{store['name']}打印桥")
     with _bridges_lock:
         old = _bridges.get(sid)
         _bridges[sid] = b
@@ -4175,36 +4269,52 @@ async def print_agent_ws(websocket: WebSocket, key: str = "", name: str = ""):
                 if mtype in ("hello", "printers"):
                     b.printers = [str(x) for x in (d.get("printers") or []) if str(x).strip()]
                     await _push_config()
+                elif mtype == "register":
+                    # 新 C# PrintAgent 注册消息: {type, storeKey, storeId, clientTime, printers}
+                    b.agent_type = "csharp"
+                    b.printers = [str(x) for x in (d.get("printers") or []) if str(x).strip()]
+                    await _push_config()
                 elif mtype == "heartbeat":
-                    pass  # 每收到一帧已刷新 last_seen，心跳本身无需处理
+                    # 刷新 print_agents.last_seen(在线状态只信上报帧)
+                    if agent_id:
+                        try:
+                            with _db(websocket) as conn:
+                                conn.execute("UPDATE print_agents SET last_seen=? WHERE id=?",
+                                             (int(time.time()), agent_id))
+                                conn.commit()
+                        except Exception:
+                            pass
                 elif mtype == "local_ack":
                     # 本地直打回执：浏览器经代理 localhost 直发打印（未经云端中转），补一条审计
                     n = int(d.get("count") or 0)
                     with _db(websocket) as conn:
                         _log(conn, f"{store['name']}打印桥", "本地直打",
                              f"{n}张 → {d.get('printer') or '默认打印机'}")
-                elif mtype == "ack":
+                elif mtype in ("ack", "task_ack"):
                     # 打印任务回执：记录该桥最近一次任务结果（只代表已写入打印队列，
                     # 物理出纸仍需人眼确认——RAW 通道读不到硬件状态）
-                    jid = str(d.get("job_id") or "")
-                    if jid:
-                        b.last_job = {"job_id": jid, "ok": bool(d.get("ok")),
-                                      "message": str(d.get("message") or ""),
-                                      "ts": datetime.now().strftime("%m-%d %H:%M:%S")}
-                        continue
+                    # legacy ack: {job_id, ok, message} ; csharp task_ack: {taskId, success, message}
+                    jid = str(d.get("job_id") or d.get("taskId") or "")
                     cid = str(d.get("control_id") or "")
-                    if not cid:
-                        continue
-                    with _bridges_lock:
-                        _bridge_results[cid] = {
-                            "ok": bool(d.get("ok")), "message": str(d.get("message") or ""),
-                        }
-                        if len(_bridge_results) > 200:
-                            for k in list(_bridge_results)[:100]:
-                                _bridge_results.pop(k, None)
-                        ev = _bridge_waiters.get(cid)
-                    if ev:
-                        ev.set()
+                    ok = bool(d.get("ok", d.get("success")))
+                    msg = str(d.get("message") or "")
+                    # C# 测试页回执: taskId 复用了 control_id, 需路由到控制指令等待者
+                    if not cid and jid:
+                        with _bridges_lock:
+                            if jid in _bridge_waiters:
+                                cid = jid
+                    if cid:
+                        with _bridges_lock:
+                            _bridge_results[cid] = {"ok": ok, "message": msg}
+                            if len(_bridge_results) > 200:
+                                for k in list(_bridge_results)[:100]:
+                                    _bridge_results.pop(k, None)
+                            ev = _bridge_waiters.get(cid)
+                        if ev:
+                            ev.set()
+                    elif jid:
+                        b.last_job = {"job_id": jid, "ok": ok, "message": msg,
+                                      "ts": datetime.now().strftime("%m-%d %H:%M:%S")}
         except Exception:
             stop.set()
 
@@ -5147,6 +5257,39 @@ def create_activation(body: ActivationIn, request: Request):
         conn.commit()
         return {"akey": akey, "expires_in": 900,
                 "url": f"http://{_lan_ip()}:{PORT}/api/device/activate?key={akey}"}
+
+
+@app.post("/api/stores/{sid}/scan-device-key")
+def store_scan_device_key(sid: int, request: Request, name: str = ""):
+    """直接生成扫描设备实例 Key(插入 devices 表, 与打印助手同风格; 激活码机制保留兼容)。"""
+    _require_auth(request)
+    with _db(request) as conn:
+        if not conn.execute("SELECT id FROM stores WHERE id=?", (sid,)).fetchone():
+            raise HTTPException(404, "门店不存在")
+        device_token = secrets.token_urlsafe(24)
+        code = f"SC{secrets.token_hex(4).upper()}"
+        dev_name = (name or "").strip() or f"扫描设备-{sid}"
+        conn.execute(
+            "INSERT INTO devices(code,name,bound_store_id,device_token,status,last_seen) "
+            "VALUES(?,?,?,?,'active',0)",
+            (code, dev_name, sid, device_token))
+        conn.commit()
+    return {"device_token": device_token, "code": code, "store_id": sid, "name": dev_name}
+
+
+@app.get("/api/stores/{sid}/scan-devices")
+def store_scan_devices(sid: int, request: Request):
+    """列出门店所有扫描设备实例(含 token, 仅回显)。"""
+    _require_auth(request)
+    now = int(time.time())
+    with _db(request) as conn:
+        rows = conn.execute(
+            "SELECT id,code,name,status,last_seen,device_token,created FROM devices "
+            "WHERE bound_store_id=? ORDER BY id DESC", (sid,)).fetchall()
+    return [{"id": r["id"], "code": r["code"], "name": r["name"],
+             "device_token": r["device_token"], "status": r["status"],
+             "online": bool(r["last_seen"]) and (now - r["last_seen"]) <= 60,
+             "created": r["created"]} for r in rows]
 
 
 @app.get("/api/devices/activations")

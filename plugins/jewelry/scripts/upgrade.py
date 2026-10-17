@@ -24,6 +24,10 @@
   dataVersion 1.2.21 商品标签分组：product_tags.group_name 分组列（migrate_schema 幂等补列）；
   dataVersion 1.2.22 运维端受控写操作：users.must_change_pwd 强制改密旗标列
   （migrate_schema 幂等补列；运维端重置密码置 1，用户改密后清零）；
+  dataVersion 1.2.23 门店 Key 实例级化：新增 print_agents 表（打印助手实例级
+  密钥/在线状态，SCHEMA 幂等建表），并从 stores 表幂等移除旧的 store_key/scan_key
+  列（门店级 Key 改为设备实例级，由 print_agents/scan 设备密钥承载；
+  migrate_schema 以 _has_column 守卫后 ALTER TABLE DROP COLUMN，老库自动收敛）；
   标签种子 _SEED_PRODUCT_TAGS 常量化，ensure_new_seeds 仅全新演示库（products 本次新灌）
   联动灌入——外网沙箱基线库可得演示标签，真实租户删光标签后升级不复活（TC-40）；
 - 幂等执行 EPC 现行规则化（前缀+门店段+品类码+序号）与材质英文长码收敛为简写。

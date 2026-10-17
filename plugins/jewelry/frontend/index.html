@@ -2033,17 +2033,27 @@
                       :class="bridgeOfStore(s.id).online ? 'st-on' : 'st-off'">
                   ● {{ bridgeOfStore(s.id).online ? t('sb.online') : t('sb.offline') }}
                 </span>
-                <span class="bridge-state st-idle" v-else>○ {{ (s.bridge_key || '').trim() ? t('sb.notConnected') : t('sb.noKey') }}</span>
+                <span class="bridge-state st-idle" v-else>○ {{ (bridgeOfStore(s.id) && bridgeOfStore(s.id).agents && bridgeOfStore(s.id).agents.length) ? t('sb.notConnected') : t('sb.noKey') }}</span>
               </div>
               <div class="prod-meta" v-if="bridgeOfStore(s.id) && bridgeOfStore(s.id).online">🖥 {{ bridgeOfStore(s.id).agent_name }}</div>
 
               <div class="bridge-row">
                 <label>{{ t('pa.key') }}</label>
-                <span class="prod-meta">{{ (s.bridge_key || '').trim() ? t('sb.keySet') : t('sb.keyNone') }}</span>
-                <button class="btn-small" @click="rotateStoreKey(s.id)">{{ t('sb.genKey') }}</button>
+                <button class="btn-small" @click="genPrintAgentKey(s.id)">＋ {{ t('sb.genKey') }}</button>
               </div>
+              <!-- 打印代理实例列表: 每个实例一个 key, 含在线状态和吊销 -->
+              <div v-if="bridgeOfStore(s.id) && bridgeOfStore(s.id).agents && bridgeOfStore(s.id).agents.length" style="margin:6px 0">
+                <div v-for="a in bridgeOfStore(s.id).agents" :key="a.id"
+                     style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px dashed #eee;font-size:13px">
+                  <span class="bridge-state" :class="a.online ? 'st-on' : 'st-off'" style="font-size:12px">●</span>
+                  <span class="mono" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ a.agent_key }}</span>
+                  <span class="prod-meta">{{ a.name }}</span>
+                  <button class="btn-small" @click="revokePrintAgent(a.id)" :disabled="a.status!=='active'">{{ t('sb.revoke') }}</button>
+                </div>
+              </div>
+              <div class="prod-meta" v-else style="margin:4px 0">{{ t('sb.noAgent') }}</div>
 
-              <details class="bridge-biz" v-if="(s.bridge_key || '').trim()">
+              <details class="bridge-biz" v-if="bridgeOfStore(s.id) && bridgeOfStore(s.id).agents && bridgeOfStore(s.id).agents.length">
                 <summary>{{ t('sb.assignTitle') }}</summary>
                 <div v-for="g in bizGroups" :key="g.group" class="biz-grp">
                   <div class="biz-grp-title">{{ t('pbizg.' + g.group) }}</div>
@@ -2090,6 +2100,7 @@
                 <div class="flex-between">
                   <span>📱 {{ t('sb.handheld') }} <span class="prod-meta">({{ devicesOfStore(s.id).length }})</span></span>
                   <span>
+                    <button class="btn-small" @click="genScanDeviceKey(s.id)">🔑 {{ t('sb.genScanKey') }}</button>
                     <button class="btn-small" @click="openHandheldLogin(s.id)">＋ {{ t('sb.bindNew') }}</button>
                     <button class="btn-small" @click="openDevices(s.id)">{{ t('sb.handheldMgr') }}</button>
                   </span>

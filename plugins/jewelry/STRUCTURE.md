@@ -230,17 +230,15 @@ plugins/jewelry/
 
 ## 6. 两个本地助手（`agents/`，独立构建线，源码不入插件包）
 
-### 6.1 打印助手（PrintBridge）
+### 6.1 打印助手（PrintAgent，.NET 8 WinForms）
 
-门店电脑本地运行的打印代理，免驱直连标签打印机：
+门店电脑本地运行的打印代理（2026-10-17 起由 Python PrintBridge 替换为 C# PrintAgent_ZMIN 工程）：
 
-- **源码**：[agents/print/print_agent.py](agents/print/print_agent.py)
-- **打包**：`agents/print/build_exe.bat` + `agents/print/PrintBridge.spec`（PyInstaller）→ 产物 `agents/print/dist/PrintBridge.exe`，复制到 `downloads/` 随插件包分发
-- **配置**：门店本地 `print_agent.json`（**不入包**，记录打印机端口 / 型号等）
-- **使用说明**：见 `agents/print/PrintBridge-使用说明.txt`
-- **链路**：插件后端下发打印任务 → PrintBridge 接收 → 直连打印机出标签；下载接口 `GET /api/print-agent/download`（包内 `downloads/` 优先，回退 `agents/print/dist/`，再退 py 源码）
-
-PrintBridge 与插件后端通过本地 HTTP/WebSocket 通信；程序路径只相对自身所在目录解析（`sys.frozen` 时取 exe 目录），可整目录搬迁；`print_agent.json` 用 `utf-8-sig` 读取（防 BOM 崩 `json.load`）。
+- **源码**：`agents/print/`（net8.0-windows WinForms 单文件工程：本地 HTTP `127.0.0.1:18180` 收任务 + 云端 WS 长连接 + ZMIN RFID/ESC-POS/Win 驱动打印调度，厂商闭源 `libs/LabelPrinter.dll` 勿动）；工程内规范见 `agents/print/AGENTS.md` 与 `agents/print/STRUCTURE.md`
+- **构建**：`dotnet publish -c Release -r win-x64 --self-contained true` → 单文件产物 `agents/print/bin/Release/net8.0-windows10.0.19041.0/win-x64/publish/PrintAgent.exe`（需 .NET 8 SDK；bin/obj/厂商 SDK 资料包 `.Net/` 均 gitignore 不入库）
+- **分发**：对外下载名仍 `PrintBridge.exe`——`GET /api/print-agent/download` 链路「运维端发布目录优先 → 包内 `downloads/` 兜底 → C# publish 产物」，发布时把 PrintAgent.exe 改名 PrintBridge.exe 上传
+- **配置**：`config.json` 在 exe 运行目录读写（非项目根副本）；门店密钥等连接信息由程序配置页填写
+- **真机验证**：打印/RFID 写入改动必须在 ZMIN 真机验收（工程 AGENTS.md 有实测铁律清单，勿凭仿真推断）
 
 ### 6.2 扫描助手（手持机 Android App）
 

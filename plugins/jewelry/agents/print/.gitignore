@@ -1,0 +1,12 @@
+bin/
+obj/
+*.user
+.trae/documents/
+.Net/
+
+# 本地运行配置（含明文密钥）
+config.json
+# 临时调试脚本
+corner_label_test.py
+# 签名证书私钥（构建用，绝不入库）
+libs/printagent.pfx

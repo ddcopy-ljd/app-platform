@@ -66,6 +66,17 @@ CREATE TABLE IF NOT EXISTS store_printers (
   PRIMARY KEY (store_id, biz_code)
 );
 
+-- 打印代理实例: 每个打印助手一个独立 key, 关联门店; 在线状态只信上报帧刷新 last_seen
+CREATE TABLE IF NOT EXISTS print_agents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id INTEGER NOT NULL,
+  agent_key TEXT UNIQUE NOT NULL,
+  name TEXT DEFAULT '',
+  status TEXT DEFAULT 'active',
+  last_seen INTEGER DEFAULT 0,
+  created TEXT DEFAULT (datetime('now','localtime'))
+);
+
 CREATE TABLE IF NOT EXISTS languages (
   code TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -891,6 +902,11 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     for table, col, decl in alters:
         if not _has_column(conn, table, col):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    # 1.2.41 门店 Key 改为实例级: 移除 stores.store_key / stores.scan_key(打印助手改 print_agents 表)
+    for _col in ("store_key", "scan_key"):
+        if _has_column(conn, "stores", _col):
+            conn.execute(f"ALTER TABLE stores DROP COLUMN {_col}")
+    conn.commit()
     _dedupe_customers(conn)
     _backfill_sales_customer_id(conn)
     # 角色级兜底：店长/高管始终拥有成本查看权（不触碰店员被显式授予/收回的状态）

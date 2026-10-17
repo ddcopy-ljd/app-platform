@@ -1,0 +1,2 @@
+# 签名私钥绝不入库（构建实际使用工作区外 ../../../../../scanner-app/app/release.jks）
+release.jks

@@ -1,0 +1,295 @@
+using System;
+using System.Collections.Generic;
+
+namespace PrintAgent.Services
+{
+    public static class I18nService
+    {
+        public static string CurrentLang { get; private set; } = "zh-CN";
+
+        public static readonly Dictionary<string, string> SupportedLanguages = new()
+        {
+            { "zh-CN", "简体中文" },
+            { "zh-TW", "繁體中文" },
+            { "en-US", "English" },
+            { "ja-JP", "日本語" },
+            { "ko-KR", "한국어" },
+            { "it-IT", "Italiano" },
+            { "fr-FR", "Français" }
+        };
+
+        private static readonly Dictionary<string, Dictionary<string, string>> Dictionaries = new()
+        {
+            ["zh-CN"] = new()
+            {
+                ["AppTitle"] = "桌面打印代理服务 (PrintAgent)",
+                ["TrayTooltip"] = "打印代理程序 (PrintAgent)",
+                ["MenuShow"] = "显示主界面",
+                ["MenuLanguage"] = "语言 / Language",
+                ["MenuExit"] = "退出程序",
+                ["TrayMinimized"] = "服务已最小化到系统托盘",
+                ["LocalPort"] = "本地端口: {0} (正常)",
+                ["CloudStatus"] = "云端状态: {0}",
+                ["CloudNotConfigured"] = "未配置",
+                ["CloudConnecting"] = "正在连接云端...",
+                ["CloudConnected"] = "已连接云端",
+                ["CloudDisconnected"] = "连接断开",
+                ["ConfigStatusWaiting"] = "状态: 待初始化 (请通过网页配置或重新配置)",
+                ["ConfigStatusNormal"] = "服务地址: {0} | 门店密钥: {1}",
+                ["ColTime"] = "任务时间",
+                ["ColSource"] = "来源",
+                ["ColType"] = "类型",
+                ["ColPrinter"] = "目标打印机",
+                ["ColStatus"] = "状态",
+                ["ColInfo"] = "附加信息",
+                ["ColTaskId"] = "任务编号",
+                ["StatusPending"] = "正在处理...",
+                ["StatusSuccess"] = "已完成",
+                ["StatusFailed"] = "失败",
+                ["SuccessDetail"] = "打印并写入成功",
+                ["ExitPromptTitle"] = "退出确认",
+                ["ExitPromptText"] = "【是】结束运行并退出程序\n【否】仅关闭窗口，继续驻留系统托盘",
+                ["MenuCheckUpdate"] = "检查更新",
+                ["UpdateFound"] = "发现新版本，正在下载升级...",
+                ["UpdateRestart"] = "升级完成，正在重启...",
+                ["UpdateFailed"] = "自动升级失败: {0}",
+                ["UpdateLatest"] = "已是最新版本",
+                ["UpdateNoServer"] = "未配置服务器，无法检查更新"
+            },
+            ["zh-TW"] = new()
+            {
+                ["AppTitle"] = "桌面列印代理服務 (PrintAgent)",
+                ["TrayTooltip"] = "列印代理程式 (PrintAgent)",
+                ["MenuShow"] = "顯示主畫面",
+                ["MenuLanguage"] = "語言 / Language",
+                ["MenuExit"] = "結束程式",
+                ["TrayMinimized"] = "服務已最小化至系統匣",
+                ["LocalPort"] = "本地連接埠: {0} (正常)",
+                ["CloudStatus"] = "雲端狀態: {0}",
+                ["CloudNotConfigured"] = "未配置",
+                ["CloudConnecting"] = "正在連線雲端...",
+                ["CloudConnected"] = "已連線雲端",
+                ["CloudDisconnected"] = "連線中斷",
+                ["ConfigStatusWaiting"] = "狀態: 待初始化 (請透過網頁配置或重新配置)",
+                ["ConfigStatusNormal"] = "服務位址: {0} | 門市金鑰: {1}",
+                ["ColTime"] = "任務時間",
+                ["ColSource"] = "來源",
+                ["ColType"] = "類型",
+                ["ColPrinter"] = "目標印表機",
+                ["ColStatus"] = "狀態",
+                ["ColInfo"] = "附加資訊",
+                ["ColTaskId"] = "任務編號",
+                ["StatusPending"] = "正在處理...",
+                ["StatusSuccess"] = "已完成",
+                ["StatusFailed"] = "失敗",
+                ["SuccessDetail"] = "列印並寫入成功",
+                ["ExitPromptTitle"] = "退出確認",
+                ["ExitPromptText"] = "【是】結束執行並離開程式\n【否】僅關閉視窗，繼續常駐系統匣",
+                ["MenuCheckUpdate"] = "檢查更新",
+                ["UpdateFound"] = "發現新版本，正在下載升級...",
+                ["UpdateRestart"] = "升級完成，正在重啟...",
+                ["UpdateFailed"] = "自動升級失敗: {0}",
+                ["UpdateLatest"] = "已是最新版本",
+                ["UpdateNoServer"] = "未配置伺服器，無法檢查更新"
+            },
+            ["en-US"] = new()
+            {
+                ["AppTitle"] = "Desktop Print Agent (PrintAgent)",
+                ["TrayTooltip"] = "Print Agent (PrintAgent)",
+                ["MenuShow"] = "Open Dashboard",
+                ["MenuLanguage"] = "Language",
+                ["MenuExit"] = "Exit",
+                ["TrayMinimized"] = "Service minimized to system tray",
+                ["LocalPort"] = "Local Port: {0} (Running)",
+                ["CloudStatus"] = "Cloud: {0}",
+                ["CloudNotConfigured"] = "Not Configured",
+                ["CloudConnecting"] = "Connecting...",
+                ["CloudConnected"] = "Connected",
+                ["CloudDisconnected"] = "Disconnected",
+                ["ConfigStatusWaiting"] = "Status: Pending setup (Configure via web page)",
+                ["ConfigStatusNormal"] = "Server: {0} | Store Key: {1}",
+                ["ColTime"] = "Time",
+                ["ColSource"] = "Source",
+                ["ColType"] = "Type",
+                ["ColPrinter"] = "Printer",
+                ["ColStatus"] = "Status",
+                ["ColInfo"] = "Details",
+                ["ColTaskId"] = "Task ID",
+                ["StatusPending"] = "Processing...",
+                ["StatusSuccess"] = "Completed",
+                ["StatusFailed"] = "Failed",
+                ["SuccessDetail"] = "Print & RFID Write Successful",
+                ["ExitPromptTitle"] = "Exit Confirmation",
+                ["ExitPromptText"] = "[Yes] Quit the application\n[No] Hide the window and keep running in the system tray",
+                ["MenuCheckUpdate"] = "Check for Updates",
+                ["UpdateFound"] = "New version found, downloading update...",
+                ["UpdateRestart"] = "Update complete, restarting...",
+                ["UpdateFailed"] = "Auto-update failed: {0}",
+                ["UpdateLatest"] = "Already up to date",
+                ["UpdateNoServer"] = "No server configured, cannot check updates"
+            },
+            ["ja-JP"] = new()
+            {
+                ["AppTitle"] = "デスクトップ印刷エージェント (PrintAgent)",
+                ["TrayTooltip"] = "印刷エージェント (PrintAgent)",
+                ["MenuShow"] = "メイン画面を表示",
+                ["MenuLanguage"] = "言語 / Language",
+                ["MenuExit"] = "終了",
+                ["TrayMinimized"] = "タスクトレイに最小化されました",
+                ["LocalPort"] = "ローカルポート: {0} (正常)",
+                ["CloudStatus"] = "クラウド状態: {0}",
+                ["CloudNotConfigured"] = "未設定",
+                ["CloudConnecting"] = "クラウドに接続中...",
+                ["CloudConnected"] = "クラウド接続済み",
+                ["CloudDisconnected"] = "切断されました",
+                ["ConfigStatusWaiting"] = "状態: 未初期化 (Webページから設定してください)",
+                ["ConfigStatusNormal"] = "サーバー: {0} | 店舗キー: {1}",
+                ["ColTime"] = "時間",
+                ["ColSource"] = "発信元",
+                ["ColType"] = "種類",
+                ["ColPrinter"] = "対象プリンター",
+                ["ColStatus"] = "状態",
+                ["ColInfo"] = "詳細情報",
+                ["ColTaskId"] = "タスクID",
+                ["StatusPending"] = "処理中...",
+                ["StatusSuccess"] = "完了",
+                ["StatusFailed"] = "失敗",
+                ["SuccessDetail"] = "印刷およびRFID書き込み成功",
+                ["ExitPromptTitle"] = "終了の確認",
+                ["ExitPromptText"] = "【はい】プログラムを終了します\n【いいえ】ウィンドウを閉じ、トレイに常駐します",
+                ["MenuCheckUpdate"] = "更新を確認",
+                ["UpdateFound"] = "新しいバージョンを検出、ダウンロード中...",
+                ["UpdateRestart"] = "更新完了、再起動中...",
+                ["UpdateFailed"] = "自動更新に失敗しました: {0}",
+                ["UpdateLatest"] = "最新バージョンです",
+                ["UpdateNoServer"] = "サーバー未設定のため更新を確認できません"
+            },
+            ["ko-KR"] = new()
+            {
+                ["AppTitle"] = "데스크톱 인쇄 에이전트 (PrintAgent)",
+                ["TrayTooltip"] = "인쇄 에이전트 (PrintAgent)",
+                ["MenuShow"] = "대시보드 열기",
+                ["MenuLanguage"] = "언어 / Language",
+                ["MenuExit"] = "종료",
+                ["TrayMinimized"] = "시스템 트레이로 최소화되었습니다",
+                ["LocalPort"] = "로컬 포트: {0} (정상)",
+                ["CloudStatus"] = "클라우드 상태: {0}",
+                ["CloudNotConfigured"] = "미구성",
+                ["CloudConnecting"] = "클라우드 연결 중...",
+                ["CloudConnected"] = "클라우드 연결됨",
+                ["CloudDisconnected"] = "연결 끊김",
+                ["ConfigStatusWaiting"] = "상태: 초기화 대기 중 (웹 페이지에서 구성하세요)",
+                ["ConfigStatusNormal"] = "서버: {0} | 매장 키: {1}",
+                ["ColTime"] = "시간",
+                ["ColSource"] = "소스",
+                ["ColType"] = "유형",
+                ["ColPrinter"] = "대상 프린터",
+                ["ColStatus"] = "상태",
+                ["ColInfo"] = "세부 정보",
+                ["ColTaskId"] = "작업 ID",
+                ["StatusPending"] = "처리 중...",
+                ["StatusSuccess"] = "완료됨",
+                ["StatusFailed"] = "실패",
+                ["SuccessDetail"] = "인쇄 및 RFID 쓰기 성공",
+                ["ExitPromptTitle"] = "종료 확인",
+                ["ExitPromptText"] = "[예] 프로그램을 종료합니다\n[아니오] 창만 닫고 트레이에 상주합니다",
+                ["MenuCheckUpdate"] = "업데이트 확인",
+                ["UpdateFound"] = "새 버전 발견, 다운로드 중...",
+                ["UpdateRestart"] = "업데이트 완료, 재시작 중...",
+                ["UpdateFailed"] = "자동 업데이트 실패: {0}",
+                ["UpdateLatest"] = "최신 버전입니다",
+                ["UpdateNoServer"] = "서버가 구성되지 않아 업데이트를 확인할 수 없습니다"
+            },
+            ["it-IT"] = new()
+            {
+                ["AppTitle"] = "Agente di Stampa Desktop (PrintAgent)",
+                ["TrayTooltip"] = "Agente di Stampa (PrintAgent)",
+                ["MenuShow"] = "Apri Dashboard",
+                ["MenuLanguage"] = "Lingua / Language",
+                ["MenuExit"] = "Esci",
+                ["TrayMinimized"] = "Servizio ridotto nella barra delle applicazioni",
+                ["LocalPort"] = "Porta Locale: {0} (Attivo)",
+                ["CloudStatus"] = "Stato Cloud: {0}",
+                ["CloudNotConfigured"] = "Non configurato",
+                ["CloudConnecting"] = "Connessione al cloud in corso...",
+                ["CloudConnected"] = "Connesso al cloud",
+                ["CloudDisconnected"] = "Disconnesso",
+                ["ConfigStatusWaiting"] = "Stato: In attesa di setup (Configura tramite browser)",
+                ["ConfigStatusNormal"] = "Server: {0} | Chiave Negozio: {1}",
+                ["ColTime"] = "Orario",
+                ["ColSource"] = "Origine",
+                ["ColType"] = "Tipo",
+                ["ColPrinter"] = "Stampante",
+                ["ColStatus"] = "Stato",
+                ["ColInfo"] = "Dettagli",
+                ["ColTaskId"] = "ID Attività",
+                ["StatusPending"] = "In elaborazione...",
+                ["StatusSuccess"] = "Completato",
+                ["StatusFailed"] = "Fallito",
+                ["SuccessDetail"] = "Stampa e scrittura RFID riuscite",
+                ["ExitPromptTitle"] = "Conferma uscita",
+                ["ExitPromptText"] = "[Sì] Esci dall'applicazione\n[No] Chiudi la finestra e resta nella barra delle applicazioni",
+                ["MenuCheckUpdate"] = "Controlla aggiornamenti",
+                ["UpdateFound"] = "Nuova versione trovata, download in corso...",
+                ["UpdateRestart"] = "Aggiornamento completato, riavvio...",
+                ["UpdateFailed"] = "Aggiornamento automatico fallito: {0}",
+                ["UpdateLatest"] = "Versione già aggiornata",
+                ["UpdateNoServer"] = "Server non configurato, impossibile verificare gli aggiornamenti"
+            },
+            ["fr-FR"] = new()
+            {
+                ["AppTitle"] = "Agent d'Impression Desktop (PrintAgent)",
+                ["TrayTooltip"] = "Agent d'Impression (PrintAgent)",
+                ["MenuShow"] = "Ouvrir le tableau de bord",
+                ["MenuLanguage"] = "Langue / Language",
+                ["MenuExit"] = "Quitter",
+                ["TrayMinimized"] = "Service réduit dans la barre d'état",
+                ["LocalPort"] = "Port Local: {0} (En cours)",
+                ["CloudStatus"] = "Statut Cloud: {0}",
+                ["CloudNotConfigured"] = "Non configuré",
+                ["CloudConnecting"] = "Connexion au cloud...",
+                ["CloudConnected"] = "Connecté au cloud",
+                ["CloudDisconnected"] = "Déconnecté",
+                ["ConfigStatusWaiting"] = "Statut: En attente de config (Configurer via la page web)",
+                ["ConfigStatusNormal"] = "Serveur: {0} | Clé Boutique: {1}",
+                ["ColTime"] = "Heure",
+                ["ColSource"] = "Source",
+                ["ColType"] = "Type",
+                ["ColPrinter"] = "Imprimante",
+                ["ColStatus"] = "Statut",
+                ["ColInfo"] = "Détails",
+                ["ColTaskId"] = "ID Tâche",
+                ["StatusPending"] = "Traitement en cours...",
+                ["StatusSuccess"] = "Terminé",
+                ["StatusFailed"] = "Échec",
+                ["SuccessDetail"] = "Impression et écriture RFID réussies",
+                ["ExitPromptTitle"] = "Confirmation de sortie",
+                ["ExitPromptText"] = "[Oui] Quitter l'application\n[Non] Fermer la fenêtre et rester dans la barre d'état",
+                ["MenuCheckUpdate"] = "Vérifier les mises à jour",
+                ["UpdateFound"] = "Nouvelle version trouvée, téléchargement...",
+                ["UpdateRestart"] = "Mise à jour terminée, redémarrage...",
+                ["UpdateFailed"] = "Échec de la mise à jour automatique : {0}",
+                ["UpdateLatest"] = "Déjà à jour",
+                ["UpdateNoServer"] = "Serveur non configuré, vérification impossible"
+            }
+        };
+
+        public static void SetLanguage(string langCode)
+        {
+            CurrentLang = Dictionaries.ContainsKey(langCode) ? langCode : "zh-CN";
+        }
+
+        public static string T(string key, params object[] args)
+        {
+            if (Dictionaries.TryGetValue(CurrentLang, out var dict) && dict.TryGetValue(key, out var val))
+            {
+                return args.Length > 0 ? string.Format(val, args) : val;
+            }
+            if (Dictionaries["en-US"].TryGetValue(key, out var fallbackVal))
+            {
+                return args.Length > 0 ? string.Format(fallbackVal, args) : fallbackVal;
+            }
+            return key;
+        }
+    }
+}

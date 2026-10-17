@@ -5156,11 +5156,32 @@ function loadSecSensors() {
 function shopOfStore(s) { return ST.shops.find(function (p) { return p.id === (s && s.shop_id); }) || null; }
 // 门店内入库：固定门店打开入库面板
 function inboundForStore(s) { openInbound(s); }
-function rotateStoreKey(sid) {
-  api('POST', '/api/stores/' + sid + '/bridge-key', {}).then(function () {
-    // 密钥只在服务端持有：重置后旧代理自动失效，不回显明文，提示重新下载（新 exe 内嵌新密钥）
-    var s = ST.stores.find(function (x) { return x.id === sid; });
-    if (s && !(s.bridge_key || '').trim()) s.bridge_key = 'set';
+function genPrintAgentKey(sid) {
+  api('POST', '/api/stores/' + sid + '/print-agent-key', {}).then(function (r) {
+    // 生成新的打印代理实例 key, 回显一次供填入助手
+    var key = r.agent_key || '';
+    if (key) {
+      // 弹出显示 key 供复制
+      prompt(t('sb.keyCopyHint'), key);
+    }
+    loadBridgeList();
+    toast(t('sb.keyGen'));
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+function revokePrintAgent(aid) {
+  if (!confirm(t('sb.revokeConfirm'))) return;
+  api('POST', '/api/print-agents/' + aid + '/revoke', {}).then(function () {
+    loadBridgeList();
+    toast(t('sb.revoked'));
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+function genScanDeviceKey(sid) {
+  api('POST', '/api/stores/' + sid + '/scan-device-key', {}).then(function (r) {
+    var key = r.device_token || '';
+    if (key) {
+      prompt(t('sb.scanKeyHint'), key);
+    }
+    loadDevices();
     toast(t('sb.keyGen'));
   }).catch(function (e) { toast(e.message, 'error'); });
 }
@@ -5469,11 +5490,10 @@ var app = Vue.createApp({
     FIELD_LABELS: function () { return FIELD_LABELS; },
     LABEL_FIELDS: function () { return LABEL_FIELDS; },
     labelFieldGroups: function () { return LABEL_FIELD_GROUPS; },
-    // 已生成密钥的门店（代理下载下拉框数据源）
+    // 已生成打印代理 key 的门店（代理下载下拉框数据源）
     keyedStores: function () {
-      // 从 stores 表按 bridge_key 非空筛选（而非依赖 bridges 列表，后者可能因代理未连接而缺失）
-      return ST.stores.filter(function (s) { return !!(s.bridge_key || '').trim(); })
-        .map(function (s) { return { store_id: s.id, store_name: s.name }; });
+      return ST.bridges.filter(function (b) { return b.has_key; })
+        .map(function (b) { return { store_id: b.store_id, store_name: b.store_name }; });
     },
     // 是否有任一门店代理在线（PC 端据此提示下载，移动端仅提示）
     anyAgentOnline: function () { return ST.bridges.some(function (b) { return b.online; }); },
@@ -5619,7 +5639,9 @@ var app = Vue.createApp({
     openTransfer: openTransfer, closeTransferDetail: closeTransferDetail,
     startReceive: startReceive, cancelReceive: cancelReceive,
     setRecvOk: setRecvOk, quickReason: quickReason, submitReceive: submitReceive,
-    loadBridgeList: loadBridgeList, createStore: createStore, rotateStoreKey: rotateStoreKey,
+    loadBridgeList: loadBridgeList, createStore: createStore,
+    genPrintAgentKey: genPrintAgentKey, revokePrintAgent: revokePrintAgent,
+    genScanDeviceKey: genScanDeviceKey,
     bindBizPrinter: bindBizPrinter, bizPrinterOf: bizPrinterOf,
     storeControl: storeControl,
     loadShops: loadShops, loadStores: loadStores, storesByShop: storesByShop,
