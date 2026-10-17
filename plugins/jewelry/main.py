@@ -3816,22 +3816,22 @@ def print_agent_status(request: Request):
 
 @app.get("/api/print-agent/download")
 def print_agent_download():
-    """下载打印代理：优先返回包内 downloads/PrintBridge.exe，缺失时回退构建产物 exe，再退 py 源码。"""
+    """下载打印助手：优先返回包内 downloads/PrintBridge.exe，缺失时回退构建产物 exe，再退 py 源码。"""
     exe = ROOT / "downloads" / "PrintBridge.exe"
     if not exe.is_file():
-        exe = ROOT / "scripts" / "dist" / "PrintBridge.exe"
+        exe = ROOT / "agents" / "print" / "dist" / "PrintBridge.exe"
     if exe.is_file():
         return FileResponse(exe, filename="PrintBridge.exe",
                             media_type="application/vnd.microsoft.portable-executable")
-    src = ROOT / "scripts" / "print_agent.py"
+    src = ROOT / "agents" / "print" / "print_agent.py"
     return FileResponse(src, filename="print_agent.py", media_type="text/x-python")
 
 
 def _scan_app_apk() -> Path | None:
-    """扫描助手 APK 路径：插件包内 downloads/ 优先，回退 scan-assistant 构建产物。"""
+    """扫描助手 APK 路径：插件包内 downloads/ 优先，回退 agents/scan 构建产物。"""
     apk = ROOT / "downloads" / "scan-assistant-release.apk"
     if not apk.is_file():
-        apk = (ROOT.parent.parent / "scan-assistant" / "app" / "build" / "outputs" / "apk"
+        apk = (ROOT / "agents" / "scan" / "app" / "build" / "outputs" / "apk"
                / "release" / "app-release.apk")
     return apk if apk.is_file() else None
 
@@ -3866,7 +3866,7 @@ def scan_app_info():
 
 @app.get("/api/scan-app/download")
 def scan_app_download():
-    """下载扫描助手 App（APK）：包内 downloads/ 优先，回退 scan-assistant 构建产物。"""
+    """下载扫描助手 App（APK）：包内 downloads/ 优先，回退 agents/scan 构建产物。"""
     apk = _scan_app_apk()
     if apk:
         return FileResponse(str(apk), filename="scan-assistant-release.apk",

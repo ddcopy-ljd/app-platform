@@ -2,7 +2,7 @@
 
 默认（无参）产物：dist/yizhen-stack_v{VERSION}.zip —— 整站包（平台 + 插件 + Android + DB 备份）。
 --platform-only 产物：dist/yizhen-platform_v{VERSION}.zip —— 仅平台自身（platform/ + 根启动脚本 + requirements + Deploy.ps1）。
-  不包含 plugins/、scan-assistant/、backup/（目标机需先上传插件或后续走上传流程）。
+  不包含 plugins/（含其内扫描助手工程 agents/scan）、backup/（目标机需先上传插件或后续走上传流程）。
 
 白名单排除 .trae/、.git/、.venv/、__pycache__/、运行时 data/、*.aar、release.jks、*.sqlite 等。
 """
@@ -94,7 +94,7 @@ def collect_files(root: Path, base_arc: str, exclude_extra=None):
 # ============ 具体收录清单 ============
 PLATFORM_DIR = ROOT / "platform"
 PLUGIN_DIR = ROOT / "plugins" / "jewelry"
-SCAN_DIR = ROOT / "scan-assistant"
+SCAN_DIR = ROOT / "plugins" / "jewelry" / "agents" / "scan"
 
 def collect_platform() -> list[tuple[Path, str]]:
     """收录平台源码（不含 data/、demo/、docs/ 之外的运行时）。"""
@@ -119,7 +119,7 @@ def collect_platform() -> list[tuple[Path, str]]:
 def collect_jewelry() -> list[tuple[Path, str]]:
     base = PLUGIN_DIR
     files = []
-    include_dirs = ["frontend", "logo", "promo", "scripts", "demo"]
+    include_dirs = ["frontend", "logo", "promo", "scripts", "demo", "agents/print"]
     include_files = [
         "main.py", "db.py", "sensors.py", "rfid_print.py",
         "plugin.json", "requirements.txt", "build_package.py",
@@ -227,7 +227,7 @@ def make_db_backup(out_dir: Path) -> list[tuple[Path, str]]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--platform-only", action="store_true",
-                    help="仅打包 platform/ 自身 + 启动/部署脚本，不含 plugins/、scan-assistant/、backup/")
+                    help="仅打包 platform/ 自身 + 启动/部署脚本，不含 plugins/（含 agents/scan）、backup/")
     ap.add_argument("--bump", action="store_true",
                     help="打包前递增版本号：修订号+1 并刷新日期段（升级发布时使用；重打包不加此参不递增）")
     args = ap.parse_args()
@@ -252,7 +252,7 @@ def main() -> None:
     files += collect_platform();              log(f"  platform/ 源码 {len(files)}")
     if not is_platform_only:
         files += collect_jewelry();               log(f"  + jewelry/ 插件源码 {len(files)}")
-        files += collect_android(SCAN_DIR, "scan-assistant"); log(f"  + Android 客户端 {len(files)}")
+        files += collect_android(SCAN_DIR, "plugins/jewelry/agents/scan"); log(f"  + Android 客户端 {len(files)}")
     files += collect_root_files();            log(f"  + 根脚本 {len(files)}")
 
     dup = {}
@@ -295,7 +295,7 @@ def main() -> None:
         deploy_guide = f"""综合业务应用服务平台 v{version} · 纯平台部署包
 打包时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
-本包**仅含平台自身**，不含 plugins/、scan-assistant/、backup/。
+本包**仅含平台自身**，不含 plugins/（含扫描助手工程 agents/scan）、backup/。
 插件需在平台启动后通过「上传插件包」入口上传，或另行下载整站包（yizhen-stack_v{version}.zip）。
 
 目录结构：
@@ -324,7 +324,8 @@ git 基线：请见 .git 或 changes.lst
 目录结构：
   platform/            服务端平台源码（FastAPI + Uvicorn）
   plugins/jewelry/     懿臻珠宝云插件源码 v1.1.2 / dataVersion 1.1.0
-  scan-assistant/      Android 扫码助手客户端（源码）
+  plugins/jewelry/agents/scan/   Android 扫描助手客户端（源码）
+  plugins/jewelry/agents/print/  打印助手（PrintBridge）源码
   scripts/             全部启动/部署/服务管理脚本
   backup/              本次打包附带的开发数据库备份（可选恢复）
 
@@ -337,7 +338,7 @@ Windows Server 部署（一键）：
 
 重要安全提示：
   - Android 厂商 SDK（DeviceAPI_*.aar）未打包，请从厂商渠道获取后放入
-    scan-assistant/app/libs/
+    plugins/jewelry/agents/scan/app/libs/
   - 生产部署务必修改默认管理员密码 admin123 与 admin/123456（插件内）
   - AGENT_API_KEY 环境变量控制 Agent 升级流水线接口，生产不开启可留空
 

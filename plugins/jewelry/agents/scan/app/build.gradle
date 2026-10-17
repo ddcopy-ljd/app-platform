@@ -4,8 +4,9 @@ plugins {
 }
 
 // 正式签名复用 scanner-app 的既有 keystore（两应用同机安装、同一签名主体）。
-// 本工程与 scanner-app 是工作区根下的并列目录，自 app 模块目录起相对路径为 ../../scanner-app。
-def releaseKeystore = file('../../scanner-app/app/release.jks')
+// keystore 不随仓库分发；本工程位于 plugins/jewelry/agents/scan/app，
+// 自 app 模块目录向上 5 级到工作区根，再进入并列的 scanner-app 工程。
+def releaseKeystore = file('../../../../../scanner-app/app/release.jks')
 def ksStorePass = project.findProperty('YIZHEN_KS_PASS') ?: 'yizhen_rfid_2026'
 def ksKeyPass = project.findProperty('YIZHEN_KEY_PASS') ?: 'yizhen_rfid_2026'
 

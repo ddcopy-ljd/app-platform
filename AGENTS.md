@@ -5,7 +5,7 @@
 
 **各模块专属开发要求：**
 - 应用插件（`plugins/`）：见 [plugins/AGENTS.md](plugins/AGENTS.md)（数据库/后端/前端/发布/踩坑）与 [plugins/STRUCTURE.md](plugins/STRUCTURE.md)（包结构/plugin.json/推广页/订阅机制/升级流程）
-- 平台与 scan-assistant（`platform/`、`scan-assistant/`）：见 [platform/AGENTS.md](platform/AGENTS.md)（Android 规范/踩坑）与 [platform/STRUCTURE.md](platform/STRUCTURE.md)（网关路由/鉴权契约/部署安全/沙箱外网访问）
+- 平台（`platform/`）与扫描助手安卓工程（`plugins/jewelry/agents/scan/`）：见 [platform/AGENTS.md](platform/AGENTS.md)（Android 规范/踩坑）与 [platform/STRUCTURE.md](platform/STRUCTURE.md)（网关路由/鉴权契约/部署安全/沙箱外网访问）
 
 ---
 
@@ -17,7 +17,8 @@
 |---|---|---|
 | `platform/` | 平台核心：网关、插件生命周期、多版本沙箱升级、WS 透传 | 本地测试用 8000 端口，`start_platform.bat` |
 | `plugins/{id}/` | 应用插件（当前 jewelry 珠宝云）：后端 + SPA + 建库/迁移脚本 + 推广页 | 本地测试用 8002 端口，`start_jewelry.bat` |
-| `scan-assistant/` | 普通安卓手机辅助 App（Kotlin，摄像头扫码盘点） | Gradle |
+| `plugins/jewelry/agents/scan/` | 扫描助手：手持机安卓 App（Kotlin，扫码盘点/入库/调拨，独立 Gradle 构建线，不入插件包） | `scripts/build_scan_app.bat` |
+| `plugins/jewelry/agents/print/` | 打印助手（PrintBridge）：门店电脑本地打印代理源码（PyInstaller 打 exe，独立构建线，不入插件包） | `agents/print/build_exe.bat` |
 
 - 平台与插件**数据库严格分离**：平台不读写插件业务表；插件不写平台库（只经内网 API 查询订阅/鉴权）。
 - 架构与鉴权合同细节以 [platform/STRUCTURE.md](platform/STRUCTURE.md) 为准，插件结构与契约以 [plugins/STRUCTURE.md](plugins/STRUCTURE.md) 为准，本文件只固化跨模块必须遵守的红线与流程。

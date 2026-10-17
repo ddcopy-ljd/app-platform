@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'scan-assistant/**'
+      - 'plugins/jewelry/agents/scan/**'
       - '.github/workflows/scan-assistant-build.yml'
   workflow_dispatch:
 
@@ -36,15 +36,15 @@ jobs:
           gradle-version: '8.2'
 
       - name: Build Debug APK
-        working-directory: ./scan-assistant
+        working-directory: ./plugins/jewelry/agents/scan
         run: gradle assembleDebug --no-daemon
 
       - name: Build Release APK
-        working-directory: ./scan-assistant
+        working-directory: ./plugins/jewelry/agents/scan
         run: gradle assembleRelease --no-daemon
 
       - name: Verify release signature
-        working-directory: ./scan-assistant
+        working-directory: ./plugins/jewelry/agents/scan
         run: |
           set -e
           APK=$(ls app/build/outputs/apk/release/app-release.apk)
@@ -55,10 +55,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: scan-assistant-debug
-          path: scan-assistant/app/build/outputs/apk/debug/*.apk
+          path: plugins/jewelry/agents/scan/app/build/outputs/apk/debug/*.apk
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: scan-assistant-release
-          path: scan-assistant/app/build/outputs/apk/release/*.apk
+          path: plugins/jewelry/agents/scan/app/build/outputs/apk/release/*.apk

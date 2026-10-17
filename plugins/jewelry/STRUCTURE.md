@@ -1,4 +1,4 @@
-﻿# jewelry/STRUCTURE.md — 懿臻珠宝云插件结构说明
+# jewelry/STRUCTURE.md — 懿臻珠宝云插件结构说明
 
 > 本文件描述 **懿臻珠宝云**（`plugins/jewelry/`）的专属目录结构、后端模块、数据库表、前端页面与打印桥接。
 > 通用插件开发要求以《plugins/AGENTS.md》为准；通用插件结构/契约/升级流程以《plugins/STRUCTURE.md》为准。冲突时以通用文档为准。
@@ -24,7 +24,8 @@
 - 销售开单（普通 / 定金尾款）
 - 借货、客户、维修、采购与委外加工
 - RFID 批量隔空盘点
-- 本地打印桥接（PrintBridge，门店电脑免驱直连标签打印机）
+- 打印助手（PrintBridge，门店电脑免驱直连标签打印机）
+- 扫描助手（手持机安卓 App，扫码盘点/入库/调拨 + 应用内自升级）
 - 多门店统一管理
 - 企业网站与到店预约
 - 智能安防（RFID/EAS 防盗设备接入与离店告警）
@@ -44,14 +45,17 @@ plugins/jewelry/
 ├── build_package.py         # 打包脚本（自动发现顶层 .py + 校验 import 链）
 ├── requirements.txt         # Python 依赖
 ├── TEST_CASES.md            # 测试用例台账
-├── scripts/
+├── scripts/                 # 平台数据任务生命周期脚本 + 冒烟（不放常驻代理程序）
 │   ├── init.py              # 新租户建库（调用 db.SCHEMA + seed_demo）
 │   ├── upgrade.py           # 版本间迁移（增量 DDL）
-│   ├── print_agent.py       # PrintBridge 打印桥接（门店电脑本地运行）
-│   ├── PrintBridge.spec     # PyInstaller 打印桥接打包配置
-│   ├── build_exe.bat        # 构建 PrintBridge.exe
-│   ├── PrintBridge-使用说明.txt
 │   └── smoke_test.py        # 冒烟测试
+├── agents/                  # 两个本地助手的独立构建线（源码全部不入插件包，见第 6 章）
+│   ├── scan/                # 扫描助手：Android 原生工程（Gradle，包名 com.yizhen.scanassistant）
+│   └── print/               # 打印助手：PrintBridge 源码与打包
+│       ├── print_agent.py       # 门店电脑本地运行的打印代理
+│       ├── PrintBridge.spec     # PyInstaller 打包配置
+│       ├── build_exe.bat        # 构建 PrintBridge.exe
+│       └── PrintBridge-使用说明.txt
 ├── frontend/                # Vue3 SPA（global build，无构建步骤）
 │   ├── index.html           # 工作区主入口
 │   ├── app.js               # 集中状态对象 ST + methods（单文件）
@@ -76,10 +80,10 @@ plugins/jewelry/
 │   └── seed_test_data.py    # 开发用种子数据（不入包）
 ├── docs/
 │   └── 懿臻珠宝云软件开发规范及需求说明.md  # 需求与验收说明
-└── downloads/               # PrintBridge.exe 分发产物（入包）
+└── downloads/               # 两个助手的分发产物（PrintBridge.exe / scan-assistant-release.apk，入包作首包兜底）
 ```
 
-**打包排除项**（`build_package.py` 内置）：`__pycache__`、`.pyc`、`scripts/build`、`scripts/dist`（打印桥接构建中间产物）、`dev_data/`、`docs/`、`demo/`、`print_agent.json`（门店本地配置）、`build_package.py` 自身、`test_*.py`、`_*.py`。
+**打包排除项**（`build_package.py` 内置）：`__pycache__`、`.pyc`、`agents/`（整个独立构建线：扫描助手 Android 工程与打印助手源码；`agents/print/build`、`agents/print/dist` 为构建中间产物）、`dev_data/`、`docs/`、`demo/`、`print_agent.json`（门店本地配置）、`build_package.py` 自身、`test_*.py`、`_*.py`。
 
 ---
 
@@ -93,7 +97,8 @@ plugins/jewelry/
 | `rfid_print.py` | RFID 芯片 EPC 写入、标签模板渲染、打印任务派发 |
 | `scripts/init.py` | 平台调用的建库脚本，参数经 `--key=value` 与环境变量传入 |
 | `scripts/upgrade.py` | 版本间增量迁移，环境变量见 `plugins/STRUCTURE.md` 第 5.3 节 |
-| `scripts/print_agent.py` | **PrintBridge**：门店电脑本地运行的打印代理，接收插件下发的打印任务并直连标签打印机；打包为 `PrintBridge.exe`（PyInstaller），分发到 `downloads/` |
+| `agents/print/print_agent.py` | **打印助手（PrintBridge）**：门店电脑本地运行的打印代理，接收插件下发的打印任务并直连标签打印机；打包为 `PrintBridge.exe`（PyInstaller），分发到 `downloads/`（构建线源码不入插件包，仅分发产物） |
+| `agents/scan/` | **扫描助手**：手持机 Android 原生工程（Kotlin/Gradle），独立构建线；release APK 复制到 `downloads/` 供应用内自升级分发。仓库根 `scripts/build_scan_app.bat` 一键构建并生成 `.md5` sidecar |
 
 ---
 
@@ -203,17 +208,27 @@ plugins/jewelry/
 
 ---
 
-## 6. PrintBridge 打印桥接
+## 6. 两个本地助手（`agents/`，独立构建线，源码不入插件包）
+
+### 6.1 打印助手（PrintBridge）
 
 门店电脑本地运行的打印代理，免驱直连标签打印机：
 
-- **源码**：[scripts/print_agent.py](scripts/print_agent.py)
-- **打包**：`scripts/build_exe.bat` + `scripts/PrintBridge.spec`（PyInstaller）→ 产物 `PrintBridge.exe`，复制到 `downloads/` 随插件包分发
+- **源码**：[agents/print/print_agent.py](agents/print/print_agent.py)
+- **打包**：`agents/print/build_exe.bat` + `agents/print/PrintBridge.spec`（PyInstaller）→ 产物 `agents/print/dist/PrintBridge.exe`，复制到 `downloads/` 随插件包分发
 - **配置**：门店本地 `print_agent.json`（**不入包**，记录打印机端口 / 型号等）
-- **使用说明**：见 `scripts/PrintBridge-使用说明.txt`
-- **链路**：插件后端下发打印任务 → PrintBridge 接收 → 直连打印机出标签
+- **使用说明**：见 `agents/print/PrintBridge-使用说明.txt`
+- **链路**：插件后端下发打印任务 → PrintBridge 接收 → 直连打印机出标签；下载接口 `GET /api/print-agent/download`（包内 `downloads/` 优先，回退 `agents/print/dist/`，再退 py 源码）
 
-PrintBridge 与插件后端通过本地 HTTP 通信；`print_agent.json` 用 `utf-8-sig` 读取（防 BOM 崩 `json.load`）。
+PrintBridge 与插件后端通过本地 HTTP/WebSocket 通信；程序路径只相对自身所在目录解析（`sys.frozen` 时取 exe 目录），可整目录搬迁；`print_agent.json` 用 `utf-8-sig` 读取（防 BOM 崩 `json.load`）。
+
+### 6.2 扫描助手（手持机 Android App）
+
+- **工程**：`agents/scan/`（Gradle，applicationId `com.yizhen.scanassistant` **永不改**，否则现网设备无法覆盖安装）
+- **构建**：仓库根 `scripts/build_scan_app.bat`（release 构建 → 拷贝 APK 到 `downloads/scan-assistant-release.apk` 并生成 `.md5` sidecar）；CI 见 `.github/workflows/scan-assistant-build.yml`
+- **签名**：release.jks 不入库，Gradle 按相对路径引用工作区根并列的外部 `scanner-app/app/release.jks`；缺失时退化为未签名包（debug 不受影响）
+- **自升级**：设备免鉴权调 `GET /api/scan-app/info`（md5/size/force）+ `GET /api/scan-app/download`（接口路径已硬编码进现网 App，**只加不改**）；包内 `downloads/` 优先，回退 `agents/scan/app/build/outputs/apk/release/` 开发构建产物
+- **规范与踩坑**：见 [platform/AGENTS.md](../../platform/AGENTS.md)（Android 原生规范、扳机通道、AP 隔离、Kotlin daemon 等）
 
 ---
 

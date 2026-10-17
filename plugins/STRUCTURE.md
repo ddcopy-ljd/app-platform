@@ -172,7 +172,7 @@ if os.path.isdir(os.environ["OLD_STORAGE"]):   # 用了文件存储才需要
 - 可选字段：`icon、category、author、description、features、promo（独立子目录，见第 2 章）、scripts.init、scripts.upgrade`
 - `id` 必须与上传接口地址里的 `{plugin_id}` 完全一致
 
-**打包排除项**：EXE/构建产物目录（如 `scripts/build`、`scripts/dist`）、门店本地运行配置（如 `print_agent.json`）不入插件包；打包脚本已内置 `EXCLUDE_PARTS / EXCLUDE_NAMES`，新增构建产物时同步维护。
+**打包排除项**：EXE/构建产物目录（如 `agents/print/build`、`agents/print/dist`）、门店本地运行配置（如 `print_agent.json`）、独立构建线 `agents/`（扫描助手 Android 工程与打印助手源码）不入插件包；打包脚本已内置 `INCLUDE_DIRS` 白名单与 `EXCLUDE_PARTS / EXCLUDE_NAMES`，新增构建产物时同步维护。
 
 #### 第 ④ 步：上传（自动触发沙箱）
 

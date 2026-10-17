@@ -4,7 +4,7 @@ title Scan Assistant - Build Release APK
 
 REM ============================================================
 REM  Yizhen Scan Assistant (Android) - one-click release build
-REM  Builds scan-assistant\ (module :app assembleRelease) and
+REM  Builds plugins\jewelry\agents\scan\ (module :app assembleRelease) and
 REM  publishes the signed APK + MD5 sidecar into
 REM    plugins\jewelry\downloads\scan-assistant-release.apk[.md5]
 REM  so the plugin backend can serve in-app self-update.
@@ -16,11 +16,11 @@ REM ============================================================
 
 if not defined ANDROID_HOME set "ANDROID_HOME=C:\Android"
 
-set "APK=scan-assistant\app\build\outputs\apk\release\app-release.apk"
+set "APK=plugins\jewelry\agents\scan\app\build\outputs\apk\release\app-release.apk"
 set "OUT=plugins\jewelry\downloads\scan-assistant-release.apk"
 
-if not exist "scan-assistant\gradlew.bat" (
-    echo [ERROR] scan-assistant\gradlew.bat not found.
+if not exist "plugins\jewelry\agents\scan\gradlew.bat" (
+    echo [ERROR] plugins\jewelry\agents\scan\gradlew.bat not found.
     echo         Keep this .bat inside the project "scripts" folder.
     goto :END
 )
@@ -31,7 +31,7 @@ echo    ANDROID_HOME=%ANDROID_HOME%
 echo ============================================================
 echo.
 
-cd scan-assistant
+cd plugins\jewelry\agents\scan
 call gradlew.bat assembleRelease
 set "RC=%ERRORLEVEL%"
 cd /d "%~dp0.."
