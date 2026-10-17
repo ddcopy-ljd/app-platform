@@ -27,6 +27,16 @@
     });
   }
 
+  function del(path) {
+    return fetch(BASE + path, { method: "DELETE", headers: { Accept: "application/json" } })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok) { throw { status: r.status, detail: j && j.detail || ("HTTP " + r.status) }; }
+          return j;
+        });
+      });
+  }
+
   function el(id) { return document.getElementById(id); }
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
@@ -137,7 +147,8 @@
   function boot() {
     Promise.all([api("api/ops/context"), api("api/ops/overview"), api("api/ops/devices"),
                  api("api/ops/agents"), api("api/ops/audit?limit=100"),
-                 api("api/ops/tasks/active"), api("api/ops/users")])
+                 api("api/ops/tasks/active"), api("api/ops/users"),
+                 api("api/ops/face/status"), api("api/ops/face/templates")])
       .then(function (rs) {
         renderChips(rs[0]);
         renderOverview(rs[1]);
@@ -146,6 +157,7 @@
         renderAudit(rs[4]);
         renderTasks(rs[5]);
         renderUsers(rs[6]);
+        renderFace(rs[7], rs[8]);
         el("console").style.display = "block";
       })
       .catch(function (e) {
@@ -329,15 +341,24 @@
       "· 立即解冻库存、释放占用设备\n" +
       "· 已有扫描数据将生成部分盘点报告\n" +
       "· 该操作不可撤销，手持机端任务同步关闭")) return;
-    post("api/ops/tasks/" + id + "/terminate").then(function (j) {
-      window.alert("任务已终止" +
-        (j.result ? "\n已生成部分报告：扫描 " + j.result.scannedCount +
-          "，匹配 " + j.result.matchedCount + "，短少 " + j.result.shortageCount : "（无扫描数据，直接解冻）"));
-      reloadControl();
-    }).catch(function (e) {
-      window.alert("终止失败：" + ((e && e.detail) || e));
-      reloadControl();
-    });
+    var guard = {};
+    FaceGuard("任务 " + taskNo + " 将被强制终止并立即解冻库存，请刷脸确认本人操作。")
+      .then(function (g) {
+        guard = g;
+        return post("api/ops/tasks/" + id + "/terminate", g);
+      })
+      .then(function (j) {
+        closeFace();
+        window.alert("任务已终止" +
+          (j.result ? "\n已生成部分报告：扫描 " + j.result.scannedCount +
+            "，匹配 " + j.result.matchedCount + "，短少 " + j.result.shortageCount : "（无扫描数据，直接解冻）"));
+        reloadControl();
+      })
+      .catch(function (e) {
+        if (e && e.cancelled) { closeFace(); return; }
+        // 人脸不匹配/口令错误时弹窗保留以便重试
+        window.alert("终止失败：" + ((e && e.detail) || e));
+      });
   }
 
   function resetPassword(id, name) {
@@ -346,20 +367,225 @@
       "· 系统生成 8 位随机密码，仅回显一次\n" +
       "· 该账号下次登录将被强制要求修改密码\n" +
       "· 重置不会踢出已登录的会话")) return;
-    post("api/ops/users/" + id + "/reset-password").then(function (j) {
-      el("pwd-modal-user").textContent = "账号：" + j.username;
-      el("pwd-modal-value").textContent = j.password;
-      el("pwd-modal").style.display = "flex";
-      reloadControl();
-    }).catch(function (e) {
-      window.alert("重置失败：" + ((e && e.detail) || e));
-    });
+    FaceGuard("即将重置账号「" + name + "」的密码，请刷脸确认本人操作。")
+      .then(function (g) { return post("api/ops/users/" + id + "/reset-password", g); })
+      .then(function (j) {
+        closeFace();
+        el("pwd-modal-user").textContent = "账号：" + j.username;
+        el("pwd-modal-value").textContent = j.password;
+        el("pwd-modal").style.display = "flex";
+        reloadControl();
+      })
+      .catch(function (e) {
+        if (e && e.cancelled) { closeFace(); return; }
+        window.alert("重置失败：" + ((e && e.detail) || e));
+      });
   }
 
   function reloadControl() {
     api("api/ops/tasks/active").then(renderTasks).catch(function () {});
     api("api/ops/users").then(renderUsers).catch(function () {});
     api("api/ops/audit?limit=100").then(renderAudit).catch(function () {});
+    reloadFace();
+  }
+
+  // ---------------- 人脸确认（高危写操作本人在场校验） ----------------
+
+  var faceState = { enabled: false, count: 0, has_emergency: false };
+  var faceMode = null;
+  var faceGuardMode = false;
+  var faceResolve = null;
+  var faceReject = null;
+
+  function renderFace(s, t) {
+    if (s) faceState = s;
+    var st = el("face-state");
+    if (!faceState.enabled) {
+      st.innerHTML = '<span class="badge gray">未启用</span> 尚未录入人脸，高危写操作仅需二次确认；录入第一张人脸后自动启用';
+    } else {
+      st.innerHTML = '<span class="badge ok">已启用</span> 已录入 <b>' + faceState.count +
+        "</b> 人，高危写操作须人脸确认 · 应急口令：" +
+        (faceState.has_emergency
+          ? '<b style="color:#12b76a">已设置</b>'
+          : '<b style="color:#f79009">未设置</b>（摄像头不可用时将无法完成验证）');
+    }
+    var rows = (t && t.items) || [];
+    var tb = el("face-tpl-rows");
+    if (!rows.length) {
+      tb.innerHTML = '<tr><td colspan="4" class="loading">暂无已录入人脸</td></tr>';
+      return;
+    }
+    var parts = [];
+    for (var i = 0; i < rows.length; i++) {
+      var x = rows[i];
+      parts.push("<tr><td>" + esc(x.name) + "</td><td class='mono'>" + esc(x.enrolled_at) +
+        "</td><td>" + esc(x.enrolled_by || "—") +
+        '</td><td><button class="btn-danger btn-sm" data-delface="' + x.id + '">删除</button></td></tr>');
+    }
+    tb.innerHTML = parts.join("");
+  }
+
+  function reloadFace() {
+    api("api/ops/face/status").then(function (s) {
+      api("api/ops/face/templates").then(function (t) { renderFace(s, t); }).catch(function () {});
+    }).catch(function () {});
+  }
+
+  function closeFace() {
+    if (window.OpsFace) OpsFace.stop();
+    el("face-modal").style.display = "none";
+  }
+
+  function switchFaceToGuard(msg) {
+    if (!faceState.has_emergency) {
+      closeFace();
+      if (faceReject) { var rj = faceReject; faceResolve = null; faceReject = null; rj({ cancelled: true }); }
+      window.alert("摄像头不可用（" + msg + "），且尚未设置应急口令，无法完成验证。\n" +
+        "请在具备摄像头的环境操作，或先在本页设置应急口令。");
+      return;
+    }
+    faceGuardMode = true;
+    OpsFace.stop();
+    el("face-stage").style.display = "none";
+    el("face-switch-btn").style.display = "none";
+    el("face-guard-row").style.display = "block";
+    el("face-detect").textContent = msg + "，请输入应急口令完成验证";
+    el("face-ok-btn").disabled = false;
+    el("face-ok-btn").textContent = "确认验证";
+    el("face-guard-input").focus();
+  }
+
+  function showFaceModal(mode, tip) {
+    faceMode = mode;
+    faceGuardMode = false;
+    el("face-name-row").style.display = mode === "enroll" ? "block" : "none";
+    el("face-name-input").value = "";
+    el("face-guard-input").value = "";
+    el("face-modal-title").textContent = mode === "enroll" ? "录入人脸" : "人脸确认";
+    el("face-modal-tip").textContent = tip;
+    el("face-detect").textContent = "正在加载人脸模型…";
+    el("face-guard-row").style.display = "none";
+    el("face-stage").style.display = "block";
+    el("face-switch-btn").style.display = mode === "verify" ? "" : "none";
+    el("face-ok-btn").disabled = true;
+    el("face-ok-btn").textContent = mode === "enroll" ? "请正对摄像头" : "请正对摄像头";
+    el("face-modal").style.display = "flex";
+    OpsFace.start({
+      base: BASE,
+      video: el("face-video"),
+      canvas: el("face-canvas"),
+      onUpdate: function (has) {
+        if (faceGuardMode) return;
+        el("face-detect").textContent = has
+          ? "已检测到人脸，确认面部清晰后点击「" + (mode === "enroll" ? "确认录入" : "确认验证") + "」"
+          : "未检测到人脸，请正对摄像头";
+        el("face-ok-btn").disabled = !has;
+        if (has) el("face-ok-btn").textContent = mode === "enroll" ? "确认录入" : "确认验证";
+      },
+    }).catch(function (err) {
+      if (mode === "enroll") {
+        closeFace();
+        window.alert("人脸录入失败：" + ((err && err.message) || err) +
+          "\n浏览器仅允许 HTTPS 或本机地址使用摄像头。");
+      } else {
+        switchFaceToGuard((err && err.message) || "摄像头不可用");
+      }
+    });
+  }
+
+  function FaceGuard(tip) {
+    return new Promise(function (resolve, reject) {
+      if (!faceState.enabled) { resolve({}); return; }
+      faceResolve = resolve;
+      faceReject = reject;
+      showFaceModal("verify", tip);
+    });
+  }
+
+  function faceOk() {
+    if (faceGuardMode) {
+      var pwd = el("face-guard-input").value;
+      if (!pwd) { window.alert("请输入应急口令"); return; }
+      if (faceResolve) {
+        var r = faceResolve;
+        faceResolve = null;
+        faceReject = null;
+        r({ emergency: pwd });
+      }
+      return;
+    }
+    var d = OpsFace.descriptor();
+    if (!d) { window.alert("请先正对摄像头，待检测到人脸后再确认"); return; }
+    if (faceMode === "enroll") {
+      var name = el("face-name-input").value.trim();
+      if (!name) { window.alert("请填写录入姓名"); return; }
+      el("face-ok-btn").disabled = true;
+      post("api/ops/face/enroll", { name: name, descriptor: d }).then(function () {
+        closeFace();
+        window.alert("人脸「" + name + "」已录入，人脸确认已启用");
+        reloadFace();
+      }).catch(function (e) {
+        el("face-ok-btn").disabled = false;
+        window.alert("录入失败：" + ((e && e.detail) || e));
+      });
+      return;
+    }
+    if (faceResolve) {
+      var r2 = faceResolve;
+      faceResolve = null;
+      faceReject = null;
+      r2({ face: d });
+    }
+  }
+
+  function faceCancel() {
+    closeFace();
+    if (faceReject) {
+      var rj = faceReject;
+      faceResolve = null;
+      faceReject = null;
+      rj({ cancelled: true });
+    }
+  }
+
+  function delFace(tid) {
+    if (!window.confirm("确认删除该人脸模板？若全部删除，高危写操作的人脸确认将自动停用。")) return;
+    del("api/ops/face/templates/" + tid).then(function () {
+      window.alert("已删除");
+      reloadFace();
+    }).catch(function (e) {
+      window.alert("删除失败：" + ((e && e.detail) || e));
+    });
+  }
+
+  function setEmergency() {
+    var p = window.prompt(
+      "设置应急口令（8-64 位）。\n" +
+      "用于摄像头或 HTTPS 环境不可用时完成高危操作验证。\n" +
+      "口令以加盐 PBKDF2 哈希保存，可随时在此重新设置。点取消放弃。");
+    if (p === null) return;
+    if (p.length < 8 || p.length > 64) { window.alert("口令长度需 8-64 位"); return; }
+    post("api/ops/face/emergency", { password: p }).then(function () {
+      window.alert("应急口令已设置");
+      reloadFace();
+    }).catch(function (e) {
+      window.alert("设置失败：" + ((e && e.detail) || e));
+    });
+  }
+
+  function bindFace() {
+    el("face-enroll-btn").addEventListener("click", function () {
+      showFaceModal("enroll",
+        "请正对摄像头、光线充足并避免逆光。系统只提取人脸特征向量，不保存照片或视频。");
+    });
+    el("face-emergency-btn").addEventListener("click", setEmergency);
+    el("face-tpl-rows").addEventListener("click", function (ev) {
+      var btn = ev.target && ev.target.closest ? ev.target.closest("[data-delface]") : null;
+      if (btn) delFace(btn.getAttribute("data-delface"));
+    });
+    el("face-ok-btn").addEventListener("click", faceOk);
+    el("face-cancel-btn").addEventListener("click", faceCancel);
+    el("face-switch-btn").addEventListener("click", function () { switchFaceToGuard("手动切换"); });
   }
 
   function bindControl() {
@@ -407,5 +633,6 @@
 
   bindPublish();
   bindControl();
+  bindFace();
   boot();
 })();

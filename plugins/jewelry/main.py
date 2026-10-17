@@ -7687,7 +7687,7 @@ def _ops_allowed(request: Request) -> bool:
 
 
 _OPS_ASSET_SUFFIXES = (".js", ".css", ".map", ".png", ".svg", ".ico", ".jpg", ".jpeg",
-                       ".webp", ".json", ".webmanifest", ".woff2", ".html")
+                       ".webp", ".json", ".webmanifest", ".woff2", ".html", ".bin")
 
 
 @app.get("/ops")
@@ -7702,6 +7702,9 @@ def ops_asset(request: Request, asset_path: str = ""):
             return FileResponse(str(idx), headers={"Cache-Control": "no-store"})
         return JSONResponse({"detail": "运维端尚未部署"}, status_code=404)
     f = (OPS_DIR / asset_path).resolve()
+    if f.is_file() and _safe_relative(f, OPS_DIR.resolve()) and asset_path.startswith("vendor/models/"):
+        # face-api 权重含无后缀 shard 文件（face_recognition_model-shard1），模型目录单独放行
+        return FileResponse(str(f))
     if f.is_file() and _safe_relative(f, OPS_DIR.resolve()) and f.suffix.lower() in _OPS_ASSET_SUFFIXES:
         nocache = {"Cache-Control": "no-cache"} if f.suffix.lower() in (".js", ".css", ".html") else None
         return FileResponse(str(f), headers=nocache)
@@ -7732,10 +7735,16 @@ def _ops_active_tasks(request: Request) -> dict:
         return {"items": items}
 
 
-def _ops_terminate_task(tid: int, request: Request) -> dict:
+def _ops_terminate_task(tid: int, request: Request,
+                        body: ops_api.FaceGuardIn | None = None) -> dict:
     """运维端强制终止进行中任务：立即解冻库存/释放设备；有扫描数据时生成部分盘点报告。
-    与发起端终止同引擎（抢占终态 → 部分报告 → 释放设备），closed_by='ops' 标记运维来源。"""
+    与发起端终止同引擎（抢占终态 → 部分报告 → 释放设备），closed_by='ops' 标记运维来源。
+    已录入人脸模板时必须先通过人脸确认（或应急口令），验证方式写入审计。"""
     op = ops_api.require_ops(request)
+    guard = ops_api.guard_verify(body or ops_api.FaceGuardIn())
+    guard_txt = {"face": lambda g: f"，人脸确认：{g['name']}",
+                 "emergency": lambda g: "，应急口令验证",
+                 "none": lambda g: ""}[guard["method"]](guard)
     with _open(request) as conn:
         t = _task_by_id(conn, tid)
         cur = conn.execute(
@@ -7758,7 +7767,8 @@ def _ops_terminate_task(tid: int, request: Request) -> dict:
         st = conn.execute("SELECT name FROM stores WHERE id=?", (t["store_id"],)).fetchone()
         _log(conn, op.operator, "运维端·终止任务",
              f"{t['task_no']}（{t['type']}）门店{(st['name'] if st else t['store_id'])}"
-             + (f" 扫描{len(epcs)}，已生成部分报告" if result else f" 扫描{len(epcs)}，立即解冻"))
+             + (f" 扫描{len(epcs)}，已生成部分报告" if result else f" 扫描{len(epcs)}，立即解冻")
+             + guard_txt)
         _push_task_closed(t, "已终止")
         return {"ok": True, "scans": len(epcs),
                 "result": {"id": result["id"], "scannedCount": result["scannedCount"],
@@ -7780,10 +7790,15 @@ def _ops_users(request: Request) -> dict:
 _PWD_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # 去易混字符（i/l/o/0/1）
 
 
-def _ops_reset_password(uid: int, request: Request) -> dict:
+def _ops_reset_password(uid: int, request: Request,
+                        body: ops_api.FaceGuardIn | None = None) -> dict:
     """运维端重置业务账号密码：生成 8 位随机密码（仅本次响应回显一次），
-    置 must_change_pwd=1 强制用户登录后改密。"""
+    置 must_change_pwd=1 强制用户登录后改密。已录入人脸模板时须先人脸/应急口令确认。"""
     op = ops_api.require_ops(request)
+    guard = ops_api.guard_verify(body or ops_api.FaceGuardIn())
+    guard_txt = {"face": lambda g: f"，人脸确认：{g['name']}",
+                 "emergency": lambda g: "，应急口令验证",
+                 "none": lambda g: ""}[guard["method"]](guard)
     new_pwd = "".join(secrets.choice(_PWD_ALPHABET) for _ in range(8))
     with _open(request) as conn:
         row = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
@@ -7792,7 +7807,8 @@ def _ops_reset_password(uid: int, request: Request) -> dict:
         conn.execute("UPDATE users SET password=?, must_change_pwd=1 WHERE id=?", (new_pwd, uid))
         conn.commit()
         _log(conn, op.operator, "运维端·重置密码",
-             f"{row['username']}（{row['display_name'] or row['username']}）密码已重置，登录后须修改")
+             f"{row['username']}（{row['display_name'] or row['username']}）密码已重置，登录后须修改"
+             + guard_txt)
     return {"ok": True, "username": row["username"], "password": new_pwd}
 
 

@@ -112,6 +112,22 @@
       </section>
 
       <section class="section">
+        <h3>人脸确认 <span class="sub">高危写操作（终止任务/重置密码）前的本人在场校验；录入任意人脸后强制启用，摄像头不可用时可用应急口令</span></h3>
+        <div class="face-statusbar">
+          <span id="face-state" class="muted">加载中…</span>
+          <span class="sp"></span>
+          <button class="btn-primary btn-sm" id="face-enroll-btn">录入人脸</button>
+          <button class="btn-outline btn-sm" id="face-emergency-btn">设置应急口令</button>
+        </div>
+        <div class="table-wrap">
+          <table class="dev-table">
+            <thead><tr><th>姓名</th><th>录入时间</th><th>录入人</th><th>操作</th></tr></thead>
+            <tbody id="face-tpl-rows"><tr><td colspan="4" class="loading">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section">
         <h3>操作审计 <span class="sub" id="audit-summary"></span></h3>
         <div class="table-wrap">
           <table class="dev-table">
@@ -140,7 +156,36 @@
     </div>
   </div>
 
+  <!-- 人脸确认/录入弹窗 -->
+  <div id="face-modal" class="modal-mask" style="display:none">
+    <div class="modal-box face-box">
+      <h4 id="face-modal-title">人脸确认</h4>
+      <p class="muted" id="face-modal-tip"></p>
+      <div id="face-name-row" style="display:none;margin-bottom:8px">
+        <input id="face-name-input" type="text" maxlength="32" placeholder="录入姓名（如：张工）"
+               style="width:100%;box-sizing:border-box;border:1px solid #d0d5dd;border-radius:6px;padding:8px 10px">
+      </div>
+      <div class="face-stage">
+        <video id="face-video" autoplay muted playsinline></video>
+        <canvas id="face-canvas"></canvas>
+      </div>
+      <div class="face-detect" id="face-detect">正在加载人脸模型…</div>
+      <div id="face-guard-row" style="display:none;margin:8px 0">
+        <input id="face-guard-input" type="password" maxlength="64" placeholder="请输入应急口令"
+               style="width:100%;box-sizing:border-box;border:1px solid #d0d5dd;border-radius:6px;padding:8px 10px">
+      </div>
+      <div class="face-actions">
+        <button class="btn-outline btn-sm" id="face-cancel-btn">取消</button>
+        <span class="sp"></span>
+        <button class="btn-outline btn-sm" id="face-switch-btn">摄像头不可用？用应急口令</button>
+        <button class="btn-primary btn-sm" id="face-ok-btn" disabled>请正对摄像头</button>
+      </div>
+    </div>
+  </div>
+
 </div>
+<script src="/ops/vendor/face-api.min.js"></script>
+<script src="/ops/face.js"></script>
 <script src="/ops/app.js"></script>
 </body>
 </html>

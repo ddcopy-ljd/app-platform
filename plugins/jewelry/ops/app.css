@@ -130,3 +130,19 @@ h4.sub-head .sub { font-weight: 400; }
   color: #b42318; background: #fef3f2; border: 1px dashed #f97066;
   border-radius: 8px; padding: 12px; margin: 12px 0; user-select: all;
 }
+
+/* ---------------- 人脸确认 ---------------- */
+.face-statusbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 13px; flex-wrap: wrap; }
+.face-statusbar .sp { flex: 1; }
+.face-box { width: 440px; text-align: left; }
+.face-stage {
+  position: relative; width: 100%; max-width: 392px; aspect-ratio: 4 / 3;
+  margin: 0 auto; background: #101828; border-radius: 10px; overflow: hidden;
+}
+.face-stage video, .face-stage canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+}
+.face-detect { text-align: center; font-size: 13px; color: #475467; margin: 10px 0 4px; min-height: 20px; }
+.face-actions { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.face-actions .sp { flex: 1; }
+.face-actions .btn-primary:disabled { background: #98a2b3; cursor: not-allowed; }
