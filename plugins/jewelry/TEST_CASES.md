@@ -372,3 +372,11 @@
 - **根因**：插件 `_bridge_enqueue` 的 C# 协议分支发 `printerType:"raw_passthrough"` + **ZPL 文本**（^XA/^FO/^FD）；ZMIN X19D 固件不识别 ZPL，LabelPrinter.dll `SetPrinterParams` 收到不报错 → 假成功。能真出纸的路径只有：①结构化 `printerType:"rfid"` 任务（SDK 原生 ZMLabel/LabelObject 排版，坐标单位 mm）；②统一指令 PCLE（ZMPCLx64 免驱）。决定性证据：旧目录助手收结构化四角测试任务两次均出纸（用户确认），同机 ZPL 透传零出纸。
 - **修复**：`rfid_print.py` 新增 `build_zmin_content()`（模板 slots/回退固定布局 → 结构化 content，**300DPI 点阵÷11.811=mm**，勿按 203DPI 的 ÷8 换算；EPC 走 content.epc=chip_epc_hex、rfidBlock=0）；`main.py` `_bridge_enqueue` C# 分支改逐件发 `printerType:"rfid"` + `interface:"USB"`（printerName=主板SN），缺 items 直接抛错禁止回退 ZPL 透传；enqueue_zpl 回退分支按 product_ids 重建结构化数据；print-control 的 csharp test 页同改结构化。旧 Python 桥维持 ZPL type:job（得实机型正常）。
 - **验证方法**：①8002 STANDALONE `POST /api/print/labels {product_ids:[1],route:'agent'}` → 助手 /api/tasks 出现 printerType=rfid 任务且"已完成：打印并写入成功"，实体出纸、条码/文字/EPC 正确（2026-10-18 实打 J001 通过，条码 HQ04000009、EPC 453238485104000001）；②回归守卫：任何 csharp 代理任务 payload 不得再出现 raw_passthrough+^XA；③旧桥不受影响（agent_type=legacy 仍走 ZPL）。
+
+## TC-49 演示销售明细 product_id 为空导致【利润分析】成本 0 / 利润率虚高 100%（1.2.44）
+
+- **问题现象**：演示租户【经营分析】→【利润分析】卡默认区间利润率显示 100%（成本 0），2026 全年虚高 69.1%；排行榜「利润」榜出现假高值。
+- **根因**：演示入库的销售明细 `sale_items.product_id` 大面积为空（23 行中 11 行）——`_ensure_sale_details` / `_backfill_demo_sales` 按「商品名」精确匹配，而演示销售单用的是短名（如「翡翠吊坠」对不上商品全名「翡翠观音吊坠」）匹配失败；后端成本口径 `SUM(COALESCE(p.cost,0))` 把无关联行算 0。
+- **修复**：种子/补齐/明细改写为取销售单自带 `product_id`；新增 `_ensure_sale_item_links()` 幂等回填老库空关联，**仅对演示单号（`_DEMO_BILL_NOS`）生效**，真实租户不受影响。
+- **验证方法**：①探针 `GET /api/dashboard/biz-analysis`：默认区间 2026-10 cost=33600 / profit=7600 / rate=18.4%（修复前 rate=100%）、全区间 rate=17.6%；②sqlite 直连 `sale_items` 空 product_id 行数 11→0；③沙箱票证同口径复测一致（v1.2.44 trial：cost 33600、rate 18.4、空关联 0）。
+- **连带说明**：补上 product_id 后，既有门店归属迁移 `_migrate_store_scope` 把原先 `store_id=0` 的演示单据按商品所属门店回填（store 1:19 / store 2:4），门店 1 视图收入相应减少 13260——属该迁移既定设计（历史单据按商品归属门店），非缺陷。
