@@ -786,6 +786,7 @@ async def gateway_proxy(ticket: str, path: str, request: Request):
 # 机器客户端（无 Cookie）允许访问的插件接口白名单：由插件自行校验凭证，
 # 平台不鉴权。如打印桥凭门店密钥换取门店名称的 bridge-whoami。
 _MACHINE_PATHS = {"api/stores/bridge-whoami", "api/print-agent/download",
+                  "api/agent/version",
                   "api/scan-app/info", "api/scan-app/download"}
 
 

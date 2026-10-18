@@ -4058,7 +4058,28 @@ def print_labels(body: LabelPrintIn, request: Request):
                 offline = sid0 not in _bridges or time.time() - _bridges[sid0].last_seen >= 15
             if offline:
                 raise HTTPException(400, "打印代理不在线：" + sname)
-            _bridge_enqueue(sid0, zpl, count, biz="label_product", printer=pname)
+            with _bridges_lock:
+                is_csharp = sid0 in _bridges and _bridges[sid0].agent_type == "csharp"
+            items_fb = None
+            if is_csharp:
+                # ZMIN 不识别 ZPL：回退入队也改发结构化任务（EPC/条码前次已落库，直接重建）
+                if not body.product_ids:
+                    raise HTTPException(400, "C# 打印代理需要商品结构化数据，回退请求缺少 product_ids")
+                with _db(request) as conn2:
+                    rows2 = conn2.execute(
+                        f"SELECT * FROM products WHERE id IN ({','.join('?' * len(body.product_ids))})",
+                        body.product_ids).fetchall()
+                    prods = [dict(r) for r in rows2]
+                    for p in prods:
+                        p.pop("image", None)
+                    prof2 = conn2.execute("SELECT name FROM tenant_profiles ORDER BY id DESC LIMIT 1").fetchone()
+                    sname2 = (prof2["name"] if prof2 and prof2["name"] else "") or sname
+                    epc_prefix_cfg2, _ = _epc_cfg(conn2)
+                    fields2 = {f for f in body.fields if f in rfid_print.FIELD_OPTIONS}
+                    items_fb = _products_to_zmin_items(
+                        conn2, prods, body=body, store_name=sname2,
+                        explicit_tpl=None, fields=fields2, epc_prefix_cfg=epc_prefix_cfg2)
+            _bridge_enqueue(sid0, zpl, count, biz="label_product", printer=pname, items=items_fb)
             sent = True
             printer_desc = "打印桥（" + sname + "）"
         else:
@@ -4125,6 +4146,7 @@ def print_labels(body: LabelPrintIn, request: Request):
         epc_prefix_cfg, _ = _epc_cfg(conn)
         zpl_parts = []
         per_store: dict[int, list[str]] = {}   # store_id -> 该门店商品的 ZPL 列表
+        items_per_store: dict[int, list[dict]] = {}  # store_id -> ZMIN 结构化 content 列表
         used_template_ids = set()
         for p in products:
             tpl_i = explicit_tpl or _bound_tpl(p.get("product_type_code") or "")
@@ -4142,8 +4164,18 @@ def print_labels(body: LabelPrintIn, request: Request):
                 )
             z0 = one.replace("^PQ1", f"^PQ{copies}")
             zpl_parts.append(z0)
-            per_store.setdefault(p.get("store_id") or 1, []).append(z0)
+            sid_k = p.get("store_id") or 1
+            per_store.setdefault(sid_k, []).append(z0)
         zpl = "".join(zpl_parts)
+        with _bridges_lock:
+            _any_csharp = any(_bridges.get(s) and _bridges[s].agent_type == "csharp" for s in per_store)
+        if _any_csharp:
+            # C# 代理走结构化任务；ZPL 仅用于 simulate/旧桥
+            items_all = _products_to_zmin_items(
+                conn, products, body=body, store_name=store_name,
+                explicit_tpl=explicit_tpl, fields=fields, epc_prefix_cfg=epc_prefix_cfg)
+            for p, it in zip(products, items_all):
+                items_per_store.setdefault(p.get("store_id") or 1, []).append(it)
         tpl_desc = f" 模板#{explicit_tpl['id']}" if explicit_tpl else (" 各自品类模板" if used_template_ids else "")
 
         sent = False
@@ -4169,7 +4201,8 @@ def print_labels(body: LabelPrintIn, request: Request):
                     raise HTTPException(400, "打印代理不在线：" + "、".join(missing))
                 for sid0, parts in per_store.items():
                     _bridge_enqueue(sid0, "".join(parts), len(parts),
-                                    biz="label_product", printer=stores_cfg[sid0]["printer"])
+                                    biz="label_product", printer=stores_cfg[sid0]["printer"],
+                                    items=items_per_store.get(sid0))
                 sent = True
                 printer_desc = "打印桥（" + "、".join(stores_cfg[s]["name"] for s in per_store) + "）"
             else:
@@ -4236,38 +4269,82 @@ def _bridge_send(sid: int, payload: dict) -> None:
 
 
 def _bridge_enqueue(sid: int, zpl: str, count: int,
-                    biz: str = "label_product", printer: str = "") -> str:
+                    biz: str = "label_product", printer: str = "",
+                    items: list[dict] | None = None) -> str:
+    """向门店代理下发标签任务。
+
+    C# PrintAgent：逐件发结构化 printerType:"rfid" 任务（ZMIN 固件不识别 ZPL，
+    raw_passthrough 透传 ^XA 文本会"成功"但零出纸）；items 为 build_zmin_content 产物。
+    旧 Python 桥：维持 type:job + ZPL（得实等 ZPL 机型正常）。
+    """
+    with _bridges_lock:
+        b = _bridges.get(sid)
+        agent_type = b.agent_type if b else "legacy"
+    if agent_type == "csharp":
+        if not items:
+            raise RuntimeError("C# 打印代理缺少结构化标签数据（items），拒绝下发 ZPL 透传任务")
+        last_jid = ""
+        for content in items:
+            with _bridges_lock:
+                _bridge_seq[0] += 1
+                jid = f"PJ{_bridge_seq[0]:06d}"
+            payload = {
+                "type": "print_task",
+                "taskId": jid,
+                "printerType": "rfid",
+                "brand": "zmin",
+                "interface": "USB",
+                "printerIp": "",
+                "printerName": printer or "Default",
+                "storeId": str(sid),
+                "content": content,
+            }
+            _bridge_send(sid, payload)
+            last_jid = jid
+        return last_jid
+    # 旧 Python PrintBridge 协议: job 嵌套
+    payload = {"type": "job", "job": {"job_id": f"PJ{_bridge_next()}", "zpl": zpl,
+                                       "title": "jewelry-labels", "count": count,
+                                       "biz": biz, "printer": printer}}
+    _bridge_send(sid, payload)
+    return payload["job"]["job_id"]
+
+
+def _bridge_next() -> str:
     with _bridges_lock:
         _bridge_seq[0] += 1
-        jid = f"PJ{_bridge_seq[0]:06d}"
-        b = _bridges.get(sid)
-    agent_type = b.agent_type if b else "legacy"
+        return f"{_bridge_seq[0]:06d}"
 
-    if agent_type == "csharp":
-        # 新 C# PrintAgent 协议: print_task + raw_passthrough
-        # ZPL 自带 ^PQ 控制份数(^PQ{count})
-        zpl_with_pq = zpl
-        if count and count > 1:
-            # 在 ^XA 后插入 ^PQ{count},0,1,Y
-            zpl_with_pq = zpl.replace("^XA", f"^XA\n^PQ{count},0,1,Y", 1) if "^XA" in zpl else zpl
-        payload = {
-            "type": "print_task",
-            "taskId": jid,
-            "printerType": "raw_passthrough",
-            "brand": "zmin",
-            "interface": "DRIVER",
-            "printerIp": "",
-            "printerName": printer or "Default",
-            "storeId": str(sid),
-            "content": {"rawCommands": zpl_with_pq},
-        }
-    else:
-        # 旧 Python PrintBridge 协议: job 嵌套
-        payload = {"type": "job", "job": {"job_id": jid, "zpl": zpl,
-                                           "title": "jewelry-labels", "count": count,
-                                           "biz": biz, "printer": printer}}
-    _bridge_send(sid, payload)
-    return jid
+
+def _products_to_zmin_items(conn, products: list[dict], *, body, store_name: str,
+                            explicit_tpl: dict | None, fields: set[str],
+                            epc_prefix_cfg: str) -> list[dict]:
+    """逐件商品 → ZMIN 结构化 content（显式模板优先，其次品类绑定模板，回退固定布局）。"""
+
+    def _bound_tpl(type_code: str):
+        if not type_code:
+            return None
+        row = conn.execute(
+            "SELECT lt.* FROM product_types pt JOIN label_templates lt ON lt.id = pt.label_template_id WHERE pt.code=?",
+            (type_code,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    items = []
+    for p in products:
+        tpl_i = explicit_tpl or _bound_tpl(p.get("product_type_code") or "")
+        if tpl_i and (tpl_i.get("definition") or "{}").strip() not in ("{}", ""):
+            items.append(rfid_print.build_zmin_content(
+                p, store_name=store_name, write_epc=body.write_epc,
+                template=tpl_i, rfid_prefix=epc_prefix_cfg,
+                width=float(tpl_i.get("size_width") or 70.0),
+                height=float(tpl_i.get("size_height") or 35.0),
+                gap=float(tpl_i.get("gap") or 3.0)))
+        else:
+            items.append(rfid_print.build_zmin_content(
+                p, fields=fields, store_name=store_name,
+                write_epc=body.write_epc, rfid_prefix=epc_prefix_cfg))
+    return items
 
 
 def _build_test_zpl(store_name: str, printer: str) -> str:
@@ -4619,15 +4696,24 @@ async def store_print_control(sid: int, body: dict, request: Request):
     with _bridges_lock:
         is_csharp = b.agent_type == "csharp" if b else False
     if is_csharp and action == "test":
-        # C# 代理不识别 control 消息, 测试页改用 print_task + raw_passthrough
+        # C# 代理不识别 control 消息；ZMIN 不识别 ZPL → 测试页用结构化 rfid 任务
         with _bridges_lock:
             _bridge_seq[0] += 1
             cid = f"C{_bridge_seq[0]:06d}"
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         payload = {
             "type": "print_task", "taskId": cid,
-            "printerType": "raw_passthrough", "interface": "DRIVER",
+            "printerType": "rfid", "brand": "zmin", "interface": "USB",
             "printerName": target_printer or "Default", "storeId": str(sid),
-            "content": {"rawCommands": _build_test_zpl(s["name"], target_printer)},
+            "content": {
+                "width": 70.0, "height": 35.0, "gap": 3.0, "dpi": 203,
+                "texts": [
+                    {"text": "PrintAgent Test", "x": 3.0, "y": 3.0, "size": 14.0},
+                    {"text": str(s["name"] or "")[:20], "x": 3.0, "y": 10.0, "size": 9.0},
+                    {"text": ts, "x": 3.0, "y": 16.0, "size": 9.0},
+                    {"text": str(target_printer or "")[:20], "x": 3.0, "y": 22.0, "size": 9.0},
+                ],
+            },
         }
     else:
         payload: dict = {"type": "control", "action": action,

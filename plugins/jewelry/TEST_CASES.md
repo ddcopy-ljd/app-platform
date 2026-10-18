@@ -358,3 +358,17 @@
 - **根因**：①`trendYAxis()` 只返回 3 条刻度、SVG 仅 2 条固定横向网格线；②**主因**：`<svg :viewBox="...">` 动态绑定在 in-DOM 模板中被 HTML 解析器小写化为 `:viewbox`，Vue 按小写名 setAttribute 后 SVG 不识别该属性，viewBox 静默失效——SVG 按 1:1 坐标渲染（坐标系 300 宽 vs 容器 450~510px），折线与网格全部只占容器左 ~60%；③次因：`trendLinePoints()` 对 `null` 断点 `continue` 跳过，含 null 的序列（去年同期）折线提前中断。
 - **修复**：viewBox 改**静态属性** `viewBox="0 0 300 120"`（HTML 解析器对 `<svg>` 内静态属性有 viewBox 大小写修正表可正确识别），`trendSvgW/H` 简化为常量 300/120；`trendYAxis()` 0→区间最大均分 4 档（5 刻度）；SVG 横向网格线 `v-for trendHLines()` 4 条对齐刻度；`trendLinePoints()` null 按 0 处理。
 - **验证方法**：浏览器走查：`.trend-svg` getAttribute('viewBox')="0 0 300 120"；`.trend-line-cur` 与 `.trend-svg` 的 getBoundingClientRect().width 比值 ≥0.95（修复前 ≈0.66）；trendYAxis() 5 条递降刻度；近30日 30 点、切近6月后比值仍 ≥0.95；控制台无当前版本号资源的新报错。
+
+## TC-47 标签打印弹层选「打印桥」点打印无反应：前端路由判定只看 printSupported（1.2.43）
+
+- **问题现象**：PC 端「RFID 标签打印」弹层，打印方式选「打印桥·打印代理」，点击打印按钮无任何反应、不出纸、无报错 toast。
+- **根因**：`submitLabelPrint` 的回退分支只以 `ST.printSupported` 判定本地能力——STANDALONE 模式下插件服务器本机装有打印机使该值为 true，于是选「打印桥」仍把 ZPL 直发服务器 DASCOM 打印机（队列有任务但实体机在门店，表现为"没反应"）；同时本地直打端口 18080 是旧 Python 桥遗留，新 C# PrintAgent 走 18180 HTTPS + `/api/print`，本地直打同样失效。叠加因素：代理密钥被上一轮测试清理吊销后 PrintAgent 离线，弹层代理状态显示异常加剧误判。
+- **修复**：路由判定改为**代理在线优先**——`ST.agent && ST.agent.online` 时第一跳即 `route=agent` 经云端 WS 下发到门店代理，且跳过本地直打步骤；代理离线时才尝试本地直打，失败回退 `route=agent` 由后端明确报 400「打印代理不在线」。静态戳 `20261018a20`。
+- **验证方法**：①USB 直连基本盘：`usb_raw_test.ps1` OpenPort/WriteToPort 均 rc=0，证明硬件链路正常，问题纯在软件路由层；②代理在线实打 1 张走 route=agent 到 ZMIN（浏览器走查，仅选 1 商品仅点 1 次）；③代理离线守卫：沙箱票证 `POST /api/print/labels {route:'agent'}` 返回 400「打印代理不在线：总部」，不静默吞任务；④后端 route=agent 且代理离线时严禁降级直发服务器打印机（防再次"假成功"）。
+
+## TC-48 ZMIN X19D 走代理"软件全成功但零出纸"：raw_passthrough 发 ZPL 固件不识别（待发布）
+
+- **问题现象**：TC-47 修复后 route=agent 任务正常送达助手（task_ack 成功、助手 /api/tasks 显示"指令透传成功"），但打印机始终不出纸；助手读 EPC/校准等 USB 功能全部正常，唯独打印无输出。
+- **根因**：插件 `_bridge_enqueue` 的 C# 协议分支发 `printerType:"raw_passthrough"` + **ZPL 文本**（^XA/^FO/^FD）；ZMIN X19D 固件不识别 ZPL，LabelPrinter.dll `SetPrinterParams` 收到不报错 → 假成功。能真出纸的路径只有：①结构化 `printerType:"rfid"` 任务（SDK 原生 ZMLabel/LabelObject 排版，坐标单位 mm）；②统一指令 PCLE（ZMPCLx64 免驱）。决定性证据：旧目录助手收结构化四角测试任务两次均出纸（用户确认），同机 ZPL 透传零出纸。
+- **修复**：`rfid_print.py` 新增 `build_zmin_content()`（模板 slots/回退固定布局 → 结构化 content，**300DPI 点阵÷11.811=mm**，勿按 203DPI 的 ÷8 换算；EPC 走 content.epc=chip_epc_hex、rfidBlock=0）；`main.py` `_bridge_enqueue` C# 分支改逐件发 `printerType:"rfid"` + `interface:"USB"`（printerName=主板SN），缺 items 直接抛错禁止回退 ZPL 透传；enqueue_zpl 回退分支按 product_ids 重建结构化数据；print-control 的 csharp test 页同改结构化。旧 Python 桥维持 ZPL type:job（得实机型正常）。
+- **验证方法**：①8002 STANDALONE `POST /api/print/labels {product_ids:[1],route:'agent'}` → 助手 /api/tasks 出现 printerType=rfid 任务且"已完成：打印并写入成功"，实体出纸、条码/文字/EPC 正确（2026-10-18 实打 J001 通过，条码 HQ04000009、EPC 453238485104000001）；②回归守卫：任何 csharp 代理任务 payload 不得再出现 raw_passthrough+^XA；③旧桥不受影响（agent_type=legacy 仍走 ZPL）。

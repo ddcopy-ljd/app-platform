@@ -12,7 +12,7 @@
 <link rel="icon" href="../logo/logo.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
 <link rel="manifest" href="./manifest.webmanifest">
-<link rel="stylesheet" href="./app.css?v=20261018b8">
+<link rel="stylesheet" href="./app.css?v=20261018b10">
 </head>
 <body>
 <div id="app">
@@ -202,7 +202,13 @@
               <span class="trend-unit">{{ t('dash.trendUnit') }}</span>
             </div>
             <div class="mini-chart">
-              <div class="mini-bar-group" v-for="(lb, i) in dTrendLabels()" :key="i">
+              <div class="mini-bar-group trend-yaxis" v-if="dTrendLabels().length">
+                <div class="mini-bar-pair trend-yaxis-plot">
+                  <span v-for="(ya, yi) in dTrendYAxis()" :key="'y'+yi" :style="{top: ya.top}">{{ ya.text }}</span>
+                </div>
+                <div class="mini-bar-label"></div>
+              </div>
+              <div class="mini-bar-group" v-for="(lb, i) in dTrendLabels()" :key="'b'+i">
                 <div class="mini-bar-pair">
                   <div class="mini-bar cur" :style="{height: barH(i)}"></div>
                   <div class="mini-bar cmp" :style="{height: cmpBarH(i)}"></div>
@@ -429,6 +435,7 @@
 
           <div class="menu-group">
             <div class="menu-group-title">{{ t('pf.system') }}</div>
+            <div class="menu-item" @click="openSub('hq')"><div class="menu-ico">🏢</div><div class="menu-label">{{ t('hq.title') }}</div><div class="chev">›</div></div>
             <div class="menu-item" @click="openSub('appointments')"><div class="menu-ico">📅</div><div class="menu-label">{{ t('appt.title') }}</div><div class="chev">›</div></div>
             <div class="menu-item" @click="openSub('store-profile')"><div class="menu-ico">🏪</div><div class="menu-label">{{ t('store.title') }}</div><div class="chev">›</div></div>
             <div class="menu-item" @click="openSub('logs')"><div class="menu-ico">📋</div><div class="menu-label">{{ t('log.title') }}</div><div class="chev">›</div></div>
@@ -906,6 +913,226 @@
           <button class="btn btn-gold btn-block" @click="saveProfile()">{{ t('common.save') }}</button>
         </template>
 
+        <!-- ========== 二级：总部管理（5 子页） ========== -->
+        <template v-else-if="ST.sub === 'hq'">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('hq.title') }}</div></div>
+          <div class="cmp-chips" style="flex-wrap:wrap;margin-bottom:14px">
+            <div class="cmp-chip" :class="{on: ST.hqTab==='info'}" @click="switchHqTab('info')">{{ t('hq.tab.info') }}</div>
+            <div class="cmp-chip" :class="{on: ST.hqTab==='promo'}" @click="switchHqTab('promo')">{{ t('hq.tab.promo') }}</div>
+            <div class="cmp-chip" :class="{on: ST.hqTab==='branches'}" @click="switchHqTab('branches')">{{ t('hq.tab.branches') }}</div>
+            <div class="cmp-chip" :class="{on: ST.hqTab==='types'}" @click="switchHqTab('types')">{{ t('hq.tab.types') }}</div>
+            <div class="cmp-chip" :class="{on: ST.hqTab==='categories'}" @click="switchHqTab('categories')">{{ t('hq.tab.categories') }}</div>
+          </div>
+
+          <!-- 总部信息 -->
+          <template v-if="ST.hqTab === 'info'">
+            <div class="card">
+              <div class="card-accent"></div>
+              <div class="card-title">{{ t('hq.tab.info') }}</div>
+              <div class="list-item-sub" style="margin:6px 0 12px">{{ t('hq.infoHint') }}</div>
+              <template v-if="ST.profile">
+                <div class="form-group"><label>{{ t('store.name') }}</label><input v-model="ST.profile.name"></div>
+                <div class="form-grid-2">
+                  <div class="form-group"><label>{{ t('store.short') }}</label><input v-model="ST.profile.short_name"></div>
+                  <div class="form-group"><label>{{ t('store.contact') }}</label><input v-model="ST.profile.contact"></div>
+                </div>
+                <div class="form-group"><label>{{ t('store.slogan') }}</label><input v-model="ST.profile.slogan"></div>
+                <div class="form-group"><label>{{ t('store.intro') }}</label><textarea v-model="ST.profile.intro"></textarea></div>
+                <div class="form-grid-2">
+                  <div class="form-group"><label>{{ t('store.phone') }}</label><input v-model="ST.profile.phone" type="tel"></div>
+                  <div class="form-group"><label>{{ t('store.hours') }}</label><input v-model="ST.profile.hours"></div>
+                </div>
+                <div class="form-group"><label>{{ t('store.address') }}</label><input v-model="ST.profile.address"></div>
+                <div class="form-grid-2">
+                  <div class="form-group"><label>{{ t('store.shTitle') }}</label><input v-model="ST.profile.showcase_title"></div>
+                  <div class="form-group"><label>{{ t('store.shSub') }}</label><input v-model="ST.profile.showcase_subtitle"></div>
+                </div>
+                <div class="switch-row">
+                  <span style="font-size:14px">{{ t('store.published') }}</span>
+                  <div class="switch" :class="{on: ST.profile.published}" @click="ST.profile.published = ST.profile.published ? 0 : 1"></div>
+                </div>
+              </template>
+              <div v-else class="empty" style="padding:16px"><div class="empty-text">{{ t('common.loading') }}</div></div>
+            </div>
+            <button class="btn btn-gold btn-block" @click="saveHqProfile()">{{ t('common.save') }}</button>
+          </template>
+
+          <!-- 企业推广 -->
+          <template v-else-if="ST.hqTab === 'promo'">
+            <div class="card">
+              <div class="card-accent"></div>
+              <div class="card-title">{{ t('hq.promoTitle') }}</div>
+              <div class="list-item-sub" style="margin:6px 0 12px">{{ t('hq.promoHint') }}</div>
+              <a class="btn btn-outline btn-block" :href="siteHref()" target="_blank" style="margin-bottom:14px">{{ t('hq.previewSite') }}</a>
+              <div class="card-title" style="font-size:13px">{{ t('hq.siteI18n') }}</div>
+              <div class="list-item-sub" style="margin:6px 0 10px">{{ t('hq.siteI18nHint') }}</div>
+              <div class="cmp-chips" style="flex-wrap:wrap;margin-bottom:12px">
+                <div v-for="l in HQ_LANGS" :key="l" class="cmp-chip" :class="{on: ST.profLang===l}" @click="openProfLang(l)">{{ hqLangName(l) }}<span v-if="hqLangFilled(l)"> ✓</span></div>
+              </div>
+              <div class="form-group"><label>{{ t('store.name') }}</label><input v-model="ST.profEdit.name" :placeholder="t('hq.namePhLang')"></div>
+              <div class="form-group"><label>{{ t('store.slogan') }}</label><input v-model="ST.profEdit.slogan"></div>
+              <div class="form-grid-2">
+                <div class="form-group"><label>{{ t('store.hours') }}</label><input v-model="ST.profEdit.hours"></div>
+                <div class="form-group"><label>{{ t('store.address') }}</label><input v-model="ST.profEdit.address"></div>
+              </div>
+              <div class="form-group"><label>{{ t('store.shTitle') }}</label><input v-model="ST.profEdit.showcase_title"></div>
+              <div class="form-group"><label>{{ t('store.shSub') }}</label><input v-model="ST.profEdit.showcase_subtitle"></div>
+              <div class="form-group"><label>{{ t('hq.cats') }}</label><input v-model="ST.profEdit.categories"></div>
+              <div class="form-group"><label>{{ t('store.intro') }}</label><textarea v-model="ST.profEdit.intro"></textarea></div>
+            </div>
+            <button class="btn btn-gold btn-block" @click="saveHqProfile()">{{ t('common.save') }}</button>
+          </template>
+
+          <!-- 分店管理 -->
+          <template v-else-if="ST.hqTab === 'branches'">
+            <div class="card">
+              <div class="card-accent"></div>
+              <div class="card-head">
+                <div class="card-title">{{ t('shop.title') }}</div>
+                <button class="btn btn-gold btn-sm" @click="createStore()">＋ {{ t('store.add') }}</button>
+              </div>
+              <div class="list-item-sub">{{ t('shop.hint') }}</div>
+            </div>
+            <div v-if="ST.storeEditMode" class="card">
+              <div class="card-title">{{ ST.storeEditMode==='edit' ? t('cat.saveEdit') : t('store.add') }}</div>
+              <div class="form-group"><label>{{ t('store.name') }}</label><input v-model="ST.storeEdit.name" :placeholder="t('store.namePh')"></div>
+              <div class="form-grid-2">
+                <div class="form-group"><label>{{ t('store.code') }}</label><input v-model="ST.storeEdit.code" maxlength="2" :disabled="ST.storeEditMode==='edit'" :placeholder="t('store.codePh')"></div>
+                <div class="form-group"><label>{{ t('store.owner') }}</label><input v-model="ST.storeEdit.owner"></div>
+              </div>
+              <div class="form-group"><label>{{ t('store.belongShop') }}</label>
+                <select v-model.number="ST.storeEdit.shop_id">
+                  <option v-for="p in ST.shops" :key="p.id" :value="p.id">{{ p.name }}</option>
+                </select>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-gold" style="flex:1" @click="saveStore()">{{ ST.storeEditMode==='edit' ? t('cat.saveEdit') : t('common.confirm') }}</button>
+                <button class="btn btn-outline" style="flex:1" @click="resetStoreEdit()">{{ t('common.cancel') }}</button>
+              </div>
+            </div>
+            <div v-for="p in ST.shops" :key="'sh'+p.id">
+              <div class="hq-grp-title">🏬 {{ p.name }} <span v-if="p.code">#{{ p.code }}</span></div>
+              <div class="card" v-for="s in storesByShop(p.id)" :key="s.id">
+                <div class="card-head">
+                  <div class="card-title">🏪 {{ s.name }} <small v-if="s.code">#{{ s.code }}</small></div>
+                  <button class="btn btn-outline btn-sm" @click="(ST.storeEditMode==='edit' && ST.storeEdit.id===s.id) ? resetStoreEdit() : editStore(s)">{{ (ST.storeEditMode==='edit' && ST.storeEdit.id===s.id) ? t('common.cancel') : t('common.edit') }}</button>
+                </div>
+                <div class="kv" v-if="s.owner"><span class="kv-k">{{ t('store.owner') }}</span><span class="kv-v">{{ s.owner }}</span></div>
+              </div>
+              <div v-if="!storesByShop(p.id).length" class="empty" style="padding:10px"><div class="empty-text">{{ t('store.emptyInShop') }}</div></div>
+            </div>
+            <div v-if="!ST.shops.length" class="empty"><div class="empty-text">{{ t('common.loading') }}</div></div>
+          </template>
+
+          <!-- 品类管理 -->
+          <template v-else-if="ST.hqTab === 'types'">
+            <div class="card">
+              <div class="card-accent"></div>
+              <div class="card-head">
+                <div class="card-title">{{ t('type.mgrTitle') }}</div>
+                <button class="btn btn-gold btn-sm" @click="resetTypeEdit()">＋ {{ t('type.addNew') }}</button>
+              </div>
+              <div class="hq-row" v-for="o in ST.productTypes" :key="o.code">
+                <div class="hq-row-main">
+                  <div class="hq-row-name">{{ typeName(o) }} <span class="q-code">{{ o.code }}</span></div>
+                  <div class="hq-row-sub">
+                    <span class="tag" :class="o.pricing_mode==='weight' ? 'tag-gold' : 'tag-wine'">{{ o.pricing_mode==='weight' ? t('type.modeWeight') : t('type.modePiece') }}</span>
+                  </div>
+                </div>
+                <div class="hq-row-ops">
+                  <button class="btn btn-outline btn-sm" @click="(ST.typeEditMode==='edit' && ST.typeEdit.code===o.code) ? resetTypeEdit() : editType(o)">{{ (ST.typeEditMode==='edit' && ST.typeEdit.code===o.code) ? t('common.cancel') : t('common.edit') }}</button>
+                  <button class="btn btn-outline btn-sm" style="color:var(--red)" @click="delType(o.code)">{{ t('common.delete') }}</button>
+                </div>
+              </div>
+              <div v-if="!ST.productTypes.length" class="empty" style="padding:10px"><div class="empty-text">{{ t('common.empty') }}</div></div>
+            </div>
+            <div class="card">
+              <div class="card-title">{{ ST.typeEditMode==='edit' ? t('cat.saveEdit') : t('type.addNew') }}</div>
+              <div class="form-grid-2">
+                <div class="form-group"><label>{{ t('lbl.code') }}</label><input v-model="ST.typeEdit.code" :disabled="ST.typeEditMode==='edit'" :placeholder="t('type.codePh')"></div>
+                <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="ST.typeEdit.sort_order" type="number"></div>
+              </div>
+              <div class="form-group"><label>{{ t('cat.zhName') }}</label><input v-model="ST.typeEdit.names.zh" :placeholder="t('type.namePh')"></div>
+              <div class="form-group"><label>{{ t('cat.enName') }}</label><input v-model="ST.typeEdit.names.en" placeholder="Ring"></div>
+              <div class="form-group"><label>Italiano</label><input v-model="ST.typeEdit.names.it" placeholder="Anello"></div>
+              <div class="form-group"><label>{{ t('type.pricingMode') }}</label>
+                <select v-model="ST.typeEdit.pricing_mode">
+                  <option value="piece">{{ t('type.modePiece') }}</option>
+                  <option value="weight">{{ t('type.modeWeight') }}</option>
+                </select>
+              </div>
+              <button class="btn btn-gold btn-block" @click="saveType()">{{ ST.typeEditMode==='edit' ? t('cat.saveEdit') : t('type.addNew') }}</button>
+            </div>
+          </template>
+
+          <!-- 分类管理 -->
+          <template v-else-if="ST.hqTab === 'categories'">
+            <div class="card">
+              <div class="card-accent"></div>
+              <div class="card-head">
+                <div class="card-title">{{ t('tagGroup.oneTitle') }}</div>
+                <button class="btn btn-gold btn-sm" @click="addTagGroup()">＋ {{ t('tagGroup.addNew') }}</button>
+              </div>
+              <div class="list-item-sub" style="margin-bottom:8px">{{ t('tagGroup.oneHint') }}</div>
+              <div class="hq-row" v-for="g in ST.tagGroups" :key="g.id">
+                <div class="hq-row-main">
+                  <div class="hq-row-name">{{ g.name }}</div>
+                  <div class="hq-row-sub">{{ t('cat.sort') }} {{ g.sort_order }} · {{ t('tagGroup.tagCount') }} {{ g.tag_count }}</div>
+                </div>
+                <div class="hq-row-ops">
+                  <button class="btn btn-outline btn-sm" @click="(ST.tagGroupEditMode==='edit' && ST.tagGroupEdit.id===g.id) ? resetTagGroupEdit() : editTagGroup(g)">{{ (ST.tagGroupEditMode==='edit' && ST.tagGroupEdit.id===g.id) ? t('common.cancel') : t('common.edit') }}</button>
+                  <button class="btn btn-outline btn-sm" style="color:var(--red)" @click="delTagGroup(g)">{{ t('common.delete') }}</button>
+                </div>
+              </div>
+              <div v-if="!ST.tagGroups.length" class="empty" style="padding:10px"><div class="empty-text">{{ t('common.empty') }}</div></div>
+            </div>
+            <div class="card">
+              <div class="card-title">{{ ST.tagGroupEditMode==='edit' ? t('cat.saveEdit') : t('tagGroup.addNew') }}</div>
+              <div class="form-group"><label>{{ t('tagGroup.name') }}</label><input v-model="ST.tagGroupEdit.name" maxlength="20" :placeholder="t('tagGroup.namePh')"></div>
+              <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="ST.tagGroupEdit.sort_order" type="number"></div>
+              <button class="btn btn-gold btn-block" @click="saveTagGroup()">{{ ST.tagGroupEditMode==='edit' ? t('cat.saveEdit') : t('tagGroup.addNew') }}</button>
+            </div>
+
+            <div class="card">
+              <div class="card-accent"></div>
+              <div class="card-head">
+                <div class="card-title">{{ t('tagGroup.twoTitle') }}</div>
+                <button class="btn btn-gold btn-sm" @click="resetTagEdit()">＋ {{ t('tag.addNew') }}</button>
+              </div>
+              <div class="cmp-chips" style="flex-wrap:wrap;margin-bottom:10px">
+                <div class="cmp-chip" :class="{on: !ST.tagFilter}" @click="setTagFilter('')">{{ t('tagGroup.filterAll') }}</div>
+                <div v-for="g in ST.tagGroups" :key="'f'+g.id" class="cmp-chip" :class="{on: ST.tagFilter===g.name}" @click="setTagFilter(g.name)">{{ g.name }}</div>
+              </div>
+              <div class="hq-row" v-for="o in filteredTags()" :key="o.id">
+                <div class="hq-row-main">
+                  <div class="hq-row-name"><span class="hq-dot" :style="{background: o.color || '#C9A227'}"></span>{{ o.name }}</div>
+                  <div class="hq-row-sub">{{ o.group_name || t('tag.ungrouped') }} · {{ t('tag.usedCount') }} {{ o.used_count }}</div>
+                </div>
+                <div class="hq-row-ops">
+                  <button class="btn btn-outline btn-sm" @click="(ST.tagEditMode==='edit' && ST.tagEdit.id===o.id) ? resetTagEdit() : editTag(o)">{{ (ST.tagEditMode==='edit' && ST.tagEdit.id===o.id) ? t('common.cancel') : t('common.edit') }}</button>
+                  <button class="btn btn-outline btn-sm" style="color:var(--red)" @click="delTag(o)">{{ t('common.delete') }}</button>
+                </div>
+              </div>
+              <div v-if="!filteredTags().length" class="empty" style="padding:10px"><div class="empty-text">{{ t('common.empty') }}</div></div>
+            </div>
+            <div class="card">
+              <div class="card-title">{{ ST.tagEditMode==='edit' ? t('cat.saveEdit') : t('tag.addNew') }}</div>
+              <div class="form-group"><label>{{ t('tag.name') }}</label><input v-model="ST.tagEdit.name" maxlength="20" :placeholder="t('tag.namePh')"></div>
+              <div class="form-grid-2">
+                <div class="form-group"><label>{{ t('tag.color') }}</label><input type="color" v-model="ST.tagEdit.color"></div>
+                <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="ST.tagEdit.sort_order" type="number"></div>
+              </div>
+              <div class="form-group"><label>{{ t('tag.group') }}</label>
+                <select v-model="ST.tagEdit.group_name">
+                  <option value="">{{ t('tag.ungrouped') }}</option>
+                  <option v-for="g in ST.tagGroupList" :key="'tg'+g" :value="g">{{ g }}</option>
+                </select>
+              </div>
+              <button class="btn btn-gold btn-block" @click="saveTag()">{{ ST.tagEditMode==='edit' ? t('cat.saveEdit') : t('tag.addNew') }}</button>
+            </div>
+          </template>
+        </template>
+
       </div>
 
       <!-- 底部 Tab -->
@@ -1008,7 +1235,7 @@
 </div>
 
 <script src="./vendor/vue.global.prod.js"></script>
-<script src="./i18n.js?v=20261018b8"></script>
+<script src="./i18n.js?v=20261018b10"></script>
 <script>
 (function () {
   if (!window.__APP_BASE__) {
@@ -1020,7 +1247,7 @@
   }
 })();
 </script>
-<script src="./app.js?v=20261018b8"></script>
+<script src="./app.js?v=20261018b10"></script>
 <script>
 // 依据可视高度动态设定容器高度：解决手机浏览器底部工具栏遮挡 tab 栏的问题
 (function () {

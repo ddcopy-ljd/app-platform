@@ -78,7 +78,15 @@
     pickOptions: [], pickLoading: false,
     pickMode: "",
     form: {}, formTitle: "", formKind: "",
-    auditNote: ""
+    auditNote: "",
+    // 总部管理（信息/推广/分店/品类/分类）
+    hqTab: "info", shops: [], hqStores: [], labelTemplates: [],
+    typeEdit: { code: "", names: { zh: "", en: "", it: "" }, sort_order: 0, pricing_mode: "piece" }, typeEditMode: "new",
+    tagGroups: [], tagFilter: "",
+    tagGroupEdit: { id: 0, name: "", sort_order: 1 }, tagGroupEditMode: "new",
+    tagEdit: { id: 0, name: "", color: "#C9A227", sort_order: 1, group_name: "" }, tagEditMode: "new",
+    storeEdit: { id: 0, name: "", code: "", owner: "", shop_id: 0 }, storeEditMode: "",
+    profI18n: {}, profEdit: {}, profLang: "en"
   });
 
   function toast(text, type) {
@@ -186,6 +194,7 @@
     else if (name === "appointments") loadAppointments();
     else if (name === "logs") loadLogs();
     else if (name === "store-profile") loadProfile();
+    else if (name === "hq") { ST.hqTab = "info"; loadHqTab(); }
     var el = document.querySelector(".page");
     if (el) el.scrollTop = 0;
   }
@@ -684,6 +693,155 @@
     }).then(function () { toast(t("store.saveOk")); closeSub(); }).catch(function (e) { toast(e.message, "error"); });
   }
 
+  // ---------------- 总部管理（手机端 5 子页） ----------------
+  var HQ_LANGS = ["en", "it", "ja", "ko", "zhHant"];
+  var HQ_I18N_FIELDS = ["name", "slogan", "intro", "hours", "address", "showcase_title", "showcase_subtitle", "categories"];
+
+  function siteHref() { return (window.__APP_BASE__ || "") + "/site"; }
+  function switchHqTab(k) { ST.hqTab = k; loadHqTab(); }
+  function loadHqTab() {
+    var k = ST.hqTab;
+    if (k === "info" || k === "promo") loadHqProfile();
+    else if (k === "branches") { loadShops(); loadHqStores(); }
+    else if (k === "types") { loadProductTypes(); loadLabelTemplates(); }
+    else if (k === "categories") { loadTagGroups(); loadTags(); }
+  }
+  function loadHqProfile() {
+    api("GET", "/api/profile").then(function (d) {
+      ST.profile = d || {};
+      var m = {};
+      try { m = (d && d.i18n) ? JSON.parse(d.i18n) : {}; } catch (e) { m = {}; }
+      ST.profI18n = m || {};
+      if (!ST.profLang) ST.profLang = "en";
+      openProfLang(ST.profLang);
+    }).catch(function (e) { toast(e.message, "error"); });
+  }
+  function hqLangName(l) { return (window.LANG_LABELS || {})[l] || l; }
+  function hqLangFilled(lang) {
+    var v = (ST.profI18n || {})[lang] || {};
+    for (var i = 0; i < HQ_I18N_FIELDS.length; i++) {
+      var x = v[HQ_I18N_FIELDS[i]];
+      if (x && String(x).trim()) return true;
+    }
+    return false;
+  }
+  function flushProfEdit() {
+    if (!ST.profLang) return;
+    var m = ST.profI18n || {}, one = {}, i, k, v, has = false;
+    for (i = 0; i < HQ_I18N_FIELDS.length; i++) {
+      k = HQ_I18N_FIELDS[i]; v = (ST.profEdit || {})[k];
+      if (v && String(v).trim()) { one[k] = String(v).trim(); has = true; }
+    }
+    if (has) m[ST.profLang] = one; else delete m[ST.profLang];
+    ST.profI18n = m;
+  }
+  function openProfLang(lang) {
+    if (ST.profLang && lang !== ST.profLang) flushProfEdit();
+    ST.profLang = lang;
+    var src = (ST.profI18n || {})[lang] || {}, ed = {};
+    for (var i = 0; i < HQ_I18N_FIELDS.length; i++) { var k = HQ_I18N_FIELDS[i]; ed[k] = src[k] || ""; }
+    ST.profEdit = ed;
+  }
+  function saveHqProfile() {
+    var p = ST.profile; if (!p) return;
+    flushProfEdit();
+    api("PUT", "/api/profile", {
+      name: p.name || "", short_name: p.short_name || "", slogan: p.slogan || "",
+      intro: p.intro || "", contact: p.contact || "", phone: p.phone || "",
+      address: p.address || "", hours: p.hours || "", categories: p.categories || "",
+      published: p.published ? 1 : 0, showcase_title: p.showcase_title || "",
+      showcase_subtitle: p.showcase_subtitle || "",
+      i18n: JSON.stringify(ST.profI18n || {})
+    }).then(function () { toast(t("store.saveOk")); }).catch(function (e) { toast(e.message, "error"); });
+  }
+
+  // 分店管理
+  function loadShops() { api("GET", "/api/shops").then(function (r) { ST.shops = r || []; }).catch(function () {}); }
+  function loadHqStores() { api("GET", "/api/stores?all=1&detail=1").then(function (r) { ST.hqStores = r || []; }).catch(function () {}); }
+  function storesByShop(shopId) {
+    var out = [];
+    for (var i = 0; i < ST.hqStores.length; i++) { if ((ST.hqStores[i].shop_id || 0) === shopId) out.push(ST.hqStores[i]); }
+    return out;
+  }
+  function createStore() { ST.storeEditMode = "new"; ST.storeEdit = { id: 0, name: "", code: "", owner: "", shop_id: (ST.shops[0] && ST.shops[0].id) || 0 }; }
+  function editStore(s) { ST.storeEditMode = "edit"; ST.storeEdit = { id: s.id, name: s.name, code: s.code || "", owner: s.owner || "", shop_id: s.shop_id || 0 }; }
+  function resetStoreEdit() { ST.storeEditMode = ""; ST.storeEdit = { id: 0, name: "", code: "", owner: "", shop_id: 0 }; }
+  function saveStore() {
+    var d = ST.storeEdit;
+    if (!d.name || !d.name.trim()) { toast(t("shop.storeNameReq"), "error"); return; }
+    var code = (d.code || "").trim().toUpperCase();
+    if (!d.id && code && !/^[A-Z0-9]{2}$/.test(code)) { toast(t("store.codeRule"), "error"); return; }
+    d.code = code;
+    var payload = { name: d.name.trim(), code: code, owner: (d.owner || "").trim(), shop_id: d.shop_id || 0 };
+    var req = d.id ? api("PUT", "/api/stores/" + d.id, payload) : api("POST", "/api/stores", payload);
+    req.then(function () { toast(t("store.saveOk")); resetStoreEdit(); loadShops(); loadHqStores(); }).catch(function (e) { toast(e.message, "error"); });
+  }
+
+  // 品类管理
+  function loadProductTypes() { api("GET", "/api/product-types").then(function (r) { ST.productTypes = r || []; }).catch(function () {}); }
+  function loadLabelTemplates() { api("GET", "/api/label-templates").then(function (r) { ST.labelTemplates = (r && r.list) || []; }).catch(function () {}); }
+  function typeName(o) { var n = (o && o.names) || {}; return n.zh || n.en || (o && o.code) || ""; }
+  function resetTypeEdit() { ST.typeEdit = { code: "", names: { zh: "", en: "", it: "" }, sort_order: (ST.productTypes || []).length + 1, pricing_mode: "piece" }; ST.typeEditMode = "new"; }
+  function editType(o) { ST.typeEditMode = "edit"; ST.typeEdit = { code: o.code, names: { zh: (o.names && o.names.zh) || "", en: (o.names && o.names.en) || "", it: (o.names && o.names.it) || "" }, sort_order: o.sort_order || 0, pricing_mode: o.pricing_mode === "weight" ? "weight" : "piece" }; }
+  function saveType() {
+    var e = ST.typeEdit;
+    if (!e.code || !e.code.trim()) { toast(t("common.required"), "error"); return; }
+    if (!(e.names.zh || e.names.en)) { toast(t("common.required"), "error"); return; }
+    var body = { code: e.code.trim(), names: { zh: e.names.zh || "", en: e.names.en || "", it: e.names.it || "" }, sort_order: Number(e.sort_order) || 0, pricing_mode: e.pricing_mode === "weight" ? "weight" : "piece" };
+    var method = ST.typeEditMode === "edit" ? "PUT" : "POST";
+    var url = ST.typeEditMode === "edit" ? "/api/product-types/" + e.code : "/api/product-types";
+    api(method, url, body).then(function () { toast(t("store.saveOk")); resetTypeEdit(); loadProductTypes(); }).catch(function (er) { toast(er.message, "error"); });
+  }
+  function delType(code) {
+    if (!confirm(t("msg.confirmDelete") + " " + code)) return;
+    api("DELETE", "/api/product-types/" + code).then(function () { toast(t("store.saveOk")); loadProductTypes(); }).catch(function (e) { toast(e.message, "error"); });
+  }
+
+  // 分类管理（一级 tag_groups / 二级 product_tags）
+  function loadTagGroups() { api("GET", "/api/tag-groups").then(function (r) { ST.tagGroups = (r && r.list) || []; }).catch(function () {}); }
+  function filteredTags() {
+    var out = [], list = ST.tagList || [], f = ST.tagFilter;
+    for (var i = 0; i < list.length; i++) { if (!f || (list[i].group_name || "") === f) out.push(list[i]); }
+    return out;
+  }
+  function setTagFilter(name) { ST.tagFilter = name || ""; }
+  function resetTagGroupEdit() { ST.tagGroupEdit = { id: 0, name: "", sort_order: (ST.tagGroups || []).length + 1 }; ST.tagGroupEditMode = "new"; }
+  function addTagGroup() { resetTagGroupEdit(); }
+  function editTagGroup(g) { ST.tagGroupEditMode = "edit"; ST.tagGroupEdit = { id: g.id, name: g.name || "", sort_order: g.sort_order || 0 }; }
+  function saveTagGroup() {
+    var g = ST.tagGroupEdit;
+    if (!g.name || !g.name.trim()) { toast(t("tagGroup.nameRequired"), "error"); return; }
+    var body = { name: g.name.trim(), sort_order: Number(g.sort_order) || 0 };
+    var method = ST.tagGroupEditMode === "edit" ? "PUT" : "POST";
+    var url = ST.tagGroupEditMode === "edit" ? "/api/tag-groups/" + g.id : "/api/tag-groups";
+    api(method, url, body).then(function () { toast(t("store.saveOk")); resetTagGroupEdit(); loadTagGroups(); loadTags(); }).catch(function (e) { toast(e.message, "error"); });
+  }
+  function delTagGroup(g) {
+    if (!confirm(t("tagGroup.delConfirm", { n: g.name }))) return;
+    api("DELETE", "/api/tag-groups/" + g.id).then(function (r) {
+      toast(t("store.saveOk") + (r && r.unlinked ? " · " + t("tagGroup.unlinked", { n: r.unlinked }) : ""));
+      if (ST.tagFilter === g.name) ST.tagFilter = "";
+      loadTagGroups(); loadTags();
+    }).catch(function (e) { toast(e.message, "error"); });
+  }
+  function resetTagEdit() { ST.tagEdit = { id: 0, name: "", color: "#C9A227", sort_order: (ST.tagList || []).length + 1, group_name: "" }; ST.tagEditMode = "new"; }
+  function editTag(o) { ST.tagEditMode = "edit"; ST.tagEdit = { id: o.id, name: o.name || "", color: o.color || "#C9A227", sort_order: o.sort_order || 0, group_name: o.group_name || "" }; }
+  function saveTag() {
+    var e = ST.tagEdit;
+    if (!e.name || !e.name.trim()) { toast(t("tag.nameRequired"), "error"); return; }
+    var body = { name: e.name.trim(), color: e.color || "", sort_order: Number(e.sort_order) || 0, group_name: (e.group_name || "").trim() };
+    var method = ST.tagEditMode === "edit" ? "PUT" : "POST";
+    var url = ST.tagEditMode === "edit" ? "/api/product-tags/" + e.id : "/api/product-tags";
+    api(method, url, body).then(function () { toast(t("store.saveOk")); resetTagEdit(); loadTags(); }).catch(function (er) { toast(er.message, "error"); });
+  }
+  function delTag(o) {
+    if (!confirm(t("tag.delConfirm", { n: o.used_count || 0 }))) return;
+    api("DELETE", "/api/product-tags/" + o.id).then(function (r) {
+      toast(t("store.saveOk") + (r && r.unlinked ? " · " + t("tag.unlinked", { n: r.unlinked }) : ""));
+      loadTags();
+    }).catch(function (e) { toast(e.message, "error"); });
+  }
+
   // ---------------- quick ----------------
   function quickGo(kind) {
     ST.sheet = "";
@@ -731,6 +889,21 @@
     var c = dTrendCmpData();
     if (!c.length) return "0%";
     return Math.max(4, Math.round(num(c[i]) / trendMax() * 100)) + "%";
+  }
+  // 纵轴刻度（实销金额）：区间最大值均分 4 段（5 条刻度），top% 与柱高百分比一一对齐
+  function dTrendYAxis() {
+    var mx = trendMax(), zh = (ST.lang || "zh") === "zh";
+    function short(n) {
+      n = Math.round(n);
+      if (zh && n >= 10000) return (n / 10000).toFixed(n >= 100000 ? 0 : 1).replace(/\.0$/, "") + "万";
+      if (!zh && n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, "") + "k";
+      return fmtNum(n);
+    }
+    var out = [];
+    for (var i = 4; i >= 0; i--) {
+      out.push({ top: Math.round((1 - i / 4) * 100) + "%", text: i === 0 ? "0" : short(mx * i / 4) });
+    }
+    return out;
   }
   function remDeposits() { return (ST.reminders && ST.reminders.deposits) || []; }
   function remRepairs() { return (ST.reminders && ST.reminders.repairsPending) || []; }
@@ -790,8 +963,18 @@
     loadOutsourcings: loadOutsourcings, newOutsourcing: newOutsourcing, createOutsourcing: createOutsourcing, receiveOutsourcing: receiveOutsourcing,
     loadAppointments: loadAppointments, setAppt: setAppt, loadLogs: loadLogs,
     loadProfile: loadProfile, saveProfile: saveProfile, quickGo: quickGo, reminderCount: reminderCount,
+    switchHqTab: switchHqTab, loadHqTab: loadHqTab, siteHref: siteHref, saveHqProfile: saveHqProfile,
+    hqLangName: hqLangName, hqLangFilled: hqLangFilled, openProfLang: openProfLang,
+    loadShops: loadShops, loadHqStores: loadHqStores, storesByShop: storesByShop, createStore: createStore,
+    editStore: editStore, resetStoreEdit: resetStoreEdit, saveStore: saveStore,
+    loadProductTypes: loadProductTypes, loadLabelTemplates: loadLabelTemplates, typeName: typeName,
+    resetTypeEdit: resetTypeEdit, editType: editType, saveType: saveType, delType: delType,
+    loadTagGroups: loadTagGroups, filteredTags: filteredTags, setTagFilter: setTagFilter,
+    resetTagGroupEdit: resetTagGroupEdit, addTagGroup: addTagGroup, editTagGroup: editTagGroup,
+    saveTagGroup: saveTagGroup, delTagGroup: delTagGroup,
+    resetTagEdit: resetTagEdit, editTag: editTag, saveTag: saveTag, delTag: delTag,
     dStock: dStock, dToday: dToday, dMonth: dMonth, dDue: dDue, dRecent: dRecent,
-    dTrendLabels: dTrendLabels, barH: barH, cmpBarH: cmpBarH, trendCmpKey: trendCmpKey,
+    dTrendLabels: dTrendLabels, barH: barH, cmpBarH: cmpBarH, dTrendYAxis: dTrendYAxis, trendCmpKey: trendCmpKey,
     setDashRange: setDashRange, setTrendCmp: setTrendCmp, remDeposits: remDeposits, remRepairs: remRepairs, remLoans: remLoans,
     iStock: iStock, iReserved: iReserved, iLoaned: iLoaned, iMetrics: iMetrics, custSales: custSales,
     userName: userName, userInitial: userInitial, roleName: roleName,
@@ -800,7 +983,7 @@
 
   Vue.createApp({
     setup: function () {
-      var out = { ST: ST, t: function (k, p) { return window.t(k, p); }, LANGS: window.LANG_KEYS, LANG_LABELS: window.LANG_LABELS };
+      var out = { ST: ST, t: function (k, p) { return window.t(k, p); }, LANGS: window.LANG_KEYS, LANG_LABELS: window.LANG_LABELS, HQ_LANGS: HQ_LANGS };
       for (var k in methods) { if (Object.prototype.hasOwnProperty.call(methods, k)) out[k] = methods[k]; }
       return out;
     },

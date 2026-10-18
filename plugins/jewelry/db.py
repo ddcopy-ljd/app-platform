@@ -1618,6 +1618,7 @@ def ensure_new_seeds(conn: sqlite3.Connection) -> None:
     _ensure_sales_seed(conn)
     # —— sales 对应的 sale_items + sale_payments 明细 ——
     _ensure_sale_details(conn)
+    _ensure_sale_item_links(conn)  # 老库明细商品关联为空时回填（修复成本/利润率口径）
     # —— 销售相关的 inventory_logs（销售出库）——
     _ensure_sale_inventory_logs(conn)
     # —— loans（借货）——
@@ -1876,14 +1877,13 @@ def _backfill_demo_sales(conn: sqlite3.Connection) -> None:
         missing,
     )
     # 补入的单同步补 sale_items + sale_payments（与 _ensure_sale_details 口径一致，支撑「件数/明细」）
-    prod_map = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM products").fetchall()}
     for s in conn.execute(
-        "SELECT id, product, amount, method FROM sales s "
+        "SELECT id, product_id, product, amount, method FROM sales s "
         "WHERE NOT EXISTS (SELECT 1 FROM sale_items si WHERE si.sale_id=s.id)"
     ).fetchall():
         conn.execute(
             "INSERT INTO sale_items(sale_id,product_id,name,price,subtotal,seq) VALUES(?,?,?,?,?,1)",
-            (s["id"], prod_map.get(s["product"]), s["product"], s["amount"], s["amount"]),
+            (s["id"], s["product_id"], s["product"], s["amount"], s["amount"]),
         )
         conn.execute(
             "INSERT INTO sale_payments(sale_id,method,amount,seq) VALUES(?,?,?,1)",
@@ -1919,15 +1919,15 @@ def _ensure_sale_details(conn: sqlite3.Connection) -> None:
     """为 sales 主单补 sale_items（明细）+ sale_payments（组合支付）。"""
     if conn.execute("SELECT COUNT(*) FROM sale_items").fetchone()[0] > 0:
         return
-    sales_rows = conn.execute("SELECT id, product, amount, method FROM sales ORDER BY id").fetchall()
+    sales_rows = conn.execute("SELECT id, product_id, product, amount, method FROM sales ORDER BY id").fetchall()
     if not sales_rows:
         return
-    # 产品 id 映射：按 name LIKE 匹配（演示数据名唯一）
+    # 产品 id 映射：优先取销售单自带的 product_id，旧数据缺失时按 name 兜底匹配
     prod_map = {}
     for r in conn.execute("SELECT id, name FROM products").fetchall():
         prod_map[r["name"]] = r["id"]
     for s in sales_rows:
-        pid = prod_map.get(s["product"])
+        pid = s["product_id"] or prod_map.get(s["product"])
         # 明细：演示单都是单件
         conn.execute(
             "INSERT INTO sale_items(sale_id,product_id,name,price,subtotal,seq) VALUES(?,?,?,?,?,1)",
@@ -1938,6 +1938,21 @@ def _ensure_sale_details(conn: sqlite3.Connection) -> None:
             "INSERT INTO sale_payments(sale_id,method,amount,seq) VALUES(?,?,?,1)",
             (s["id"], s["method"], s["amount"]),
         )
+
+
+def _ensure_sale_item_links(conn: sqlite3.Connection) -> None:
+    """修复销售明细的商品关联：sale_items.product_id 为空时回填所属销售单的 product_id。
+    老演示库里 seed 明细曾按「商品名」匹配（短名如「翡翠吊坠」对不上商品全名），导致 product_id 为空、
+    成本口径算成 0（利润率虚高 100%）。**仅对演示单号（bill_no ∈ 演示种子集）生效**，真实租户数据不动。"""
+    nos = list(_DEMO_BILL_NOS)
+    if not nos:
+        return
+    ph = ",".join("?" * len(nos))
+    conn.execute(
+        "UPDATE sale_items SET product_id=(SELECT s.product_id FROM sales s WHERE s.id=sale_items.sale_id) "
+        "WHERE product_id IS NULL AND sale_id IN (SELECT id FROM sales WHERE bill_no IN (" + ph + "))",
+        nos,
+    )
 
 
 def _ensure_sale_inventory_logs(conn: sqlite3.Connection) -> None:
@@ -2114,6 +2129,7 @@ def seed_demo(conn: sqlite3.Connection) -> None:
     # —— sales / sale_items / sale_payments（共用 _ensure_sales_seed，保证 dashboard 趋势图/品类占比全覆盖）——
     _ensure_sales_seed(conn)
     _ensure_sale_details(conn)
+    _ensure_sale_item_links(conn)
     conn.commit()  # 让 products 插入在 SELECT sale_items 前可见
     # —— customers ——
     customers = [

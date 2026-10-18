@@ -304,6 +304,100 @@ def build_batch_zpl(products: list[dict], *, fields: set[str] | None = None,
     return "".join(blocks)
 
 
+# ---------------------------------------------------------------- ZMIN 结构化任务
+# ZMIN X19D 固件不识别 ZPL：^XA 文本经 SDK 透传"成功"但零出纸（假成功）。
+# 唯一可靠路径 = PrintAgent 的 printerType:"rfid" 结构化任务（SDK 原生 ZMLabel 排版）。
+# 坐标换算：模板 slots 为 300DPI 点阵（11.811 dots = 1mm）→ 结构化 content 用 mm。
+DOTS_PER_MM = 300 / 25.4            # ≈11.811（模板点阵为 300DPI）
+
+
+def _slot_to_content_el(slot: dict, product: dict, store_name: str,
+                        rfid_prefix: str, content: dict) -> None:
+    """模板单个 slot → 结构化图元（text/barcode），写入 content。"""
+    field = slot.get("field", "")
+    value = _field_value(field, product, store_name, rfid_prefix)
+    if field in ("epc_text", "epc_barcode") and (slot.get("font") or {}).get("type", "ascii") == "barcode":
+        value = _strip_epc_prefix(_ascii_safe((product or {}).get("rfid_epc", "")), rfid_prefix)
+    if not value:
+        return
+    x = round(int(slot.get("x", 0)) / DOTS_PER_MM, 2)
+    y = round(int(slot.get("y", 0)) / DOTS_PER_MM, 2)
+    font = slot.get("font") or {}
+    ftype = font.get("type", "ascii")
+    h_dot = int(font.get("h", 24))
+    size_pt = max(6, min(40, round(h_dot / DOTS_PER_MM * 2.835, 1)))  # 字高点阵→mm→pt
+    if ftype == "empty":
+        return
+    if ftype == "barcode":
+        content["barcode"] = {
+            "code": value, "type": "Code 128 Auto",
+            "x": x, "y": y, "scale": 2,
+            "height": round(h_dot / DOTS_PER_MM, 2), "textPosition": 2,
+        }
+    elif ftype == "qrcode":
+        # SDK 结构化图元不支持 QR：降级为明文文本，保证信息可见
+        content["texts"].append({"text": value, "x": x, "y": y, "size": size_pt})
+    else:
+        content["texts"].append({"text": value, "x": x, "y": y, "size": size_pt})
+
+
+def build_zmin_content(product: dict, *, fields: set[str] | None = None,
+                       store_name: str = "", write_epc: bool = True,
+                       template: dict | None = None, rfid_prefix: str = "E280",
+                       width: float = 70.0, height: float = 35.0,
+                       gap: float = 3.0, dpi: int = 203) -> dict:
+    """单件商品 → PrintAgent 结构化 rfid 任务 content。
+
+    优先模板 slots 布局；无模板回退固定布局（与 build_label_zpl 同版式，点阵÷8=mm）。
+    """
+    p = product or {}
+    content: dict = {"width": width, "height": height, "gap": gap, "dpi": dpi,
+                     "speed": 4, "darkness": 12, "haveGap": True,
+                     "texts": []}
+    epc = _ascii_safe(p.get("rfid_epc", ""))
+    if write_epc and epc:
+        content["epc"] = chip_epc_hex(epc, rfid_prefix)
+        content["rfidBlock"] = 0
+
+    if template and template.get("definition"):
+        try:
+            definition = json.loads(template["definition"]) if isinstance(template["definition"], str) else template["definition"]
+        except (json.JSONDecodeError, TypeError):
+            definition = {}
+        for slot in definition.get("slots", []):
+            _slot_to_content_el(slot, p, store_name, rfid_prefix, content)
+        return content
+
+    # ---- 回退固定布局（镜像 build_label_zpl 旧版分支，300DPI 点阵÷11.811=mm）----
+    name = _cn(p.get("name", ""))
+    spec = _spec_str(p)
+    code = _ascii_safe(p.get("code", ""))
+    if fields and "name" in fields and (name or code):
+        content["texts"].append({"text": name or code, "x": 2.03, "y": 2.03, "size": 7.2})
+    if fields and "spec" in fields and spec:
+        content["texts"].append({"text": spec, "x": 2.03, "y": 5.76, "size": 6.0})
+    if fields and "barcode" in fields:
+        bc = _ascii_safe(p.get("barcode") or code)
+        if bc:
+            content["barcode"] = {"code": bc, "type": "Code 128 Auto",
+                                  "x": 2.03, "y": 11.51, "scale": 2,
+                                  "height": 5.42, "textPosition": 2}
+    if fields and "epc_barcode" in fields and epc:
+        content["texts"].append({"text": f"EPC {_strip_epc_prefix(epc, rfid_prefix)}",
+                                 "x": 35.56, "y": 16.07, "size": 6.0})
+    if fields and "price" in fields and p.get("price"):
+        content["texts"].append({"text": f"RMB {float(p['price']):,.0f}",
+                                 "x": 47.38, "y": 2.03, "size": 10.1})
+    if fields and "cert" in fields and p.get("cert"):
+        content["texts"].append({"text": f"CERT {_ascii_safe(p['cert'])}",
+                                 "x": 44.00, "y": 9.12, "size": 6.0})
+    if fields and "epc_text" in fields and epc:
+        content["texts"].append({"text": f"EPC {epc}", "x": 35.56, "y": 31.56, "size": 6.0})
+    if fields and "store" in fields and store_name:
+        content["texts"].append({"text": _cn(store_name), "x": 2.03, "y": 31.90, "size": 6.0})
+    return content
+
+
 def list_printers() -> list[str]:
     """列出本机打印机（仅 Windows + pywin32）。"""
     try:
