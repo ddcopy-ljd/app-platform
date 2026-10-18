@@ -165,6 +165,14 @@ CREATE TABLE IF NOT EXISTS product_tag_links (
 );
 CREATE INDEX IF NOT EXISTS idx_tag_links_tag ON product_tag_links(tag_id);
 
+-- 商品标签一级分类（标签类别，可增删改；product_tags.group_name 引用其 name）
+CREATE TABLE IF NOT EXISTS tag_groups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  sort_order INTEGER DEFAULT 0,
+  created TEXT DEFAULT (datetime('now','localtime'))
+);
+
 CREATE TABLE IF NOT EXISTS customers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -931,6 +939,7 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
     seed_store_printers(conn)
     _seed_base_dicts(conn)
+    _seed_tag_groups(conn)
     _seed_clerk_types(conn)
     _backfill_category_code(conn)
     _migrate_material_and_type(conn)
@@ -1058,6 +1067,23 @@ def _migrate_legacy_stocktake_tasks(conn: sqlite3.Connection) -> None:
         "WHERE status IN ('进行中','待核对')")
     if cur.rowcount:
         conn.commit()
+
+
+# 商品标签一级分类（标签类别）初始值：原后端固定枚举 TAG_GROUPS 迁移为可维护数据
+DEFAULT_TAG_GROUPS = ["风格", "工艺", "场景", "客群", "营销"]
+
+
+def _seed_tag_groups(conn: sqlite3.Connection) -> None:
+    conn.executemany(
+        "INSERT OR IGNORE INTO tag_groups(name,sort_order) VALUES(?,?)",
+        [(g, i + 1) for i, g in enumerate(DEFAULT_TAG_GROUPS)],
+    )
+    # 兜底：把既有标签里出现过的自定义分组一并纳入字典，避免老库「有标签组但不在分类字典」
+    conn.execute(
+        "INSERT OR IGNORE INTO tag_groups(name,sort_order) "
+        "SELECT DISTINCT group_name, 100 FROM product_tags "
+        "WHERE TRIM(IFNULL(group_name,''))<>''"
+    )
 
 
 # 基础字典：语言 / EPC 业务配置 / 商品分类（多语言名称）
@@ -1714,9 +1740,20 @@ def _ensure_operate_logs_seed(conn: sqlite3.Connection) -> None:
 
 
 # sales 种子数据（seed_demo 和 ensure_new_seeds 共用，保证 dashboard 趋势图/品类占比有值）
-# 时间覆盖近 12 个月窗口，product_id 正确关联 products 表；末位 clerk_name 支撑「店员销售」榜
+# 时间覆盖 2025-01 ~ 2026-10 共 22 个月，保证「近6月/近3月/今年」等窗口的去年同期（同比）均有数据；
+# product_id 正确关联 products 表；末位 clerk_name 支撑「店员销售」榜
 _SEED_SALES_ROWS = [
-    # 2025 年（同比基准，当前 2026-10 看正好 -1 年）
+    # 2025 年 1-9 月（同比基准：2026 各月去年同期，保证同比线全月有值）
+    ("XS20250115001", "李强", "13900002222", "蓝宝石戒指", 10, 9800, 9800, "微信", "2025-01-15", "普通", "已完成", "陈强"),
+    ("XS20250212001", "张美凤", "13700003333", "银质对戒", 7, 1180, 1180, "现金", "2025-02-12", "普通", "已完成", "陈强"),
+    ("XS20250314001", "赵明辉", "13600004444", "古法金手串", 8, 29800, 29800, "刷卡", "2025-03-14", "普通", "已完成", "林雅"),
+    ("XS20250420001", "刘女士", "13500009999", "祖母绿锁骨链", 9, 11800, 11800, "微信", "2025-04-20", "普通", "已完成", "陈强"),
+    ("XS20250518001", "王晓丽", "13800001111", "铂金项链", 4, 8900, 8900, "现金", "2025-05-18", "普通", "已完成", "陈强"),
+    ("XS20250622001", "孙先生", "13400006666", "红碧玺戒指", 5, 5200, 5200, "微信", "2025-06-22", "普通", "已完成", "陈强"),
+    ("XS20250711001", "周女士", "13300005555", "和田玉平安扣", 11, 7200, 7200, "刷卡", "2025-07-11", "普通", "已完成", "林雅"),
+    ("XS20250819001", "陈先生", "13700008888", "钻石耳钉", 2, 4280, 4280, "微信", "2025-08-19", "普通", "已完成", "林雅"),
+    ("XS20250923001", "李雪", "13500005555", "足金手镯", 1, 21800, 21800, "现金", "2025-09-23", "普通", "已完成", "林雅"),
+    # 2025 年 10-12 月
     ("XS20251008001", "陈先生", "13700008888", "钻石耳钉", 2, 4280, 4280, "微信", "2025-10-08", "普通", "已完成", "林雅"),
     ("XS20251115001", "王晓丽", "13800001111", "足金手镯", 1, 21800, 21800, "现金", "2025-11-15", "普通", "已完成", "林雅"),
     ("XS20251220001", "赵女士", "13900007777", "翡翠吊坠", 3, 8600, 8600, "刷卡", "2025-12-20", "普通", "已完成", "陈强"),
@@ -1820,11 +1857,47 @@ def _ensure_user_store_grants(conn: sqlite3.Connection) -> None:
                 )
 
 
+_DEMO_BILL_NOS = {r[0] for r in _SEED_SALES_ROWS}
+
+
+def _backfill_demo_sales(conn: sqlite3.Connection) -> None:
+    """老演示库补齐演示销售：按 bill_no 逐条 INSERT OR IGNORE 补缺失月份，并在补入的单上补明细/支付。
+    仅补齐、绝不删除既有数据；**只对演示库生效**——当且仅当库内所有 sales.bill_no 都属于演示种子集时才执行，
+    真实租户自建单号不在集合内 → 自然跳过，杜绝污染真实数据（TC-39 同类「不复活」思路）。"""
+    existing = [r["bill_no"] for r in conn.execute("SELECT bill_no FROM sales")]
+    if not existing or any(b not in _DEMO_BILL_NOS for b in existing):
+        return  # 存在非演示单号 → 真实租户库，不补齐
+    have = set(existing)
+    missing = [r for r in _SEED_SALES_ROWS if r[0] not in have]
+    if not missing:
+        return
+    conn.executemany(
+        "INSERT OR IGNORE INTO sales(bill_no,customer,phone,product,product_id,amount,paid,method,biz_date,type,status,clerk_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+        missing,
+    )
+    # 补入的单同步补 sale_items + sale_payments（与 _ensure_sale_details 口径一致，支撑「件数/明细」）
+    prod_map = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM products").fetchall()}
+    for s in conn.execute(
+        "SELECT id, product, amount, method FROM sales s "
+        "WHERE NOT EXISTS (SELECT 1 FROM sale_items si WHERE si.sale_id=s.id)"
+    ).fetchall():
+        conn.execute(
+            "INSERT INTO sale_items(sale_id,product_id,name,price,subtotal,seq) VALUES(?,?,?,?,?,1)",
+            (s["id"], prod_map.get(s["product"]), s["product"], s["amount"], s["amount"]),
+        )
+        conn.execute(
+            "INSERT INTO sale_payments(sale_id,method,amount,seq) VALUES(?,?,?,1)",
+            (s["id"], s["method"], s["amount"]),
+        )
+
+
 def _ensure_sales_seed(conn: sqlite3.Connection) -> None:
-    """幂等 sales 种子：全新库直接 seed；老库若 COUNT≤5 且无本月数据 → 视为旧 seed 清掉重灌。"""
+    """幂等 sales 种子：全新库直接 seed；老库若 COUNT≤5 且无本月数据 → 视为旧 seed 清掉重灌；
+    已有较多数据的演示库 → 只补齐缺失月份（不重灌、不删除），真实租户库不动。"""
     n = conn.execute("SELECT COUNT(*) c FROM sales").fetchone()["c"]
     if n > 5:
-        return  # 已有较多真实销售数据，不动
+        _backfill_demo_sales(conn)  # 演示库补齐到两年；真实库自动跳过
+        return
     # 检查本月数据
     cur_month = conn.execute(
         "SELECT COUNT(*) c FROM sales WHERE biz_date >= date('now','start of month','localtime')"

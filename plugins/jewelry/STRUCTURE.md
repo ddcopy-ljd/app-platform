@@ -85,10 +85,10 @@ plugins/jewelry/
 │   └── seed_test_data.py    # 开发用种子数据（不入包）
 ├── docs/
 │   └── 懿臻珠宝云软件开发规范及需求说明.md  # 需求与验收说明
-└── downloads/               # 两个助手的分发产物（PrintBridge.exe / scan-assistant-release.apk，入包作首包兜底）
+└── downloads/               # 助手分发目录：运维端上传的 PrintBridge.exe / scan-assistant-release.apk 落此（点下载接口同址取件；不入包）
 ```
 
-**打包排除项**（`build_package.py` 内置）：`__pycache__`、`.pyc`、`agents/`（整个独立构建线：扫描助手 Android 工程与打印助手源码；`agents/print/build`、`agents/print/dist` 为构建中间产物）、`dev_data/`、`docs/`、`demo/`、`print_agent.json`（门店本地配置）、`build_package.py` 自身、`test_*.py`、`_*.py`。
+**打包排除项**（`build_package.py` 内置）：`__pycache__`、`.pyc`、`agents/`（整个独立构建线：扫描助手 Android 工程与打印助手源码；`agents/print/build`、`agents/print/dist` 为构建中间产物）、`downloads/`（助手产物改由运维端上传写入）、`dev_data/`、`docs/`、`demo/`、`print_agent.json`（门店本地配置）、`build_package.py` 自身、`test_*.py`、`_*.py`。
 
 ---
 
@@ -222,7 +222,7 @@ plugins/jewelry/
   - 助手发布（写操作，强制审计）：`GET /api/ops/agents`（当前发布状态+发布历史）、`POST /api/ops/agents/publish`（multipart 上传：校验扩展名/≤30MB/空文件 → MD5 → 临时文件原子替换 → `.md5` sidecar → manifest.json 历史 → `operate_logs`）、`POST /api/ops/agents/scan/force`（强更开关，写/删 `.force` sidecar）。
   - 受控写操作（main.py 内实现，复用业务引擎，每笔二次确认 + 强制审计，action 前缀「运维端·」）：`GET /api/ops/tasks/active`（进行中任务，盘点任务=库存冻结来源）、`POST /api/ops/tasks/{tid}/terminate`（强制终止：抢占终态 `closed_by='ops'` → 有扫描生成部分盘点报告 → 释放设备 → 立即解冻；非进行中 409）、`GET /api/ops/users`（业务账号列表，永不回显密码）、`POST /api/ops/users/{uid}/reset-password`（生成 8 位随机密码仅响应回显一次，置 `users.must_change_pwd=1` 强制用户登录后改密）。两个 POST 的 body 均为可选 `FaceGuardIn{face:128维向量|emergency:口令}`，人脸功能启用时必须二选一通过，审计 detail 追加验证方式（人脸姓名+距离 / 应急口令）。
   - 人脸确认（v1.2.40 起，仅卡上述两个高危写操作，巡检/进门不刷脸）：`GET /api/ops/face/status`（enabled=已录模板数>0、count、has_emergency）、`GET /api/ops/face/templates`（列表**永不回显 descriptor**）、`POST /api/ops/face/enroll`（姓名+128 维特征，重名 400，≤20 个）、`DELETE /api/ops/face/templates/{tid}`（删完最后一个自动停用）、`POST /api/ops/face/emergency`（应急口令，8-64 位）。浏览器端用本地 `ops/vendor/` 的 face-api.js（tinyFaceDetector+68 landmarks+recognition，约 7MB，无外网依赖）提取特征；服务端纯 Python 欧氏距离 1:N 比对，阈值 0.5（严格档）。模板存平台注入 `STORAGE_DIR/face/`（`templates.json`+`emergency.key`，与 agents/ 同级跨版本持久；独立运行回退 `dev_storage/face/`），应急口令为 PBKDF2-SHA256（20 万轮加盐）存储。浏览器仅 HTTPS/本机可用摄像头，无摄像头或非安全上下文时 UI 回落应急口令；未设口令则拒绝操作而不是放行。模型权重含无后缀 `-shardN` 文件，`/ops/{path}` 静态路由对 `vendor/models/` 前缀单独放行。
-- **助手产物目录**：平台注入的 `STORAGE_DIR/agents/`（插件级共享存储根，升级仅迁移 `{租户}/v{版本}` 子目录，本目录跨版本持久）；独立运行回退 `dev_storage/agents/`（gitignore）。下载链路「发布目录优先、包内 `downloads/` 兜底」——`_scan_app_apk()` 与 `GET /api/print-agent/download` 已接入；发布后立即对全租户生效。
+- **助手产物目录**：插件包内 `downloads/`（与下载接口同址取件）；运维端上传即就地覆盖，发布后立即对全租户生效。该目录随插件版本走，插件升级/重装后需重新上传（插件包默认不再预置助手产物，`build_package.py` 已排除 `downloads/`）。
 - **强制改密（dataVersion 1.2.22 起）**：`users.must_change_pwd=1` 时 `_require_auth` 仅放行 `/api/auth/logout`、`/api/auth/me`、`/api/auth/change-password`，其余接口一律 403「请先修改密码」；PC 端登录/恢复会话即弹出强制改密遮罩（不可关闭，仅「修改并继续 / 退出登录」两个出口）；自助改密 `POST /api/auth/change-password`（校验原密码、新旧不同、成功清旗标并写 `operate_logs`「修改密码」）；管理员在账号管理设置密码同样清旗标（管理员知情设密不强制改）。
 - **打包**：`ops/` 与顶层 `ops_api.py` 随插件包发布；与业务端同一次插件升级生效。
 
@@ -236,7 +236,8 @@ plugins/jewelry/
 
 - **源码**：`agents/print/`（net8.0-windows WinForms 单文件工程：本地 HTTP `127.0.0.1:18180` 收任务 + 云端 WS 长连接 + ZMIN RFID/ESC-POS/Win 驱动打印调度，厂商闭源 `libs/LabelPrinter.dll` 勿动）；工程内规范见 `agents/print/AGENTS.md` 与 `agents/print/STRUCTURE.md`
 - **构建**：`dotnet publish -c Release -r win-x64 --self-contained true` → 单文件产物 `agents/print/bin/Release/net8.0-windows10.0.19041.0/win-x64/publish/PrintAgent.exe`（需 .NET 8 SDK；bin/obj/厂商 SDK 资料包 `.Net/` 均 gitignore 不入库）
-- **分发**：对外下载名仍 `PrintBridge.exe`——`GET /api/print-agent/download` 链路「运维端发布目录优先 → 包内 `downloads/` 兜底 → C# publish 产物」，发布时把 PrintAgent.exe 改名 PrintBridge.exe 上传
+- **分发**：对外下载名仍 `PrintBridge.exe`——`GET /api/print-agent/download` 链路「下载目录 `downloads/` 优先 → C# publish 产物兜底」，发布时把 PrintAgent.exe 改名 PrintBridge.exe 上传
+- **自升级**：`GET /api/agent/version` 返回 `{md5,url,version}`（免鉴权，平台网关 `_MACHINE_PATHS` 放行；`url` 指向 `/api/print-agent/download`）——代理端以 md5 与本地 exe 比对，不一致则按 url 下载替换。注意 `UpdateService.ResolveBaseUrl()` 目前只取 `scheme://authority`、丢弃路径前缀，经平台 `{租户}` 前缀部署时需一并修正才能取到该端点
 - **配置**：`config.json` 在 exe 运行目录读写（非项目根副本）；门店密钥等连接信息由程序配置页填写
 - **真机验证**：打印/RFID 写入改动必须在 ZMIN 真机验收（工程 AGENTS.md 有实测铁律清单，勿凭仿真推断）
 
@@ -245,7 +246,7 @@ plugins/jewelry/
 - **工程**：`agents/scan/`（Gradle，applicationId `com.yizhen.scanassistant` **永不改**，否则现网设备无法覆盖安装）
 - **构建**：仓库根 `scripts/build_scan_app.bat`（release 构建 → 拷贝 APK 到 `downloads/scan-assistant-release.apk` 并生成 `.md5` sidecar）；CI 见 `.github/workflows/scan-assistant-build.yml`
 - **签名**：release.jks 不入库，Gradle 按相对路径引用工作区根并列的外部 `scanner-app/app/release.jks`；缺失时退化为未签名包（debug 不受影响）
-- **自升级**：设备免鉴权调 `GET /api/scan-app/info`（md5/size/force）+ `GET /api/scan-app/download`（接口路径已硬编码进现网 App，**只加不改**）；包内 `downloads/` 优先，回退 `agents/scan/app/build/outputs/apk/release/` 开发构建产物
+- **自升级**：设备免鉴权调 `GET /api/scan-app/info`（md5/size/force）+ `GET /api/scan-app/download`（接口路径已硬编码进现网 App，**只加不改**）；下载目录 `downloads/` 优先，回退 `agents/scan/app/build/outputs/apk/release/` 开发构建产物
 - **规范与踩坑**：见 [platform/AGENTS.md](../../platform/AGENTS.md)（Android 原生规范、扳机通道、AP 隔离、Kotlin daemon 等）
 
 ---

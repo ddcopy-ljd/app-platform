@@ -28,6 +28,9 @@
   密钥/在线状态，SCHEMA 幂等建表），并从 stores 表幂等移除旧的 store_key/scan_key
   列（门店级 Key 改为设备实例级，由 print_agents/scan 设备密钥承载；
   migrate_schema 以 _has_column 守卫后 ALTER TABLE DROP COLUMN，老库自动收敛）；
+  dataVersion 1.2.24 商品标签一级分类：tag_groups 表（标签类别可增删改，
+  原后端固定枚举 TAG_GROUPS 迁移为初始数据，_seed_tag_groups 幂等灌入 5 个
+  分组并把既有标签出现过的分组名一并纳入；SCHEMA 幂等建表，无 ALTER）；
   标签种子 _SEED_PRODUCT_TAGS 常量化，ensure_new_seeds 仅全新演示库（products 本次新灌）
   联动灌入——外网沙箱基线库可得演示标签，真实租户删光标签后升级不复活（TC-40）；
 - 幂等执行 EPC 现行规则化（前缀+门店段+品类码+序号）与材质英文长码收敛为简写。

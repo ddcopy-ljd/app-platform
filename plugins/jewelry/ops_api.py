@@ -170,8 +170,8 @@ def ops_devices(request: Request):
 
 
 # ---------------------------------------------------------------- 助手发布（扫描助手 APK / 打印助手 EXE）
-# 产物存插件级共享可写目录（平台注入 STORAGE_DIR 的 agents/ 子目录，升级仅迁移 {租户}/v{版本}，本目录跨版本持久）；
-# 下载链路「发布目录优先、包内 downloads/ 兜底」。独立运行（无 STORAGE_DIR）回退 dev_storage/agents（gitignore）。
+# 产物直接存插件包内 downloads/：与下载接口同址取件，运维端上传即就地覆盖，发布后对全租户立即生效。
+# 注意：本目录随插件版本走，插件升级/重装后需由运维端重新上传（插件包默认不再预置助手产物）。
 
 MAX_AGENT_BYTES = 30 * 1024 * 1024  # 30MB
 
@@ -184,9 +184,8 @@ _manifest_lock = threading.Lock()
 
 
 def pub_dir() -> Path:
-    """运维端发布的助手产物目录（main.py 下载链路也引用）。"""
-    base = os.environ.get("STORAGE_DIR")
-    d = (Path(base) / "agents") if base else (ROOT / "dev_storage" / "agents")
+    """运维端发布的助手产物目录 = 插件包内 downloads/（下载接口同址取件，main.py 也引用）。"""
+    d = ROOT / "downloads"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

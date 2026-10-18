@@ -136,7 +136,7 @@ input, select, textarea { font-family: inherit; color: var(--text); }
   letter-spacing: .3px; transition: all .18s; position: relative; white-space: nowrap;
 }
 .tab .tab-ico { font-size: 20px; line-height: 1; transition: transform .2s; }
-.tab.active { color: var(--wine); font-weight: 700; }
+.tab.active { color: var(--wine-deep); font-weight: 700; }
 .tab.active .tab-ico { transform: scale(1.14) translateY(-1px); }
 .tab .tab-dot { position: absolute; top: 1px; right: calc(50% - 17px); width: 7px; height: 7px;
   border-radius: 50%; background: #E85D5D; }
@@ -149,7 +149,7 @@ input, select, textarea { font-family: inherit; color: var(--text); }
   text-shadow: 0 1px 2px rgba(140,100,20,.45); transition: transform .15s;
 }
 .tab-center-btn:active { transform: scale(.93); }
-.tab-center-label { font-size: 10.5px; color: var(--wine); font-weight: 700; text-align: center; margin-top: 3px; }
+.tab-center-label { font-size: 10.5px; color: var(--wine-deep); font-weight: 700; text-align: center; margin-top: 3px; }
 
 /* ---------- 卡片 ---------- */
 .card {
@@ -175,7 +175,7 @@ input, select, textarea { font-family: inherit; color: var(--text); }
 .stat::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2.5px;
   background: linear-gradient(90deg, var(--gold-light), var(--gold), var(--gold-dark)); }
 .stat-label { font-size: 11.5px; color: var(--text3); letter-spacing: .5px; margin-bottom: 7px; display: flex; align-items: center; gap: 5px; }
-.stat-value { font-size: 22px; font-weight: 700; font-family: "Songti SC", serif; color: var(--wine); line-height: 1.1; letter-spacing: .5px; font-variant-numeric: tabular-nums; }
+.stat-value { font-size: 22px; font-weight: 700; font-family: "Songti SC", serif; color: var(--wine-deep); line-height: 1.1; letter-spacing: .5px; font-variant-numeric: tabular-nums; }
 .stat-value small { font-size: 12px; font-weight: 400; color: var(--text3); margin-left: 2px; }
 .stat-foot { font-size: 10.5px; color: var(--text3); margin-top: 7px; letter-spacing: .3px; }
 
@@ -195,7 +195,7 @@ input, select, textarea { font-family: inherit; color: var(--text); }
 .list-item-title .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .list-item-sub { font-size: 11.5px; color: var(--text3); line-height: 1.5; letter-spacing: .2px; }
 .list-item-tail { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
-.list-item-amount { font-size: 15px; font-weight: 700; color: var(--wine); font-family: "Songti SC", serif; letter-spacing: .3px; font-variant-numeric: tabular-nums; }
+.list-item-amount { font-size: 15px; font-weight: 700; color: var(--wine-deep); font-family: "Songti SC", serif; letter-spacing: .3px; font-variant-numeric: tabular-nums; }
 .chev { color: var(--gold-dark); font-size: 16px; opacity: .6; }
 
 /* ---------- 标签 / 状态 ---------- */
@@ -205,7 +205,7 @@ input, select, textarea { font-family: inherit; color: var(--text); }
 .tag-green { background: #EEF3E6; color: var(--green); }
 .tag-blue { background: #E8EFF5; color: var(--blue); }
 .tag-red { background: #F7E8E5; color: var(--red); }
-.tag-wine { background: #F3E4E8; color: var(--wine); }
+.tag-wine { background: #F3E4E8; color: var(--wine-deep); }
 .tag-purple { background: #F3E8F5; color: var(--purple); }
 .tag-gray { background: #F2EDE2; color: var(--text3); }
 .state { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 8px;
@@ -213,7 +213,7 @@ input, select, textarea { font-family: inherit; color: var(--text); }
 .state::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .9; }
 .state-ok { background: #EEF3E6; color: var(--green); }
 .state-lock { background: linear-gradient(135deg, #F7EFE0, #EFE2C6); color: var(--gold-dark); border: 1px solid #E5D3A8; }
-.state-loan { background: #F3E4E8; color: var(--wine); }
+.state-loan { background: #F3E4E8; color: var(--wine-deep); }
 .state-due { background: #F7E8E5; color: var(--red); }
 .state-doing { background: #E8EFF5; color: var(--blue); }
 .state-wait { background: #F3E8F5; color: var(--purple); }
@@ -271,7 +271,7 @@ input, select, textarea { font-family: inherit; color: var(--text); }
 .remind-body { flex: 1; min-width: 0; }
 .remind-title { font-size: 13.5px; font-weight: 600; margin-bottom: 3px; }
 .remind-sub { font-size: 11px; color: var(--text3); }
-.remind-count { font-size: 15px; font-weight: 700; color: var(--wine); font-family: "Songti SC", serif; font-variant-numeric: tabular-nums; }
+.remind-count { font-size: 15px; font-weight: 700; color: var(--wine-deep); font-family: "Songti SC", serif; font-variant-numeric: tabular-nums; }
 
 /* ---------- 迷你柱图 ---------- */
 .mini-chart { display: flex; align-items: flex-end; gap: 8px; height: 118px; padding-top: 10px; }
@@ -280,6 +280,24 @@ input, select, textarea { font-family: inherit; color: var(--text); }
   background: linear-gradient(180deg, #E8D5A0, var(--gold) 55%, var(--gold-dark));
   box-shadow: 0 2px 8px -2px rgba(201,169,97,.6); transition: height .5s var(--ease); }
 .mini-bar-label { font-size: 10px; color: var(--text3); letter-spacing: .2px; }
+
+/* ---------- 趋势卡：同比/环比切换 + 全局时间段 + 双柱（本期/对比） ---------- */
+.cmp-chips { display: flex; gap: 6px; }
+.cmp-chip { font-size: 12px; padding: 4px 12px; border-radius: 14px; border: 1.5px solid var(--border);
+  color: var(--text2); cursor: pointer; white-space: nowrap; transition: .15s; -webkit-tap-highlight-color: transparent; }
+.cmp-chip.on { background: var(--wine); border-color: var(--wine); color: #fff; }
+.trend-range-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.trend-range { font-size: 13px; color: var(--text); background: #FDFAF3; border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 10px; outline: none; }
+.trend-unit { font-size: 12.5px; color: var(--text2); font-weight: 600; }
+.mini-bar-pair { flex: 1 1 auto; min-height: 0; width: 100%; display: flex; align-items: flex-end; justify-content: center; gap: 3px; }
+.mini-bar-pair .mini-bar { width: 42%; max-width: 12px; border-radius: 3px 3px 0 0; box-shadow: none; }
+.mini-bar.cur { background: linear-gradient(180deg, #E8D5A0, var(--gold) 55%, var(--gold-dark)); }
+.mini-bar.cmp { background: linear-gradient(180deg, #D9DDE3, #9AA4B2); }
+.trend-legend { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; color: var(--text2); font-weight: 600; }
+.trend-legend .lg-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+.trend-legend .lg-dot.cur { background: var(--gold); }
+.trend-legend .lg-dot.cmp { background: #9AA4B2; }
 
 /* ---------- 表单 ---------- */
 .form-group { margin-bottom: 14px; }
@@ -401,7 +419,7 @@ input, select, textarea { font-family: inherit; color: var(--text); }
 .section-title:first-child { margin-top: 0; }
 .back-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .back-btn { width: 38px; height: 38px; border-radius: 50%; background: var(--card); border: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: center; font-size: 18px; color: var(--wine); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 18px; color: var(--wine-deep); flex-shrink: 0;
   box-shadow: var(--shadow-card); }
 .back-title { font-size: 17px; font-weight: 700; letter-spacing: .5px; flex: 1; }
 .kv { display: flex; align-items: baseline; justify-content: space-between; padding: 9px 0; border-bottom: 1px dashed #EFE2C6; }
@@ -418,3 +436,99 @@ input, select, textarea { font-family: inherit; color: var(--text); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
+
+/* ---------- 看板扩展块（金价 / 区间KPI / 风控 / 销售额统计 / 品类占比 / 排行 / 经营分析） ---------- */
+/* 业务说明折叠 */
+.biz-guide { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+  margin-bottom: 12px; box-shadow: var(--shadow-card); overflow: hidden; }
+.biz-guide > summary { cursor: pointer; list-style: none; padding: 12px 14px; font-size: 12.5px; font-weight: 600;
+  color: var(--wine-deep); letter-spacing: .4px; display: flex; align-items: center; gap: 6px; }
+.biz-guide > summary::-webkit-details-marker { display: none; }
+.biz-guide[open] > summary { border-bottom: 1px solid var(--border); }
+.biz-body { padding: 12px 14px; font-size: 12px; line-height: 1.7; color: var(--text2); white-space: pre-wrap; letter-spacing: .2px; }
+
+/* 实时金价栏 */
+.gold-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.gb-item { flex: 1 1 46%; min-width: 130px; background: linear-gradient(135deg, #FFFFFF, #FBF4E4);
+  border: 1px solid var(--gold-light); border-radius: var(--radius); padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 4px; box-shadow: var(--shadow-card); }
+.gb-label { font-size: 11px; color: var(--text3); letter-spacing: .4px; }
+.gb-val { font-size: 14px; font-weight: 700; font-family: "Songti SC", serif; color: var(--wine-deep);
+  font-variant-numeric: tabular-nums; }
+.gb-fail { color: var(--red); font-size: 12.5px; font-weight: 500; font-family: inherit; }
+
+/* 区间 KPI 涨跌与调拨色 */
+.pct { font-weight: 600; }
+.pct.up { color: var(--green); }
+.pct.down { color: var(--red); }
+.mv-in { color: var(--green); font-weight: 700; }
+.mv-out { color: var(--red); font-weight: 700; }
+.mv-sep { color: var(--text3); margin: 0 2px; }
+
+/* 风控条 */
+.risk-bar { margin-bottom: 12px; }
+.risk-card { display: flex; align-items: center; gap: 8px; padding: 11px 13px; border-radius: var(--radius);
+  background: linear-gradient(135deg, #FDF3EA, #F9E7DC); border: 1px solid #E9CBA6; box-shadow: var(--shadow-card); }
+.rc-icon { font-size: 16px; }
+.rc-text { flex: 1; font-size: 12px; color: var(--text2); letter-spacing: .3px; }
+.rc-val { font-size: 12px; letter-spacing: .3px; display: flex; gap: 8px; align-items: center; }
+
+/* 标签筛选 chips */
+.tag-pick-wrap { margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
+.tag-group { display: flex; flex-direction: column; gap: 6px; }
+.tag-group-name { font-size: 11px; color: var(--text3); letter-spacing: .5px; padding-left: 2px; }
+.tag-pick-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.pick-chip { font-size: 12px; padding: 4px 10px; border-radius: 14px; border: 1.5px solid var(--border);
+  background: #FDFAF3; color: var(--wine); white-space: nowrap; letter-spacing: .3px; }
+.pick-chip.on { background: var(--wine); border-color: var(--wine); color: #fff; }
+
+/* 销售额统计列表 */
+.tag-stats-list { display: flex; flex-direction: column; gap: 12px; }
+.tag-stats-row { display: flex; flex-direction: column; gap: 6px; }
+.tag-stats-line { display: flex; flex-direction: column; gap: 6px; }
+.tag-stats-name { font-size: 13px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; letter-spacing: .3px; }
+.tag-stats-bar-wrap { height: 8px; background: #F1E9D8; border-radius: 5px; overflow: hidden; }
+.tag-stats-bar { height: 100%; border-radius: 5px; transition: width .3s var(--ease); }
+.tag-stats-val { font-size: 11px; color: var(--text3); letter-spacing: .2px; font-variant-numeric: tabular-nums; }
+.tag-stats-empty, .rank-empty { font-size: 12px; color: var(--text3); text-align: center; padding: 16px 8px; letter-spacing: .3px; }
+.tag-stats-note { font-size: 10.5px; color: var(--text3); margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); line-height: 1.5; letter-spacing: .2px; }
+.dl-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+
+/* 品类占比环形图 */
+.donut-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.donut-svg { width: 150px; height: 150px; }
+.donut-c1 { font-size: 3.4px; fill: var(--text3); text-anchor: middle; }
+.donut-c2 { font-size: 4.2px; font-weight: 700; fill: var(--wine-deep); text-anchor: middle; font-family: "Songti SC", serif; }
+.donut-legend { width: 100%; display: flex; flex-direction: column; gap: 9px; }
+.dl-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.dl-name { color: var(--text); font-weight: 600; letter-spacing: .3px; }
+.dl-val { margin-left: auto; color: var(--text3); font-size: 11px; letter-spacing: .2px; font-variant-numeric: tabular-nums; text-align: right; }
+
+/* 排行榜 */
+.rank-hint { font-size: 10.5px; color: var(--text3); margin: -6px 0 10px; letter-spacing: .2px; line-height: 1.5; }
+.rank-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.rank-box { background: #FDFAF3; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; }
+.rank-box-title { font-size: 12px; font-weight: 700; color: var(--wine-deep); letter-spacing: .4px; margin-bottom: 8px; }
+.rank-box-hint { font-weight: 400; font-size: 10px; color: var(--text3); }
+.rank-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px dashed #EFE2C6; }
+.rank-row:last-child { border-bottom: none; }
+.rank-no { flex: 0 0 18px; width: 18px; height: 18px; border-radius: 50%; background: #EADFC8; color: var(--text3);
+  font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.rank-no-1 { background: linear-gradient(135deg, #E8C86A, #C9A227); color: #5C2233; }
+.rank-no-2 { background: #D7D3CC; color: #4a4038; }
+.rank-no-3 { background: #E3B98A; color: #5C2233; }
+.rank-name { flex: 1; font-size: 12.5px; color: var(--text); letter-spacing: .2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-val { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.rank-val b { font-size: 12.5px; font-weight: 700; color: var(--wine-deep); font-variant-numeric: tabular-nums; }
+.rank-val em { font-size: 10px; color: var(--text3); font-style: normal; }
+
+/* 经营分析 */
+.ba-group { margin-bottom: 14px; }
+.ba-group:last-child { margin-bottom: 0; }
+.ba-group-title { font-size: 12px; font-weight: 700; color: var(--wine-deep); letter-spacing: .4px; margin-bottom: 8px; }
+.ba-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.ba-card { background: linear-gradient(135deg, #FFFFFF, #FBF4E4); border: 1px solid var(--gold-light);
+  border-radius: var(--radius-sm); padding: 10px 8px; text-align: center; }
+.ba-val { font-size: 13.5px; font-weight: 700; color: var(--wine-deep); font-family: "Songti SC", serif;
+  font-variant-numeric: tabular-nums; line-height: 1.2; }
+.ba-label { font-size: 10px; color: var(--text3); margin-top: 5px; letter-spacing: .2px; }

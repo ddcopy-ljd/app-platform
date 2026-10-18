@@ -44,13 +44,14 @@ var ST = Vue.reactive({
   // 强制改密弹窗（运维端重置密码后 must_change_pwd=1，登录/恢复会话即弹出，改完才可进入系统）
   mustPwdOpen: false, mustPwdOld: '', mustPwdNew: '', mustPwdNew2: '',
   // data
-  dashData: null, trendData: null, trendRange: '30d', bizAnalysis: null, remindData: null, showRemind: true, catSales: null,
+  dashData: null, trendData: null, bizAnalysis: null, remindData: null, showRemind: true, catSales: null,
   trendShift: 0, trendDragX: 0, trendDragOn: false,  // 趋势图平移时间单位数(天/月) / 拖动中位移(px) / 拖动中
+  trendCmp: 'yoy',   // 趋势对比口径：yoy=同比（去年同期）/ mom=环比（紧邻上一等长区间）
   _trendReqSeq: 0,   // 趋势请求序号：连续拖动只接受最后一次响应
   goldData: null,   // 实时金价（国际+门店零售）
   riskData: null,   // 资产风控（滞销库龄+最近盘点）
-  // 看板时间范围：mode=today|week|month|custom；custom 用 start/end（ISO 日期）
-  dashRange: { mode: 'today', start: '', end: '' },
+  // 看板时间范围（页面级）：mode=today|week|month|3m|6m|year（顶部金价栏右侧下拉）；默认近6月（沿用原销售额统计卡下拉默认值）
+  dashRange: { mode: '6m' },
   saleRange: { mode: 'today', start: '', end: '' },   // 销售列表时间过滤（同看板工具栏）
   products: [], prodTotal: 0, prodCat: '', prodQ: '', prodHasCert: false, prodLoc: 0, prodStatusFilter: '',
   cats: [], bizConfig: { epc_prefix: 'E280', seq_bits: 8 }, languages: [],
@@ -63,11 +64,16 @@ var ST = Vue.reactive({
   tagEdit: { id: 0, name: '', color: '#C9A227', sort_order: 0, group_name: '' }, tagEditMode: 'new',
   tagStats: null, tagSel: [],  // 销售额统计结果 / 标签维度下选中标签 id（空=全部）
   tagsExpanded: false,   // 商品列表标签列：默认收起，点「展开标签」后同行显示全部标签
-  saleStatsDim: 'category', saleStatsRange: '6m',  // 销售额统计卡：维度(category品类/tag标签) / 独立时间预设(today/week/month/3m/6m/year)
-  rankData: null, rankRange: '6m',   // 看板 TOP5 排行榜（7 榜）/ 独立时间预设
-  tagGroupList: [],            // 标签分组枚举（后端 TAG_GROUPS；管理页下拉 + 各标签选择处分组块渲染）
+  saleStatsDim: 'category',  // 销售额统计卡：维度(category品类/tag标签)；时间范围跟随页面级 dashRange
+  rankData: null,   // 看板 TOP5 排行榜（7 榜）；统计时间跟随页面级 dashRange
+  tagGroupList: [],            // 标签分组名枚举（后端 /api/product-tags 的 groups；分组块渲染顺序）
+  tagGroups: [],               // 一级分类（标签类别）完整列表：{ id, name, sort_order, tag_count }
+  tagGroupEdit: { id: 0, name: '', sort_order: 0 }, tagGroupEditMode: 'new',  // 一级分类编辑态
+  tagFilter: '',               // 分类管理：按一级分类名过滤二级分类（空=全部）
   anaTagSel: [], anaTagStats: null,  // 分析页标签维度：选中标签 id（空=全部）/ 按区间拉取的标签统计
   profLangs: ['en', 'it', 'ja', 'ko', 'zhHant'], profLang: 'en', profI18n: {}, profEdit: {},  // 推广页多语言可写内容
+  shopsTab: 'info',            // 总部管理子页：info/promo/branches/types/categories
+  devicePanelOpen: {},         // 分店管理：门店卡片设备清单展开态 { storeId: true }
   // 商品图片裁切弹窗
   imgCrop: { show: false, pid: 0, src: '', orient: 'landscape', busy: false,
              iw: 0, ih: 0, zoom: 1, tx: 0, ty: 0 },
@@ -220,6 +226,16 @@ var ST = Vue.reactive({
 function fmt(n) { return n == null ? '0' : Number(n).toLocaleString(); }
 function fmtY(n) { return '￥' + fmt(n); }
 function dateFmt(s) { return s ? String(s).replace(/-/g, '/') : ''; }
+// 心跳时间（秒级 epoch）转相对时间：分店管理设备清单展示「最后心跳」
+function agoText(ts) {
+  if (!ts) return '';
+  var d = Math.floor(Date.now() / 1000 - Number(ts));
+  if (d < 0) d = 0;
+  if (d < 60) return d + 's';
+  if (d < 3600) return Math.floor(d / 60) + 'min';
+  if (d < 86400) return Math.floor(d / 3600) + 'h';
+  return Math.floor(d / 86400) + 'd';
+}
 // 同比/环比辅助：返回 {label: '↑10.5%'/'↓10.5%'/null, cls: 'pct-up'/'pct-down'/null}
 // 模板直接调用 {{ pctLabel(v) }} 和 :class="pctCls(v)" 避免 Math.abs/toFixed 等复杂表达式
 function pctLabel(v) {
@@ -248,19 +264,20 @@ function hasLastYear(arr) {
   return false;
 }
 
-// 趋势折线：切换时间范围（15d/30d/6m/12m），切范围时回到当前窗口
-function setTrendRange(r) {
-  ST.trendRange = r;
-  ST.trendShift = 0;
-  loadTrend();
+// 趋势折线：时间范围跟随页面级 dashRange（金价栏右侧下拉）；区间跨度 ≤45 天按天、否则按月（与后端判定一致）
+function trendByDay() {
+  var rg = dateRangeCompute(ST.dashRange.mode);
+  var a = rg.start.split('-'), b = rg.end.split('-');
+  var s = new Date(+a[0], +a[1] - 1, +a[2]), e = new Date(+b[0], +b[1] - 1, +b[2]);
+  return Math.round((e - s) / 86400000) <= 45;
 }
 // 平移上限：日粒度最多回看 730 天（2 年），月粒度 36 个月（3 年）
-function trendShiftMax() { return (ST.trendRange === '6m' || ST.trendRange === '12m') ? 36 : 730; }
+function trendShiftMax() { return trendByDay() ? 730 : 36; }
 function loadTrend(shift) {
   if (shift != null) ST.trendShift = shift;
   var sh = ST.trendShift || 0;
-  var u = '/api/dashboard/trend?range=' + (ST.trendRange || '30d');
-  if (sh > 0) u += '&offset=' + sh;
+  var rg = dateRangeCompute(ST.dashRange.mode);
+  var u = '/api/dashboard/trend?start=' + rg.start + '&end=' + rg.end + '&offset=' + sh;
   var token = ++ST._trendReqSeq;   // 连续拖动中只接受最后一次响应，防止乱序覆盖
   api('GET', u).then(function (d) { if (ST._trendReqSeq === token) ST.trendData = d; }).catch(function () {});
 }
@@ -342,8 +359,17 @@ function trendLinePoints(arr, maxV) {
 function trendScaleMax() {
   var d = ST.trendData;
   if (!d) return 1;
-  return Math.max(1, trendMax(d.amounts, d.amountsLastYear));
+  return Math.max(1, trendMax(d.amounts, trendCmpData()));
 }
+// 对比序列：同比=去年同期（amountsLastYear），环比=紧邻上一等长区间（amountsPrev）
+function trendCmpData() {
+  var d = ST.trendData;
+  if (!d) return [];
+  return ST.trendCmp === 'mom' ? (d.amountsPrev || []) : (d.amountsLastYear || []);
+}
+// 对比口径对应的图例文案键（同比/环比）
+function trendCmpKey() { return ST.trendCmp === 'mom' ? 'dash.mom' : 'dash.yoy'; }
+function setTrendCmp(c) { ST.trendCmp = (c === 'mom') ? 'mom' : 'yoy'; }
 // 横轴刻度：返回日期标签；日粒度隔天显示一个（防密防重叠），月粒度每月一个
 function trendTicks() {
   var d = ST.trendData;
@@ -470,6 +496,14 @@ var ADMIN_SUBS = [
   { key: 'bridge', icon: '🖨', label: '打印代理' },
   { key: 'logs', icon: '📋', label: '操作日志' },
   { key: 'report', icon: '🐞', label: '问题上报' },
+];
+// 总部管理子视图（tab==='shops' 下的 shopsTab）：总部信息/企业推广/分店管理/品类管理/分类管理
+var SHOPS_TABS = [
+  { key: 'info', icon: '🏢', labelKey: 'shops.tab.info' },
+  { key: 'promo', icon: '🌐', labelKey: 'shops.tab.promo' },
+  { key: 'branches', icon: '🏬', labelKey: 'shops.tab.branches' },
+  { key: 'types', icon: '📦', labelKey: 'shops.tab.types' },
+  { key: 'categories', icon: '🏷', labelKey: 'shops.tab.categories' },
 ];
 
 var SUB_VIEWS = ['customers', 'loans', 'repairs', 'purchases', 'outsourcings', 'logs'];
@@ -1000,10 +1034,11 @@ function setLang(lang) {
   var dictKey = (typeof LANG_MAP !== 'undefined') ? LANG_MAP[currentLang] : '';
   // 拆分后字典按需加载：目标语言字典未载入时先异步加载，完成后再刷新界面
   if (typeof ensureLangDict === 'function' && dictKey && dictKey !== 'zh' && !I18N[dictKey]) {
-    ensureLangDict(dictKey, function () { ST.lang = currentLang; ST.dictVer++; });
+    ensureLangDict(dictKey, function () { ST.lang = currentLang; ST.dictVer++; loadGold(); });
     return;
   }
   ST.lang = currentLang;
+  loadGold();
 }
 
 // ---- navigation ----
@@ -1023,7 +1058,11 @@ function go(tab) {
   if (ST.tab === 'sales' && ST.saleSub === 'analysis' && !ST.saleAna.data) loadSaleAnalysis();
   if (ST.tab === 'appointments') loadAppt();
   if (ST.tab === 'showcase') loadShowcase();
-  if (ST.tab === 'shops') { syncManageStore(); loadShops(); loadStores(true, true); loadBridgeList(); loadProfile(); loadProductTypes(); loadTemplates(); loadAllDevices(); loadSecSensors(); }
+  if (ST.tab === 'shops') { syncManageStore(); loadShops(); loadProfile(); }
+  // 总部管理按子页加载：只拉当前 tab 需要的数据，减少无谓请求
+  if (ST.tab === 'shops' && ST.shopsTab === 'branches') { loadStores(true, true); loadBridgeList(); loadAllDevices(); loadSecSensors(); }
+  if (ST.tab === 'shops' && ST.shopsTab === 'types') { loadProductTypes(); loadTemplates(); }
+  if (ST.tab === 'shops' && ST.shopsTab === 'categories') { loadTagGroups(); loadTags(); }
   if (ST.tab === 'stores') { syncManageStore(); loadShops(); loadStores(true); loadBridgeList(); loadLocations(); loadAllDevices(); }
   if (ST.tab === 'system') {
     // 企业整体级子页（账号权限/EPC/打印模板/经办人）在分店视图不可见，校正到门店级子页
@@ -1053,6 +1092,14 @@ function switchAdminSub(key) {
   ST.adminSub = key;
   go('system');  // 统一走 go() 的 system 分支触发数据加载
 }
+function switchShopsTab(key) {
+  ST.shopsTab = key;
+  go('shops');  // 统一走 go() 的 shops 分支按子页触发数据加载
+}
+// 分店管理：门店卡片设备清单展开/收起
+function toggleDevicePanel(sid) {
+  ST.devicePanelOpen = Object.assign({}, ST.devicePanelOpen, { [sid]: !ST.devicePanelOpen[sid] });
+}
 
 function openSubView(name) {
   // PC 内容区按 tab 渲染列表；从看板快捷入口/KPI 卡进入时必须同步切 tab（移动端走 sub-page 覆盖层，不改 tab）
@@ -1067,7 +1114,7 @@ function openSubView(name) {
 }
 
 // ---- data loading ----
-// 计算看板时间区间 [start,end]（ISO 日期）；today/week/month 按当前日期推导，custom 用已存值
+// 计算销售列表时间区间 [start,end]（ISO 日期）；today/week/month 按当前日期推导，custom 用已存值
 function dashRangeCompute(dr) {
   dr = dr || ST.dashRange;
   var now = new Date();
@@ -1092,11 +1139,8 @@ function dashRangeCompute(dr) {
 }
 function setDashRange(mode) {
   ST.dashRange.mode = mode;
-  if (mode !== 'custom') loadDash();
-}
-function applyDashCustomRange() {
-  if (!ST.dashRange.start || !ST.dashRange.end) { toast(t('dash.pickRange'), 'error'); return; }
-  ST.dashRange.mode = 'custom';
+  ST.trendShift = 0;   // 切换全局时间段后趋势窗口长度变化，回到当前窗口
+  ST.trendDragX = 0;
   loadDash();
 }
 // 销售列表时间过滤（复用 dashRangeCompute 的区间推导）
@@ -1234,9 +1278,8 @@ function saleClerkDonut() {
   });
 }
 function loadDash() {
-  var rg = dashRangeCompute();
+  var rg = dateRangeCompute(ST.dashRange.mode);
   var q = '?start=' + rg.start + '&end=' + rg.end;
-  ST.dashRange.curStart = rg.start; ST.dashRange.curEnd = rg.end;
   api('GET', '/api/dashboard/overview' + q).then(function (r) { ST.dashData = r; }).catch(function () {});
   loadTrend();
   api('GET', '/api/dashboard/category-sales' + q).then(function (r) { ST.catSales = r; }).catch(function () {});
@@ -1248,11 +1291,17 @@ function loadDash() {
   loadGold();
 }
 
-// 浏览器地区 → ISO 币种代码（用于金价按当地货币显示）
+// 当前语言区域 → ISO 币种代码（本地金价按语言区域币种折算，与界面语言一致）
 function localeCurrency() {
+  var byLang = { 'zh-Hans': 'CNY', 'zh-Hant': 'HKD', 'en': 'USD', 'it': 'EUR', 'ja': 'JPY', 'ko': 'KRW' }[ST.lang];
+  if (byLang) return byLang;
   try {
-    var c = new Intl.NumberFormat().resolvedOptions().currency;
-    if (c) return c;
+    var r = (new Intl.NumberFormat().resolvedOptions().locale || '').split('-')[1];
+    if (r === 'US') return 'USD';
+    if (r === 'JP') return 'JPY';
+    if (r === 'KR') return 'KRW';
+    if (r === 'IT') return 'EUR';
+    if (r === 'HK' || r === 'MO') return 'HKD';
   } catch (e) {}
   return 'CNY';
 }
@@ -2570,23 +2619,21 @@ function loadTags() {
     ST.tagGroupList = (r && r.groups) || [];
   }).catch(function () {});
 }
-// 销售额统计（看板卡）：维度品类 top10 / 标签可切换；时间段独立预设，不跟随看板全局区间
+// 销售额统计（看板卡）：维度品类 top10 / 标签可切换；时间范围跟随页面级 dashRange（顶部下拉）
 function loadSaleStats() {
-  var rg = dateRangeCompute(ST.saleStatsRange);
+  var rg = dateRangeCompute(ST.dashRange.mode);
   var q = '?dim=' + ST.saleStatsDim + '&start=' + rg.start + '&end=' + rg.end;
   if (ST.saleStatsDim === 'tag' && ST.tagSel && ST.tagSel.length) q += '&tag_ids=' + ST.tagSel.join(',');
   api('GET', '/api/dashboard/tag-stats' + q).then(function (r) { ST.tagStats = r; }).catch(function () {});
 }
 function setSaleStatsDim(d) { ST.saleStatsDim = d; loadSaleStats(); }
-function setSaleStatsRange(m) { ST.saleStatsRange = m; loadSaleStats(); }
 
 // ===== 看板 TOP5 排行榜（7 榜）=====
 function loadRankings() {
-  var rg = dateRangeCompute(ST.rankRange);
+  var rg = dateRangeCompute(ST.dashRange.mode);   // 时间跟随页面级 dashRange
   api('GET', '/api/dashboard/rankings?start=' + rg.start + '&end=' + rg.end)
     .then(function (r) { ST.rankData = r; }).catch(function () {});
 }
-function setRankRange(m) { ST.rankRange = m; loadRankings(); }
 // 把 7 组后端数据组装成统一 {title, hint, rows:[{name,v,sub}]} 供网格渲染
 function rankBlocks() {
   var d = ST.rankData;
@@ -2633,6 +2680,63 @@ function tagGrouped() {
 }
 // 组名展示：空组=「未分组」（i18n）；其余直接用后端组名（业务数据，不进语言字典）
 function tagGroupName(g) { return g || t('tag.ungrouped'); }
+// ---------------- 一级分类（标签类别）：可增删改 ----------------
+function loadTagGroups() {
+  api('GET', '/api/tag-groups').then(function (r) { ST.tagGroups = (r && r.list) || []; }).catch(function () {});
+}
+// 二级分类按选中一级分类过滤（空=全部）
+function tagFiltered() {
+  var f = ST.tagFilter;
+  if (!f) return ST.tagList || [];
+  return (ST.tagList || []).filter(function (o) { return (o.group_name || '') === f; });
+}
+function setTagFilter(name) { ST.tagFilter = name || ''; }
+function resetTagGroupEdit() {
+  ST.tagGroupEdit = { id: 0, name: '', sort_order: (ST.tagGroups || []).length + 1 };
+  ST.tagGroupEditMode = 'new';
+}
+function addTagGroup() {
+  resetTagGroupEdit();
+  setTimeout(function () {
+    var el = document.getElementById('tag-group-edit-form');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 60);
+}
+function editTagGroup(g) {
+  ST.tagGroupEditMode = 'edit';
+  ST.tagGroupEdit = { id: g.id, name: g.name || '', sort_order: g.sort_order || 0 };
+  setTimeout(function () {
+    var el = document.getElementById('tag-group-edit-form');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.remove('cat-edit-flash');
+      void el.offsetWidth;
+      el.classList.add('cat-edit-flash');
+    }
+  }, 60);
+}
+function saveTagGroup() {
+  var g = ST.tagGroupEdit;
+  if (!g.name || !g.name.trim()) { toast(t('tagGroup.nameRequired'), 'error'); return; }
+  var body = { name: g.name.trim(), sort_order: Number(g.sort_order) || 0 };
+  var method = ST.tagGroupEditMode === 'edit' ? 'PUT' : 'POST';
+  var url = ST.tagGroupEditMode === 'edit' ? '/api/tag-groups/' + g.id : '/api/tag-groups';
+  api(method, url, body).then(function () {
+    toast(t('toast.saveOk'));
+    resetTagGroupEdit();
+    loadTagGroups();
+    loadTags();   // 分组下拉/分组块顺序同步（groups 走 product-tags 接口）
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
+function delTagGroup(g) {
+  if (!confirm(t('tagGroup.delConfirm', { n: g.name }))) return;
+  api('DELETE', '/api/tag-groups/' + g.id).then(function (r) {
+    toast(t('toast.delOk') + (r && r.unlinked ? ' · ' + t('tagGroup.unlinked', { n: r.unlinked }) : ''));
+    if (ST.tagFilter === g.name) ST.tagFilter = '';
+    loadTagGroups();
+    loadTags();
+  }).catch(function (e) { toast(e.message, 'error'); });
+}
 // ---------------- 分析页：按标签维度（库存/销售占比） ----------------
 // scope='sale' 用销售分析页当前区间；scope='inv' 用当前在库快照（无需区间）
 function loadAnaTagStats(scope) {
@@ -4600,27 +4704,30 @@ function submitLabelPrint() {
      .finally(function () { ST.labelBusy = false; });
     return;
   }
-  // 双模式：先模拟取 ZPL → 优先本地直打（localhost:18080）→ 失败回退云端下发
+  // 双模式：先模拟取 ZPL → 代理在线直接走云端 WS 下发；否则尝试本地直打（旧桥 18080）→ 失败回退云端
   ST.labelBusy = true;
   var body = _labelTplBody();
   body.product_ids = ST.labelItems.map(function (x) { return x.id; });
   body.simulate = true;
+  var sendViaCloud = function (zpl) {
+    var b2 = { product_ids: body.product_ids, printer: '', copies: body.copies,
+               write_epc: body.write_epc, font: body.font, simulate: false,
+               enqueue_zpl: zpl, enqueue_store_id: ST.curStoreId || 0 };
+    if (ST.agent && ST.agent.online) { b2.route = 'agent'; }        // 门店打印桥在线：优先经 WS 下发到代理
+    else if (ST.printSupported) { b2.printer = ST.printerName; }    // 云端本机有打印机：直发
+    else { b2.route = 'agent'; }
+    return api('POST', '/api/print/labels', b2).then(function (r2) {
+      ST.labelResult = r2; toast(t('toast.printSent')); refreshAll();
+    });
+  };
   api('POST', '/api/print/labels', body).then(function (r) {
     if (!r.zpl) { ST.labelBusy = false; toast(t('label.btFail'), 'error'); return; }
     ST.labelResult = r;
+    if (ST.agent && ST.agent.online) { return sendViaCloud(r.zpl); }   // 走代理，跳过失效的本地直打
     return localPrintZpl(r.zpl).then(function (lj) {
       toast(t('toast.localPrint', { p: lj.printer || '默认打印机' }));
       refreshAll();
-    }, function () {
-      var b2 = { product_ids: body.product_ids, printer: '', copies: body.copies,
-                 write_epc: body.write_epc, font: body.font, simulate: false,
-                 enqueue_zpl: r.zpl, enqueue_store_id: ST.curStoreId || 0 };
-      if (ST.printSupported) { b2.printer = ST.printerName; }   // 云端本机有打印机：直发
-      else { b2.route = 'agent'; }                              // 经门店打印桥 WS 下发
-      return api('POST', '/api/print/labels', b2).then(function (r2) {
-        ST.labelResult = r2; toast(t('toast.printSent')); refreshAll();
-      });
-    });
+    }, function () { return sendViaCloud(r.zpl); });
   }).catch(function (e) { toast(e.message, 'error'); })
    .finally(function () { ST.labelBusy = false; });
 }
@@ -5459,6 +5566,10 @@ var app = Vue.createApp({
         return isAdminSubAllowed(s.key);
       });
     },
+    // 总部管理子 Tab（v-for 需要值而非函数，故与 adminSubs 一样用 computed）
+    shopsTabs: function () {
+      return SHOPS_TABS.map(function (x) { return { key: x.key, icon: x.icon, label: t(x.labelKey) }; });
+    },
     cats: function () {
       var list = (ST.cats || []).map(function (c) { return (c.names && c.names.zh) || c.code; });
       return list.length ? list : CATS;
@@ -5542,7 +5653,7 @@ var app = Vue.createApp({
     openPsiTab: openPsiTab, loadPsi: loadPsi,
     exportInvCSV: exportInvCSV, printInv: printInv,
     probeLocalAgent: probeLocalAgent, connectLocalAgent: connectLocalAgent,
-    setDashRange: setDashRange, applyDashCustomRange: applyDashCustomRange,
+    setDashRange: setDashRange,
     setSaleRange: setSaleRange, applySaleCustomRange: applySaleCustomRange,
     setListRange: setListRange, customRangeQuery: customRangeQuery, loadDeposits: loadDeposits,
     loadSubList: loadSubList,
@@ -5558,9 +5669,10 @@ var app = Vue.createApp({
     isHqStore: isHqStore,   // 总店/分店视图判定（模板以 isHqStore() 调用，故放 methods）
     isExecRole: isExecRole, // 高管只读标识（模板可用于只读角标）
     roleText: roleText,
-    t: t, fmt: fmt, fmtY: fmtY, dateFmt: dateFmt,
+    t: t, fmt: fmt, fmtY: fmtY, dateFmt: dateFmt, agoText: agoText,
     pctLabel: pctLabel, pctCls: pctCls, trendMax: trendMax, hasLastYear: hasLastYear,
-    setTrendRange: setTrendRange, trendLinePoints: trendLinePoints, trendScaleMax: trendScaleMax, trendTicks: trendTicks, trendVLines: trendVLines, trendYAxis: trendYAxis, trendHLines: trendHLines, trendSvgW: trendSvgW, trendSvgH: trendSvgH,
+    trendLinePoints: trendLinePoints, trendScaleMax: trendScaleMax, trendTicks: trendTicks, trendVLines: trendVLines, trendYAxis: trendYAxis, trendHLines: trendHLines, trendSvgW: trendSvgW, trendSvgH: trendSvgH,
+    trendCmpData: trendCmpData, trendCmpKey: trendCmpKey, setTrendCmp: setTrendCmp,
     loadTrend: loadTrend, trendDragStart: trendDragStart, trendDragMove: trendDragMove, trendDragEnd: trendDragEnd, trendDragReset: trendDragReset,
     baDonutSegments: baDonutSegments, baTop5Sum: baTop5Sum,
     toggleHealth: toggleHealth,
@@ -5591,10 +5703,15 @@ var app = Vue.createApp({
     resetTypeEdit: resetTypeEdit, editType: editType, saveType: saveType, delType: delType,
     bindTypeTemplate: bindTypeTemplate,
     // 商品标签（多标签 + 分组统计）
-    loadTags: loadTags, loadSaleStats: loadSaleStats, setSaleStatsDim: setSaleStatsDim, setSaleStatsRange: setSaleStatsRange,
-    setRankRange: setRankRange, rankBlocks: rankBlocks,
+    loadTags: loadTags, loadSaleStats: loadSaleStats, setSaleStatsDim: setSaleStatsDim,
+    rankBlocks: rankBlocks,
     toggleTagSel: toggleTagSel, clearTagSel: clearTagSel, toggleProdTagFilter: toggleProdTagFilter,
     tagGrouped: tagGrouped, tagGroupName: tagGroupName,
+    // 总部管理五 Tab + 一级分类（标签类别）CRUD
+    switchShopsTab: switchShopsTab, toggleDevicePanel: toggleDevicePanel,
+    loadTagGroups: loadTagGroups, tagFiltered: tagFiltered, setTagFilter: setTagFilter,
+    addTagGroup: addTagGroup, editTagGroup: editTagGroup, saveTagGroup: saveTagGroup,
+    delTagGroup: delTagGroup, resetTagGroupEdit: resetTagGroupEdit,
     toggleAnaTagSel: toggleAnaTagSel, clearAnaTagSel: clearAnaTagSel, loadAnaTagStats: loadAnaTagStats,
     toggleTagPick: toggleTagPick, tagChipStyle: tagChipStyle, tagBarStyle: tagBarStyle,
     addTag: addTag, editTag: editTag, saveTag: saveTag, delTag: delTag, resetTagEdit: resetTagEdit,

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>懿臻珠宝云</title>
 <link rel="icon" href="/logo/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./app.css?v=20261016a113">
+<link rel="stylesheet" href="./app.css?v=20261018a19">
 </head>
 <body>
 <div id="app">
@@ -134,46 +134,42 @@
 
       <div class="main-content" v-if="!subView || isPc">
         <!-- dashboard -->
-        <section v-if="tab==='dashboard'">
+        <section class="dash-pg" v-if="tab==='dashboard'">
           <details class="biz-guide"><summary>📖 {{ t('biz.title') }}</summary><div class="biz-body">{{ t('biz.dashboard') }}</div></details>
-          <!-- 时间范围工具栏 -->
-          <div class="range-bar">
-            <div class="range-tabs">
-              <button class="range-tab" :class="{on: dashRange.mode==='today'}" @click="setDashRange('today')">{{ t('dash.today') }}</button>
-              <button class="range-tab" :class="{on: dashRange.mode==='week'}" @click="setDashRange('week')">{{ t('dash.week') }}</button>
-              <button class="range-tab" :class="{on: dashRange.mode==='month'}" @click="setDashRange('month')">{{ t('dash.month') }}</button>
-              <button class="range-tab" :class="{on: dashRange.mode==='custom'}" @click="dashRange.mode='custom'">{{ t('dash.custom') }}</button>
-            </div>
-            <div class="range-custom" v-if="dashRange.mode==='custom'">
-              <input type="date" v-model="dashRange.start"> <span class="range-to">~</span> <input type="date" v-model="dashRange.end">
-              <button class="btn btn-sm btn-gold" @click="applyDashCustomRange">{{ t('dash.query') }}</button>
-            </div>
-            <div class="range-cur" v-else>{{ dashRange.curStart }} ~ {{ dashRange.curEnd }}</div>
-          </div>
-          <!-- 实时金价栏 -->
-          <div class="gold-bar" v-if="goldData">
-            <div class="gb-item">
+          <!-- 实时金价栏（看板最上方）：金价卡变窄，右侧同一行放页面时间范围下拉 -->
+          <div class="gold-bar">
+            <div class="gb-item" v-if="goldData">
               <span class="gb-label">🌍 {{ t('dash.goldIntl') }}</span>
-              <span class="gb-val" v-if="goldData.intlPrice">{{ goldData.ccySymbol }}{{ fmt(goldData.intlPrice) }}/{{ t('misc.gram') }}</span>
-              <span class="gb-val" v-else-if="goldData.intlUsd">${{ fmt(goldData.intlUsd) }}/oz</span>
+              <span class="gb-val" v-if="goldData.intlUsd">${{ fmt(goldData.intlUsd) }}/oz</span>
               <span class="gb-val gb-fail" v-else @click="loadGold()">{{ t('dash.goldFail') }}</span>
-              <span class="gb-sub" v-if="goldData.intlUsd">{{ goldData.ccy }} · ${{ fmt(goldData.intlUsd) }}/oz · {{ goldData.intlTime }}</span>
+              <span class="gb-sub" v-if="goldData.intlTime">{{ goldData.intlTime }}</span>
             </div>
+            <div class="gb-item" v-if="goldData && goldData.intlPrice">
+              <span class="gb-label">📍 {{ t('dash.goldLocal') }}</span>
+              <span class="gb-val">{{ goldData.ccySymbol }}{{ fmt(goldData.intlPrice) }}/{{ t('misc.gram') }}</span>
+              <span class="gb-sub">{{ goldData.ccy }}</span>
+            </div>
+            <select class="trend-range-select gold-range-select" :value="dashRange.mode" @change="setDashRange($event.target.value)">
+              <option value="today">{{ t('dash.today') }}</option>
+              <option value="week">{{ t('dash.week') }}</option>
+              <option value="month">{{ t('dash.month') }}</option>
+              <option value="3m">{{ t('rg.3m') }}</option>
+              <option value="6m">{{ t('rg.6m') }}</option>
+              <option value="year">{{ t('rg.year') }}</option>
+            </select>
           </div>
+          <div class="dash-top">
+          <div class="dash-top-main">
           <div class="stats-grid dash-kpi" v-if="dashData && dashData.rangeData">
+            <div class="stat-card orange clickable" v-if="riskData && riskData.aging && riskData.aging.count > 0" @click="go('inventory')"><div class="stat-label">⏳ {{ t('dash.aging') }}<span class="stat-hint">›</span></div><div class="stat-value">{{ riskData.aging.count }} {{ t('dash.pieceUnit') }}</div><div class="stat-sub" :class="{'cell-secret':!isCostVisible()}">{{ riskData.aging.cost==null ? '***' : '￥'+fmt(riskData.aging.cost) }}</div></div>
             <div class="stat-card gold clickable" @click="go('sales')"><div class="stat-label">{{ t('dash.rangeSales') }}<span class="stat-hint">›</span></div><div class="stat-value">￥{{ fmt(dashData.rangeData.sales.amount) }}</div><div class="stat-sub">{{ dashData.rangeData.sales.count }} {{ t('dash.bills') }} · {{ t('dash.avg') }} ￥{{ fmt(dashData.rangeData.sales.avg) }}<span v-if="dashData.rangeData.sales.momPct != null" class="pct" :class="pctCls(dashData.rangeData.sales.momPct)"> · {{ t('dash.mom') }} {{ pctLabel(dashData.rangeData.sales.momPct) }}</span><span v-if="dashData.rangeData.sales.yoyPct != null" class="pct" :class="pctCls(dashData.rangeData.sales.yoyPct)"> · {{ t('dash.yoy') }} {{ pctLabel(dashData.rangeData.sales.yoyPct) }}</span></div></div>
             <div class="stat-card clickable" @click="go('inventory')"><div class="stat-label">{{ t('dash.rangeMove') }}<span class="stat-hint">›</span></div><div class="stat-value"><span class="mv-in">+{{ dashData.rangeData.stockIn.qty }}</span><span class="mv-sep">/</span><span class="mv-out">-{{ dashData.rangeData.stockOut.qty }}</span></div><div class="stat-sub" :class="{'cell-secret':!isCostVisible()}">{{ t('dash.onhand') }} {{ dashData.stock.count }} · {{ t('dash.cost') }} {{ dashData.stock.cost==null ? '***' : '￥'+fmt(dashData.stock.cost) }}</div></div>
             <div class="stat-card green clickable" @click="go('deposits')"><div class="stat-label">{{ t('dash.rangeDue') }}<span class="stat-hint">›</span></div><div class="stat-value">￥{{ fmt(dashData.rangeData.depositPending.amount) }}</div><div class="stat-sub">{{ dashData.rangeData.depositPending.count }} {{ t('dash.depBills') }}</div></div>
             <div class="stat-card blue clickable" @click="openSubView('customers')"><div class="stat-label">{{ t('dash.rangeCustDue') }}</div><div class="stat-value">￥{{ fmt(dashData.rangeData.customerDue.amount) }}</div></div>
           </div>
-          <!-- 资产风控：滞销库龄 + 最近盘点异常 -->
-          <div class="risk-bar" v-if="riskData && ((riskData.aging && riskData.aging.count > 0) || (riskData.lastStocktake && (riskData.lastStocktake.surplus_count > 0 || riskData.lastStocktake.shortage_count > 0)))">
-            <div class="risk-card clickable" v-if="riskData.aging && riskData.aging.count > 0" @click="go('inventory')">
-              <span class="rc-icon">⏳</span>
-              <span class="rc-text">{{ t('dash.aging') }} {{ riskData.aging.count }} {{ t('dash.pieceUnit') }}</span>
-              <span class="rc-val" :class="{'cell-secret':!isCostVisible()}">{{ riskData.aging.cost==null ? '***' : '￥'+fmt(riskData.aging.cost) }}</span>
-            </div>
-            <div class="risk-card clickable" v-if="riskData.lastStocktake && (riskData.lastStocktake.surplus_count > 0 || riskData.lastStocktake.shortage_count > 0)" @click="go('inventory')">
+          <!-- 资产风控：最近盘点异常（滞销库龄已并入上方 KPI 卡区） -->
+          <div class="risk-bar" v-if="riskData && riskData.lastStocktake && (riskData.lastStocktake.surplus_count > 0 || riskData.lastStocktake.shortage_count > 0)">
+            <div class="risk-card clickable" @click="go('inventory')">
               <span class="rc-icon">📡</span>
               <span class="rc-text">{{ t('dash.stocktakeRisk') }} {{ riskData.lastStocktake.created.slice(5,10) }}</span>
               <span class="rc-val"><span class="mv-in">{{ t('inv.surplus') }} {{ riskData.lastStocktake.surplus_count }}</span> <span class="mv-out">{{ t('inv.shortage') }} {{ riskData.lastStocktake.shortage_count }}</span></span>
@@ -192,23 +188,21 @@
               <div class="quick-item" @click="openSubView('logs')"><div class="quick-icon blue">📋</div><div class="quick-label">{{ t('q.logs') }}</div></div>
             </div>
           </div>
-          <div class="dash-row">
           <div class="mini-chart" v-if="trendData && trendData.labels && trendData.labels.length">
             <div class="mini-chart-title"><span>{{ t('kpi.trend') }}</span>
               <span class="trend-head-right">
-                <span v-if="hasLastYear(trendData.amountsLastYear)" class="chart-legend">
-                  <span class="lg-line lg-cur"></span>{{ t('dash.curYear') }}<span class="lg-line lg-past"></span>{{ t('dash.prevYear') }}
+                <span class="trend-cmp">
+                  <span class="cat-chip" :class="{active:trendCmp==='yoy'}" @click="setTrendCmp('yoy')">{{ t('dash.yoy') }}</span>
+                  <span class="cat-chip" :class="{active:trendCmp==='mom'}" @click="setTrendCmp('mom')">{{ t('dash.mom') }}</span>
                 </span>
                 <button v-if="trendShift>0" class="trend-reset-btn" @click="trendDragReset()">⟲ {{ t('act.reset') }}</button>
-                <select class="trend-range-select" :value="trendRange" @change="setTrendRange($event.target.value)">
-                  <option value="15d">{{ t('dash.tr15d') }}</option>
-                  <option value="30d">{{ t('dash.tr30d') }}</option>
-                  <option value="6m">{{ t('dash.tr6m') }}</option>
-                  <option value="12m">{{ t('dash.tr12m') }}</option>
-                </select>
               </span>
             </div>
-            <div class="trend-unit-label">{{ t('dash.trendUnit') }}</div>
+            <div class="trend-unit-label"><span>{{ t('dash.trendUnit') }}</span>
+              <span class="chart-legend trend-legend">
+                <span class="lg-line lg-cur"></span>{{ t('dash.trendCur') }}<span class="lg-line lg-past"></span>{{ t(trendCmpKey()) }}
+              </span>
+            </div>
             <div class="trend-pan" :class="{dragging: trendDragOn}"
                  @pointerdown="trendDragStart" @pointermove="trendDragMove" @pointerup="trendDragEnd" @pointercancel="trendDragEnd" @pointerleave="trendDragEnd">
             <div class="trend-pan-inner" :style="{transform: 'translateX(' + trendDragX + 'px)'}">
@@ -220,7 +214,7 @@
                 <line v-for="(vl, vi) in trendVLines()" :key="'v'+vi" :x1="vl.x" y1="8" :x2="vl.x" :y2="trendSvgH()-4" class="trend-grid" vector-effect="non-scaling-stroke"></line>
                 <line x1="4" :y1="trendSvgH()-4" :x2="trendSvgW()-4" :y2="trendSvgH()-4" class="trend-axis" vector-effect="non-scaling-stroke"></line>
                 <line v-for="(hl, hi) in trendHLines()" :key="'h'+hi" x1="4" :y1="hl.y" :x2="trendSvgW()-4" :y2="hl.y" class="trend-grid" vector-effect="non-scaling-stroke"></line>
-                <polyline v-if="hasLastYear(trendData.amountsLastYear)" :points="trendLinePoints(trendData.amountsLastYear, trendScaleMax())" class="trend-line-past" fill="none" vector-effect="non-scaling-stroke"></polyline>
+                <polyline v-if="hasLastYear(trendCmpData())" :points="trendLinePoints(trendCmpData(), trendScaleMax())" class="trend-line-past" fill="none" vector-effect="non-scaling-stroke"></polyline>
                 <polyline :points="trendLinePoints(trendData.amounts, trendScaleMax())" class="trend-line-cur" fill="none" vector-effect="non-scaling-stroke"></polyline>
               </svg>
             </div>
@@ -230,44 +224,15 @@
             </div>
             </div>
           </div>
-          </div><!-- /dash-row 趋势图独占一行 -->
-          <div class="dash-row">
-          <div class="mini-chart" v-if="catSales && catSales.items && catSales.items.length">
-            <div class="mini-chart-title"><span>{{ t('kpi.catSales') }}</span></div>
-            <div class="donut-wrap">
-              <svg class="donut-svg" viewBox="0 0 42 42">
-                <circle cx="21" cy="21" r="15.9" fill="none" stroke="#eee" stroke-width="6"></circle>
-                <circle v-for="s in catDonutSegments()" :key="s.key" cx="21" cy="21" r="15.9" fill="none"
-                        :stroke="donutColor(s.color)" stroke-width="6" pathLength="100"
-                        :stroke-dasharray="s.pct + ' ' + (100 - s.pct)" :stroke-dashoffset="s.offset"
-                        transform="rotate(-90 21 21)"></circle>
-                <text x="21" y="20" class="donut-c1">{{ t('dash.donutTotal') }}</text>
-                <text x="21" y="24.5" class="donut-c2">￥{{ fmt(catSales.total) }}</text>
-              </svg>
-              <div class="donut-legend">
-                <div class="dl-row" v-for="(c,i) in catSales.items" :key="c.category">
-                  <span class="dl-dot" :style="{background: donutColor(i%6)}"></span>
-                  <span class="dl-name">{{ catText(c.category) }}</span>
-                  <span class="dl-val">￥{{ fmt(c.amount) }} · {{ c.pct }}% · {{ t('tag.inStock') }} {{ c.stock_count || 0 }} {{ t('tag.pieceUnit') }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="mini-chart" v-if="tagStats && tagStats.items && tagStats.items.length">
+          </div><!-- /dash-top-main -->
+          <div class="dash-top-side">
+          <div class="mini-chart" v-if="tagStats">
             <div class="mini-chart-title"><span>{{ t('tag.salesStatsTitle') }}</span>
               <span class="trend-head-right">
                 <span class="cat-chips">
                   <div class="cat-chip" :class="{active:saleStatsDim==='category'}" @click="setSaleStatsDim('category')">{{ t('tag.dimCategory') }}</div>
                   <div class="cat-chip" :class="{active:saleStatsDim==='tag'}" @click="setSaleStatsDim('tag')">{{ t('tag.dimTag') }}</div>
                 </span>
-                <select class="trend-range-select" :value="saleStatsRange" @change="setSaleStatsRange($event.target.value)">
-                  <option value="today">{{ t('dash.today') }}</option>
-                  <option value="week">{{ t('dash.week') }}</option>
-                  <option value="month">{{ t('dash.month') }}</option>
-                  <option value="3m">{{ t('rg.3m') }}</option>
-                  <option value="6m">{{ t('rg.6m') }}</option>
-                  <option value="year">{{ t('rg.year') }}</option>
-                </select>
               </span>
             </div>
             <div class="tag-pick-wrap" v-if="saleStatsDim==='tag' && tagList.length">
@@ -291,21 +256,38 @@
                 <div class="tag-stats-val" v-else>{{ t('tag.salesAmt') }} ￥{{ fmt(g.sale_amount) }} · {{ g.sale_count }} {{ t('tag.pieceUnit') }} · {{ g.sale_pct }}% · {{ t('tag.inStock') }} {{ g.stock_count }} {{ t('tag.pieceUnit') }}<span v-if="g.stock_cost != null"> · {{ t('kpi.stockCost') }} ￥{{ fmt(g.stock_cost) }}</span></div>
               </div>
             </div>
+            <div class="tag-stats-empty" v-if="!tagStats.items || !tagStats.items.length">{{ t('rank.empty') }}</div>
             <div class="tag-stats-note" v-if="saleStatsDim==='tag' && tagStats.note">{{ t('tag.dupNote') }}</div>
           </div>
+          </div><!-- /dash-top-side -->
+          </div><!-- /dash-top 左列（KPI + 风控 + 趋势） + 右列（销售额统计）等高二列 -->
+          <div class="dash-row dash-biz">
+          <div class="mini-chart cat-sales-card" v-if="catSales">
+            <div class="mini-chart-title"><span>{{ t('kpi.catSales') }}</span></div>
+            <div class="donut-wrap" v-if="catSales.items && catSales.items.length">
+              <svg class="donut-svg" viewBox="0 0 42 42">
+                <circle cx="21" cy="21" r="15.9" fill="none" stroke="#eee" stroke-width="6"></circle>
+                <circle v-for="s in catDonutSegments()" :key="s.key" cx="21" cy="21" r="15.9" fill="none"
+                        :stroke="donutColor(s.color)" stroke-width="6" pathLength="100"
+                        :stroke-dasharray="s.pct + ' ' + (100 - s.pct)" :stroke-dashoffset="s.offset"
+                        transform="rotate(-90 21 21)"></circle>
+                <text x="21" y="20" class="donut-c1">{{ t('dash.donutTotal') }}</text>
+                <text x="21" y="24.5" class="donut-c2">￥{{ fmt(catSales.total) }}</text>
+              </svg>
+              <div class="donut-legend">
+                <div class="dl-row" v-for="(c,i) in catSales.items" :key="c.category">
+                  <span class="dl-dot" :style="{background: donutColor(i%6)}"></span>
+                  <span class="dl-name">{{ catText(c.category) }}</span>
+                  <span class="dl-val">￥{{ fmt(c.amount) }} · {{ c.pct }}% · {{ t('tag.inStock') }} {{ c.stock_count || 0 }} {{ t('tag.pieceUnit') }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="mini-chart-empty" v-if="!catSales.items || !catSales.items.length">{{ t('rank.empty') }}</div>
           </div>
           <div class="mini-chart rank-card" v-if="rankData">
             <div class="mini-chart-title"><span>{{ t('rank.title') }}</span>
               <span class="trend-head-right">
                 <span class="rank-hint">{{ t('rank.periodHint') }}</span>
-                <select class="trend-range-select" :value="rankRange" @change="setRankRange($event.target.value)">
-                  <option value="today">{{ t('dash.today') }}</option>
-                  <option value="week">{{ t('dash.week') }}</option>
-                  <option value="month">{{ t('dash.month') }}</option>
-                  <option value="3m">{{ t('rg.3m') }}</option>
-                  <option value="6m">{{ t('rg.6m') }}</option>
-                  <option value="year">{{ t('rg.year') }}</option>
-                </select>
               </span>
             </div>
             <div class="rank-grid">
@@ -352,39 +334,8 @@
               </div>
             </div>
             </div><!-- /ba-metrics -->
-            <div class="ba-group" v-if="bizAnalysis.categories && bizAnalysis.categories.length">
-              <div class="ba-group-title">🥧 {{ t('ba.catShare') }}</div>
-              <div class="donut-wrap">
-                <svg class="donut-svg" viewBox="0 0 42 42">
-                  <circle cx="21" cy="21" r="15.9" fill="none" stroke="#eee" stroke-width="6"></circle>
-                  <circle v-for="s in baDonutSegments()" :key="s.key" cx="21" cy="21" r="15.9" fill="none"
-                          :stroke="donutColor(s.color)" stroke-width="6" pathLength="100"
-                          :stroke-dasharray="s.pct + ' ' + (100 - s.pct)" :stroke-dashoffset="s.offset"
-                          transform="rotate(-90 21 21)"></circle>
-                  <text x="21" y="20" class="donut-c1">{{ t('ba.top5') }}</text>
-                  <text x="21" y="24.5" class="donut-c2">￥{{ fmt(baTop5Sum()) }}</text>
-                </svg>
-                <div class="donut-legend">
-                  <div class="dl-row" v-for="(c,i) in bizAnalysis.categories.slice(0,5)" :key="c.category">
-                    <span class="dl-dot" :style="{background: donutColor(i%6)}"></span>
-                    <span class="dl-name">{{ catText(c.category) }}</span>
-                    <span class="dl-val">{{ c.pct }}%</span>
-                  </div>
-                </div>
-              </div>
-              <table class="ba-table">
-                <thead><tr><th>{{ t('ba.catName') }}</th><th class="r">{{ t('ba.realQty') }}</th><th class="r">{{ t('ba.realCost') }}</th><th class="r">{{ t('ba.realAmount') }}</th></tr></thead>
-                <tbody>
-                  <tr v-for="c in bizAnalysis.categories" :key="'t'+c.category">
-                    <td><span class="dl-dot" :style="{background: donutColor(bizAnalysis.categories.indexOf(c)%6)}"></span>{{ catText(c.category) }}</td>
-                    <td class="r">{{ c.qty }}</td>
-                    <td class="r">{{ c.cost==null ? '***' : '￥' + fmt(c.cost) }}</td>
-                    <td class="r">￥{{ fmt(c.amount) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
           </div>
+          </div><!-- /dash-row 品类销售占比（环形图） + 经营分析 + 排行榜 -->
           <div class="dash-pair" v-if="remindData || (dashData && dashData.recentSales && dashData.recentSales.length)">
           <div class="reminder-section" v-if="remindData">
             <div class="reminder-head" @click="showRemind=!showRemind"><span>🕐 {{ t('kpi.todo') }}</span><span class="badge">{{ todoCount }}</span></div>
@@ -1672,7 +1623,15 @@
         <!-- ================= 店铺管理（上层组织） ================= -->
         <section v-if="tab==='shops'">
           <details class="biz-guide"><summary>📖 {{ t('biz.title') }}</summary><div class="biz-body">{{ t('shop.guide') }}</div></details>
-          <div class="card-item">
+          <!-- 总部管理子导航：总部信息 / 企业推广 / 分店管理 / 品类管理 / 分类管理 -->
+          <div class="admin-subnav" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+            <button v-for="s in shopsTabs" :key="s.key" class="btn btn-sm"
+                    :class="shopsTab===s.key ? 'btn-gold' : 'btn-outline'"
+                    @click="switchShopsTab(s.key)">{{ s.icon }} {{ s.label }}</button>
+          </div>
+
+          <!-- ========== 分店管理：分店信息 + 分店设备清单 ========== -->
+          <div class="card-item" v-if="shopsTab==='branches'">
             <div class="card-title">{{ t('shop.title') }}</div>
             <div class="hint" style="margin-bottom:10px">{{ t('shop.hint') }}</div>
 
@@ -1734,15 +1693,57 @@
                   <div class="prod-meta" v-if="s.stat">
                     {{ t('store.saleCount') }} {{ s.stat.saleCount }} · {{ t('store.saleAmount') }} ￥{{ fmt(s.stat.saleAmount) }}
                   </div>
+                  <!-- 分店设备清单：打印助手 / 扫描助手 / 安防设备，点按钮展开明细 -->
+                  <div style="margin-top:6px">
+                    <button class="btn-small" @click="toggleDevicePanel(s.id)">
+                      {{ devicePanelOpen[s.id] ? t('shops.devHide') : t('shops.devShow') }}
+                      （{{ devicesOfStore(s.id).length + storeSecStore(s.id).length + (bridgeOfStore(s.id) ? (bridgeOfStore(s.id).agents || []).length : 0) }}）
+                    </button>
+                  </div>
+                  <div v-if="devicePanelOpen[s.id]" class="dev-panel">
+                    <div class="dev-group-title">🖨 {{ t('shops.devPrint') }}</div>
+                    <template v-if="bridgeOfStore(s.id) && (bridgeOfStore(s.id).agents || []).length">
+                      <div class="dev-line" v-for="a in bridgeOfStore(s.id).agents" :key="'pa'+a.id">
+                        <b>{{ a.name || t('shops.devPrint') }}</b>
+                        <span class="bridge-state" :class="a.online ? 'st-on' : 'st-off'">● {{ a.online ? t('sb.online') : t('sb.offline') }}</span>
+                      </div>
+                    </template>
+                    <div v-else class="prod-meta">{{ t('shops.devNone') }}</div>
+
+                    <div class="dev-group-title">📱 {{ t('shops.devScan') }}</div>
+                    <template v-if="devicesOfStore(s.id).length">
+                      <div class="dev-line" v-for="dv in devicesOfStore(s.id)" :key="'sd'+dv.id">
+                        <b>{{ dv.name || dv.code }}</b>
+                        <span class="prod-meta mono" v-if="dv.code">{{ dv.code }}</span>
+                        <span class="bridge-state" :class="dv.online ? 'st-on' : 'st-off'">● {{ dv.online ? t('sb.online') : t('sb.offline') }}</span>
+                        <span class="prod-meta" v-if="dv.last_seen">{{ t('shops.lastSeen') }} {{ agoText(dv.last_seen) }}</span>
+                      </div>
+                    </template>
+                    <div v-else class="prod-meta">{{ t('shops.devNone') }}</div>
+
+                    <div class="dev-group-title">🛡 {{ t('shops.devSec') }}</div>
+                    <template v-if="storeSecStore(s.id).length">
+                      <div class="dev-line" v-for="sc in storeSecStore(s.id)" :key="'ss'+sc.id">
+                        <b>{{ sc.name }}</b>
+                        <span class="prod-meta">{{ sc.driver_name }}<template v-if="sc.location"> · {{ sc.location }}</template></span>
+                        <span class="bridge-state" :class="sc.online ? 'st-on' : 'st-off'">● {{ sc.online ? t('sb.online') : t('sb.offline') }}</span>
+                        <span class="prod-meta" v-if="sc.last_seen">{{ t('shops.lastSeen') }} {{ agoText(sc.last_seen) }}</span>
+                      </div>
+                    </template>
+                    <div v-else class="prod-meta">{{ t('shops.devNone') }}</div>
+                  </div>
                   </template>
                 </div>
               </div>
               <div v-if="!storesByShop(p.id).length" class="prod-meta" style="padding:4px 0">{{ t('store.emptyInShop') }}</div>
             </div>
+          </div>
 
-            <!-- 企业资料（从系统管理搬入总部管理） -->
-            <div class="card-item" v-if="profile">
-              <div class="card-title">{{ t('pf.title') }}</div>
+          <!-- ========== 总部信息：总部基本资料 ========== -->
+          <div class="card-item" v-if="shopsTab==='info'">
+            <div class="card-title">{{ t('pf.title') }}</div>
+            <div class="hint">{{ t('shops.infoHint') }}</div>
+            <template v-if="profile">
               <div class="form-group"><label>{{ t('pf.name') }}</label><input v-model="profile.name"></div>
               <div class="form-group"><label>{{ t('pf.slogan') }}</label><input v-model="profile.slogan"></div>
               <div class="form-group"><label>{{ t('pf.intro') }}</label><textarea v-model="profile.intro"></textarea></div>
@@ -1751,7 +1752,18 @@
               <div class="form-group"><label>{{ t('pf.shTitle') }}</label><input v-model="profile.showcase_title" :placeholder="t('pf.shTitlePh')"></div>
               <div class="form-group"><label>{{ t('pf.shSub') }}</label><input v-model="profile.showcase_subtitle" :placeholder="t('pf.shSubPh')"></div>
               <button class="btn btn-gold" @click="saveProfile">{{ t('act.save') }}</button>
-              <a class="btn btn-outline" href="/site" target="_blank" style="margin-left:12px">{{ t('pf.previewSite') }}</a>
+            </template>
+            <div class="empty" v-else>{{ t('common.loading') }}</div>
+          </div>
+
+          <!-- ========== 企业推广：官网 /site 多语言内容逐语言维护 ========== -->
+          <div class="card-item" v-if="shopsTab==='promo'">
+            <div class="card-title">{{ t('pf.promoTitle') }}</div>
+            <div class="hint">{{ t('pf.promoHint') }}</div>
+            <template v-if="profile">
+              <div style="margin-bottom:12px">
+                <a class="btn btn-outline" :href="dlUrl('/site')" target="_blank">{{ t('pf.previewSite') }}</a>
+              </div>
               <div class="pf-i18n-box">
                 <div class="pf-i18n-title">🌐 {{ t('pf.siteI18n') }}</div>
                 <div class="hint">{{ t('pf.siteI18nHint') }}</div>
@@ -1770,11 +1782,12 @@
                 <div class="form-group"><label>{{ t('pf.intro') }}</label><textarea v-model="profEdit.intro"></textarea></div>
                 <button class="btn btn-gold" @click="saveProfile">{{ t('act.save') }}</button>
               </div>
-            </div>
+            </template>
+            <div class="empty" v-else>{{ t('common.loading') }}</div>
           </div>
 
-          <!-- 商品品类与标签模板（企业整体级） -->
-          <div class="card-item">
+          <!-- ========== 品类管理 ========== -->
+          <div class="card-item" v-if="shopsTab==='types'">
             <div class="card-title">{{ t('type.mgrTitle') }}</div>
             <table class="data-table" style="margin-bottom:12px">
               <thead><tr><th>{{ t('lbl.code') }}</th><th>{{ t('cat.name') }}</th><th>{{ t('cat.sort') }}</th><th>{{ t('type.pricingMode') }}</th><th>{{ t('tpl.boundTpl') }}</th><th>{{ t('common.op') }}</th></tr></thead>
@@ -1813,40 +1826,75 @@
             </div>
           </div>
 
-          <!-- 商品标签（企业整体级：多标签 + 分组统计） -->
-          <div class="card-item">
-            <div class="flex-between" style="margin-bottom:8px">
-              <div class="card-title" style="margin:0">{{ t('tag.mgrTitle') }}</div>
-              <button class="btn btn-gold btn-sm" @click="addTag">＋ {{ t('tag.addNew') }}</button>
-            </div>
-            <table class="data-table" style="margin-bottom:12px">
-              <thead><tr><th>{{ t('tag.name') }}</th><th>{{ t('tag.group') }}</th><th>{{ t('cat.sort') }}</th><th>{{ t('tag.usedCount') }}</th><th>{{ t('common.op') }}</th></tr></thead>
-              <tbody>
-                <tr v-for="o in tagList" :key="o.id">
-                  <td><span class="ptag" :style="tagChipStyle(o)">{{ o.name }}</span></td>
-                  <td>{{ o.group_name || '—' }}</td>
-                  <td>{{ o.sort_order }}</td>
-                  <td>{{ o.used_count }}</td>
-                  <td><button class="btn-small" :class="{'btn-gold': tagEditMode==='edit' && tagEdit.id===o.id}" @click="(tagEditMode==='edit' && tagEdit.id===o.id) ? resetTagEdit() : editTag(o)">{{ (tagEditMode==='edit' && tagEdit.id===o.id) ? t('act.cancel') : t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delTag(o)">{{ t('act.del') }}</button></td>
-                </tr>
-              </tbody>
-            </table>
-            <div id="tag-edit-form" style="margin-top:10px;padding:10px;border:1px solid #eee;border-radius:6px">
-              <div class="form-row">
-                <div class="form-group"><label>{{ t('tag.name') }}</label><input v-model="tagEdit.name" maxlength="20" :placeholder="t('tag.namePh')"></div>
-                <div class="form-group"><label>{{ t('tag.color') }}</label><input type="color" v-model="tagEdit.color"></div>
-                <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="tagEdit.sort_order" type="number"></div>
-                <div class="form-group"><label>{{ t('tag.group') }}</label>
-                  <select v-model="tagEdit.group_name">
-                    <option value="">{{ t('tag.ungrouped') }}</option>
-                    <option v-for="g in tagGroupList" :key="'tg'+g" :value="g">{{ g }}</option>
-                  </select>
-                </div>
+          <!-- ========== 分类管理：一级分类（标签类别） / 二级分类（标签） ========== -->
+          <template v-if="shopsTab==='categories'">
+            <!-- 一级分类：标签类别（可增删改；product_tags.group_name 引用其 name） -->
+            <div class="card-item">
+              <div class="flex-between" style="margin-bottom:8px">
+                <div class="card-title" style="margin:0">{{ t('tagGroup.oneTitle') }}</div>
+                <button class="btn btn-gold btn-sm" @click="addTagGroup">＋ {{ t('tagGroup.addNew') }}</button>
               </div>
-              <button class="btn btn-gold" @click="saveTag">{{ tagEditMode==='edit'?t('cat.saveEdit'):t('tag.addNew') }}</button>
-              <button class="btn btn-outline" v-if="tagEditMode==='edit'" @click="resetTagEdit" style="margin-left:8px">{{ t('act.cancel') }}</button>
+              <div class="hint" style="margin-bottom:8px">{{ t('tagGroup.oneHint') }}</div>
+              <table class="data-table" style="margin-bottom:12px">
+                <thead><tr><th>{{ t('tagGroup.name') }}</th><th>{{ t('cat.sort') }}</th><th>{{ t('tagGroup.tagCount') }}</th><th>{{ t('common.op') }}</th></tr></thead>
+                <tbody>
+                  <tr v-for="g in tagGroups" :key="g.id">
+                    <td>{{ g.name }}</td>
+                    <td>{{ g.sort_order }}</td>
+                    <td>{{ g.tag_count }}</td>
+                    <td><button class="btn-small" :class="{'btn-gold': tagGroupEditMode==='edit' && tagGroupEdit.id===g.id}" @click="(tagGroupEditMode==='edit' && tagGroupEdit.id===g.id) ? resetTagGroupEdit() : editTagGroup(g)">{{ (tagGroupEditMode==='edit' && tagGroupEdit.id===g.id) ? t('act.cancel') : t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delTagGroup(g)">{{ t('act.del') }}</button></td>
+                  </tr>
+                </tbody>
+              </table>
+              <div id="tag-group-edit-form" style="margin-top:10px;padding:10px;border:1px solid #eee;border-radius:6px">
+                <div class="form-row">
+                  <div class="form-group"><label>{{ t('tagGroup.name') }}</label><input v-model="tagGroupEdit.name" maxlength="20" :placeholder="t('tagGroup.namePh')"></div>
+                  <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="tagGroupEdit.sort_order" type="number"></div>
+                </div>
+                <button class="btn btn-gold" @click="saveTagGroup">{{ tagGroupEditMode==='edit'?t('cat.saveEdit'):t('tagGroup.addNew') }}</button>
+                <button class="btn btn-outline" v-if="tagGroupEditMode==='edit'" @click="resetTagGroupEdit" style="margin-left:8px">{{ t('act.cancel') }}</button>
+              </div>
             </div>
-          </div>
+
+            <!-- 二级分类：标签（归属一级分类） -->
+            <div class="card-item">
+              <div class="flex-between" style="margin-bottom:8px">
+                <div class="card-title" style="margin:0">{{ t('tagGroup.twoTitle') }}</div>
+                <button class="btn btn-gold btn-sm" @click="addTag">＋ {{ t('tag.addNew') }}</button>
+              </div>
+              <div class="tag-pick-chips" style="margin-bottom:8px">
+                <button class="tag-chip" :class="{'tag-chip-on': !tagFilter}" @click="setTagFilter('')">{{ t('tagGroup.filterAll') }}</button>
+                <button v-for="g in tagGroups" :key="'ft'+g.id" class="tag-chip" :class="{'tag-chip-on': tagFilter===g.name}" @click="setTagFilter(g.name)">{{ g.name }}</button>
+              </div>
+              <table class="data-table" style="margin-bottom:12px">
+                <thead><tr><th>{{ t('tag.name') }}</th><th>{{ t('tag.group') }}</th><th>{{ t('cat.sort') }}</th><th>{{ t('tag.usedCount') }}</th><th>{{ t('common.op') }}</th></tr></thead>
+                <tbody>
+                  <tr v-for="o in tagFiltered()" :key="o.id">
+                    <td><span class="ptag" :style="tagChipStyle(o)">{{ o.name }}</span></td>
+                    <td>{{ o.group_name || '—' }}</td>
+                    <td>{{ o.sort_order }}</td>
+                    <td>{{ o.used_count }}</td>
+                    <td><button class="btn-small" :class="{'btn-gold': tagEditMode==='edit' && tagEdit.id===o.id}" @click="(tagEditMode==='edit' && tagEdit.id===o.id) ? resetTagEdit() : editTag(o)">{{ (tagEditMode==='edit' && tagEdit.id===o.id) ? t('act.cancel') : t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delTag(o)">{{ t('act.del') }}</button></td>
+                  </tr>
+                </tbody>
+              </table>
+              <div id="tag-edit-form" style="margin-top:10px;padding:10px;border:1px solid #eee;border-radius:6px">
+                <div class="form-row">
+                  <div class="form-group"><label>{{ t('tag.name') }}</label><input v-model="tagEdit.name" maxlength="20" :placeholder="t('tag.namePh')"></div>
+                  <div class="form-group"><label>{{ t('tag.color') }}</label><input type="color" v-model="tagEdit.color"></div>
+                  <div class="form-group"><label>{{ t('cat.sort') }}</label><input v-model.number="tagEdit.sort_order" type="number"></div>
+                  <div class="form-group"><label>{{ t('tag.group') }}</label>
+                    <select v-model="tagEdit.group_name">
+                      <option value="">{{ t('tag.ungrouped') }}</option>
+                      <option v-for="g in tagGroupList" :key="'tg'+g" :value="g">{{ g }}</option>
+                    </select>
+                  </div>
+                </div>
+                <button class="btn btn-gold" @click="saveTag">{{ tagEditMode==='edit'?t('cat.saveEdit'):t('tag.addNew') }}</button>
+                <button class="btn btn-outline" v-if="tagEditMode==='edit'" @click="resetTagEdit" style="margin-left:8px">{{ t('act.cancel') }}</button>
+              </div>
+            </div>
+          </template>
         </section>
 
         <!-- ================= 门店管理（店铺下门店：入库/扫描设备/库位；打印代理已集中到系统管理） ================= -->
@@ -3910,14 +3958,14 @@ Content-Type: application/json
 <script src="./vendor/vue.global.prod.js"></script>
 <script src="./vendor/qrcode.min.js"></script>
 <script src="./vendor/zxing.min.js"></script>
-<script src="./i18n.js?v=20261016a113"></script>
+<script src="./i18n.js?v=20261018a19"></script>
 <script>
 // 非中文时同步加载对应语言字典（i18n.<dict>.js），确保 app.js 挂载前字典就绪
 (function () {
   var _dict = (typeof i18nDictFile === 'function') ? i18nDictFile() : '';
-  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261016a113"><\/script>');
+  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261018a19"><\/script>');
 })();
 </script>
-<script src="./app.js?v=20261016a113"></script>
+<script src="./app.js?v=20261018a20"></script>
 </body>
 </html>

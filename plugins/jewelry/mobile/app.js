@@ -60,6 +60,9 @@
     loginForm: { username: "admin", password: "123456" },
     logging: false,
     dash: null, trend: null, reminders: null,
+    goldData: null, riskData: null, catSales: null, tagStats: null, rankData: null, bizAnalysis: null,
+    saleStatsDim: "category", tagSel: [], tagList: [], tagGroupList: [], productTypes: [],
+    dashRange: "6m", trendCmp: "yoy",   // 看板全局时间段（today/week/month/3m/6m/year）+ 趋势对比口径（yoy 同比 / mom 环比）
     products: { items: [], total: 0, page: 1, size: 30, q: "", status: "" },
     productForm: null, productEdit: false, productView: null,
     inventory: null, lockedItems: [],
@@ -149,7 +152,7 @@
     }).catch(function (e) { toast(e.message, "error"); });
   }
 
-  function setLang(l) { ST.lang = l; window.YZLang.set(l); }
+  function setLang(l) { ST.lang = l; window.YZLang.set(l); loadGold(); }
 
   function curStoreName() {
     for (var i = 0; i < ST.stores.length; i++) {
@@ -190,12 +193,136 @@
   function closeSub() { ST.sub = ""; ST.subId = 0; }
 
   // ---------------- dashboard ----------------
+  // 看板全局时间段推导（与电脑端一致）：mode=today|week|month|3m|6m|year → {start,end}
+  function mobRangeCompute(mode) {
+    var now = new Date();
+    function iso(d) {
+      var m = ("0" + (d.getMonth() + 1)).slice(-2), dd = ("0" + d.getDate()).slice(-2);
+      return d.getFullYear() + "-" + m + "-" + dd;
+    }
+    var t0 = iso(now);
+    if (mode === "week") { var day = (now.getDay() + 6) % 7; var mon = new Date(now); mon.setDate(now.getDate() - day); return { start: iso(mon), end: t0 }; }
+    if (mode === "month") { var f = new Date(now.getFullYear(), now.getMonth(), 1); return { start: iso(f), end: t0 }; }
+    if (mode === "3m") { var d3 = new Date(now); d3.setMonth(d3.getMonth() - 3); return { start: iso(d3), end: t0 }; }
+    if (mode === "6m") { var d6 = new Date(now); d6.setMonth(d6.getMonth() - 6); return { start: iso(d6), end: t0 }; }
+    if (mode === "year") { return { start: now.getFullYear() + "-01-01", end: t0 }; }
+    return { start: t0, end: t0 };
+  }
+  function setDashRange(mode) { ST.dashRange = mode; loadDash(); }
+  function setTrendCmp(c) { ST.trendCmp = (c === "mom") ? "mom" : "yoy"; }
+
   function loadDash() {
     ST.loading = true;
-    api("GET", "/api/dashboard/overview").then(function (d) { ST.dash = d; }).catch(function () {});
-    api("GET", "/api/dashboard/trend?range=6m").then(function (d) { ST.trend = d; }).catch(function () {});
-    api("GET", "/api/dashboard/reminders").then(function (d) { ST.reminders = d; }).catch(function () {})
+    var rg = mobRangeCompute(ST.dashRange);
+    var q = "?start=" + rg.start + "&end=" + rg.end;
+    api("GET", "/api/dashboard/overview" + q).then(function (d) { ST.dash = d; }).catch(function () {})
       .then(function () { ST.loading = false; });
+    api("GET", "/api/dashboard/trend" + q).then(function (d) { ST.trend = d; }).catch(function () {});
+    api("GET", "/api/dashboard/category-sales" + q).then(function (d) { ST.catSales = d; }).catch(function () {});
+    api("GET", "/api/dashboard/biz-analysis" + q).then(function (d) { ST.bizAnalysis = d; }).catch(function () {});
+    api("GET", "/api/dashboard/rankings" + q).then(function (d) { ST.rankData = d; }).catch(function () {});
+    api("GET", "/api/dashboard/reminders").then(function (d) { ST.reminders = d; }).catch(function () {});
+    api("GET", "/api/dashboard/risk").then(function (d) { ST.riskData = d; }).catch(function () {});
+    api("GET", "/api/product-types").then(function (d) { ST.productTypes = d || []; }).catch(function () {});
+    loadTags();
+    loadTagStats();
+    loadGold();
+  }
+
+  // ------------- 看板扩展块：金价 / 区间KPI / 风控 / 销售额统计 / 品类占比 / 排行 / 经营分析 -------------
+  function localeCurrency() {
+    var byLang = { "zh": "CNY", "zh-Hans": "CNY", "zhHant": "HKD", "zh-Hant": "HKD", "en": "USD", "it": "EUR", "ja": "JPY", "ko": "KRW" };
+    if (byLang[ST.lang]) return byLang[ST.lang];
+    try {
+      var r = (new Intl.NumberFormat().resolvedOptions().locale || "").split("-")[1];
+      if (r === "US") return "USD";
+      if (r === "JP") return "JPY";
+      if (r === "KR") return "KRW";
+      if (r === "IT") return "EUR";
+      if (r === "HK" || r === "MO") return "HKD";
+    } catch (e) {}
+    return "CNY";
+  }
+  function loadGold() {
+    api("GET", "/api/dashboard/gold?ccy=" + encodeURIComponent(localeCurrency())).then(function (r) { ST.goldData = r; })
+      .catch(function () { ST.goldData = { intlUsd: null, intlPrice: null }; });
+  }
+  function pctCls(p) { return num(p) >= 0 ? "pct up" : "pct down"; }
+  function pctLabel(p) { var n = num(p); return (n >= 0 ? "+" : "") + fmtNum(n) + "%"; }
+  var DONUT_COLORS = ["#C9A227", "#8B2E3B", "#3D6B99", "#4E8A5A", "#B36A2E", "#7A5C9E"];
+  function donutColor(i) { return DONUT_COLORS[(i || 0) % DONUT_COLORS.length]; }
+  function catText(name) {
+    var list = ST.productTypes || [];
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i];
+      if (c.names && c.names.zh === name) return c.names[ST.lang] || c.names.zh || name;
+    }
+    return name || "";
+  }
+  function catDonutSegments() {
+    var items = (ST.catSales && ST.catSales.items) || [];
+    var acc = 0;
+    return items.map(function (c, i) {
+      var seg = { pct: c.pct, offset: -acc, color: i % 6, key: c.category };
+      acc += c.pct;
+      return seg;
+    });
+  }
+  function loadTags() {
+    api("GET", "/api/product-tags").then(function (r) {
+      ST.tagList = (r && r.list) || [];
+      ST.tagGroupList = (r && r.groups) || [];
+    }).catch(function () {});
+  }
+  function loadTagStats() {
+    var rg = mobRangeCompute(ST.dashRange);
+    var q = "?dim=" + ST.saleStatsDim + "&start=" + rg.start + "&end=" + rg.end;
+    if (ST.saleStatsDim === "tag" && ST.tagSel && ST.tagSel.length) q += "&tag_ids=" + ST.tagSel.join(",");
+    api("GET", "/api/dashboard/tag-stats" + q).then(function (r) { ST.tagStats = r; }).catch(function () {});
+  }
+  function setSaleStatsDim(d) { ST.saleStatsDim = d; loadTagStats(); }
+  function toggleTagSel(id) {
+    var i = ST.tagSel.indexOf(id);
+    if (i >= 0) ST.tagSel.splice(i, 1); else ST.tagSel.push(id);
+    loadTagStats();
+  }
+  function clearTagSel() { ST.tagSel = []; loadTagStats(); }
+  function tagGrouped() {
+    var list = ST.tagList || [], order = (ST.tagGroupList || []).slice(), map = {}, out = [], i, g;
+    for (i = 0; i < list.length; i++) {
+      g = list[i].group_name || "";
+      if (!map[g]) { map[g] = []; if (order.indexOf(g) < 0) order.push(g); }
+      map[g].push(list[i]);
+    }
+    for (i = 0; i < order.length; i++) {
+      if (map[order[i]]) out.push({ group: order[i], tags: map[order[i]] });
+    }
+    return out;
+  }
+  function tagGroupName(g) { return g || t("tag.ungrouped"); }
+  function tagBarStyle(g, i) {
+    return { width: Math.max(Number(g.sale_pct) || 0, 2) + "%", background: g.color || donutColor(i % 6) };
+  }
+  function rankBlocks() {
+    var d = ST.rankData;
+    if (!d) return [];
+    var m = function (v) { return (v == null) ? "***" : ("￥" + fmtNum(v)); };
+    return [
+      { key: "turnover", title: t("rank.turnover"), rows: (d.turnover || []).map(function (r) {
+          return { name: r.name, v: r.days + " " + t("rank.days"), sub: r.sold }; }) },
+      { key: "profit", title: t("rank.profit"), rows: (d.profit || []).map(function (r) {
+          return { name: r.name, v: r.rate == null ? "***" : (r.rate + "%"), sub: m(r.profit) }; }) },
+      { key: "qty", title: t("rank.qty"), rows: (d.qty || []).map(function (r) {
+          return { name: r.name, v: r.qty + " " + t("tag.pieceUnit"), sub: "￥" + fmtNum(r.amount) }; }) },
+      { key: "customer", title: t("rank.customer"), rows: (d.customer || []).map(function (r) {
+          return { name: r.name, v: "￥" + fmtNum(r.amount), sub: r.bills + " " + t("rank.bills") }; }) },
+      { key: "clerk", title: t("rank.clerk"), rows: (d.clerk || []).map(function (r) {
+          return { name: r.name, v: "￥" + fmtNum(r.amount), sub: r.bills + " " + t("rank.bills") }; }) },
+      { key: "slow", title: t("rank.slow"), hint: t("rank.slowHint"), rows: (d.slow || []).map(function (r) {
+          return { name: r.name, v: r.age + " " + t("rank.days"), sub: r.cost == null ? "" : (t("kpi.stockCost") + " ￥" + fmtNum(r.cost)) }; }) },
+      { key: "category", title: t("rank.category"), rows: (d.category || []).map(function (r) {
+          return { name: r.name, v: "￥" + fmtNum(r.amount), sub: r.qty + " " + t("tag.pieceUnit") }; }) }
+    ];
   }
 
   // ---------------- products ----------------
@@ -583,14 +710,27 @@
   function dRecent() { return (ST.dash && ST.dash.recentSales) || []; }
   function dTrendLabels() { return (ST.trend && ST.trend.labels) || []; }
   function dTrendAmounts() { return (ST.trend && ST.trend.amounts) || []; }
+  // 对比序列：同比=去年同期（amountsLastYear），环比=紧邻上一等长区间（amountsPrev）
+  function dTrendCmpData() {
+    var tr = ST.trend;
+    if (!tr) return [];
+    return ST.trendCmp === "mom" ? (tr.amountsPrev || []) : (tr.amountsLastYear || []);
+  }
+  function trendCmpKey() { return ST.trendCmp === "mom" ? "dash.mom" : "dash.yoy"; }
   function trendMax() {
-    var a = dTrendAmounts(), m = 0;
+    var a = dTrendAmounts(), c = dTrendCmpData(), m = 0;
     for (var i = 0; i < a.length; i++) m = Math.max(m, num(a[i]));
+    for (var j = 0; j < c.length; j++) m = Math.max(m, num(c[j]));
     return m || 1;
   }
   function barH(i) {
     var a = dTrendAmounts();
     return Math.max(4, Math.round(num(a[i]) / trendMax() * 100)) + "%";
+  }
+  function cmpBarH(i) {
+    var c = dTrendCmpData();
+    if (!c.length) return "0%";
+    return Math.max(4, Math.round(num(c[i]) / trendMax() * 100)) + "%";
   }
   function remDeposits() { return (ST.reminders && ST.reminders.deposits) || []; }
   function remRepairs() { return (ST.reminders && ST.reminders.repairsPending) || []; }
@@ -630,6 +770,11 @@
     login: login, logout: logout, switchStore: switchStore, setLang: setLang, curStoreName: curStoreName,
     go: go, openSub: openSub, closeSub: closeSub, onScroll: onScroll,
     loadDash: loadDash,
+    loadGold: loadGold, localeCurrency: localeCurrency, pctCls: pctCls, pctLabel: pctLabel,
+    donutColor: donutColor, catText: catText, catDonutSegments: catDonutSegments,
+    loadTags: loadTags, loadTagStats: loadTagStats, setSaleStatsDim: setSaleStatsDim,
+    toggleTagSel: toggleTagSel, clearTagSel: clearTagSel, tagGrouped: tagGrouped,
+    tagGroupName: tagGroupName, tagBarStyle: tagBarStyle, rankBlocks: rankBlocks,
     loadProducts: loadProducts, loadMoreProducts: loadMoreProducts, viewProduct: viewProduct,
     newProduct: newProduct, editProduct: editProduct, copyProduct: copyProduct, saveProduct: saveProduct, delProduct: delProduct,
     loadInventory: loadInventory, inboundForm: inboundForm, submitInbound: submitInbound,
@@ -646,7 +791,8 @@
     loadAppointments: loadAppointments, setAppt: setAppt, loadLogs: loadLogs,
     loadProfile: loadProfile, saveProfile: saveProfile, quickGo: quickGo, reminderCount: reminderCount,
     dStock: dStock, dToday: dToday, dMonth: dMonth, dDue: dDue, dRecent: dRecent,
-    dTrendLabels: dTrendLabels, barH: barH, remDeposits: remDeposits, remRepairs: remRepairs, remLoans: remLoans,
+    dTrendLabels: dTrendLabels, barH: barH, cmpBarH: cmpBarH, trendCmpKey: trendCmpKey,
+    setDashRange: setDashRange, setTrendCmp: setTrendCmp, remDeposits: remDeposits, remRepairs: remRepairs, remLoans: remLoans,
     iStock: iStock, iReserved: iReserved, iLoaned: iLoaned, iMetrics: iMetrics, custSales: custSales,
     userName: userName, userInitial: userInitial, roleName: roleName,
     money: money, fmtNum: fmtNum, num: num, statusKey: statusKey, statusClass: statusClass, today: todayStr

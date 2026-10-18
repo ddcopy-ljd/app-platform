@@ -83,6 +83,7 @@ _lock = threading.Lock()
 _EXEC_ADMIN_PREFIXES = (
     "/api/admin/", "/api/shops", "/api/stores", "/api/profile", "/api/biz-config",
     "/api/categories", "/api/product-types", "/api/label-templates", "/api/product-tags",
+    "/api/tag-groups",
     "/api/clerk-types", "/api/locations", "/api/sensors",
 )
 _EXEC_PASS_PREFIXES = ("/api/auth/",)
@@ -552,50 +553,351 @@ def spa_index():
     return JSONResponse({"detail": "前端未构建"}, status_code=503)
 
 
+# ---- 官网多语言 UI 字典（6 语言）----
+# zh 的值即原中文原文，保证默认渲染与历史一致；其余语言为对应翻译。
+LANG_LABELS = {"zh": "简体中文", "zhHant": "繁體中文", "en": "English", "it": "Italiano", "ja": "日本語", "ko": "한국어"}
+_SITE_HTML_LANG = {"zh": "zh-CN", "zhHant": "zh-Hant", "en": "en", "it": "it", "ja": "ja", "ko": "ko"}
+SITE_UI = {
+    "zh": {
+        "titleSuffix": "官方臻选", "brandFallback": "臻",
+        "navAbout": "品牌故事", "navShowcase": "臻品橱窗", "navBooking": "预约到店",
+        "aboutKicker": "SINCE 2009 · 品牌故事",
+        "aboutTitle": "十七年只做一件事<br>让每件珠宝都经得起岁月",
+        "aboutP1": "{brand}创立于 2009 年，前身为老街上一间三十平米的打金铺。十七年来，我们坚持从深圳水贝、云南腾冲源头直选金料与裸石，每件成品均经 NGTC / GIA 权威检测，一物一证，支持全国复检。",
+        "aboutP2": "如今，懿臻已发展为集黄金、钻石、翡翠、彩宝销售与高级定制于一体的珠宝门店，驻店师傅平均从业 20 年以上。我们相信，好的珠宝从不只是商品——它陪人走过求婚、结婚、弥月、纪念等一生里最重要的时刻。",
+        "aboutCats": "黄金首饰 · 钻石婚戒 · 翡翠玉石 · 彩宝定制 · 投资金条",
+        "stat1Val": "17年", "stat1Lbl": "匠心经营",
+        "stat2Val": "10000+", "stat2Lbl": "客户的共同选择",
+        "stat3Val": "100%", "stat3Lbl": "一物一证 · 支持复检",
+        "stat4Val": "20年", "stat4Lbl": "驻店师傅平均工龄",
+        "promiseTitle": "四大安心承诺",
+        "promiseSub": "从选料到售后，每个环节都写进我们的店规",
+        "promise1Title": "源头直采", "promise1Desc": "金料与裸石直选自深圳水贝、云南腾冲，省去中间环节，同品质价格更实在。",
+        "promise2Title": "一物一证", "promise2Desc": "每件成品均配 NGTC / GIA 权威证书，支持全国任意机构复检，假一赔十。",
+        "promise3Title": "自有工坊", "promise3Desc": "驻店师傅平均从业 20 年，改圈、刻字、维修立等可取，高级定制最快 7 日交付。",
+        "promise4Title": "终身养护", "promise4Desc": "所购首饰终身享免费清洗、抛光与牢固度检测，以旧换新按当日金价估价。",
+        "showcaseCount": "共 {n} 件臻品 · 官方直营 · 假一赔十",
+        "emptyTitle": "橱窗正在整理中", "emptySub": "敬请期待本季臻品",
+        "bookingTitle": "预约到店", "bookingSub": "专属顾问一对一 · VIP 私享鉴赏",
+        "formName": "您的称呼", "formNamePh": "请输入姓名",
+        "formContact": "联系方式", "formContactPh": "手机 / 微信",
+        "formCategory": "意向品类", "formCategoryPh": "如 钻石、黄金、翡翠",
+        "formProduct": "目标商品（可填名称）", "formProductPh": "点击「预约看货」可自动填入",
+        "formDate": "期望到店日期", "formSlot": "期望时段", "formSlotPh": "如 14:00 - 16:00",
+        "formRemark": "备注说明", "formRemarkPh": "可填写具体需求，如圈号、预算、送礼场合等",
+        "btnSubmit": "✦ 提交 VIP 预约 ✦",
+        "footerCerts": "NGTC / GIA 权威检测合作 · 假一赔十 · 终身免费养护",
+        "footerCopy": "© {name} · 以臻金品质 铸一世珍藏",
+        "cardOrigin": "产地", "cardMaterial": "材质", "cardWeight": "金重", "cardSize": "尺寸", "cardPrice": "参考价",
+        "cardCert": "附权威证书", "cardConsult": "到店咨询", "cardCode": "货号", "cardBook": "预约看货",
+        "cardDefaultCat": "珠宝", "labelSep": "：", "autoSep": "｜",
+        "jsSubmitting": "正在提交…", "jsSuccess": "预约已提交，专属顾问将尽快与您联系",
+        "jsNetwork": "网络繁忙，请稍后重试或直接致电门店", "jsCodePrefix": "货号", "jsIntentPrefix": "意向商品：",
+    },
+    "zhHant": {
+        "titleSuffix": "官方臻選", "brandFallback": "臻",
+        "navAbout": "品牌故事", "navShowcase": "臻品櫥窗", "navBooking": "預約到店",
+        "aboutKicker": "SINCE 2009 · 品牌故事",
+        "aboutTitle": "十七年只做一件事<br>讓每件珠寶都經得起歲月",
+        "aboutP1": "{brand}創立於 2009 年，前身為老街上一間三十坪的打金鋪。十七年來，我們堅持從深圳水貝、雲南騰衝源頭直選金料與裸石，每件成品均經 NGTC / GIA 權威檢測，一物一證，支持全國復檢。",
+        "aboutP2": "如今，{brand}已發展為集黃金、鑽石、翡翠、彩寶銷售與高級定製於一體的珠寶門店，駐店師傅平均從業 20 年以上。我們相信，好的珠寶從不只是商品——它陪人走過求婚、結婚、彌月、紀念等一生裡最重要的時刻。",
+        "aboutCats": "黃金首飾 · 鑽石婚戒 · 翡翠玉石 · 彩寶定製 · 投資金條",
+        "stat1Val": "17年", "stat1Lbl": "匠心經營",
+        "stat2Val": "10000+", "stat2Lbl": "客戶的共同選擇",
+        "stat3Val": "100%", "stat3Lbl": "一物一證 · 支持復檢",
+        "stat4Val": "20年", "stat4Lbl": "駐店師傅平均工齡",
+        "promiseTitle": "四大安心承諾",
+        "promiseSub": "從選料到售後，每個環節都寫進我們的店規",
+        "promise1Title": "源頭直採", "promise1Desc": "金料與裸石直選自深圳水貝、雲南騰衝，省去中間環節，同品質價格更實惠。",
+        "promise2Title": "一物一證", "promise2Desc": "每件成品均配 NGTC / GIA 權威證書，支持全國任意機構復檢，假一賠十。",
+        "promise3Title": "自有工坊", "promise3Desc": "駐店師傅平均從業 20 年，改圈、刻字、維修立等可取，高級定製最快 7 日交付。",
+        "promise4Title": "終身養護", "promise4Desc": "所購首飾終身享免費清洗、拋光與牢固度檢測，以舊換新按當日金價估價。",
+        "showcaseCount": "共 {n} 件臻品 · 官方直營 · 假一賠十",
+        "emptyTitle": "櫥窗正在整理中", "emptySub": "敬請期待本季臻品",
+        "bookingTitle": "預約到店", "bookingSub": "專屬顧問一對一 · VIP 私享鑑賞",
+        "formName": "您的稱呼", "formNamePh": "請輸入姓名",
+        "formContact": "聯絡方式", "formContactPh": "手機 / 微信",
+        "formCategory": "意向品類", "formCategoryPh": "如 鑽石、黃金、翡翠",
+        "formProduct": "目標商品（可填名稱）", "formProductPh": "點擊「預約看貨」可自動填入",
+        "formDate": "期望到店日期", "formSlot": "期望時段", "formSlotPh": "如 14:00 - 16:00",
+        "formRemark": "備註說明", "formRemarkPh": "可填寫具體需求，如圈號、預算、送禮場合等",
+        "btnSubmit": "✦ 提交 VIP 預約 ✦",
+        "footerCerts": "NGTC / GIA 權威檢測合作 · 假一賠十 · 終身免費養護",
+        "footerCopy": "© {name} · 以臻金品質 鑄一世珍藏",
+        "cardOrigin": "產地", "cardMaterial": "材質", "cardWeight": "金重", "cardSize": "尺寸", "cardPrice": "參考價",
+        "cardCert": "附權威證書", "cardConsult": "到店諮詢", "cardCode": "貨號", "cardBook": "預約看貨",
+        "cardDefaultCat": "珠寶", "labelSep": "：", "autoSep": "｜",
+        "jsSubmitting": "正在提交…", "jsSuccess": "預約已提交，專屬顧問將盡快與您聯繫",
+        "jsNetwork": "網絡繁忙，請稍後重試或直接致電門店", "jsCodePrefix": "貨號", "jsIntentPrefix": "意向商品：",
+    },
+    "en": {
+        "titleSuffix": "Official Selection", "brandFallback": "Y",
+        "navAbout": "Our Story", "navShowcase": "Showcase", "navBooking": "Book a Visit",
+        "aboutKicker": "SINCE 2009 · OUR STORY",
+        "aboutTitle": "For 17 years, one craft only<br>Jewellery that outlasts the years",
+        "aboutP1": "{brand} was founded in 2009, growing from a small goldsmith's workshop on the old street. For seventeen years we have sourced gold and gemstones directly from Shuibei (Shenzhen) and Tengchong (Yunnan). Every piece is certified by NGTC / GIA — one certificate per item — and can be re-verified nationwide.",
+        "aboutP2": "Today {brand} is a jewellery house offering gold, diamonds, jade and coloured gemstones alongside bespoke commissions, with in-house craftsmen averaging over 20 years' experience. We believe fine jewellery is never merely a product — it accompanies you through the most important moments of life.",
+        "aboutCats": "Gold · Diamond Rings · Jade · Coloured Gems · Gold Bars",
+        "stat1Val": "17 yrs", "stat1Lbl": "Dedicated Craft",
+        "stat2Val": "10,000+", "stat2Lbl": "Customers' Choice",
+        "stat3Val": "100%", "stat3Lbl": "One Cert Per Item",
+        "stat4Val": "20 yrs", "stat4Lbl": "Avg. Craftsman Experience",
+        "promiseTitle": "Four Promises",
+        "promiseSub": "From sourcing to after-sales, every step is a house rule",
+        "promise1Title": "Direct Sourcing", "promise1Desc": "Gold and gemstones sourced directly from Shuibei (Shenzhen) and Tengchong (Yunnan), cutting out middlemen for fairer prices.",
+        "promise2Title": "One Cert Per Item", "promise2Desc": "Every piece comes with an NGTC / GIA certificate, re-verifiable at any institution nationwide, with a tenfold compensation guarantee.",
+        "promise3Title": "In-House Atelier", "promise3Desc": "Craftsmen with 20 years' average experience handle resizing, engraving and repairs on the spot; bespoke orders delivered in as fast as 7 days.",
+        "promise4Title": "Lifetime Care", "promise4Desc": "Enjoy free lifetime cleaning, polishing and security checks; trade-ins valued at the day's gold price.",
+        "showcaseCount": "{n} pieces · Official Direct Sale · Tenfold Guarantee",
+        "emptyTitle": "The showcase is being prepared", "emptySub": "Stay tuned for this season's finest",
+        "bookingTitle": "Book a Visit", "bookingSub": "One-to-one advisor · Private VIP viewing",
+        "formName": "Your Name", "formNamePh": "Enter your name",
+        "formContact": "Contact", "formContactPh": "Phone / WeChat",
+        "formCategory": "Preferred Category", "formCategoryPh": "e.g. Diamond, Gold, Jade",
+        "formProduct": "Target Item (name optional)", "formProductPh": "Click 'Book a Viewing' to autofill",
+        "formDate": "Preferred Date", "formSlot": "Preferred Time", "formSlotPh": "e.g. 14:00 - 16:00",
+        "formRemark": "Notes", "formRemarkPh": "Ring size, budget, gifting occasion, etc.",
+        "btnSubmit": "✦ Submit VIP Booking ✦",
+        "footerCerts": "NGTC / GIA Certified · Tenfold Guarantee · Free Lifetime Care",
+        "footerCopy": "© {name} · Fine gold, a lifetime treasure",
+        "cardOrigin": "Origin", "cardMaterial": "Material", "cardWeight": "Gold Wt.", "cardSize": "Size", "cardPrice": "Ref. Price",
+        "cardCert": "Cert Included", "cardConsult": "Ask in store", "cardCode": "Item No.", "cardBook": "Book a Viewing",
+        "cardDefaultCat": "Jewellery", "labelSep": ": ", "autoSep": " · ",
+        "jsSubmitting": "Submitting…", "jsSuccess": "Booking submitted — your advisor will contact you soon",
+        "jsNetwork": "Network busy. Please retry later or call the store.", "jsCodePrefix": "Item No. ", "jsIntentPrefix": "Interest: ",
+    },
+    "it": {
+        "titleSuffix": "Selezione Ufficiale", "brandFallback": "G",
+        "navAbout": "La Nostra Storia", "navShowcase": "Vetrina", "navBooking": "Prenota una Visita",
+        "aboutKicker": "DAL 2009 · LA NOSTRA STORIA",
+        "aboutTitle": "Da 17 anni una sola arte<br>Gioielli che sfidano il tempo",
+        "aboutP1": "{brand} è stata fondata nel 2009, nata da una piccola bottega di orafo nella vecchia strada. Da diciassette anni selezioniamo oro e gemme direttamente dalle fonti di Shuibei (Shenzhen) e Tengchong (Yunnan). Ogni pezzo è certificato NGTC / GIA — un certificato per articolo — e verificabile in tutta la Cina.",
+        "aboutP2": "Oggi {brand} è una gioielleria che offre oro, diamanti, giada e gemme colorate oltre a creazioni su misura, con artigiani interni con oltre 20 anni di esperienza media. Crediamo che un buon gioiello non sia mai solo un prodotto — accompagna i momenti più importanti della vita.",
+        "aboutCats": "Oro · Anelli di Diamante · Giada · Gemme Colorate · Lingotti",
+        "stat1Val": "17 anni", "stat1Lbl": "Artigianato Dedicato",
+        "stat2Val": "10.000+", "stat2Lbl": "Scelta dei Clienti",
+        "stat3Val": "100%", "stat3Lbl": "Un Certificato a Pezzo",
+        "stat4Val": "20 anni", "stat4Lbl": "Esperienza Media Artigiani",
+        "promiseTitle": "Quattro Promesse",
+        "promiseSub": "Dalla selezione all'assistenza, ogni fase è una regola di casa",
+        "promise1Title": "Selezione Diretta", "promise1Desc": "Oro e gemme selezionati direttamente da Shuibei (Shenzhen) e Tengchong (Yunnan), senza intermediari per prezzi più equi.",
+        "promise2Title": "Un Certificato a Pezzo", "promise2Desc": "Ogni pezzo è accompagnato da certificato NGTC / GIA, verificabile in tutta la Cina, con garanzia di rimborso dieci volte.",
+        "promise3Title": "Atelier Interno", "promise3Desc": "Artigiani con 20 anni di esperienza media per ridimensionamento, incisione e riparazioni immediate; su misura in soli 7 giorni.",
+        "promise4Title": "Cura a Vita", "promise4Desc": "Pulizia, lucidatura e controlli di sicurezza gratuiti a vita; permuta valutata al prezzo dell'oro del giorno.",
+        "showcaseCount": "{n} pezzi · Vendita Diretta Ufficiale · Garanzia Dieci Volte",
+        "emptyTitle": "La vetrina è in allestimento", "emptySub": "Restate sintonizzati per i capolavori della stagione",
+        "bookingTitle": "Prenota una Visita", "bookingSub": "Consulente dedicato · Anteprima privata VIP",
+        "formName": "Il Tuo Nome", "formNamePh": "Inserisci il nome",
+        "formContact": "Contatto", "formContactPh": "Telefono / WeChat",
+        "formCategory": "Categoria Preferita", "formCategoryPh": "es. Diamante, Oro, Giada",
+        "formProduct": "Articolo Desiderato (nome opzionale)", "formProductPh": "Clicca 'Prenota una Visione' per compilare",
+        "formDate": "Data Preferita", "formSlot": "Fascia Oraria", "formSlotPh": "es. 14:00 - 16:00",
+        "formRemark": "Note", "formRemarkPh": "Misura, budget, occasione, ecc.",
+        "btnSubmit": "✦ Invia Prenotazione VIP ✦",
+        "footerCerts": "Certificazione NGTC / GIA · Garanzia Dieci Volte · Cura Gratuita a Vita",
+        "footerCopy": "© {name} · Oro pregiato, un tesoro per la vita",
+        "cardOrigin": "Origine", "cardMaterial": "Materiale", "cardWeight": "Peso Oro", "cardSize": "Misura", "cardPrice": "Prezzo Rif.",
+        "cardCert": "Cert. Incluso", "cardConsult": "Info in negozio", "cardCode": "Codice", "cardBook": "Prenota una Visione",
+        "cardDefaultCat": "Gioielli", "labelSep": ": ", "autoSep": " · ",
+        "jsSubmitting": "Invio in corso…", "jsSuccess": "Prenotazione inviata — presto ti contatteremo",
+        "jsNetwork": "Rete occupata. Riprova più tardi o chiama il negozio.", "jsCodePrefix": "Cod. ", "jsIntentPrefix": "Articolo: ",
+    },
+    "ja": {
+        "titleSuffix": "公式セレクト", "brandFallback": "臻",
+        "navAbout": "ブランドストーリー", "navShowcase": "逸品ショーケース", "navBooking": "来店予約",
+        "aboutKicker": "SINCE 2009 · ブランドストーリー",
+        "aboutTitle": "17年間、ただ一つのこと<br>歳月に耐えるジュエリーを",
+        "aboutP1": "{brand}は2009年、旧市街の30平米の金細工工房から創業しました。17年来、深セン水貝と雲南騰沖から金地金と裸石を直接仕入れ、すべての製品はNGTC / GIAの権威ある鑑定を受け、一点一証、全国で再鑑定可能です。",
+        "aboutP2": "現在{brand}は、ゴールド・ダイヤモンド・翡翠・カラーストーンの販売とオーダーメイドを手掛けるジュエリーショップに成長し、常駐職人の平均経験は20年以上です。良いジュエリーは決して単なる商品ではなく、人生の大切な瞬間に寄り添うものだと信じています。",
+        "aboutCats": "ゴールド · ダイヤ婚約指輪 · 翡翠 · カラーストーン · 金地金",
+        "stat1Val": "17年", "stat1Lbl": "匠の経営",
+        "stat2Val": "10000+", "stat2Lbl": "お客様の選択",
+        "stat3Val": "100%", "stat3Lbl": "一点一証・再鑑定対応",
+        "stat4Val": "20年", "stat4Lbl": "職人の平均経験年数",
+        "promiseTitle": "四つの安心のお約束",
+        "promiseSub": "仕入れからアフターケアまで、すべてを店の規約に",
+        "promise1Title": "源流直接仕入れ", "promise1Desc": "金地金と裸石は深セン水貝・雲南騰沖から直接仕入れ、中間業者を省き、同じ品質でよりお値打ちに。",
+        "promise2Title": "一点一証", "promise2Desc": "すべての製品にNGTC / GIAの権威ある証明書を添付、全国の機関で再鑑定可能、偽物は十倍返金。",
+        "promise3Title": "自社工房", "promise3Desc": "平均経験20年の常駐職人がサイズ直し・刻印・修理を即日対応、オーダーメイドは最短7日でお渡し。",
+        "promise4Title": "生涯メンテナンス", "promise4Desc": "ご購入のジュエリーは生涯無料で洗浄・研磨・緩み検査、下取りは当日の金価格で評価。",
+        "showcaseCount": "全 {n} 点 · 公式直営 · 偽物十倍返金",
+        "emptyTitle": "ショーケースを準備中", "emptySub": "今季の逸品にご期待ください",
+        "bookingTitle": "来店予約", "bookingSub": "専任コンシェルジュ · VIP限定観覧",
+        "formName": "お名前", "formNamePh": "お名前を入力",
+        "formContact": "ご連絡先", "formContactPh": "電話 / WeChat",
+        "formCategory": "ご希望のカテゴリ", "formCategoryPh": "例：ダイヤ、ゴールド、翡翠",
+        "formProduct": "ご希望の商品（名称可）", "formProductPh": "「予約見学」をクリックで自動入力",
+        "formDate": "ご希望の来店日", "formSlot": "ご希望の時間帯", "formSlotPh": "例 14:00 - 16:00",
+        "formRemark": "ご要望・備考", "formRemarkPh": "サイズ、ご予算、ギフトの用途など",
+        "btnSubmit": "✦ VIP予約を送信 ✦",
+        "footerCerts": "NGTC / GIA 権威鑑定提携 · 偽物十倍返金 · 生涯無料メンテナンス",
+        "footerCopy": "© {name} · 極上の金品質で、一生の宝物を",
+        "cardOrigin": "産地", "cardMaterial": "素材", "cardWeight": "金重量", "cardSize": "サイズ", "cardPrice": "参考価格",
+        "cardCert": "権威証明付き", "cardConsult": "店頭でご相談", "cardCode": "商品番号", "cardBook": "予約見学",
+        "cardDefaultCat": "ジュエリー", "labelSep": "：", "autoSep": "｜",
+        "jsSubmitting": "送信中…", "jsSuccess": "予約を承りました。担当者より折り返しご連絡します",
+        "jsNetwork": "通信が混み合っています。後ほど再試行するか店舗へ直接お電話ください。", "jsCodePrefix": "商品番号", "jsIntentPrefix": "希望商品：",
+    },
+    "ko": {
+        "titleSuffix": "공식 셀렉션", "brandFallback": "臻",
+        "navAbout": "브랜드 스토리", "navShowcase": "명품 쇼케이스", "navBooking": "방문 예약",
+        "aboutKicker": "SINCE 2009 · 브랜드 스토리",
+        "aboutTitle": "17년, 오직 한 가지<br>세월을 견디는 주얼리",
+        "aboutP1": "{brand}은 2009년 옛 거리의 30평 금세공 작업실에서 시작되었습니다. 17년간 선전 수베이와 윈난 텅충에서 금과 원석을 직접 소싱했으며, 모든 제품은 NGTC / GIA 권위 감정을 거쳐 일물일증으로 전국 어디서든 재감정할 수 있습니다.",
+        "aboutP2": "이제 {brand}은 골드·다이아몬드·비취·컬러 스톤 판매와 맞춤 제작을 아우르는 주얼리 매장으로 성장했으며, 상주 장인의 평균 경력은 20년 이상입니다. 좋은 주얼리는 결코 상품이 아니라 인생의 가장 중요한 순간을 함께합니다.",
+        "aboutCats": "골드 주얼리 · 다이아몬드 반지 · 비취 · 컬러 스톤 · 골드 바",
+        "stat1Val": "17년", "stat1Lbl": "장인 정신",
+        "stat2Val": "10000+", "stat2Lbl": "고객의 선택",
+        "stat3Val": "100%", "stat3Lbl": "일물일증 · 재감정 가능",
+        "stat4Val": "20년", "stat4Lbl": "상주 장인 평균 경력",
+        "promiseTitle": "네 가지 안심 약속",
+        "promiseSub": "소싱부터 사후 관리까지, 모든 과정을 매장 규칙으로",
+        "promise1Title": "직접 소싱", "promise1Desc": "금과 원석을 선전 수베이·윈난 텅충에서 직접 선별, 중간 유통을 줄여 같은 품질에 더 합리적인 가격.",
+        "promise2Title": "일물일증", "promise2Desc": "모든 제품에 NGTC / GIA 권위 인증서를 동봉, 전국 어느 기관에서든 재검증 가능, 가품은 열 배 보상.",
+        "promise3Title": "자체 공방", "promise3Desc": "평균 경력 20년의 상주 장인이 사이즈 조정·각인·수리를 즉시 처리, 맞춤 제작은 최단 7일 납품.",
+        "promise4Title": "평생 케어", "promise4Desc": "구매 주얼리는 평생 무료 세척·광택·고정도 점검, 보상 판매는 당일 금값으로 평가.",
+        "showcaseCount": "총 {n}점 · 공식 직영 · 가품 열 배 보상",
+        "emptyTitle": "쇼케이스를 준비 중입니다", "emptySub": "이번 시즌 명품을 기대해 주세요",
+        "bookingTitle": "방문 예약", "bookingSub": "전담 컨설턴트 1:1 · VIP 프라이빗 감상",
+        "formName": "성함", "formNamePh": "이름을 입력하세요",
+        "formContact": "연락처", "formContactPh": "휴대폰 / 위챗",
+        "formCategory": "관심 카테고리", "formCategoryPh": "예: 다이아몬드, 골드, 비취",
+        "formProduct": "희망 상품 (이름 가능)", "formProductPh": "'예약 보기'를 클릭하면 자동 입력",
+        "formDate": "희망 방문일", "formSlot": "희망 시간대", "formSlotPh": "예 14:00 - 16:00",
+        "formRemark": "비고", "formRemarkPh": "사이즈, 예산, 선물 용도 등",
+        "btnSubmit": "✦ VIP 예약 제출 ✦",
+        "footerCerts": "NGTC / GIA 권위 감정 협력 · 가품 열 배 보상 · 평생 무료 케어",
+        "footerCopy": "© {name} · 최고의 금 품질로 일생의 보물을",
+        "cardOrigin": "원산지", "cardMaterial": "재질", "cardWeight": "금 중량", "cardSize": "사이즈", "cardPrice": "참고가",
+        "cardCert": "권위 인증서", "cardConsult": "매장 문의", "cardCode": "상품번호", "cardBook": "예약 보기",
+        "cardDefaultCat": "주얼리", "labelSep": "：", "autoSep": "｜",
+        "jsSubmitting": "제출 중…", "jsSuccess": "예약이 접수되었습니다. 담당자가 곧 연락드립니다",
+        "jsNetwork": "네트워크가 혼잡합니다. 잠시 후 다시 시도하거나 매장으로 전화해 주세요.", "jsCodePrefix": "상품번호", "jsIntentPrefix": "희망 상품: ",
+    },
+}
+
+
+def _json_map(raw) -> dict:
+    """把 JSON 字符串安全解析为 dict，失败或非对象一律返回空 dict。"""
+    try:
+        m = json.loads(raw or "{}")
+        return m if isinstance(m, dict) else {}
+    except Exception:
+        return {}
+
+
+def _pick_site_lang(request: Request) -> str:
+    """官网语言：优先 ?lang=，其次 Accept-Language，最后兜底 zh。"""
+    lang = (request.query_params.get("lang") or "").strip()
+    if lang in SITE_UI:
+        return lang
+    for part in (request.headers.get("accept-language") or "").split(","):
+        tag = part.split(";")[0].strip().lower()
+        if not tag:
+            continue
+        if tag.startswith("zh"):
+            if any(x in tag for x in ("hant", "tw", "hk", "mo")):
+                return "zhHant"
+            return "zh"
+        base = tag.split("-")[0]
+        if base in ("en", "it", "ja", "ko"):
+            return base
+    return "zh"
+
+
 @app.get("/site")
 def public_site(request: Request):
+    lang = _pick_site_lang(request)
+    ui = SITE_UI[lang]
+    html_lang = _SITE_HTML_LANG.get(lang, "zh-CN")
     with _db(request) as conn:
         prof = conn.execute("SELECT * FROM tenant_profiles ORDER BY id DESC LIMIT 1").fetchone()
         rows = conn.execute(
-            """SELECT id, code, name, product_type, material, weight, size, price, cert, status,
-                      origin, showcase_order, showcase_desc, image_ts
+            """SELECT id, code, name, name_i18n, product_type, material, weight, size, price, cert, status,
+                      origin, showcase_order, showcase_desc, showcase_desc_i18n, image_ts
                  FROM products
                 WHERE showcase_public=1 AND status='在库'
                 ORDER BY (showcase_order=0) ASC, showcase_order ASC, id DESC
                 LIMIT 10"""
         ).fetchall()
-    name = (prof["name"] if prof else "懿臻珠宝") or "懿臻珠宝"
-    slogan = (prof["slogan"] if prof else "") or ""
-    intro = (prof["intro"] if prof else "") or ""
-    addr = (prof["address"] if prof else "") or ""
-    phone = (prof["phone"] if prof else "") or ""
-    hours = (prof["hours"] if prof else "") or ""
-    sh_title = (prof["showcase_title"] if prof else "新品橱窗") or "新品橱窗"
-    sh_sub = (prof["showcase_subtitle"] if prof else "本周臻品 · 限量发售") or "本周臻品 · 限量发售"
+    prof_i18n = _json_map(prof["i18n"]) if (prof is not None and "i18n" in prof.keys()) else {}
 
+    def _g(key, default=""):
+        if prof is None or key not in prof.keys():
+            return default
+        v = prof[key]
+        return v if v else default
+
+    def _pick(field, base):
+        if lang != "zh":
+            tr = prof_i18n.get(lang)
+            if isinstance(tr, dict):
+                v = tr.get(field)
+                if isinstance(v, str) and v.strip():
+                    return v
+        return base
+
+    name = _pick("name", _g("name", "懿臻珠宝"))
+    slogan = _pick("slogan", _g("slogan"))
+    intro = _pick("intro", _g("intro"))
+    addr = _pick("address", _g("address"))
+    phone = _pick("phone", _g("phone"))
+    hours = _pick("hours", _g("hours"))
+    sh_title = _pick("showcase_title", _g("showcase_title", "新品橱窗"))
+    sh_sub = _pick("showcase_subtitle", _g("showcase_subtitle", "本周臻品 · 限量发售"))
+    cats_raw = _pick("categories", _g("categories"))
+    cats_text = " · ".join([c.strip() for c in cats_raw.split(",") if c.strip()]) if cats_raw else ui["aboutCats"]
+
+    # 品牌故事段落：{brand} 用本地化品牌名替换（zh 段落文案与旧版一致）
+    about_p1 = ui["aboutP1"].replace("{brand}", name)
+    about_p2 = ui["aboutP2"].replace("{brand}", name)
+    # 语言切换条：当前语言高亮，全部内联样式，不改动既有 CSS 类
+    lang_switcher_html = "".join(
+        (f'<a href="/site?lang={code}" style="color:#3D2B1F;background:#C9A961;text-decoration:none;font-size:12px;'
+         f'padding:4px 12px;border-radius:14px;margin:3px;font-weight:600;">{label}</a>')
+        if code == lang else
+        (f'<a href="/site?lang={code}" style="color:#F7EFE0;border:1px solid rgba(245,231,184,.35);text-decoration:none;'
+         f'font-size:12px;padding:4px 12px;border-radius:14px;margin:3px;opacity:.78;">{label}</a>')
+        for code, label in LANG_LABELS.items()
+    )
     items_html: list[str] = []
     for r in rows:
-        desc = (r["showcase_desc"] or "").strip()
+        # 商品名称/描述多语言：name_i18n / showcase_desc_i18n，取不到回退中文列
+        ni = _json_map(r["name_i18n"])
+        di = _json_map(r["showcase_desc_i18n"])
+        p_name = r["name"] or ""
+        if lang != "zh":
+            v = ni.get(lang)
+            if isinstance(v, str) and v.strip():
+                p_name = v.strip()
+        desc = ""
+        if lang != "zh":
+            v = di.get(lang)
+            if isinstance(v, str) and v.strip():
+                desc = v.strip()
+        if not desc:
+            desc = (r["showcase_desc"] or "").strip()
         if not desc:
             parts = []
-            if r["origin"]: parts.append(f"产地：{r['origin']}")
-            if r["material"]: parts.append(f"材质：{r['material']}")
-            if r["weight"] and float(r["weight"]) > 0: parts.append(f"金重：{float(r['weight']):.2f}g")
-            if r["size"]: parts.append(f"尺寸：{r['size']}")
-            if r["price"]: parts.append(f"参考价：¥{float(r['price']):,.0f}")
-            desc = "｜".join(parts)
-        cat = r["product_type"] or "珠宝"
+            sep = ui["labelSep"]
+            if r["origin"]: parts.append(f"{ui['cardOrigin']}{sep}{r['origin']}")
+            if r["material"]: parts.append(f"{ui['cardMaterial']}{sep}{r['material']}")
+            if r["weight"] and float(r["weight"]) > 0: parts.append(f"{ui['cardWeight']}{sep}{float(r['weight']):.2f}g")
+            if r["size"]: parts.append(f"{ui['cardSize']}{sep}{r['size']}")
+            if r["price"]: parts.append(f"{ui['cardPrice']}{sep}¥{float(r['price']):,.0f}")
+            desc = ui["autoSep"].join(parts)
+        cat = r["product_type"] or ui["cardDefaultCat"]
         tags_html = f"<span class='tag-cat'>{cat}</span>"
         if r["cert"]:
-            tags_html += f"<span class='tag-cert'>附权威证书</span>"
-        price_text = f"¥{float(r['price']):,.0f}" if r["price"] and float(r["price"]) > 0 else "<i>到店咨询</i>"
+            tags_html += f"<span class='tag-cert'>{ui['cardCert']}</span>"
+        price_text = f"¥{float(r['price']):,.0f}" if r["price"] and float(r["price"]) > 0 else f"<i>{ui['cardConsult']}</i>"
         # 货号行：便于客户到店时报货号描述商品
-        code_html = f"<p class='sc-code'>货号 <b>{r['code']}</b></p>" if r["code"] else ""
+        code_html = f"<p class='sc-code'>{ui['cardCode']} <b>{r['code']}</b></p>" if r["code"] else ""
         if r["image_ts"]:
-            cover_html = f"<img class='sc-img' src='/api/products/{r['id']}/image' alt='{r['name']}' loading='lazy'>"
+            cover_html = f"<img class='sc-img' src='/api/products/{r['id']}/image' alt='{p_name}' loading='lazy'>"
         else:
             # 首字母占位的视觉 LOGO
-            avatar_ch = (r["name"] or "臻")[:1]
+            avatar_ch = (p_name or ui["brandFallback"])[:1]
             cover_html = f"<div class='sc-avatar'>{avatar_ch}</div>"
         items_html.append(
             f"""<article class='sc-card'>
@@ -604,26 +906,26 @@ def public_site(request: Request):
     <div class='sc-badges'>{tags_html}</div>
   </div>
   <div class='sc-body'>
-    <h3>{r['name']}</h3>
+    <h3>{p_name}</h3>
     {code_html}
     <p class='sc-desc'>{desc}</p>
     <div class='sc-foot'>
       <span class='sc-price'>{price_text}</span>
-      <button class='sc-book' onclick=\"focusBook('{r['name']}','{cat}','{r['code'] or ''}')\">预约看货</button>
+      <button class='sc-book' onclick=\"focusBook('{p_name}','{cat}','{r['code'] or ''}')\">{ui['cardBook']}</button>
     </div>
   </div>
 </article>"""
         )
     cards_html = "\n".join(items_html) or (
         "<div class='sc-empty'><div class='sc-empty-ico'>💎</div>"
-        "<p>橱窗正在整理中</p><span>敬请期待本季臻品</span></div>"
+        f"<p>{ui['emptyTitle']}</p><span>{ui['emptySub']}</span></div>"
     )
     # 企业宣传 · 四大安心承诺
     promises = [
-        ("🔍", "源头直采", "金料与裸石直选自深圳水贝、云南腾冲，省去中间环节，同品质价格更实在。"),
-        ("📜", "一物一证", "每件成品均配 NGTC / GIA 权威证书，支持全国任意机构复检，假一赔十。"),
-        ("🔨", "自有工坊", "驻店师傅平均从业 20 年，改圈、刻字、维修立等可取，高级定制最快 7 日交付。"),
-        ("♾️", "终身养护", "所购首饰终身享免费清洗、抛光与牢固度检测，以旧换新按当日金价估价。"),
+        ("🔍", ui["promise1Title"], ui["promise1Desc"]),
+        ("📜", ui["promise2Title"], ui["promise2Desc"]),
+        ("🔨", ui["promise3Title"], ui["promise3Desc"]),
+        ("♾️", ui["promise4Title"], ui["promise4Desc"]),
     ]
     promise_cards_html = "\n".join(
         f"<div class='p-card'><div class='p-ico'>{ico}</div><h3>{pt}</h3><p>{pd}</p></div>"
@@ -634,8 +936,8 @@ def public_site(request: Request):
     icon_loc = "<svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z'/><circle cx='12' cy='10' r='3'/></svg>"
     icon_clock = "<svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><circle cx='12' cy='12' r='10'/><polyline points='12 6 12 12 16 14'/></svg>"
 
-    html = f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{name} · 官方臻选</title>
+    html = f"""<!DOCTYPE html><html lang="{html_lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{name} · {ui['titleSuffix']}</title>
 <style>
 * {{ box-sizing: border-box; }}
 body {{ margin: 0; font-family: "PingFang SC","Microsoft YaHei","Hiragino Sans GB",sans-serif; background:#FBF6EC; color:#3D2B1F; line-height:1.6; }}
@@ -864,7 +1166,7 @@ section[id] {{ scroll-margin-top: 64px; }}
 }}
 </style></head><body>
 <section class="hero">
-  <div class="brand-logo"><img src="/logo/logo.svg" alt="{name} logo" onerror="this.remove(); this.parentElement.innerHTML='臻';"></div>
+  <div class="brand-logo"><img src="/logo/logo.svg" alt="{name} logo" onerror="this.remove(); this.parentElement.innerHTML='{ui['brandFallback']}';"></div>
   <h1>{name}</h1>
   <div class="slogan">{slogan}</div>
   <p class="intro">{intro}</p>
@@ -873,35 +1175,36 @@ section[id] {{ scroll-margin-top: 64px; }}
     { (f'<span>{icon_phone}{phone}</span>' if phone else '') }
     { (f'<span>{icon_clock}{hours}</span>' if hours else '') }
   </div>
+  <div style="display:flex;flex-wrap:wrap;justify-content:center;margin-top:24px;">{lang_switcher_html}</div>
 </section>
 <nav class="site-nav">
   <div class="site-nav-in">
     <span class="site-nav-brand">{name}</span>
     <span class="site-nav-links">
-      <a href="#about">品牌故事</a><a href="#showcase">臻品橱窗</a><a href="#booking">预约到店</a>
+      <a href="#about">{ui['navAbout']}</a><a href="#showcase">{ui['navShowcase']}</a><a href="#booking">{ui['navBooking']}</a>
     </span>
   </div>
 </nav>
 <section class="about" id="about">
   <div class="about-wrap">
     <div class="about-text">
-      <span class="about-kicker">SINCE 2009 · 品牌故事</span>
-      <h2>十七年只做一件事<br>让每件珠宝都经得起岁月</h2>
-      <p>{name}创立于 2009 年，前身为老街上一间三十平米的打金铺。十七年来，我们坚持从深圳水贝、云南腾冲源头直选金料与裸石，每件成品均经 NGTC / GIA 权威检测，一物一证，支持全国复检。</p>
-      <p>如今，懿臻已发展为集黄金、钻石、翡翠、彩宝销售与高级定制于一体的珠宝门店，驻店师傅平均从业 20 年以上。我们相信，好的珠宝从不只是商品——它陪人走过求婚、结婚、弥月、纪念等一生里最重要的时刻。</p>
-      <div class="about-cats">黄金首饰 · 钻石婚戒 · 翡翠玉石 · 彩宝定制 · 投资金条</div>
+      <span class="about-kicker">{ui['aboutKicker']}</span>
+      <h2>{ui['aboutTitle']}</h2>
+      <p>{about_p1}</p>
+      <p>{about_p2}</p>
+      <div class="about-cats">{cats_text}</div>
     </div>
     <div class="about-stats">
-      <div class="stat"><b>17年</b><span>匠心经营</span></div>
-      <div class="stat"><b>10000+</b><span>客户的共同选择</span></div>
-      <div class="stat"><b>100%</b><span>一物一证 · 支持复检</span></div>
-      <div class="stat"><b>20年</b><span>驻店师傅平均工龄</span></div>
+      <div class="stat"><b>{ui['stat1Val']}</b><span>{ui['stat1Lbl']}</span></div>
+      <div class="stat"><b>{ui['stat2Val']}</b><span>{ui['stat2Lbl']}</span></div>
+      <div class="stat"><b>{ui['stat3Val']}</b><span>{ui['stat3Lbl']}</span></div>
+      <div class="stat"><b>{ui['stat4Val']}</b><span>{ui['stat4Lbl']}</span></div>
     </div>
   </div>
   <div class="promise-inner">
     <div class="promise-head">
-      <h2>四大安心承诺</h2>
-      <p>从选料到售后，每个环节都写进我们的店规</p>
+      <h2>{ui['promiseTitle']}</h2>
+      <p>{ui['promiseSub']}</p>
     </div>
     <div class="promise-grid">{promise_cards_html}</div>
   </div>
@@ -909,43 +1212,43 @@ section[id] {{ scroll-margin-top: 64px; }}
 <div class="wrap">
   <div class="section-title" id="showcase">
     <div><h2>{sh_title}</h2><span class="sub">{sh_sub}</span></div>
-    <span class="sub">共 {len(rows)} 件臻品 · 官方直营 · 假一赔十</span>
+    <span class="sub">{ui['showcaseCount'].format(n=len(rows))}</span>
   </div>
   <div class="sc-grid">{cards_html}</div>
 
   <section class="form-section" id="booking">
     <div class="section-title">
-      <div><h2>预约到店</h2><span class="sub">专属顾问一对一 · VIP 私享鉴赏</span></div>
+      <div><h2>{ui['bookingTitle']}</h2><span class="sub">{ui['bookingSub']}</span></div>
     </div>
     <div class="form">
       <form id="bookForm" onsubmit="return book(event)">
         <div class="form-grid">
-          <div><label>您的称呼 *</label><input name="name" id="f-name" placeholder="请输入姓名" required></div>
-          <div><label>联系方式 *</label><input name="contact" id="f-contact" placeholder="手机 / 微信" required></div>
-          <div><label>意向品类</label><input name="category" id="f-category" placeholder="如 钻石、黄金、翡翠"></div>
-          <div><label>目标商品（可填名称）</label><input name="product" id="f-product" placeholder="点击「预约看货」可自动填入"></div>
-          <div><label>期望到店日期</label><input name="want_date" type="date"></div>
-          <div><label>期望时段</label><input name="want_slot" placeholder="如 14:00 - 16:00"></div>
+          <div><label>{ui['formName']} *</label><input name="name" id="f-name" placeholder="{ui['formNamePh']}" required></div>
+          <div><label>{ui['formContact']} *</label><input name="contact" id="f-contact" placeholder="{ui['formContactPh']}" required></div>
+          <div><label>{ui['formCategory']}</label><input name="category" id="f-category" placeholder="{ui['formCategoryPh']}"></div>
+          <div><label>{ui['formProduct']}</label><input name="product" id="f-product" placeholder="{ui['formProductPh']}"></div>
+          <div><label>{ui['formDate']}</label><input name="want_date" type="date"></div>
+          <div><label>{ui['formSlot']}</label><input name="want_slot" placeholder="{ui['formSlotPh']}"></div>
         </div>
-        <label style="margin-top:14px">备注说明</label>
-        <textarea name="remark" placeholder="可填写具体需求，如圈号、预算、送礼场合等"></textarea>
+        <label style="margin-top:14px">{ui['formRemark']}</label>
+        <textarea name="remark" placeholder="{ui['formRemarkPh']}"></textarea>
         <div class="submit-row">
-          <button class="btn-submit" type="submit">✦ 提交 VIP 预约 ✦</button>
+          <button class="btn-submit" type="submit">{ui['btnSubmit']}</button>
           <div id="msg" class="msg-box"></div>
         </div>
       </form>
     </div>
   </section>
   <div class="footer">
-    <div class="footer-certs">NGTC / GIA 权威检测合作 · 假一赔十 · 终身免费养护</div>
-    © {name} · 以臻金品质 铸一世珍藏
+    <div class="footer-certs">{ui['footerCerts']}</div>
+    {ui['footerCopy'].format(name=name)}
   </div>
 </div>
 <script>
 function focusBook(name, cat, code) {{
   const fp = document.getElementById('f-product');
   const fc = document.getElementById('f-category');
-  if (fp) fp.value = code ? ('货号' + code + ' ' + name) : name;
+  if (fp) fp.value = code ? ({json.dumps(ui['jsCodePrefix'], ensure_ascii=False)} + code + ' ' + name) : name;
   if (fc && !fc.value) fc.value = cat;
   fp && fp.scrollIntoView({{ behavior:'smooth', block:'center' }});
   fp && fp.focus();
@@ -954,7 +1257,7 @@ function book(e) {{
   e.preventDefault();
   var f = e.target;
   var msg = document.getElementById('msg');
-  msg.className = ''; msg.textContent = '正在提交…';
+  msg.className = ''; msg.textContent = {json.dumps(ui['jsSubmitting'], ensure_ascii=False)};
   var b = {{
     name: f.name.value.trim(),
     contact: f.contact.value.trim(),
@@ -962,18 +1265,18 @@ function book(e) {{
     category: f.category.value.trim(),
     want_date: f.want_date.value,
     want_slot: f.want_slot.value.trim(),
-    remark: (f.product.value.trim() ? ('意向商品：' + f.product.value + '\\n') : '') + f.remark.value
+    remark: (f.product.value.trim() ? ({json.dumps(ui['jsIntentPrefix'], ensure_ascii=False)} + f.product.value + '\\n') : '') + f.remark.value
   }};
   fetch('/api/public/appointments', {{
     method: 'POST',
     headers: {{ 'Content-Type': 'application/json' }},
     body: JSON.stringify(b)
   }}).then(r=>r.json()).then(d=>{{
-    msg.textContent = d.detail || '预约已提交，专属顾问将尽快与您联系';
+    msg.textContent = d.detail || {json.dumps(ui['jsSuccess'], ensure_ascii=False)};
     msg.className = 'ok';
     f.reset();
   }}).catch(()=>{{
-    msg.textContent = '网络繁忙，请稍后重试或直接致电门店';
+    msg.textContent = {json.dumps(ui['jsNetwork'], ensure_ascii=False)};
     msg.className = 'err';
   }});
   return false;
@@ -1375,21 +1678,37 @@ def dashboard_overview(request: Request, start: str = Query(default=""), end: st
 
 @app.get("/api/dashboard/trend")
 def dashboard_trend(request: Request, trange: str = Query(default="30d", alias="range"),
+                    start: str = Query(default=""), end: str = Query(default=""),
                     offset: int = Query(default=0, ge=0, le=730)):
-    """实销总额趋势：range=15d/30d（按日）、6m/12m（按月）。
-    offset=向过去平移的「时间单位」数（拖动连续平移：日粒度=天数，月粒度=月数；
-    1.2.35 起由「窗口数」改为连续单位，窗口长度 n 不变，拖动按落点精确取窗）。
+    """实销总额趋势。支持两种入参：
+    - start/end（ISO 日期）：取所选区间整段；跨度 ≤45 天按天、否则按月（看板跟随全局时间段用）。
+    - range=15d/30d（按日）、6m/12m（按月）：兼容旧预设。
+    offset=向过去平移的「时间单位」数（日粒度=天数，月粒度=月数；窗口长度 n 不变）。
     返回今年/去年同期双序列（labels 为今年轴，去年轴同格式对齐）。"""
     from datetime import timedelta as _td
     sess = _require_auth(request)
-    rng = trange if trange in ("15d", "30d", "6m", "12m") else "30d"
-    by_day = rng in ("15d", "30d")
-    n = 15 if rng == "15d" else 30 if rng == "30d" else 6 if rng == "6m" else 12
     today = date.today()
+    if start and end:
+        sd, ed = start[:10], end[:10]
+        if sd > ed:
+            sd, ed = ed, sd
+        try:
+            s_d, e_d = date.fromisoformat(sd), date.fromisoformat(ed)
+        except ValueError:
+            s_d = e_d = today
+        by_day = (e_d - s_d).days <= 45
+        anchor = e_d
+        n = ((e_d - s_d).days + 1) if by_day else ((e_d.year - s_d.year) * 12 + (e_d.month - s_d.month) + 1)
+        rng = "custom"
+    else:
+        rng = trange if trange in ("15d", "30d", "6m", "12m") else "30d"
+        by_day = rng in ("15d", "30d")
+        n = 15 if rng == "15d" else 30 if rng == "30d" else 6 if rng == "6m" else 12
+        anchor = today
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, sess)
         if by_day:
-            end_d = today - _td(days=offset)   # 窗口右端：offset=向过去平移的天数
+            end_d = anchor - _td(days=offset)   # 窗口右端：offset=向过去平移的天数
             start = (end_d - _td(days=n - 1)).isoformat()
             end_s = end_d.isoformat()
             rows = conn.execute(
@@ -1416,10 +1735,18 @@ def dashboard_trend(request: Request, trange: str = Query(default="30d", alias="
                 "GROUP BY d" % marks, [sid] + ly_dates).fetchall()
             m2 = {r["d"]: round(r["a"], 2) for r in rows2}
             last_year = [m2.get(d) for d in ly_dates]
+            # 环比：紧邻的上一等长区间（窗口前 n 天）
+            prev_dates = [(end_d - _td(days=2 * n - 1 - i)).isoformat() for i in list(range(n))]
+            rows3 = conn.execute(
+                "SELECT biz_date d, COALESCE(SUM(amount),0) a FROM sales "
+                "WHERE status!='已冲红' AND (store_id=? OR store_id=0) AND biz_date BETWEEN ? AND ? "
+                "GROUP BY d", (sid, prev_dates[0], prev_dates[-1])).fetchall()
+            m3 = {r["d"]: round(r["a"], 2) for r in rows3}
+            amounts_prev = [m3.get(d, 0.0) for d in prev_dates]
         else:
             months_expr = "substr(biz_date,1,7)"
             # 窗口右端月份：当月向过去平移 offset 个月
-            ey, em = today.year, today.month
+            ey, em = anchor.year, anchor.month
             for _ in list(range(offset)):
                 em -= 1
                 if em == 0:
@@ -1459,8 +1786,32 @@ def dashboard_trend(request: Request, trange: str = Query(default="30d", alias="
             for lab in labels:
                 ly = f"{int(lab[:4]) - 1}-{lab[5:]}"
                 last_year.append(m2.get(ly))
+            # 环比：紧邻的上一等长区间（窗口左端再往前 n 个月）
+            py, pm = int(start[:4]), int(start[5:7])
+            pm -= 1
+            if pm == 0:
+                pm, py = 12, py - 1
+            sy, sm = py, pm
+            for _ in list(range(n - 1)):
+                sm -= 1
+                if sm == 0:
+                    sm, sy = 12, sy - 1
+            prev_labels = []
+            cy, cm = sy, sm
+            for _ in list(range(n)):
+                prev_labels.append(f"{cy}-{cm:02d}")
+                cm += 1
+                if cm == 13:
+                    cm, cy = 1, cy + 1
+            rows3 = conn.execute(
+                f"SELECT {months_expr} d, COALESCE(SUM(amount),0) a FROM sales "
+                "WHERE status!='已冲红' AND (store_id=? OR store_id=0) "
+                "AND substr(biz_date,1,7) BETWEEN ? AND ? GROUP BY d",
+                (sid, prev_labels[0], prev_labels[-1])).fetchall()
+            m3 = {r["d"]: round(r["a"], 2) for r in rows3}
+            amounts_prev = [m3.get(l, 0.0) for l in prev_labels]
         return {"range": rng, "byDay": by_day, "offset": offset, "labels": labels,
-                "amounts": amounts, "amountsLastYear": last_year}
+                "amounts": amounts, "amountsLastYear": last_year, "amountsPrev": amounts_prev}
 
 
 @app.get("/api/dashboard/category-sales")
@@ -1976,26 +2327,37 @@ class ProfileIn(BaseModel):
     published: int = 1
     showcase_title: str = "新品橱窗"
     showcase_subtitle: str = "本周臻品 · 限量发售"
+    i18n: str = "{}"
 
 
 @app.put("/api/profile")
 def profile_put(body: ProfileIn, request: Request):
     op = _require_auth(request)
+    # 官网多语言内容：按语言录入 JSON（{lang: {name,slogan,intro,...}}），落 tenant_profiles.i18n
+    raw_i18n = (body.i18n or "").strip() or "{}"
+    try:
+        parsed_i18n = json.loads(raw_i18n)
+        if not isinstance(parsed_i18n, dict):
+            parsed_i18n = {}
+    except Exception:
+        parsed_i18n = {}
+    i18n_json = json.dumps(parsed_i18n, ensure_ascii=False)
     with _db(request) as conn:
         row = conn.execute("SELECT id FROM tenant_profiles ORDER BY id DESC LIMIT 1").fetchone()
         vals = (body.name, body.short_name, body.slogan, body.intro, body.contact, body.phone, body.address,
-                body.hours, body.categories, body.published, body.showcase_title, body.showcase_subtitle)
+                body.hours, body.categories, body.published, body.showcase_title, body.showcase_subtitle,
+                i18n_json)
         if row:
             conn.execute(
                 """UPDATE tenant_profiles SET name=?,short_name=?,slogan=?,intro=?,contact=?,phone=?,address=?,
-                   hours=?,categories=?,published=?,showcase_title=?,showcase_subtitle=? WHERE id=?""",
+                   hours=?,categories=?,published=?,showcase_title=?,showcase_subtitle=?,i18n=? WHERE id=?""",
                 vals + (row["id"],),
             )
         else:
             conn.execute(
                 """INSERT INTO tenant_profiles(tenant_id,name,short_name,slogan,intro,contact,phone,address,
-                   hours,categories,published,showcase_title,showcase_subtitle)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   hours,categories,published,showcase_title,showcase_subtitle,i18n)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (_tenant_of(request),) + vals,
             )
         conn.commit()
@@ -2298,8 +2660,11 @@ def product_type_bind_template(code: str, body: ProductTypeTemplateIn, request: 
 
 # ---------------------------------------------------------------- 商品标签（业务统计字典，租户库内私有、门店共用）
 
-# 标签分组枚举：组是固定口径，只允许在组内新增标签，禁止自由造组（否则同义组名碎片化，统计失效）
-TAG_GROUPS = ["风格", "工艺", "场景", "客群", "营销"]
+# 标签一级分类（标签类别）：现由 tag_groups 表维护（可增删改），组名在标签上引用，统计按组归并。
+# 首次建库/迁移由 db._seed_tag_groups 灌入默认分组。
+def _tag_group_names(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute("SELECT name FROM tag_groups ORDER BY sort_order, id").fetchall()
+    return [r["name"] for r in rows]
 
 
 class ProductTagIn(BaseModel):
@@ -2317,7 +2682,7 @@ def product_tags_list(request: Request):
             "SELECT t.*, (SELECT COUNT(*) FROM product_tag_links l WHERE l.tag_id=t.id) AS used_count "
             "FROM product_tags t ORDER BY t.sort_order, t.id"
         ).fetchall()
-        return {"list": [dict(r) for r in rows], "groups": TAG_GROUPS}
+        return {"list": [dict(r) for r in rows], "groups": _tag_group_names(conn)}
 
 
 @app.post("/api/product-tags")
@@ -2329,9 +2694,9 @@ def product_tag_create(body: ProductTagIn, request: Request):
     if len(name) > 20:
         raise HTTPException(400, "标签名不能超过 20 字")
     grp = (body.group_name or "").strip()
-    if grp and grp not in TAG_GROUPS:
-        raise HTTPException(400, f"分组「{grp}」不在预定义分组内")
     with _db(request) as conn:
+        if grp and grp not in _tag_group_names(conn):
+            raise HTTPException(400, f"分类「{grp}」不存在，请先在分类管理中创建")
         if conn.execute("SELECT 1 FROM product_tags WHERE name=?", (name,)).fetchone():
             raise HTTPException(400, f"标签「{name}」已存在")
         cur = conn.execute("INSERT INTO product_tags(name,color,sort_order,group_name) VALUES(?,?,?,?)",
@@ -2350,9 +2715,9 @@ def product_tag_update(tid: int, body: ProductTagIn, request: Request):
     if len(name) > 20:
         raise HTTPException(400, "标签名不能超过 20 字")
     grp = (body.group_name or "").strip()
-    if grp and grp not in TAG_GROUPS:
-        raise HTTPException(400, f"分组「{grp}」不在预定义分组内")
     with _db(request) as conn:
+        if grp and grp not in _tag_group_names(conn):
+            raise HTTPException(400, f"分类「{grp}」不存在，请先在分类管理中创建")
         if not conn.execute("SELECT id FROM product_tags WHERE id=?", (tid,)).fetchone():
             raise HTTPException(404, "标签不存在")
         if conn.execute("SELECT id FROM product_tags WHERE name=? AND id<>?", (name, tid)).fetchone():
@@ -2378,6 +2743,82 @@ def product_tag_delete(tid: int, request: Request):
         conn.commit()
         _log(conn, op["username"], "删除商品标签", f"#{tid} {row['name']}（解除 {used} 件商品关联）")
         return {"ok": True, "unlinked": used}
+
+
+# ---------------------------------------------------------------- 商品标签一级分类（标签类别，可增删改）
+
+class TagGroupIn(BaseModel):
+    name: str = ""
+    sort_order: int = 0
+
+
+@app.get("/api/tag-groups")
+def tag_groups_list(request: Request):
+    _require_auth(request)
+    with _db(request) as conn:
+        rows = conn.execute(
+            "SELECT g.*, (SELECT COUNT(*) FROM product_tags t WHERE t.group_name=g.name) AS tag_count "
+            "FROM tag_groups g ORDER BY g.sort_order, g.id"
+        ).fetchall()
+        return {"list": [dict(r) for r in rows]}
+
+
+@app.post("/api/tag-groups")
+def tag_group_create(body: TagGroupIn, request: Request):
+    op = _require_auth(request)
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(400, "分类名不能为空")
+    if len(name) > 20:
+        raise HTTPException(400, "分类名不能超过 20 字")
+    with _db(request) as conn:
+        if conn.execute("SELECT 1 FROM tag_groups WHERE name=?", (name,)).fetchone():
+            raise HTTPException(400, f"分类「{name}」已存在")
+        cur = conn.execute("INSERT INTO tag_groups(name,sort_order) VALUES(?,?)", (name, body.sort_order))
+        conn.commit()
+        _log(conn, op["username"], "新建标签分类", name)
+        return {"ok": True, "id": cur.lastrowid}
+
+
+@app.put("/api/tag-groups/{gid}")
+def tag_group_update(gid: int, body: TagGroupIn, request: Request):
+    op = _require_auth(request)
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(400, "分类名不能为空")
+    if len(name) > 20:
+        raise HTTPException(400, "分类名不能超过 20 字")
+    with _db(request) as conn:
+        row = conn.execute("SELECT name FROM tag_groups WHERE id=?", (gid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "分类不存在")
+        old = row["name"]
+        if conn.execute("SELECT id FROM tag_groups WHERE name=? AND id<>?", (name, gid)).fetchone():
+            raise HTTPException(400, f"分类「{name}」已存在")
+        conn.execute("UPDATE tag_groups SET name=?,sort_order=? WHERE id=?", (name, body.sort_order, gid))
+        # 组名即标签的引用键：重命名时同步改写引用该分类的标签，避免出现「有标签但分类丢失」
+        if name != old:
+            conn.execute("UPDATE product_tags SET group_name=? WHERE group_name=?", (name, old))
+        conn.commit()
+        _log(conn, op["username"], "更新标签分类", f"#{gid} {old}→{name}")
+        return {"ok": True}
+
+
+@app.delete("/api/tag-groups/{gid}")
+def tag_group_delete(gid: int, request: Request):
+    """删除分类：把该分类下标签的分组置空（不删标签），前端负责二次确认。"""
+    op = _require_auth(request)
+    with _db(request) as conn:
+        row = conn.execute("SELECT name FROM tag_groups WHERE id=?", (gid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "分类不存在")
+        n = conn.execute("SELECT COUNT(*) c FROM product_tags WHERE group_name=?",
+                         (row["name"],)).fetchone()["c"]
+        conn.execute("UPDATE product_tags SET group_name='' WHERE group_name=?", (row["name"],))
+        conn.execute("DELETE FROM tag_groups WHERE id=?", (gid,))
+        conn.commit()
+        _log(conn, op["username"], "删除标签分类", f"#{gid} {row['name']}（{n} 个标签转为未分组）")
+        return {"ok": True, "unlinked": n}
 
 
 # ---------------------------------------------------------------- 标签模板 CRUD
@@ -3881,26 +4322,28 @@ def print_agent_status(request: Request):
     return {"bridges": out}
 
 
-@app.get("/api/print-agent/download")
-def print_agent_download():
-    """下载打印助手：运维端发布目录优先，包内 downloads/ 兜底，再退 C# 开发构建产物。"""
+def _print_agent_exe() -> Path | None:
+    """打印助手 EXE 路径：运维端发布目录（插件包 downloads/）优先，再退 C# 开发构建产物。"""
     exe = ops_api.pub_dir() / "PrintBridge.exe"
-    if not exe.is_file():
-        exe = ROOT / "downloads" / "PrintBridge.exe"
     if not exe.is_file():
         exe = (ROOT / "agents" / "print" / "bin" / "Release"
                / "net8.0-windows10.0.19041.0" / "win-x64" / "publish" / "PrintAgent.exe")
-    if exe.is_file():
+    return exe if exe.is_file() else None
+
+
+@app.get("/api/print-agent/download")
+def print_agent_download():
+    """下载打印助手：运维端发布目录（插件包 downloads/）优先，再退 C# 开发构建产物。"""
+    exe = _print_agent_exe()
+    if exe:
         return FileResponse(exe, filename="PrintBridge.exe",
                             media_type="application/vnd.microsoft.portable-executable")
     raise HTTPException(404, "打印助手尚未发布")
 
 
 def _scan_app_apk() -> Path | None:
-    """扫描助手 APK 路径：运维端发布目录优先（跨版本持久），包内 downloads/ 兜底，再退开发构建产物。"""
+    """扫描助手 APK 路径：运维端发布目录（插件包 downloads/）优先，再退开发构建产物。"""
     apk = ops_api.pub_dir() / "scan-assistant-release.apk"
-    if not apk.is_file():
-        apk = ROOT / "downloads" / "scan-assistant-release.apk"
     if not apk.is_file():
         apk = (ROOT / "agents" / "scan" / "app" / "build" / "outputs" / "apk"
                / "release" / "app-release.apk")
@@ -3937,12 +4380,32 @@ def scan_app_info():
 
 @app.get("/api/scan-app/download")
 def scan_app_download():
-    """下载扫描助手 App（APK）：包内 downloads/ 优先，回退 agents/scan 构建产物。"""
+    """下载扫描助手 App（APK）：运维端发布目录（插件包 downloads/）优先，回退 agents/scan 构建产物。"""
     apk = _scan_app_apk()
     if apk:
         return FileResponse(str(apk), filename="scan-assistant-release.apk",
                             media_type="application/vnd.android.package-archive")
     raise HTTPException(404, "APK 尚未构建（scan-assistant 需先执行 Gradle release 构建）")
+
+
+def _agent_md5(path: Path) -> str:
+    """助手产物 MD5：优先读发布时写的 <file>.md5 sidecar，缺失则现算。"""
+    side = Path(str(path) + ".md5")
+    if side.is_file():
+        parts = side.read_text(encoding="utf-8", errors="ignore").split()
+        if parts and len(parts[0]) == 32:
+            return parts[0].lower()
+    return hashlib.md5(path.read_bytes()).hexdigest()
+
+
+@app.get("/api/agent/version")
+def agent_version():
+    """打印助手（PrintBridge）自升级探测（免鉴权，代理端调用）：返回 {md5,url,version}。
+    代理端以 md5 与本地 exe 比对，不一致则按 url 下载替换（与扫描助手 /api/scan-app/info 对称：各查各的）。"""
+    exe = _print_agent_exe()
+    if not exe:
+        return {"md5": "", "url": "", "version": ""}
+    return {"md5": _agent_md5(exe), "url": "/api/print-agent/download", "version": SOFT_VERSION}
 
 
 def _public_server(request: Request) -> str:

@@ -43,10 +43,6 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
     });
   }
-  function money(n) {
-    n = Number(n || 0);
-    return n.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
   function ago(ts) {
     if (!ts) return "从未";
     var d = Date.now() / 1000 - ts;
@@ -75,31 +71,6 @@
     html += '<span class="chip">版本 <b>' + esc(c.software_version) + "</b></span>";
     html += '<span class="chip">' + esc(c.server_time) + "</span>";
     el("ctx-chips").innerHTML = html;
-  }
-
-  function card(k, v, unit, cls) {
-    return '<div class="card' + (cls ? " " + cls : "") + '">' +
-      '<div class="k">' + k + "</div>" +
-      '<div class="v">' + esc(v) + (unit ? "<small>" + unit + "</small>" : "") + "</div></div>";
-  }
-
-  function renderOverview(o) {
-    var c = o.counts;
-    var h = "";
-    h += card("门店", c.stores);
-    h += card("系统用户", c.users);
-    h += card("会员", c.customers);
-    h += card("商品总数", c.products, "件");
-    h += card("在库商品", c.products_in_stock, "件", "accent");
-    h += card("在库成本", money(c.stock_cost), "元");
-    h += card("在库吊牌额", money(c.stock_price), "元");
-    h += card("今日成交", o.sales_today.bills, "单", "accent");
-    h += card("今日实收", money(o.sales_today.paid), "元", "accent");
-    h += card("近7日成交", o.sales_7d.bills, "单");
-    h += card("近7日实收", money(o.sales_7d.paid), "元");
-    h += card("扫描助手在线", c.devices_online + " / " + c.devices, "台",
-      c.devices_online ? "danger" : "");
-    el("cards").innerHTML = h;
   }
 
   function renderDevices(d) {
@@ -145,19 +116,18 @@
   }
 
   function boot() {
-    Promise.all([api("api/ops/context"), api("api/ops/overview"), api("api/ops/devices"),
+    Promise.all([api("api/ops/context"), api("api/ops/devices"),
                  api("api/ops/agents"), api("api/ops/audit?limit=100"),
                  api("api/ops/tasks/active"), api("api/ops/users"),
                  api("api/ops/face/status"), api("api/ops/face/templates")])
       .then(function (rs) {
         renderChips(rs[0]);
-        renderOverview(rs[1]);
-        renderDevices(rs[2]);
-        renderAgents(rs[3]);
-        renderAudit(rs[4]);
-        renderTasks(rs[5]);
-        renderUsers(rs[6]);
-        renderFace(rs[7], rs[8]);
+        renderDevices(rs[1]);
+        renderAgents(rs[2]);
+        renderAudit(rs[3]);
+        renderTasks(rs[4]);
+        renderUsers(rs[5]);
+        renderFace(rs[6], rs[7]);
         el("console").style.display = "block";
       })
       .catch(function (e) {
