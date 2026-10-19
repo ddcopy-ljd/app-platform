@@ -393,9 +393,18 @@ def _norm_material(v: str) -> str:
     return _MAT_FULL_TO_SHORT.get(v, v)
 
 
-def _epc_cfg(conn: sqlite3.Connection) -> tuple[str, int]:
-    cfg = conn.execute("SELECT epc_prefix,seq_bits FROM biz_config WHERE id=1").fetchone()
-    return (cfg[0], cfg[1]) if cfg else ("E280", 6)
+def _epc_cfg(conn: sqlite3.Connection) -> tuple[str, int, str]:
+    """返回 (旧字母前缀, 序号位数, 新数字前缀)。"""
+    cfg = conn.execute("SELECT epc_prefix,seq_bits,epc_num_prefix FROM biz_config WHERE id=1").fetchone()
+    return (cfg[0], cfg[1], (cfg[2] or "").strip() or "6901234567") if cfg else ("E280", 6, "6901234567")
+
+
+def _norm_epc(conn: sqlite3.Connection, raw) -> str:
+    """扫描/回读值归一化：芯片 hex（含固件按字边界补的 00）→ 库内可读 EPC。
+    认不出（他厂标签/随机 TID）原样返回，不猜。新旧格式（字母前缀/数字 BCD）兼容。"""
+    prefix, bits, pat, num_pat = db._epc_rule(conn)
+    return rfid_print.decode_chip_epc(raw if isinstance(raw, str) else ("" if raw is None else str(raw)),
+                                      prefix=prefix, seq_bits=bits, pat=pat, num_pat=num_pat)
 
 
 def _pinyin_initials(name: str, n: int = 3) -> str:
@@ -417,74 +426,49 @@ def _pinyin_initials(name: str, n: int = 3) -> str:
     return "".join(out)[:n]
 
 
-def _store_seg(code: str, store_id: int = 0) -> str:
-    """门店码归一化为定长 2 位字符段：本身恰为 2 位字母/数字则大写原样保留
-    （如 HQ、A1、06）；否则（空/超长/中文等）回退为门店序号的 2 位 hex。
-    注意：含非 hex 字母的段写入 RFID 芯片时由 chip_epc_hex 转 ASCII-hex。"""
-    code = (code or "").strip().upper()
-    if len(code) == 2 and all(c in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ" for c in code):
-        return code
-    return f"{(store_id or 0) % 256:02X}"
-
-
 def _compute_item_barcode(conn: sqlite3.Connection, product: dict) -> str:
-    """印刷条码 = 门店码(2位字母/数字) + 品类码(2) + 序号(4-6)，每件唯一，与 EPC 解耦（EPC 不改）。
+    """印刷条码 = 门店码(4位自定义数字码) + 品类码(2) + 序号(6位十进制) = 12 位纯数字，每件唯一。
 
     序号为「同门店+同品类」下的全局递增序号（与 EPC 序号同思路、但独立计数）；
     补全时按货号排序赋值，使同货号多件获得连续序号（01/02/03…），既保证条码唯一可扫中单件，
     又体现“序号按货号聚集”。
     """
     sid = product.get("store_id") or 1
-    sc = conn.execute("SELECT code FROM stores WHERE id=?", (sid,)).fetchone()
-    store_seg = _store_seg(sc[0] if sc else "", sid)
     tc = (product.get("product_type_code") or "99") or "99"
     cat = tc.strip().upper()[:2].ljust(2, "0")
-    _, seq_bits = _epc_cfg(conn)
-    seq_bits = max(4, min(6, int(seq_bits or 6)))
-    head = f"{store_seg}{cat}"
+    # 门店 4 位自定义数字码 + 品类 2 位，序号 6 位十进制 → 条码 12 位纯数字（与 EPC 短码结构一致）
+    head = f"{db._store_num_code(conn, sid)}{cat}"
     maxseq = 0
     for (b,) in conn.execute("SELECT barcode FROM products WHERE barcode LIKE ?", (head + "%",)).fetchall():
         tail = (b or "")[len(head):]
-        if len(tail) == seq_bits:
-            try:
-                maxseq = max(maxseq, int(tail, 16))
-            except ValueError:
-                continue
+        if len(tail) == 6 and tail.isdigit():
+            maxseq = max(maxseq, int(tail))
     seq = maxseq + 1
-    if seq > 16 ** seq_bits - 1:  # 极端溢出兜底（几乎不会发生）
+    if seq > 999999:  # 极端溢出兜底（几乎不会发生）
         seq = 1
-    return f"{head}{seq:0{seq_bits}X}"
+    return f"{head}{seq:06d}"
 
 
 def _gen_type_epc(conn: sqlite3.Connection, type_code: str, store_id: int = 1) -> str:
-    """EPC = 企业前缀(配置) + 门店码(2位字母/数字) + 品类码(2) + 序号(seq_bits,4-6)；各(门店+品类)独立计数。"""
-    prefix, seq_bits = _epc_cfg(conn)
-    seq_bits = max(4, min(6, int(seq_bits or 6)))  # 序号固定 4-6 位
+    """EPC 生成（新格式，GS1 式纯数字 20 位）：
+    数字前缀(8位,配置) + 门店(4位自定义数字码,store_num_map/补零) + 品类码(2位) + 序号(6位十进制)；
+    各(门店+品类)独立计数。旧字母格式存量保留，新签一律数字格式（BCD 写芯见 rfid_print.chip_epc_hex）。"""
+    _prefix, _bits, num_prefix = _epc_cfg(conn)  # (旧字母前缀, 序号位数, 新数字前缀)
     code = (type_code or "99").strip().upper() or "99"
     code = code[:2].ljust(2, "0")  # 品类码固定 2 位
-    store_seg = "00"
-    try:
-        r = conn.execute("SELECT code FROM stores WHERE id=?", (store_id,)).fetchone()
-        if r is not None:
-            store_seg = _store_seg(r[0], store_id)
-    except Exception:
-        store_seg = "00"
-    head = f"{prefix}{store_seg}{code}"
+    store_seg = db._store_num_code(conn, store_id)  # 门店 4 位自定义 BCD 数字码
+    head = f"{num_prefix}{store_seg}{code}"
     maxseq = 0
-    row = conn.execute(
+    for (e,) in conn.execute(
         "SELECT rfid_epc FROM products WHERE rfid_epc LIKE ?", (head + "%",)
-    ).fetchall()
-    for (e,) in row:
+    ).fetchall():
         tail = (e or "")[len(head):]
-        if len(tail) == seq_bits:
-            try:
-                maxseq = max(maxseq, int(tail, 16))
-            except ValueError:
-                continue
+        if len(tail) == 6 and tail.isdigit():
+            maxseq = max(maxseq, int(tail))
     seq = maxseq + 1
-    if seq > 16 ** seq_bits - 1:
-        raise HTTPException(400, "该品类 EPC 序号已用尽，请调大序号位数")
-    return f"{head}{seq:0{seq_bits}X}"
+    if seq > 999999:
+        raise HTTPException(400, "该门店该品类 EPC 序号已用尽（999999）")
+    return f"{head}{seq:06d}"
 
 
 # 列表/详情不回传图片 BLOB（图片走专用接口），用 image_ts 判断是否有图
@@ -492,7 +476,7 @@ _PRODUCT_COLS = (
     "products.id,products.code,products.name,products.name_i18n,products.category,products.category_code,"
     "products.material,products.product_type,products.product_type_code,"
     "products.weight,products.size,products.cert,products.cost,products.price,products.status,"
-    "products.store_id,products.rfid_epc,products.barcode,"
+    "products.store_id,products.rfid_epc,products.label_status,products.barcode,"
     "products.showcase_public,products.showcase_order,products.showcase_desc,products.showcase_desc_i18n,"
     "products.origin,products.high_value,"
     "products.location_id,products.cert_location_id,"
@@ -1540,7 +1524,8 @@ def dashboard_overview(request: Request, start: str = Query(default=""), end: st
         r_out = conn.execute(
             "SELECT COALESCE(SUM(l.qty),0) q, COALESCE(SUM(l.qty * COALESCE(p.cost,0)),0) c "
             "FROM inventory_logs l LEFT JOIN products p ON p.id=l.product_id "
-            "WHERE l.type IN ('out','transfer_out') AND substr(l.ts,1,10) BETWEEN ? AND ?", (rs, re_)).fetchone()
+            "WHERE l.type IN ('out','transfer_out') AND substr(l.ts,1,10) BETWEEN ? AND ? "
+            "AND (l.store_id=? OR l.store_id=0)", (rs, re_, sid)).fetchone()
         # 区间内到期应交付的定金余额
         r_dep = conn.execute(
             "SELECT COALESCE(SUM(balance),0) a, COUNT(*) n FROM deposits "
@@ -2232,10 +2217,14 @@ def dashboard_reminders(request: Request):
     sess = _require_auth(request)
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, sess)
+        # 定金单：带出锁定商品的货号与实物照，便于看板提醒中直接核对取货
         deposits_urgent = conn.execute(
-            "SELECT * FROM deposits WHERE status='已定' AND (store_id=? OR store_id=0) "
-            "ORDER BY CASE WHEN promised_date='' OR promised_date IS NULL THEN 1 ELSE 0 END, "
-            "promised_date ASC LIMIT 10", (sid,)
+            "SELECT d.*, p.code AS product_code, "
+            "CASE WHEN p.image IS NOT NULL THEN 1 ELSE 0 END AS has_image, p.image_ts AS image_ts "
+            "FROM deposits d LEFT JOIN products p ON p.id = d.product_id "
+            "WHERE d.status='已定' AND (d.store_id=? OR d.store_id=0) "
+            "ORDER BY CASE WHEN d.promised_date='' OR d.promised_date IS NULL THEN 1 ELSE 0 END, "
+            "d.promised_date ASC LIMIT 10", (sid,)
         ).fetchall()
         loans_overdue = conn.execute(
             "SELECT * FROM loans WHERE status IN ('借出中','借入中') AND due_date < date('now') "
@@ -2918,7 +2907,7 @@ def label_template_preview(tid: int, request: Request, product_id: int = 1):
             conn.execute("UPDATE products SET barcode=? WHERE id=?", (bc, product["id"]))
             conn.commit()
         product["barcode"] = bc
-        prefix_cfg, _ = _epc_cfg(conn)
+        prefix_cfg, _, _npc = _epc_cfg(conn)
         zpl = rfid_print.build_label_zpl(product, store_name=store_name, template=dict(tpl), rfid_prefix=prefix_cfg)
         return {"ok": True, "zpl": zpl, "product": product}
 
@@ -3227,6 +3216,9 @@ def product_create(body: ProductIn, request: Request):
         _assert_locations_in_store(conn, body.store_id, body.location_id, body.cert_location_id)
         epc = (body.rfid_epc or "").strip()
         if not epc:
+            # 品类必选：EPC 内嵌品类码，未确认品类不允许生成
+            if not (body.product_type_code or "").strip() and not (body.product_type or "").strip():
+                raise HTTPException(400, "请先选择品类再生成EPC")
             epc = _gen_type_epc(conn, type_code, body.store_id)  # 新商品保存即自动生成 EPC
         cur = conn.execute(
             """INSERT INTO products(code,name,name_i18n,category,category_code,material,product_type,product_type_code,
@@ -3275,7 +3267,25 @@ def product_update(pid: int, body: ProductIn, request: Request):
         body.store_id = sid  # 不允许借编辑跨店改归属
         type_code, type_name = _resolve_type(conn, body.product_type_code, body.product_type)
         _assert_locations_in_store(conn, body.store_id, body.location_id, body.cert_location_id)
-        epc = (body.rfid_epc or "").strip() or row["rfid_epc"]
+        # 品类锁定：EPC 内嵌品类码，已生成 EPC 的商品不允许再改品类
+        if row["rfid_epc"] and type_code != (row["product_type_code"] or ""):
+            raise HTTPException(400, "该商品已生成EPC，品类不可修改（如需变更请重新建档）")
+        old_epc = (row["rfid_epc"] or "").strip()
+        new_epc = (body.rfid_epc or "").strip()
+        epc_changed = False
+        if new_epc and new_epc != old_epc:
+            # 编辑可改 EPC（改后需重打标签重贴）：仅在库可改，校验格式与唯一性
+            if row["status"] != "在库":
+                raise HTTPException(400, "仅在库商品可修改EPC")
+            if not re.fullmatch(r"[0-9A-Za-z]{6,24}", new_epc):
+                raise HTTPException(400, "EPC格式不正确（6-24位字母或数字）")
+            dup = conn.execute(
+                "SELECT id FROM products WHERE rfid_epc=? AND id<>?", (new_epc, pid)
+            ).fetchone()
+            if dup:
+                raise HTTPException(409, "EPC已被其他商品使用")
+            epc_changed = True
+        epc = new_epc or old_epc
         conn.execute(
             """UPDATE products SET code=?,name=?,name_i18n=?,category=?,category_code=?,material=?,
                product_type=?,product_type_code=?,weight=?,size=?,cert=?,
@@ -3297,6 +3307,8 @@ def product_update(pid: int, body: ProductIn, request: Request):
         _set_product_tags(conn, pid, body.tag_ids)
         conn.commit()
         _log(conn, op["username"], "修改商品", f"#{pid} {body.code}")
+        if epc_changed:
+            _log(conn, op["username"], "修改EPC", f"#{pid} {body.code}: {old_epc} -> {epc}")
         return {"ok": True, "rfid_epc": epc}
 
 
@@ -3996,6 +4008,7 @@ def rfid_scan(body: RfidScanIn, request: Request):
             _inv(conn, book_map.get(epc, {}).get("id"), epc, "scan", op["username"], store_id=sid)
             if epc in book_map:
                 p = book_map[epc]
+                conn.execute("UPDATE products SET label_status='verified' WHERE id=?", (p["id"],))
                 scanned.append({"epc": epc, "product": p["name"], "code": p["code"], "status": p["status"], "result": "账实相符"})
             # 未登记标签（盘盈）：不再记录入库，直接忽略
         shortage = []
@@ -4074,7 +4087,7 @@ def print_labels(body: LabelPrintIn, request: Request):
                         p.pop("image", None)
                     prof2 = conn2.execute("SELECT name FROM tenant_profiles ORDER BY id DESC LIMIT 1").fetchone()
                     sname2 = (prof2["name"] if prof2 and prof2["name"] else "") or sname
-                    epc_prefix_cfg2, _ = _epc_cfg(conn2)
+                    epc_prefix_cfg2, _, _npc2 = _epc_cfg(conn2)
                     fields2 = {f for f in body.fields if f in rfid_print.FIELD_OPTIONS}
                     items_fb = _products_to_zmin_items(
                         conn2, prods, body=body, store_name=sname2,
@@ -4143,7 +4156,7 @@ def print_labels(body: LabelPrintIn, request: Request):
         # 逐件生成：显式模板优先，否则按各商品品类绑定模板，无模板回退默认字段布局
         fields = {f for f in body.fields if f in rfid_print.FIELD_OPTIONS}
         copies = max(1, body.copies)
-        epc_prefix_cfg, _ = _epc_cfg(conn)
+        epc_prefix_cfg, _, _npc = _epc_cfg(conn)
         zpl_parts = []
         per_store: dict[int, list[str]] = {}   # store_id -> 该门店商品的 ZPL 列表
         items_per_store: dict[int, list[dict]] = {}  # store_id -> ZMIN 结构化 content 列表
@@ -4213,6 +4226,11 @@ def print_labels(body: LabelPrintIn, request: Request):
                     sent = True
                 except Exception as e:
                     raise HTTPException(500, f"发送打印机失败：{e}")
+        if sent and body.write_epc and jobs:
+            # 已实际下发含写芯的打印任务 → 置「已下发」（verified 不降级）
+            conn.executemany(
+                "UPDATE products SET label_status='issued' WHERE id=? AND IFNULL(label_status,'')<>'verified'",
+                [(j["id"],) for j in jobs])
         conn.commit()
         _log(conn, op["username"], "RFID标签打印",
              f"{len(jobs)}件×{body.copies}张 {printer_desc or '仅生成指令'}" + tpl_desc)
@@ -5474,7 +5492,7 @@ def _do_scan(conn: sqlite3.Connection, t, code: str, name: str, source: str, dev
     src = body.source if body.source in ("rfid", "camera", "manual") else "rfid"
     accepted, seen = [], set()
     for tag in body.tags:
-        epc = (tag.epc or "").strip().upper()
+        epc = _norm_epc(conn, tag.epc)   # 芯片 hex → 可读 EPC，保证入库值与 products.rfid_epc 同口径
         if not epc or epc in seen:
             continue
         seen.add(epc)
@@ -5805,7 +5823,7 @@ def create_activation(body: ActivationIn, request: Request):
             (akey, body.store_id, (body.name or "").strip(), op["username"], int(time.time()) + 900))
         conn.commit()
         return {"akey": akey, "expires_in": 900,
-                "url": f"http://{_lan_ip()}:{PORT}/api/device/activate?key={akey}"}
+                "url": f"{_public_server(request)}/api/device/activate?key={akey}"}
 
 
 @app.post("/api/stores/{sid}/scan-device-key")
@@ -6292,7 +6310,7 @@ def _resolve_product(conn: sqlite3.Connection, raw_scan, store_id: int | None = 
     if raw_scan is None:
         return None
     val = raw_scan if isinstance(raw_scan, str) else str(raw_scan)
-    val = val.strip()
+    val = _norm_epc(conn, val)   # 芯片 hex（含补零）→ 可读 EPC
     if not val:
         return None
     row: sqlite3.Row | None = None
@@ -7170,6 +7188,46 @@ def deposit_create(body: DepositIn, request: Request):
         return {"id": cur.lastrowid}
 
 
+@app.put("/api/deposits/{did}")
+def deposit_update(did: int, body: DepositIn, request: Request):
+    """编辑「已定」定金单：金额/取货信息可改；已锁定商品不可更换（保留原商品名）。"""
+    op = _require_auth(request)
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, op)
+        _assert_stock_unfrozen(conn)
+        d = conn.execute("SELECT * FROM deposits WHERE id=?", (did,)).fetchone()
+        if not d:
+            raise HTTPException(404, "定金单不存在")
+        if d["store_id"] not in (0, sid):
+            raise HTTPException(403, "该定金单不属于当前工作门店")
+        if d["status"] != "已定":
+            raise HTTPException(400, "仅「已定」定金单可编辑")
+        old_dep, old_bal = float(d["deposit"] or 0), float(d["balance"] or 0)
+        old_phone = d["phone"] or ""
+        # 按差额回写客户往来账：编辑只在既有客户行上增减，不新建客户
+        if old_phone:
+            conn.execute(
+                "UPDATE customers SET total_amount=total_amount-?, due_amount=due_amount-? WHERE phone=?",
+                (old_dep, old_bal, old_phone))
+        name = d["product"] if d["product_id"] else (body.product or "")
+        conn.execute(
+            """UPDATE deposits SET customer=?,phone=?,product=?,total=?,deposit=?,balance=?,
+               promised_date=?,delivery_time=?,deliver_requirements=?,reminder_days=? WHERE id=?""",
+            (body.customer, body.phone, name, body.total, body.deposit, body.balance,
+             body.promised_date, body.delivery_time, body.deliver_requirements,
+             body.reminder_days, did))
+        if body.phone:
+            conn.execute(
+                "UPDATE customers SET total_amount=total_amount+?, due_amount=due_amount+?, "
+                "name=COALESCE(NULLIF(?,''),name) WHERE phone=?",
+                (body.deposit, body.balance, body.customer, body.phone))
+        conn.commit()
+        _log(conn, op["username"], "改定金单",
+             f"#{did} 客户{body.customer or '散客'} 商品{name or '未指定'} "
+             f"总价￥{body.total:,.2f} 定金￥{body.deposit:,.2f} 尾款￥{body.balance:,.2f}")
+        return {"ok": True}
+
+
 @app.post("/api/deposits/{did}/pay")
 def deposit_pay(did: int, request: Request):
     op = _require_auth(request)
@@ -7223,6 +7281,12 @@ def deposit_void(did: int, request: Request):
         if d["product_id"]:
             conn.execute("UPDATE products SET status='在库' WHERE id=?", (d["product_id"],))
         conn.execute("UPDATE deposits SET status='已冲红' WHERE id=?", (did,))
+        if d["phone"]:
+            # 冲红回滚：创建时 _touch_customer 累加了 total_amount=deposit, due_amount=balance
+            conn.execute(
+                "UPDATE customers SET total_amount=MAX(total_amount-?,0), due_amount=MAX(due_amount-?,0) "
+                "WHERE phone=?",
+                (float(d["deposit"] or 0), float(d["balance"] or 0), d["phone"]))
         conn.commit()
         _log(conn, op["username"], "定金冲红",
              f"#{did} 客户{d['customer'] or '散客'} 商品{d['product'] or ''} "

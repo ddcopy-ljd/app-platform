@@ -87,6 +87,10 @@ CREATE TABLE IF NOT EXISTS languages (
 CREATE TABLE IF NOT EXISTS biz_config (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   epc_prefix TEXT DEFAULT 'E28',
+  -- 新格式数字前缀（GS1 式纯数字 EPC：前缀8+门店4+品类2+序号6=20位，BCD 写芯）
+  epc_num_prefix TEXT DEFAULT '69012345',
+  -- 门店 4 位数字码映射（JSON：{"1":"0001"}），空则按 store_id 补零 4 位
+  store_num_map TEXT DEFAULT '',
   seq_bits INTEGER DEFAULT 8,
   bridge_key TEXT DEFAULT '',
   gold_price REAL DEFAULT 0
@@ -129,6 +133,8 @@ CREATE TABLE IF NOT EXISTS products (
   status TEXT DEFAULT '在库',
   store_id INTEGER,
   rfid_epc TEXT DEFAULT '',
+  -- RFID 打标状态：''=未打标 / issued=已下发打印 / verified=已验证（扫描账实相符）
+  label_status TEXT DEFAULT '',
   showcase_public INTEGER DEFAULT 0,
   showcase_order INTEGER DEFAULT 0,
   showcase_desc TEXT DEFAULT '',
@@ -842,6 +848,12 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("stores", "printer_name", "TEXT DEFAULT ''"),
         ("products", "barcode", "TEXT DEFAULT ''"),
         ("biz_config", "epc_cleaned", "INTEGER DEFAULT 0"),
+        # EPC 数字前缀（新格式 20 位纯数字=前缀8+门店4+品类2+序号6，BCD 打包写芯；旧字母前缀保留用于解码存量）
+        ("biz_config", "epc_num_prefix", "TEXT DEFAULT '69012345'"),
+        # 门店 4 位数字码映射（JSON：{"1":"0001"}），空则按 store_id 补零 4 位
+        ("biz_config", "store_num_map", "TEXT DEFAULT ''"),
+        # RFID 打标状态：''=未打标 / issued=已下发 / verified=已验证
+        ("products", "label_status", "TEXT DEFAULT ''"),
         ("sensors", "heartbeat_timeout", "INTEGER DEFAULT 15"),
         ("sensors", "field_map", "TEXT DEFAULT ''"),
         ("products", "location_id", "INTEGER DEFAULT 0"),
@@ -914,6 +926,8 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     for _col in ("store_key", "scan_key"):
         if _has_column(conn, "stores", _col):
             conn.execute(f"ALTER TABLE stores DROP COLUMN {_col}")
+    # EPC 数字前缀升级：早期 10 位默认（6901234567）统一升级为 8 位默认（门店段扩为 4 位自定义 BCD 码）
+    conn.execute("UPDATE biz_config SET epc_num_prefix='69012345' WHERE IFNULL(epc_num_prefix,'') IN ('','6901234567')")
     conn.commit()
     _dedupe_customers(conn)
     _backfill_sales_customer_id(conn)
@@ -953,7 +967,101 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     _migrate_store_scope(conn)
     conn.commit()
     _migrate_legacy_zero_store(conn)
+    _ensure_builtin_label_templates(conn)
+    _reconcile_customers_due(conn)
     conn.commit()
+
+
+def _reconcile_customers_due(conn: sqlite3.Connection) -> None:
+    """从 sales + deposits 重算 customers.due_amount，修复历史数据不一致。
+
+    正确值 = sales 未付款（已冲红除外）+ deposits 已定尾款
+           = Σ MAX(0, amount - paid) WHERE status!='已冲红'
+           + Σ balance              WHERE status='已定'
+    """
+    conn.execute(
+        "UPDATE customers SET due_amount = "
+        "  COALESCE((SELECT SUM(MAX(0, amount - paid)) FROM sales "
+        "            WHERE sales.phone = customers.phone AND status != '已冲红'), 0)"
+        "  + COALESCE((SELECT SUM(balance) FROM deposits "
+        "              WHERE deposits.phone = customers.phone AND status = '已定'), 0)"
+    )
+
+
+def _ensure_builtin_label_templates(conn: sqlite3.Connection) -> None:
+    """内置标签模板（幂等，按名字判重）：标签打印统一走模板排版。
+    租户可在此基础上修改/按品类绑定；未绑定模板的品类默认绑定「珠宝RFID标准签」。
+    坐标单位为打印点（300dpi，÷11.811=mm），字段与 rfid_print._field_value 对齐。
+    画布按 ZMIN 实测纸型 66×25.4mm 间隙5mm（=779×299 点）；definition._builtin 为内置版本号，
+    低于当前版本时自动升级覆盖（租户自改请另存新名，避免被升级覆盖）。"""
+    _BUILTIN_VER = 3
+    # 可打印区域 = 标签左侧 25×25mm（对折珠宝签），≈295×295 点；右边为折叠/粘贴区不排内容
+    tpl_rfid = {
+        "_builtin": _BUILTIN_VER,
+        "slots": [
+            {"field": "name", "x": 8, "y": 8, "w": 280, "h": 28, "font": {"type": "cn", "w": 26, "h": 26}},
+            {"field": "price", "x": 8, "y": 42, "w": 280, "h": 34, "font": {"type": "ascii", "w": 30, "h": 30}},
+            {"field": "barcode", "x": 8, "y": 84, "w": 270, "h": 70, "font": {"type": "barcode", "h": 50}},
+            {"field": "epc_text", "x": 8, "y": 196, "w": 280, "h": 18, "font": {"type": "ascii", "w": 14, "h": 14}},
+            {"field": "spec", "x": 8, "y": 224, "w": 280, "h": 18, "font": {"type": "cn", "w": 14, "h": 14}},
+        ]
+    }
+    tpl_price = {
+        "_builtin": _BUILTIN_VER,
+        "slots": [
+            {"field": "name", "x": 8, "y": 10, "w": 280, "h": 30, "font": {"type": "cn", "w": 26, "h": 26}},
+            {"field": "price", "x": 8, "y": 48, "w": 280, "h": 40, "font": {"type": "ascii", "w": 36, "h": 36}},
+            {"field": "barcode", "x": 8, "y": 102, "w": 270, "h": 80, "font": {"type": "barcode", "h": 60}},
+            {"field": "store", "x": 8, "y": 224, "w": 280, "h": 18, "font": {"type": "cn", "w": 14, "h": 14}},
+        ]
+    }
+    tpl_epc = {
+        "_builtin": _BUILTIN_VER,
+        "slots": [
+            {"field": "code", "x": 8, "y": 8, "w": 280, "h": 26, "font": {"type": "ascii", "w": 22, "h": 22}},
+            {"field": "name", "x": 8, "y": 42, "w": 280, "h": 26, "font": {"type": "cn", "w": 22, "h": 22}},
+            {"field": "epc_barcode", "x": 8, "y": 82, "w": 270, "h": 74, "font": {"type": "barcode", "h": 54}},
+            {"field": "epc_text", "x": 8, "y": 198, "w": 280, "h": 18, "font": {"type": "ascii", "w": 14, "h": 14}},
+            {"field": "category", "x": 8, "y": 226, "w": 280, "h": 18, "font": {"type": "cn", "w": 14, "h": 14}},
+        ]
+    }
+    builtin = [
+        ("珠宝RFID标准签（66×25.4）", 66, 25.4, 5, 1, tpl_rfid),
+        ("简约价签（条码66×25.4）", 66, 25.4, 5, 0, tpl_price),
+        ("EPC盘点签（66×25.4）", 66, 25.4, 5, 1, tpl_epc),
+    ]
+    # 旧版内置模板（70×35 画布，坐标作废）按旧名清理，避免残留误用
+    for legacy in ("珠宝RFID标准签（横版70×35）", "简约价签（条码70×35）", "EPC盘点签（70×35）"):
+        old = conn.execute("SELECT id FROM label_templates WHERE name=?", (legacy,)).fetchone()
+        if old:
+            conn.execute("UPDATE product_types SET label_template_id=0 WHERE label_template_id=?", (old[0],))
+            conn.execute("DELETE FROM label_templates WHERE id=?", (old[0],))
+    for name, w, h, gap, is_rfid, definition in builtin:
+        payload = json.dumps(definition, ensure_ascii=False)
+        row = conn.execute("SELECT id, definition FROM label_templates WHERE name=?", (name,)).fetchone()
+        if row:
+            try:
+                old_ver = (json.loads(row[1]) if row[1] else {}).get("_builtin", 0)
+            except Exception:
+                old_ver = 0
+            if old_ver < _BUILTIN_VER:
+                conn.execute(
+                    "UPDATE label_templates SET size_width=?,size_height=?,gap=?,definition=?,is_rfid=? WHERE id=?",
+                    (w, h, gap, payload, is_rfid, row[0]),
+                )
+        else:
+            conn.execute(
+                "INSERT INTO label_templates(name,size_width,size_height,layout,definition,gap,is_rfid) VALUES(?,?,?,?,?,?,?)",
+                (name, w, h, "{}", payload, gap, is_rfid),
+            )
+    row = conn.execute(
+        "SELECT id FROM label_templates WHERE name=?", ("珠宝RFID标准签（66×25.4）",)
+    ).fetchone()
+    if row:
+        conn.execute(
+            "UPDATE product_types SET label_template_id=? WHERE IFNULL(label_template_id,0)=0",
+            (row[0],),
+        )
 
 
 def _migrate_store_scope(conn: sqlite3.Connection) -> None:
@@ -1264,15 +1372,43 @@ def _migrate_material_and_type(conn: sqlite3.Connection) -> None:
 
 def store_segment(code: str, store_id: int = 0) -> str:
     """门店码归一化为 2 位字符段：本身恰为 2 位字母/数字则大写原样保留
-    （如 HQ、A1、06）；否则回退为门店序号的 2 位 hex（与 main.py 的 _store_seg 保持一致）。"""
+    （如 HQ、A1、06）；否则回退为门店序号的 2 位 hex（仅用于旧字母格式 EPC 重排）。"""
     code = (code or "").strip().upper()
     if len(code) == 2 and all(c in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ" for c in code):
         return code
     return f"{(store_id or 0) % 256:02X}"
 
 
+def _epc_num_rule(conn: sqlite3.Connection):
+    """新格式规则（GS1 式纯数字）：返回 (num_prefix, 合规正则)。
+
+    EPC = 数字前缀(8位) + 门店(4位自定义数字码) + 品类(2位) + 序号(6位十进制) = 20 位数字；
+    写芯片时按 BCD 打包 10 字节 + 版本/校验 2 字节（见 rfid_print.chip_epc_hex）。
+    """
+    cfg = conn.execute("SELECT epc_num_prefix FROM biz_config WHERE id=1").fetchone()
+    np_ = ((cfg[0] if cfg else "") or "69012345").strip() or "69012345"
+    pat = re.compile(r"^" + re.escape(np_) + r"(\d{4})(\d{2})(\d{6})$")
+    return np_, pat
+
+
+def _store_num_code(conn: sqlite3.Connection, store_id: int) -> str:
+    """门店 4 位数字码：biz_config.store_num_map（JSON {"1":"0001"}）优先，缺省按 store_id 补零 4 位。"""
+    import json as _json
+    sid = int(store_id or 1)
+    try:
+        row = conn.execute("SELECT store_num_map FROM biz_config WHERE id=1").fetchone()
+        m = _json.loads((row[0] if row else "") or "{}")
+        v = str(m.get(str(sid)) or m.get(sid) or "").strip()
+        if v.isdigit() and len(v) == 4:
+            return v
+    except Exception:
+        pass
+    return f"{sid:04d}"
+
+
 def _epc_rule(conn: sqlite3.Connection):
-    """返回 (prefix, seq_bits, 合规正则)。门店段 2 位字母/数字，品类码 2 位数字，序号 4-6 位 hex。"""
+    """返回 (prefix, seq_bits, 旧格式正则, 新数字格式正则)。
+    旧格式：门店段 2 位字母/数字，品类码 2 位数字，序号 4-6 位 hex。"""
     cfg = conn.execute("SELECT epc_prefix,seq_bits FROM biz_config WHERE id=1").fetchone()
     if cfg:
         prefix = (cfg[0] or "E28").strip() or "E28"
@@ -1282,7 +1418,8 @@ def _epc_rule(conn: sqlite3.Connection):
     pat = re.compile(
         r"^" + re.escape(prefix) + r"([0-9A-Z]{2})(\d{2})([0-9A-F]{%d})$" % bits
     )
-    return prefix, bits, pat
+    _, num_pat = _epc_num_rule(conn)
+    return prefix, bits, pat, num_pat
 
 
 def assign_rule_epcs(conn: sqlite3.Connection) -> dict[str, str]:
@@ -1295,35 +1432,40 @@ def assign_rule_epcs(conn: sqlite3.Connection) -> dict[str, str]:
     - 幂等：对合规库重复执行不产生任何改动。
     返回 {旧EPC大写: 新EPC}（空 EPC 新建的不计入映射），供同步日志/盘点引用表。
     """
-    prefix, bits, pat = _epc_rule(conn)
-    seg_cache: dict[int, str] = {}
+    prefix, bits, pat, num_pat = _epc_rule(conn)
+    np_, _npat = _epc_num_rule(conn)
+    snum_cache: dict[int, str] = {}
 
-    def _seg(sid: int) -> str:
-        if sid not in seg_cache:
-            r = conn.execute("SELECT code FROM stores WHERE id=?", (sid,)).fetchone()
-            seg_cache[sid] = store_segment(r[0] if r else "", sid)
-        return seg_cache[sid]
+    def _snum(sid: int) -> str:
+        if sid not in snum_cache:
+            snum_cache[sid] = _store_num_code(conn, sid)
+        return snum_cache[sid]
 
     rows = conn.execute(
         "SELECT id,COALESCE(store_id,1),COALESCE(product_type_code,''),COALESCE(rfid_epc,'') "
         "FROM products ORDER BY id"
     ).fetchall()
     used: dict[tuple[str, str], set[int]] = {}
+    used_new: dict[tuple[str, str], set[int]] = {}
     seen: set[str] = set()
     parsed = []
     for pid, sid, tc, epc in rows:
         code = (tc or "99").strip().upper()[:2].ljust(2, "0") or "99"
         up = (epc or "").strip().upper()
         m = pat.match(up) if up else None
+        mn = num_pat.fullmatch(up) if up else None  # 新格式（20 位纯数字）同样视为合规终身码
         # 终身码：格式合规且全库唯一即保留，不校验品类段/门店段是否与当前一致
-        keep = bool(m) and up not in seen
+        keep = (bool(m) or bool(mn)) and up not in seen
         if keep:
             seen.add(up)
-            used.setdefault((m.group(1), m.group(2)), set()).add(int(m.group(3), 16))
+            if m:  # 仅旧格式占用旧序号池（新旧两套序号空间独立）
+                used.setdefault((m.group(1), m.group(2)), set()).add(int(m.group(3), 16))
+            if mn:  # 新格式存量占新序号池，防补全撞号
+                used_new.setdefault((mn.group(1), mn.group(2)), set()).add(int(mn.group(3)))
         parsed.append((pid, sid, code, epc or "", keep))
 
-    def _take(key: tuple[str, str]) -> int:
-        s = used.setdefault(key, set())
+    def _take(pool: dict, key: tuple[str, str]) -> int:
+        s = pool.setdefault(key, set())
         n = 1
         while n in s:
             n += 1
@@ -1334,8 +1476,9 @@ def assign_rule_epcs(conn: sqlite3.Connection) -> dict[str, str]:
     for pid, sid, code, epc, keep in parsed:
         if keep:
             continue
-        seg = _seg(sid)
-        new = f"{prefix}{seg}{code}{_take((seg, code)):0{bits}X}"
+        # 补全/重排一律按现行新数字格式（与 _gen_type_epc 同构：前缀8+门店4+品类2+序号6 十进制）
+        snum = _snum(sid)
+        new = f"{np_}{snum}{code}{_take(used_new, (snum, code)):06d}"
         conn.execute("UPDATE products SET rfid_epc=? WHERE id=?", (new, pid))
         if epc:
             changed[epc.strip().upper()] = new
