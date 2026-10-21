@@ -962,6 +962,8 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE stores DROP COLUMN {_col}")
     # 1.2.50 「打印代理」统一改名「打印助手」: 存量实例名幂等迁移(纯显示用途)
     conn.execute("UPDATE print_agents SET name = '打印助手' || SUBSTR(name, 5) WHERE name LIKE '打印代理-%'")
+    # 1.2.52 清理演示种子误入安防的柜台 RFID 读写器(驱动码 UHF-RFID 非安防注册驱动, 属占位数据)
+    conn.execute("DELETE FROM sensors WHERE name='柜台-RFID读写器' AND driver_code='UHF-RFID'")
     # EPC 数字前缀升级：早期 10 位默认（6901234567）统一升级为 8 位默认（门店段扩为 4 位自定义 BCD 码）
     conn.execute("UPDATE biz_config SET epc_num_prefix='69012345' WHERE IFNULL(epc_num_prefix,'') IN ('','6901234567')")
     conn.commit()
@@ -1771,7 +1773,6 @@ def ensure_new_seeds(conn: sqlite3.Connection) -> None:
             "INSERT INTO sensors(name,store_id,location,driver_code,enabled) VALUES(?,?,?,?,?)",
             [
                 ("主店门口EAS天线", 1, "门口", "EAS-GATE", 1),
-                ("柜台-RFID读写器", 1, "柜台中央", "UHF-RFID", 1),
                 ("分店门口EAS天线", 2, "门口", "EAS-GATE", 1),
             ],
         )
@@ -2437,7 +2438,6 @@ def seed_demo(conn: sqlite3.Connection) -> None:
         "INSERT INTO sensors(name,store_id,location,driver_code,enabled) VALUES(?,?,?,?,?)",
         [
             ("主店门口EAS天线", 1, "门口", "EAS-GATE", 1),
-            ("柜台-RFID读写器", 1, "柜台中央", "UHF-RFID", 1),
             ("分店门口EAS天线", 2, "门口", "EAS-GATE", 1),
         ],
     )

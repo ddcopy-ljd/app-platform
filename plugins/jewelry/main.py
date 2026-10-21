@@ -4904,13 +4904,19 @@ def store_bind_printer(sid: int, body: dict, request: Request):
 
     必须是同步端点：FastAPI 在线程池执行本函数，_bridge_send 才能跨线程
     投递到代理所在事件循环；若用 async 会在事件循环线程上自锁。
-    body: {"biz": 业务码(默认label_product), "printer": 打印机名(空串=取消指派),
+    body: {"biz": 业务码(默认label_product；"receipt"=一次性指派全部小票类业务),
+           "printer": 打印机名(空串=取消指派),
            "iface": 链路 USB/NET/BT(空=默认USB), "printer_ip": NET 地址,
            "media": {paper_id,paper_name,tear_mm} 标签方案(仅标签类业务)}
     """
     op = _require_auth(request)
     biz = str(body.get("biz") or "label_product").strip()
-    if biz not in db.PRINT_BIZ_CODES:
+    # 「小票打印机」是门店一台设备：一次选择覆盖全部 receipt 类业务
+    if biz == "receipt":
+        biz_list = [c for c, g in db.PRINT_BIZ if g == "receipt"]
+    elif biz in db.PRINT_BIZ_CODES:
+        biz_list = [biz]
+    else:
         raise HTTPException(400, "未知打印业务")
     printer = str(body.get("printer") or "").strip()
     iface = str(body.get("iface") or "").strip().upper()
@@ -4926,15 +4932,16 @@ def store_bind_printer(sid: int, body: dict, request: Request):
     with _db(request) as conn:
         if not conn.execute("SELECT id FROM stores WHERE id=?", (sid,)).fetchone():
             raise HTTPException(404, "门店不存在")
-        conn.execute(
-            "INSERT INTO store_printers(store_id,biz_code,printer_name,iface,printer_ip,media_json,rev,updated_at,updated_by)"
-            " VALUES(?,?,?,?,?,?,1,?,?)"
-            " ON CONFLICT(store_id,biz_code) DO UPDATE SET printer_name=excluded.printer_name,"
-            " iface=excluded.iface, printer_ip=excluded.printer_ip, media_json=excluded.media_json,"
-            " rev=store_printers.rev+1, updated_at=excluded.updated_at, updated_by=excluded.updated_by",
-            (sid, biz, printer, iface, printer_ip, media_json,
-             datetime.now().strftime("%Y-%m-%d %H:%M:%S"), op["username"]))
-        if biz == "label_product":
+        for code in biz_list:
+            conn.execute(
+                "INSERT INTO store_printers(store_id,biz_code,printer_name,iface,printer_ip,media_json,rev,updated_at,updated_by)"
+                " VALUES(?,?,?,?,?,?,1,?,?)"
+                " ON CONFLICT(store_id,biz_code) DO UPDATE SET printer_name=excluded.printer_name,"
+                " iface=excluded.iface, printer_ip=excluded.printer_ip, media_json=excluded.media_json,"
+                " rev=store_printers.rev+1, updated_at=excluded.updated_at, updated_by=excluded.updated_by",
+                (sid, code, printer, iface, printer_ip, media_json,
+                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"), op["username"]))
+        if "label_product" in biz_list:
             # 同步旧列：其他直接读 stores.printer_name 的链路保持一致
             conn.execute("UPDATE stores SET printer_name=? WHERE id=?", (printer, sid))
         conn.commit()
@@ -4961,6 +4968,9 @@ async def store_print_control(sid: int, body: dict, request: Request):
     if action not in ("feed", "backfeed", "test", "refresh"):
         raise HTTPException(400, "未知控制指令")
     biz = str(body.get("biz") or "label_product").strip()
+    # 「小票打印机」是门店一台设备：一次选择覆盖全部 receipt 类业务；测试统一走 receipt_sale
+    if biz == "receipt":
+        biz = "receipt_sale"
     if biz not in db.PRINT_BIZ_CODES:
         raise HTTPException(400, "未知打印业务")
     with _db(request) as conn:
@@ -4989,22 +4999,35 @@ async def store_print_control(sid: int, body: dict, request: Request):
             _bridge_seq[0] += 1
             cid = f"C{_bridge_seq[0]:06d}"
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        payload = {
-            "type": "print_task", "taskId": cid,
-            "printerType": "rfid", "brand": "zmin",
-            "interface": "USB",
-            "printerIp": "",
-            "printerName": target_printer or "Default", "storeId": str(sid),
-            "content": {
-                "width": 66.0, "height": 25.4, "gap": 5.0, "dpi": 300,
-                "texts": [
-                    {"text": "PrintAgent Test", "x": 2.0, "y": 2.5, "size": 12.0},
-                    {"text": str(s["name"] or "")[:20], "x": 2.0, "y": 9.0, "size": 8.0},
-                    {"text": ts, "x": 2.0, "y": 15.0, "size": 8.0},
-                    {"text": str(target_printer or "")[:20], "x": 2.0, "y": 21.0, "size": 8.0},
-                ],
-            },
-        }
+        if biz == "receipt_sale":
+            # 小票机测试：标准驱动打印纯文本（ESC/POS 通道在正式小票业务里走 pos 任务）
+            if not target_printer:
+                raise HTTPException(400, "请先在门店卡片选择小票打印机")
+            payload = {
+                "type": "print_task", "taskId": cid,
+                "printerType": "standard",
+                "printerName": target_printer, "storeId": str(sid),
+                "content": {
+                    "text": f"懿臻珠宝云 · 小票打印机测试\n{ts}\n{s['name']}\n{target_printer}"
+                },
+            }
+        else:
+            payload = {
+                "type": "print_task", "taskId": cid,
+                "printerType": "rfid", "brand": "zmin",
+                "interface": "USB",
+                "printerIp": "",
+                "printerName": target_printer or "Default", "storeId": str(sid),
+                "content": {
+                    "width": 66.0, "height": 25.4, "gap": 5.0, "dpi": 300,
+                    "texts": [
+                        {"text": "PrintAgent Test", "x": 2.0, "y": 2.5, "size": 12.0},
+                        {"text": str(s["name"] or "")[:20], "x": 2.0, "y": 9.0, "size": 8.0},
+                        {"text": ts, "x": 2.0, "y": 15.0, "size": 8.0},
+                        {"text": str(target_printer or "")[:20], "x": 2.0, "y": 21.0, "size": 8.0},
+                    ],
+                },
+            }
     else:
         payload: dict = {"type": "control", "action": action,
                          "biz": biz, "printer": target_printer}
@@ -6945,7 +6968,9 @@ def store_list(request: Request, all: int = 0, detail: int = 0):
             """SELECT s.id,s.name,s.code,s.owner,s.shop_id,
                       COALESCE(sp.name,'') AS shop_name,
                       IFNULL(s.bridge_key,'') AS bridge_key,
-                      IFNULL(s.printer_name,'') AS printer_name
+                      IFNULL(s.printer_name,'') AS printer_name,
+                      IFNULL((SELECT sp2.printer_name FROM store_printers sp2
+                               WHERE sp2.store_id=s.id AND sp2.biz_code='receipt_sale'),'') AS receipt_printer
                FROM stores s LEFT JOIN shops sp ON sp.id=s.shop_id
                ORDER BY s.shop_id, s.id""").fetchall()
         if all and sess.get("role") != "TENANT_ADMIN":

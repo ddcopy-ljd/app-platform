@@ -1285,6 +1285,12 @@ tr.row-flash, tr.row-flash:hover { background-color: #FFF3CD !important; transit
 /* 门店卡片列表：PC 卡片宽度 360–520px 自适应（太窄太宽都不好看），窄屏回落单列 */
 .store-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 520px)); gap: 10px; margin-top: 10px; justify-content: center; }
 .store-grid > .bridge-store { margin-top: 0; min-width: 0; }
+/* 门店管理页门店列表：一行一店紧凑行（门店名 · 负责人 · 操作按钮） */
+.store-rows { margin-top: 8px; border: 1px solid #ece4d3; border-radius: 8px; background: #fdfbf6; overflow: hidden; }
+.store-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 7px 10px; border-bottom: 1px solid #f2ebdd; }
+.store-row:last-child { border-bottom: none; }
+.store-row.store-sel { background: #fbf3e2; }
+@media (max-width: 720px) { .store-row > span[style*="margin-left:auto"] { margin-left: 0 !important; width: 100%; } }
 /* 打印代理页门店卡网格: 固定两列(单卡居中 520 封顶不满宽), 窄屏回落单列 */
 .bridge-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 520px)); gap: 10px; margin-top: 10px; justify-content: center; }
 .bridge-grid > .bridge-store { margin-top: 0; min-width: 0; }

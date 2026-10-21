@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>懿臻珠宝云</title>
 <link rel="icon" href="/logo/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./app.css?v=20261021b01">
+<link rel="stylesheet" href="./app.css?v=20261021b02">
 </head>
 <body>
 <div id="app">
@@ -28,10 +28,6 @@
       <input v-model="loginPwd" type="password" :placeholder="t('login.passPh')" @keyup.enter="doLogin">
       <button class="btn btn-primary btn-block" @click="doLogin">{{ t('login.submit') }}</button>
       <div class="login-hint">{{ t('login.hint') }}</div>
-      <div class="login-dl">
-        <a class="login-dl-link" :href="dlUrl('/api/scan-app/download')">📱 {{ t('login.scanApp') }}</a>
-        <a class="login-dl-link" :href="dlUrl('/api/print-agent/download')">🖨 {{ t('login.printAgent') }}</a>
-      </div>
       <div class="lang-row">
         <button v-for="k in langKeys" :key="k" class="lang-mini" :class="{on:lang===k}" @click="setLang(k)">{{ langLabels[k] }}</button>
       </div>
@@ -1636,10 +1632,6 @@
             <button v-for="s in shopsTabs" :key="s.key" class="btn btn-sm"
                     :class="shopsTab===s.key ? 'btn-gold' : 'btn-outline'"
                     @click="switchShopsTab(s.key)">{{ s.icon }} {{ s.label }}</button>
-            <span style="margin-left:auto;display:flex;gap:14px">
-              <a class="login-dl-link" :href="dlUrl('/api/scan-app/download')" download>📱 {{ t('login.scanApp') }}</a>
-              <a class="login-dl-link" :href="dlUrl('/api/print-agent/download')" download>🖨 {{ t('login.printAgent') }}</a>
-            </span>
           </div>
 
           <!-- ========== 分店管理：分店信息 + 分店设备清单 ========== -->
@@ -1652,7 +1644,7 @@
               <div class="prod-meta">{{ t('shop.subtitle') }}</div>
               <button class="btn btn-gold btn-sm" @click="createStore">＋ {{ t('store.add') }}</button>
             </div>
-            <div v-if="storeEditMode==='new' || storeEdit.id" style="padding:10px;border:1px solid #eee;border-radius:6px;margin-top:10px">
+            <div v-if="storeEditMode==='new'" style="padding:10px;border:1px solid #eee;border-radius:6px;margin-top:10px">
               <div class="form-row">
                 <div class="form-group"><label>{{ t('store.name') }}</label><input v-model="storeEdit.name" :placeholder="t('store.namePh')"></div>
                 <div class="form-group"><label>{{ t('store.code') }}</label><input v-model="storeEdit.code" maxlength="2" :disabled="storeEditMode==='edit'" :placeholder="t('store.codePh')"></div>
@@ -1674,20 +1666,9 @@
                 <div v-for="s in storesByShop(p.id)" :key="s.id" class="bridge-store">
                   <div class="flex-between">
                     <b>🏪 {{ s.name }} <span class="mono" style="font-size:14px;color:#6B5A48">#{{ s.code }}</span></b>
-                    <button class="btn-small" @click="(storeEditMode==='edit' && storeEdit.id===s.id) ? resetStoreEdit() : editStore(s)">{{ (storeEditMode==='edit' && storeEdit.id===s.id) ? t('act.cancel') : t('act.edit') }}</button>
+                    <!-- 总部只管跳转：资料编辑在独立「门店管理」页进行，避免与总部页互相影响 -->
+                    <button class="btn-small" @click="openStorePage(s.id, true)">{{ t('act.edit') }}</button>
                   </div>
-                  <!-- 行内编辑门店资料（总部视图：任意门店） -->
-                  <template v-if="storeEditMode==='edit' && storeEdit.id===s.id">
-                    <div class="form-group"><label>{{ t('store.name') }}</label><input v-model="storeEdit.name" :placeholder="t('store.namePh')"></div>
-                    <div class="form-group"><label>{{ t('store.owner') }}</label><input v-model="storeEdit.owner"></div>
-                    <div class="form-group"><label>{{ t('store.belongShop') }}</label>
-                      <select v-model.number="storeEdit.shop_id">
-                        <option v-for="sh in shops" :key="sh.id" :value="sh.id">{{ sh.name }}</option>
-                      </select>
-                    </div>
-                    <button class="btn btn-gold" @click="saveStore">{{ t('cat.saveEdit') }}</button>
-                  </template>
-                  <template v-else>
                   <div class="prod-meta" :class="(bridgeOfStore(s.id) && bridgeOfStore(s.id).online) ? 'mv-in' : 'mv-out'">● {{ t('store.bridge') }} {{ (bridgeOfStore(s.id) && bridgeOfStore(s.id).online) ? t('sb.online') : t('sb.offline') }}</div>
                   <div class="prod-meta" v-if="s.owner">{{ t('store.owner') }}：{{ s.owner }}</div>
                   <div class="prod-meta" v-if="s.printer_name">🖨 {{ s.printer_name }}</div>
@@ -1707,7 +1688,7 @@
                   </div>
                   <!-- 分店设备清单：打印助手 / 扫描助手 / 安防设备，点按钮展开明细 -->
                   <div style="margin-top:6px">
-                    <button class="btn-small" :class="{'btn-gold': locStore===s.id}" @click="selectStore(s.id)">{{ t('store.manage') }}</button>
+                    <button class="btn-small" :class="{'btn-gold': locStore===s.id}" @click="openStorePage(s.id)">{{ t('store.manage') }}</button>
                     <button class="btn-small" @click="toggleDevicePanel(s.id)">
                       {{ devicePanelOpen[s.id] ? t('shops.devHide') : t('shops.devShow') }}
                       （{{ devicesOfStore(s.id).length + storeSecStore(s.id).length + (bridgeOfStore(s.id) ? (bridgeOfStore(s.id).agents || []).length : 0) }}）
@@ -1745,7 +1726,6 @@
                     </template>
                     <div v-else class="prod-meta">{{ t('shops.devNone') }}</div>
                   </div>
-                  </template>
                 </div>
               </div>
               <div v-if="!storesByShop(p.id).length" class="prod-meta" style="padding:4px 0">{{ t('store.emptyInShop') }}</div>
@@ -1912,72 +1892,37 @@
           </template>
         </section>
 
-        <!-- ================= 门店管理（店铺下门店：入库/扫描设备/库位；打印代理已集中到系统管理） ================= -->
+        <!-- ================= 门店管理（独立页面：只含门店自身资料与设备，模板与总部管理完全独立） ================= -->
         <section v-if="tab==='stores'">
-          <div class="card-item">
-            <div class="flex-between" style="margin-bottom:8px">
-              <div class="card-title" style="margin:0">{{ t('store.title') }}</div>
-              <span style="display:flex;gap:14px;align-items:center">
-                <a class="login-dl-link" :href="dlUrl('/api/scan-app/download')" download>📱 {{ t('login.scanApp') }}</a>
-                <a class="login-dl-link" :href="dlUrl('/api/print-agent/download')" download>🖨 {{ t('login.printAgent') }}</a>
-                <!-- 开分店是总部能力，分店视图不显示 -->
-                <button class="btn btn-gold" v-if="isHqStore()" @click="createStore">＋ {{ t('store.add') }}</button>
-              </span>
-            </div>
-
-            <!-- 门店新增/编辑表单：新增仅总部；编辑=总部任意店，或分店改本店资料（归属店铺由总部决定） -->
-            <div v-if="(storeEditMode==='new' && isHqStore()) || (storeEditMode==='edit' && storeEdit.id && (isHqStore() || storeEdit.id===curStoreId))" style="padding:10px;border:1px solid #eee;border-radius:6px;margin-bottom:12px">
-              <div class="form-row">
-                <div class="form-group"><label>{{ t('store.name') }}</label><input v-model="storeEdit.name" :placeholder="t('store.namePh')"></div>
-                <div class="form-group"><label>{{ t('store.code') }}</label><input v-model="storeEdit.code" maxlength="2" :disabled="storeEditMode==='edit'" :placeholder="t('store.codePh')"></div>
-                <div class="form-group"><label>{{ t('store.owner') }}</label><input v-model="storeEdit.owner"></div>
-                <div class="form-group"><label>{{ t('store.belongShop') }}</label>
-                  <select v-model.number="storeEdit.shop_id" :disabled="!isHqStore()">
-                    <option v-for="p in shops" :key="p.id" :value="p.id">{{ p.name }}</option>
-                  </select>
-                </div>
-              </div>
-              <div style="display:flex;gap:8px">
-                <button class="btn btn-gold" @click="saveStore">{{ storeEditMode==='edit' ? t('cat.saveEdit') : t('act.confirm') }}</button>
-                <button class="btn btn-outline" @click="resetStoreEdit">{{ t('act.cancel') }}</button>
-              </div>
-            </div>
-
-            <!-- 按店铺分组的门店列表（manageShops：总店列出全部，分店只有本店所属分组） -->
-            <div v-for="p in manageShops" :key="'grp-'+p.id" style="margin-bottom:14px">
-              <div class="biz-grp-title">🏬 {{ p.name }} <span style="color:inherit;font-weight:400">#{{ p.code }} · {{ t('shop.itemLimit') }} {{ p.sale_item_limit }}</span></div>
-              <div class="store-grid">
-                <div v-for="s in storesByShop(p.id)" :key="s.id" class="bridge-store" :class="{'store-sel': locStore===s.id}">
-                  <div class="flex-between">
-                    <b style="cursor:pointer" @click="selectStore(s.id)">🏪 {{ s.name }} <span class="mono" style="font-size:14px;color:#6B5A48">#{{ s.code }}</span></b>
-                  </div>
-                  <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
-                    <button class="btn-small" @click="selectStore(s.id)">{{ t('store.manage') }}</button>
-                    <button class="btn-small" :disabled="frozen" @click="inboundForStore(s)">📥 {{ t('store.inbound') }}</button>
-                    <button class="btn-small" @click="openDevices(s.id)">📷 {{ t('store.devices') }}</button>
-                  </div>
-                  <div class="prod-meta" v-if="s.owner">{{ t('store.owner') }}：{{ s.owner }}</div>
-                </div>
-              </div>
-              <div v-if="!storesByShop(p.id).length" class="prod-meta" style="padding:4px 0">{{ t('store.emptyInShop') }}</div>
-            </div>
-          </div>
-
-
-        </section>
-
-          <!-- 选中门店的详情：基本信息/安防/手持机/打印机/库位（门店管理与总部管理-分店管理共用） -->
-          <template v-if="curStore && (tab==='stores' || (tab==='shops' && shopsTab==='branches'))">
-            <!-- 基本信息 -->
+          <template v-if="curStore">
+            <!-- 基本信息（查看/编辑同卡：修改资料在此卡内展开编辑） -->
             <div class="card-item">
               <div class="card-title">{{ curStore.name }} · {{ t('store.baseInfo') }}</div>
-              <div class="form-row">
-                <div class="form-group"><label>{{ t('store.name') }}</label><input :value="curStore.name" disabled></div>
-                <div class="form-group"><label>{{ t('store.code') }}</label><input :value="curStore.code||''" disabled></div>
-                <div class="form-group"><label>{{ t('store.owner') }}</label><input :value="curStore.owner||''" disabled></div>
-                <div class="form-group"><label>{{ t('store.belongShop') }}</label><input :value="curShop ? curShop.name : ''" disabled></div>
-              </div>
-              <button class="btn btn-outline" v-if="isHqStore() || (curStore && curStore.id===curStoreId)" @click="editStore(curStore)">{{ t('store.editInfo') }}</button>
+              <template v-if="storeEditMode==='edit' && storeEdit.id===curStore.id">
+                <div class="form-row">
+                  <div class="form-group"><label>{{ t('store.name') }}</label><input v-model="storeEdit.name" disabled :placeholder="t('store.namePh')"></div>
+                  <div class="form-group"><label>{{ t('store.code') }}</label><input v-model="storeEdit.code" maxlength="2" disabled :placeholder="t('store.codePh')"></div>
+                  <div class="form-group"><label>{{ t('store.owner') }}</label><input v-model="storeEdit.owner"></div>
+                  <div class="form-group"><label>{{ t('store.belongShop') }}</label>
+                    <select v-model.number="storeEdit.shop_id" :disabled="!isHqStore()">
+                      <option v-for="p in shops" :key="p.id" :value="p.id">{{ p.name }}</option>
+                    </select>
+                  </div>
+                </div>
+                <div style="display:flex;gap:8px">
+                  <button class="btn btn-gold" @click="saveStore">{{ t('cat.saveEdit') }}</button>
+                  <button class="btn btn-outline" @click="resetStoreEdit">{{ t('act.cancel') }}</button>
+                </div>
+              </template>
+              <template v-else>
+                <div class="form-row">
+                  <div class="form-group"><label>{{ t('store.name') }}</label><input :value="curStore.name" disabled></div>
+                  <div class="form-group"><label>{{ t('store.code') }}</label><input :value="curStore.code||''" disabled></div>
+                  <div class="form-group"><label>{{ t('store.owner') }}</label><input :value="curStore.owner||''" disabled></div>
+                  <div class="form-group"><label>{{ t('store.belongShop') }}</label><input :value="curShop ? curShop.name : ''" disabled></div>
+                </div>
+                <button class="btn btn-outline" v-if="isHqStore() || (curStore && curStore.id===curStoreId)" @click="editStore(curStore)">{{ t('store.editInfo') }}</button>
+              </template>
             </div>
 
             <!-- 安防设备 -->
@@ -2004,7 +1949,7 @@
               <div class="flex-between" style="margin-bottom:8px">
                 <div class="card-title" style="margin:0">📱 {{ t('sb.handheld') }} <span class="prod-meta">({{ devicesOfStore(curStore.id).length }})</span></div>
                 <span>
-                    <button class="btn-small" @click="openDevices(curStore.id)">{{ t('sb.handheldMgr') }}</button>
+                    <button class="btn-small" @click="openHandheldAdd(curStore.id)">{{ t('sb.handheldAdd') }}</button>
                   </span>
               </div>
               <div v-if="devicesOfStore(curStore.id).length">
@@ -2024,28 +1969,43 @@
               <div class="empty" v-else>{{ t('sb.noHandheld') }}</div>
             </div>
 
-            <!-- 打印机（本机打印助手）：只读展示本机打印机清单 + 测试页（固定 ZMIN X19D · 66×25.4mm） -->
+            <!-- 打印机（本机打印助手）：两行选择 —— RFID 标签机 / 小票机（固定 ZMIN X19D · 66×25.4mm） -->
             <div class="card-item" v-if="curStore">
               <div class="flex-between" style="margin-bottom:8px">
-                <div class="card-title" style="margin:0">🖨 {{ t('sb.printers') }} <span class="prod-meta">({{ agentPrinters().length }})</span></div>
-                <button class="btn-small" @click="openStorePrinters">{{ t('sb.refresh') }}</button>
+                <div class="card-title" style="margin:0">🖨 {{ t('sb.printers') }}</div>
+                <span style="display:flex;gap:8px;align-items:center">
+                  <button class="btn-small" @click="openStorePrinters">{{ t('sb.refresh') }}</button>
+                </span>
               </div>
-              <template v-if="localAgent">
-                <div v-if="agentPrinters().length">
-                  <div class="sec-dev" v-for="p in agentPrinters()" :key="p.name + p.interface">
-                    <div class="flex-between">
-                      <b>{{ p.name }} <span class="prod-meta">{{ p.brand ? p.brand.toUpperCase() : '' }} · {{ p.interface }}</span>
-                        <span class="prod-meta" v-if="p.isDefault">· {{ t('sb.printerDefault') }}</span></b>
-                      <span style="display:flex;gap:8px;align-items:center">
-                        <button class="btn-small" @click="agentCalibrate('config')">{{ t('sb.test') }}</button>
-                        <span class="bridge-state" :class="p.online ? 'st-on' : 'st-off'">● {{ p.online ? t('sb.online') : t('sb.offline') }}</span>
-                      </span>
-                    </div>
-                  </div>
+              <!-- 第一行：RFID 标签打印机（测试页打 66×25.4 标签） -->
+              <div class="sec-dev">
+                <div class="flex-between" style="gap:12px">
+                  <b>🏷 {{ t('sb.rfidPrinter') }}</b>
+                  <span style="display:flex;gap:8px;align-items:center">
+                    <select class="input" style="max-width:260px" :value="curStore.printer_name||''"
+                            @change="setStorePrinter(curStore.id,'rfid',$event.target.value)">
+                      <option value="">{{ t('sb.selectPrinter') }}</option>
+                      <option v-for="p in agentPrinterOptions('rfid', curStore.printer_name)" :key="'r'+p.name" :value="p.name">{{ p.label }}</option>
+                    </select>
+                    <button class="btn-small" @click="agentCalibrate('config')">{{ t('sb.test') }}</button>
+                  </span>
                 </div>
-                <div class="empty" v-else>{{ t('sb.noPrinter') }}</div>
-              </template>
-              <div class="empty" v-else>{{ t('sb.agentOfflineHint') }}</div>
+              </div>
+              <!-- 第二行：小票打印机（测试走助手标准驱动出纯文本） -->
+              <div class="sec-dev">
+                <div class="flex-between" style="gap:12px">
+                  <b>🧾 {{ t('sb.receiptPrinter') }}</b>
+                  <span style="display:flex;gap:8px;align-items:center">
+                    <select class="input" style="max-width:260px" :value="curStore.receipt_printer||''"
+                            @change="setStorePrinter(curStore.id,'receipt',$event.target.value)">
+                      <option value="">{{ t('sb.selectPrinter') }}</option>
+                      <option v-for="p in agentPrinterOptions('receipt', curStore.receipt_printer)" :key="'p'+p.name" :value="p.name">{{ p.label }}</option>
+                    </select>
+                    <button class="btn-small" @click="testReceiptPrinter(curStore.id)">{{ t('sb.test') }}</button>
+                  </span>
+                </div>
+              </div>
+              <div class="prod-meta" v-if="!localAgent" style="margin-top:6px">⚠ {{ t('sb.agentOfflineHint') }}</div>
             </div>
 
             <!-- 库位主数据 -->
@@ -2083,17 +2043,24 @@
               </div>
             </div>
           </template>
+        </section>
 
-        <!-- ================= 系统管理子导航（始终置顶，先于各子视图内容渲染） ================= -->
-        <section v-if="tab==='system'">
+        <!-- ================= 系统管理拆两页：总部系统管理 vs 门店系统管理 ================= -->
+        <!-- 总部系统管理子导航 -->
+        <section v-if="tab==='hq-system'">
           <div class="admin-subnav" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
-            <button v-for="s in adminSubs" :key="s.key" class="btn btn-sm"
+            <button v-for="s in hqAdminSubs" :key="s.key" class="btn btn-sm"
                     :class="adminSub===s.key ? 'btn-gold' : 'btn-outline'"
                     @click="switchAdminSub(s.key)">{{ s.icon }} {{ s.label }}</button>
-            <span style="margin-left:auto;display:flex;gap:14px">
-              <a class="login-dl-link" :href="dlUrl('/api/scan-app/download')" download>📱 {{ t('login.scanApp') }}</a>
-              <a class="login-dl-link" :href="dlUrl('/api/print-agent/download')" download>🖨 {{ t('login.printAgent') }}</a>
-            </span>
+          </div>
+        </section>
+
+        <!-- 门店系统管理子导航（始终置顶，先于各子视图内容渲染） -->
+        <section v-if="tab==='system'">
+          <div class="admin-subnav" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+            <button v-for="s in storeAdminSubs" :key="s.key" class="btn btn-sm"
+                    :class="adminSub===s.key ? 'btn-gold' : 'btn-outline'"
+                    @click="switchAdminSub(s.key)">{{ s.icon }} {{ s.label }}</button>
           </div>
         </section>
 
@@ -2101,7 +2068,14 @@
         <section v-if="tab==='system' && adminSub==='bridge'">
           <!-- 门店设备：按门店分组管理打印机 / 手持机 / 安防设备（谁用谁管） -->
           <div class="card-item">
-            <div class="card-title">{{ t('sb.title') }}</div>
+            <div class="flex-between" style="margin-bottom:4px;gap:12px;flex-wrap:wrap">
+              <div class="card-title" style="margin:0">{{ t('sb.title') }}</div>
+              <!-- 助手程序下载：手持机 APP / 打印助手 EXE -->
+              <span style="display:flex;gap:16px;flex-wrap:wrap">
+                <a class="login-dl-link" :href="dlUrl('/api/scan-app/download')" download>📱 {{ t('sb.dlScanApp') }}</a>
+                <a class="login-dl-link" :href="dlUrl('/api/print-agent/download')" download>🖨 {{ t('sb.dlPrintAgent') }}</a>
+              </span>
+            </div>
             <div class="hint">{{ t('sb.hint') }}</div>
             <div v-if="!anyAgentOnline" class="agent-warn">⚠ {{ t('sb.agentDownPc') }}</div>
 
@@ -2184,7 +2158,7 @@
         </section>
 
         <!-- ================= 用户与门店权限（系统管理子视图，企业整体级：仅总店店长） ================= -->
-        <section v-if="tab==='system' && adminSub==='users' && isAdminRole() && isHqStore()">
+        <section v-if="tab==='hq-system' && adminSub==='users' && isAdminRole()">
           <details class="biz-guide"><summary>📖 {{ t('biz.title') }}</summary><div class="biz-body">{{ t('adminUser.guide') }}</div></details>
           <div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0 12px">
             <div style="font-size:14px;color:var(--text-2)">{{ t('adminUser.tip') }}</div>
@@ -2613,10 +2587,10 @@ Content-Type: application/json
           </div>
           <div class="empty" v-if="!showcase">{{ t('common.loading') }}</div>
         </section>
-        <!-- ================= 系统管理（全局策略与底座配置） ================= -->
-        <section v-if="tab==='system'">
-          <!-- EPC 编码规则（企业整体级，仅总店） -->
-          <div v-if="adminSub==='epc' && isHqStore()">
+        <!-- ================= 总部系统管理（EPC / 经办人 / 标签模板：企业整体级） ================= -->
+        <section v-if="tab==='hq-system'">
+          <!-- EPC 编码规则 -->
+          <div v-if="adminSub==='epc'">
           <div class="card-item card-narrow">
             <div class="card-title">{{ t('epc.title') }}</div>
             <div class="form-row epc-rule-fields">
@@ -2631,7 +2605,7 @@ Content-Type: application/json
           </div>
 
           <!-- 经办人类别（企业整体级，仅总店；销售开单必选，默认店员；单据保存名称快照） -->
-          <div v-if="adminSub==='clerk' && isHqStore()">
+          <div v-if="adminSub==='clerk'">
           <div class="card-item card-narrow">
             <div class="card-title">{{ t('clerk.title') }}</div>
             <div class="hint" style="margin-bottom:10px">{{ t('clerk.hint') }}</div>
@@ -2665,7 +2639,7 @@ Content-Type: application/json
           </div>
 
           <!-- 标签打印模板（企业整体级，仅总店；品类绑定在「总部管理」品类表中操作） -->
-          <div v-if="adminSub==='tpl' && isHqStore()">
+          <div v-if="adminSub==='tpl'">
           <div class="card-item card-narrow">
             <div class="card-title">{{ t('tpl.title') }} <button class="btn btn-sm btn-gold" style="margin-left:8px" @click="openTplDesigner(null)">{{ t('tpl.new') }}</button></div>
             <table class="data-table" style="margin-bottom:12px" v-if="labelTemplates.length">
@@ -3794,6 +3768,23 @@ Content-Type: application/json
     </div>
   </div>
 
+  <!-- 手持机助手 APP 下载：二维码 + 链接复制（门店详情「添加」按钮） -->
+  <div class="modal-mask" v-if="hhAddModal" @click.self="closeHandheldAdd">
+    <div class="modal-box" style="max-width:380px">
+      <div class="sheet-head"><h3>📱 {{ t('hhadd.title') }}</h3><span class="sheet-close" @click="closeHandheldAdd">✕</span></div>
+      <div class="sheet-body" style="text-align:center">
+        <div v-if="hhAddQr" style="margin:6px auto 10px;display:inline-block;background:#fff;padding:8px;border-radius:8px" v-html="hhAddQr"></div>
+        <div class="prod-meta" v-else style="margin:10px 0">{{ t('hhadd.noQr') }}</div>
+        <input class="mono" style="width:100%;font-size:12px" :value="hhAddUrl" readonly @focus="$event.target.select()">
+        <div style="display:flex;gap:8px;margin-top:10px;justify-content:center">
+          <button class="btn btn-sm btn-gold" @click="copyText(hhAddUrl)">⧉ {{ t('hhadd.copy') }}</button>
+          <a class="btn btn-sm btn-outline" :href="hhAddUrl" download style="text-decoration:none;line-height:26px">⬇ {{ t('hhadd.open') }}</a>
+        </div>
+        <div class="prod-meta" style="margin-top:10px">{{ t('hhadd.hint') }}</div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-mask" v-if="stockDetail" @click.self="stockDetail=null">
     <div class="modal-box modal-lg">
       <div class="sheet-head"><h3>{{ t('co.batchTitle') }} {{ stockDetail.head.batch_no }}</h3><span class="sheet-close" @click="stockDetail=null">✕</span></div>
@@ -3936,14 +3927,14 @@ Content-Type: application/json
 <script src="./vendor/vue.global.prod.js"></script>
 <script src="./vendor/qrcode.min.js"></script>
 <script src="./vendor/zxing.min.js"></script>
-<script src="./i18n.js?v=20261021b01"></script>
+<script src="./i18n.js?v=20261021b10"></script>
 <script>
 // 非中文时同步加载对应语言字典（i18n.<dict>.js），确保 app.js 挂载前字典就绪
 (function () {
   var _dict = (typeof i18nDictFile === 'function') ? i18nDictFile() : '';
-  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261021b01"><\/script>');
+  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261021b10"><\/script>');
 })();
 </script>
-<script src="./app.js?v=20261021b01"></script>
+<script src="./app.js?v=20261021b10"></script>
 </body>
 </html>
