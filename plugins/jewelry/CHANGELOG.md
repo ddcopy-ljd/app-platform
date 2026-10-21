@@ -1,5 +1,17 @@
 # CHANGELOG — 懿臻珠宝云
 
+## v1.2.52.261021（未发布）
+
+### 打印功能大简化：打印机/规格/连接全部固定，删掉复杂配置
+
+固定方案：打印机 ZMIN X19D（USB、300dpi），标签 66×25.4mm 横版（间隙 5mm，可打印区左侧 25×25mm），撕裂线 17.0mm 为打印机硬件撕纸参数（助手启动自动下发 `CONFIG tear,17.0`，FEED 一张正好停在撕裂线）。
+
+- **C# 助手裁剪**：删除标签纸形状库（LabelPaperStore/LabelPaper）、设备档案（DeviceProfiles）、连接巡检（ConnectionProbeService）、蓝牙双通道（BlePrintService/BtSppPrintService）、打印机配置窗体（FormPrinterConfig）及对应本地接口（/api/labelpapers、/api/profiles、/api/printer-prefs、/api/printer-status、/api/print-config/apply、/api/rfid/*、/api/printers）；device_cmd 仅保留 exec；主窗体精简为「打印机状态 + 测试页 + 服务地址/门店密钥绑定」
+- **网页端收缩**：门店详情「打印机」卡片精简为在线状态 + 打印机清单 + 测试页；「打印与扫描助手」页删除标签纸形状库、标签格式指派、业务指派三块 UI（云端 label_papers 表/API 保留以备后用）；app.js/i18n 同步清理死代码与失效 key；前端缓存版本 → 20261021b01
+- **排版引擎**：rfid_print.py 画布 827×413（70×35）→ 779×300（66×25.4）；无模板回退布局与内建模板「珠宝RFID标准签（66×25.4）」统一（FALLBACK_DEFINITION）；build_zmin_content 默认 66/25.4/间隙5/300dpi
+- **测试页**：云端下发的助手测试页固定 66×25.4、300dpi、USB
+- 顺手修复 i18n.it.js 存量语法错误（sb.keyGen 值未转义引号导致意语字典加载失败）
+
 ## v1.2.51.261020（未发布）
 
 ### 打印配置管理：三层模型 + 链路指派 + 连接巡检

@@ -1,13 +1,14 @@
 """RFID 珠宝标签 ZPL 排版引擎（得实 DL-735RE 等 ZPL 指令打印机）。
 
-标签规格：70mm × 35mm，300 DPI → 827 × 413 dots。
+标签规格（固定）：宽 66mm × 高 25.4mm 横版，300 DPI → 779 × 300 dots，
+间隙 5mm；可打印区域为标签左侧 25×25mm（对折珠宝签）。
 - ASCII 内容（货号/价格/条码/EPC）用内置字体 ^A0N
 - 中文使用机内字体 ^A@N（默认宋体 E:SIMSUN.FNT，可按打印机实际字体调整）
 - RFID 芯片写入：^RFW,H,<EPC十六进制>
 
 模板驱动模式：
 - template.definition.slots 定义字段位置与样式
-- 无模板时回退到旧版固定布局（fields 集合）
+- 无模板时回退到内建固定版式（FALLBACK_DEFINITION，66×25.4 左侧 25×25mm 可打印区）
 """
 
 from __future__ import annotations
@@ -116,9 +117,9 @@ def decode_chip_epc(raw: str, prefix: str = "E28", seq_bits: int = 6,
                 return cand
     return s
 
-# 300 DPI 下的标签尺寸
-LABEL_WIDTH_DOTS = 827   # 70mm
-LABEL_HEIGHT_DOTS = 413  # 35mm
+# 300 DPI 下的标签尺寸（固定 66×25.4mm 横版，与内建模板画布一致）
+LABEL_WIDTH_DOTS = 779   # 66mm
+LABEL_HEIGHT_DOTS = 300  # 25.4mm
 
 # 可输出字段：key → 中文名称
 FIELD_OPTIONS = {
@@ -141,6 +142,18 @@ FIELD_OPTIONS = {
 
 DEFAULT_FIELDS = {"store", "name", "spec", "price", "barcode"}
 DEFAULT_FONT = "E:SIMSUN.FNT"  # 打印机内中文字体（无中文字体的机器可改为空）
+
+# 无模板时的回退布局：与 db.py 内建「珠宝RFID标准签（66×25.4）」同版式，
+# 可打印区域为标签左侧 25×25mm（≈295×300 点），坐标单位 300dpi 点
+FALLBACK_DEFINITION = {
+    "slots": [
+        {"field": "name", "x": 8, "y": 8, "w": 280, "h": 28, "font": {"type": "cn", "w": 26, "h": 26}},
+        {"field": "price", "x": 8, "y": 42, "w": 280, "h": 34, "font": {"type": "ascii", "w": 30, "h": 30}},
+        {"field": "barcode", "x": 8, "y": 84, "w": 270, "h": 70, "font": {"type": "barcode", "h": 50}},
+        {"field": "epc_text", "x": 8, "y": 196, "w": 280, "h": 18, "font": {"type": "ascii", "w": 14, "h": 14}},
+        {"field": "spec", "x": 8, "y": 224, "w": 280, "h": 18, "font": {"type": "cn", "w": 14, "h": 14}},
+    ]
+}
 
 
 def _ascii_safe(s: str) -> str:
@@ -302,62 +315,16 @@ def build_label_zpl(product: dict, *, fields: set[str] | None = None,
     if write_epc and epc:
         L.append(f"^RFW,H^FD{chip_epc_hex(epc, rfid_prefix)}^FS")
 
-    # ---- 模板驱动：遍历 slots ----
+    # ---- 模板驱动：遍历 slots（无模板时回退到固定 66×25.4 版式）----
+    tpl_def = None
     if template and template.get("definition"):
         try:
-            definition = json.loads(template["definition"]) if isinstance(template["definition"], str) else template["definition"]
+            tpl_def = json.loads(template["definition"]) if isinstance(template["definition"], str) else template["definition"]
         except (json.JSONDecodeError, TypeError):
-            definition = {}
-        slots = definition.get("slots", [])
-        for slot in slots:
-            L.extend(_render_slot(slot, product, store_name, rfid_prefix))
-        # 模板中可覆盖 write_epc
-        if definition.get("write_epc") is False:
-            # 已在上面写入，无法撤销；若模板明确关闭则需要在生成前判断
-            pass
-    else:
-        # ---- 旧版固定布局（fields 集合）----
-        cn_font = bool(font)
-        y = 24
-        if fields and "name" in fields and name:
-            if cn_font:
-                L.append(f"^FO24,{y}^A@N,30,30,{font}^FD{name}^FS")
-            else:
-                L.append(f"^FO24,{y}^A0N,28,28^FD{code}^FS")
-            y += 44
-
-        if fields and "spec" in fields and spec:
-            if cn_font:
-                L.append(f"^FO24,{y}^A@N,22,22,{font}^FD{spec}^FS")
-            else:
-                L.append(f"^FO24,{y}^A0N,22,22^FD{_ascii_safe(spec)}^FS")
-            y += 34
-
-        if fields and "barcode" in fields:
-            bc = _ascii_safe(product.get("barcode") or code)
-            if bc:
-                L.append(f"^FO24,{y + 34}^BY2^BCN,64,Y,N,N^FD{bc}^FS")
-                L.append(f"^FO24,{y + 4}^A0N,22,22^FD{bc}^FS")
-
-        if fields and "epc_barcode" in fields and epc:
-            # 可扫描的 EPC 条码：去掉企业前缀（仅品类+序号），缩短条码；完整 EPC 仍存芯片/见 epc_text
-            epc_short = _strip_epc_prefix(epc, rfid_prefix)
-            L.append(f"^FO420,210^BY2^BCN,50,Y,N,N^FD{epc_short}^FS")
-            L.append(f"^FO420,190^A0N,18,18^FDEPC {epc_short}^FS")
-
-        if fields and "price" in fields and price:
-            price_s = f"RMB {float(price):,.0f}"
-            L.append(f"^FO560,24^A0N,42,42^FD{price_s}^FS")
-
-        if fields and "cert" in fields and cert:
-            L.append(f"^FO520,108^A0N,20,20^FDCERT {cert}^FS")
-
-        if fields and "epc_text" in fields and epc:
-            L.append(f"^FO420,{LABEL_HEIGHT_DOTS - 40}^A0N,18,18^FDEPC {epc}^FS")
-
-        if fields and "store" in fields and store:
-            if cn_font:
-                L.append(f"^FO24,{LABEL_HEIGHT_DOTS - 36}^A@N,20,20,{font}^FD{store}^FS")
+            tpl_def = {}
+    slots = (tpl_def or FALLBACK_DEFINITION).get("slots", [])
+    for slot in slots:
+        L.extend(_render_slot(slot, product, store_name, rfid_prefix))
 
     L += ["^PQ1", "^XZ"]
     return "\r\n".join(L) + "\r\n"
@@ -417,11 +384,11 @@ def _slot_to_content_el(slot: dict, product: dict, store_name: str,
 def build_zmin_content(product: dict, *, fields: set[str] | None = None,
                        store_name: str = "", write_epc: bool = True,
                        template: dict | None = None, rfid_prefix: str = "E280",
-                       width: float = 70.0, height: float = 35.0,
-                       gap: float = 3.0, dpi: int = 203) -> dict:
+                       width: float = 66.0, height: float = 25.4,
+                       gap: float = 5.0, dpi: int = 300) -> dict:
     """单件商品 → PrintAgent 结构化 rfid 任务 content。
 
-    优先模板 slots 布局；无模板回退固定布局（与 build_label_zpl 同版式，点阵÷8=mm）。
+    优先模板 slots 布局；无模板回退到 FALLBACK_DEFINITION（与 ZPL 回退同版式）。
     """
     p = product or {}
     content: dict = {"width": width, "height": height, "gap": gap, "dpi": dpi,
@@ -432,42 +399,15 @@ def build_zmin_content(product: dict, *, fields: set[str] | None = None,
         content["epc"] = chip_epc_hex(epc, rfid_prefix)
         content["rfidBlock"] = 0
 
+    tpl_def = None
     if template and template.get("definition"):
         try:
-            definition = json.loads(template["definition"]) if isinstance(template["definition"], str) else template["definition"]
+            tpl_def = json.loads(template["definition"]) if isinstance(template["definition"], str) else template["definition"]
         except (json.JSONDecodeError, TypeError):
-            definition = {}
-        for slot in definition.get("slots", []):
-            _slot_to_content_el(slot, p, store_name, rfid_prefix, content)
-        return content
-
-    # ---- 回退固定布局（镜像 build_label_zpl 旧版分支，300DPI 点阵÷11.811=mm）----
-    name = _cn(p.get("name", ""))
-    spec = _spec_str(p)
-    code = _ascii_safe(p.get("code", ""))
-    if fields and "name" in fields and (name or code):
-        content["texts"].append({"text": name or code, "x": 2.03, "y": 2.03, "size": 7.2})
-    if fields and "spec" in fields and spec:
-        content["texts"].append({"text": spec, "x": 2.03, "y": 5.76, "size": 6.0})
-    if fields and "barcode" in fields:
-        bc = _ascii_safe(p.get("barcode") or code)
-        if bc:
-            content["barcode"] = {"code": bc, "type": "Code 128 Auto",
-                                  "x": 2.03, "y": 11.51, "scale": 2,
-                                  "height": 5.42, "textPosition": 2}
-    if fields and "epc_barcode" in fields and epc:
-        content["texts"].append({"text": f"EPC {_strip_epc_prefix(epc, rfid_prefix)}",
-                                 "x": 35.56, "y": 16.07, "size": 6.0})
-    if fields and "price" in fields and p.get("price"):
-        content["texts"].append({"text": f"RMB {float(p['price']):,.0f}",
-                                 "x": 47.38, "y": 2.03, "size": 10.1})
-    if fields and "cert" in fields and p.get("cert"):
-        content["texts"].append({"text": f"CERT {_ascii_safe(p['cert'])}",
-                                 "x": 44.00, "y": 9.12, "size": 6.0})
-    if fields and "epc_text" in fields and epc:
-        content["texts"].append({"text": f"EPC {epc}", "x": 35.56, "y": 31.56, "size": 6.0})
-    if fields and "store" in fields and store_name:
-        content["texts"].append({"text": _cn(store_name), "x": 2.03, "y": 31.90, "size": 6.0})
+            tpl_def = {}
+    slots = (tpl_def or FALLBACK_DEFINITION).get("slots", [])
+    for slot in slots:
+        _slot_to_content_el(slot, p, store_name, rfid_prefix, content)
     return content
 
 

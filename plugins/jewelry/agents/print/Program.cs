@@ -53,6 +53,22 @@ namespace PrintAgent
                 return;
             }
 
+            // 启动即下发固定撕裂线偏移(17.0mm, X19D 硬件撕纸参数, CONFIG tear → #UM>FD, 打印机 NV 持久):
+            // 走统一指令层(zmin/USB), 失败仅记日志, 不弹窗不阻塞启动
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    string cmds = $"CONFIG tear,{AppConfig.FixedTearOffsetMm.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+                    var (code, msg, _) = await RfidCommandExecutor.ExecuteAsync("zmin", "USB", "", "", cmds, 8000, false);
+                    Console.WriteLine($"[PrintAgent] 启动下发 {cmds}: code={code}, msg={msg}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[PrintAgent] 启动下发 CONFIG tear 失败: {ex.Message}");
+                }
+            });
+
             Icon appIcon;
             try
             {

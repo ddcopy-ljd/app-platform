@@ -32,9 +32,6 @@ namespace PrintAgent.Services
         public event Action<PrintTask>? OnCloudTaskReceived;
         public event Action<PrintTask, bool, string>? OnCloudTaskFinished;
 
-        /// <summary>本地打印机与服务端记录不匹配时触发(缺失或离线), 参数为缺失/离线的打印机名列表</summary>
-        public event Action<List<string>>? OnPrinterMismatch;
-
         public CloudSyncService(AppConfig config, PrintDispatcher dispatcher)
         {
             _config = config;
@@ -175,14 +172,13 @@ namespace PrintAgent.Services
                     return;
                 }
 
-                // 服务端推送的门店配置: 含 biz_printers(业务→打印机名), 与本地打印机对比, 缺失/离线报警
+                // 服务端推送的门店配置报文: 业务指派功能已废, 忽略即可
                 if (msgType.Equals("config", StringComparison.OrdinalIgnoreCase))
                 {
-                    CheckPrinterMismatch(jMsg);
                     return;
                 }
 
-                // 远程维护设备指令 (珠宝云预留通道, 本期仅 printer): exec|capabilities|profile_get|profile_set → device_ack
+                // 远程维护设备指令 (仅 printer exec): exec → device_ack
                 if (msgType.Equals("device_cmd", StringComparison.OrdinalIgnoreCase))
                 {
                     string taskId = jMsg.Value<string>("taskId") ?? Guid.NewGuid().ToString("N");
@@ -229,62 +225,8 @@ namespace PrintAgent.Services
                             (code, msg, data) = r;
                             break;
                         }
-                        case "capabilities":
-                        {
-                            var cap = (JObject)JsonConvert.DeserializeObject(JsonConvert.SerializeObject(RfidCommandExecutor.Capabilities(brand)))!;
-                            code = cap.Value<int>("code");
-                            msg = cap.Value<string>("msg") ?? "ok";
-                            data = cap["data"]?.ToString(Newtonsoft.Json.Formatting.None);
-                            break;
-                        }
-                        case "profile_get":
-                        {
-                            string key = RfidCommandExecutor.ProfileKey(brand, iface, ip, target);
-                            _config.DeviceProfiles.TryGetValue(key, out var prof);
-                            code = 0; msg = prof == null ? "该设备无档案" : "ok";
-                            data = prof == null ? null : JsonConvert.SerializeObject(prof);
-                            break;
-                        }
-                        case "profile_set":
-                        {
-                            var prof = jMsg["profile"]?.ToObject<DeviceProfile>();
-                            if (prof == null) { code = 1; msg = "profile 不能为空"; data = null; break; }
-                            string key = RfidCommandExecutor.ProfileKey(brand, iface, ip, target);
-                            _config.DeviceProfiles[key] = prof;
-                            _config.Save();
-                            code = 0; msg = $"设备档案已保存: {key}"; data = null;
-                            break;
-                        }
-                        // 标签纸形状库 (珠宝云管理后台预留): 绑定复用 profile_set(LabelPaperId)
-                        case "labelpaper_list":
-                            code = 0; msg = "ok";
-                            data = JsonConvert.SerializeObject(LabelPaperStore.Load());
-                            break;
-                        case "labelpaper_save":
-                        {
-                            var paper = jMsg["paper"]?.ToObject<LabelPaper>();
-                            if (paper == null) { code = 1; msg = "paper 不能为空"; data = null; break; }
-                            paper.Source = "cloud";
-                            code = 0; msg = "标签纸已保存";
-                            data = JsonConvert.SerializeObject(LabelPaperStore.Upsert(paper));
-                            break;
-                        }
-                        case "labelpaper_delete":
-                        {
-                            bool del = LabelPaperStore.Delete(jMsg.Value<string>("id") ?? "");
-                            code = del ? 0 : 1; msg = del ? "已删除" : "未找到该 Id 的标签纸"; data = null;
-                            break;
-                        }
-                        case "labelpaper_sync":
-                        {
-                            var papers = jMsg["papers"]?.ToObject<List<LabelPaper>>();
-                            if (papers == null || papers.Count == 0) { code = 1; msg = "papers 不能为空"; data = null; break; }
-                            var (added, updatedCnt) = LabelPaperStore.Sync(papers, jMsg.Value<string>("mode") ?? "replace");
-                            code = 0; msg = $"整库同步完成: 新增 {added}, 更新 {updatedCnt}"; data = null;
-                            break;
-                        }
                         default:
-                            code = 1; msg = $"未知 action: {action} (exec|capabilities|profile_get|profile_set|labelpaper_list|labelpaper_save|labelpaper_delete|labelpaper_sync)"; data = null;
+                            code = 1; msg = $"未知 action: {action} (仅支持 exec)"; data = null;
                             break;
                     }
 
@@ -355,48 +297,6 @@ namespace PrintAgent.Services
                 byte[] bytes = Encoding.UTF8.GetBytes(json);
                 await _webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
             }
-        }
-
-        /// <summary>对比服务端 biz_printers 与本地打印机, 缺失或离线的触发报警</summary>
-        private void CheckPrinterMismatch(JObject configMsg)
-        {
-            try
-            {
-                var bizPrinters = configMsg["biz_printers"] as JObject;
-                if (bizPrinters == null) return;
-
-                // 服务端记录的打印机名集合(去重, 空串跳过)
-                var expected = bizPrinters.Properties()
-                    .Select(p => p.Value?.ToString() ?? "")
-                    .Where(n => !string.IsNullOrWhiteSpace(n))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-                if (expected.Count == 0) return;
-
-                var local = PrinterDiscoveryService.GetAllLocalPrinters();
-                var localNames = new HashSet<string>(
-                    local.Select(p => p.Name), StringComparer.OrdinalIgnoreCase);
-
-                var problems = new List<string>();
-                foreach (var name in expected)
-                {
-                    if (!localNames.Contains(name))
-                    {
-                        problems.Add($"缺失: {name}");
-                    }
-                    else
-                    {
-                        var dev = local.FirstOrDefault(p =>
-                            string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
-                        if (dev != null && !dev.Online)
-                            problems.Add($"离线: {name}");
-                    }
-                }
-
-                if (problems.Count > 0)
-                    OnPrinterMismatch?.Invoke(problems);
-            }
-            catch { }
         }
 
         private void CloseSocketAsync()

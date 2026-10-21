@@ -21,7 +21,7 @@ import java.util.concurrent.Executors
  * - 已有 deviceToken 时直接进 [TaskActivity]：作业页启动即建立 WS 常驻连接，
  *   凭证失效会被服务端 4401 关闭，再由作业页清凭证回本页，无需 HTTP 探活；
  * - 服务器地址可手填并记住；设备码安装即生成（SH-XXXXXX）只读展示；
- * - 「扫描激活码」扫 PC 端 /api/device/activate?key= 二维码：origin 存为 serverUrl，key 作 akey；
+ * - 「扫描激活码」扫 PC 端 /api/device/activate?key= 二维码：base（含网关前缀）存为 serverUrl，key 作 akey；
  * - 「手动输入激活码激活」弹框录入 akey；
  * - 激活成功保存 token/门店/code/name 后进作业页。右上角「设置」进 [SettingsActivity]。
  */

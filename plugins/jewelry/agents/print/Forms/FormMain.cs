@@ -16,8 +16,12 @@ namespace PrintAgent.Forms
         private Label _lblStatus = null!;
         private Label _lblCloudStatus = null!;
         private Label _lblConfig = null!;
+        private Label _lblPrinter = null!;
         private ListView _taskListView = null!;
         private ComboBox _cboLang = null!;
+        private TextBox _txtServer = null!;
+        private TextBox _txtStoreKey = null!;
+        private readonly System.Windows.Forms.Timer _printerTimer = new System.Windows.Forms.Timer();
         private CloudState _currentCloudState = CloudState.NotConfigured;
         private bool _exitConfirmed;
 
@@ -46,8 +50,6 @@ namespace PrintAgent.Forms
             _trayIcon = trayIcon;
 
             I18nService.SetLanguage(_config.Language);
-
-            ConnectionProbeService.Start(60); // 打印机连接巡检：60s/轮，链路级探测不打打印任务
 
             InitializeCustomUI();
             BindEvents();
@@ -93,15 +95,49 @@ namespace PrintAgent.Forms
             topPanel.Controls.Add(_lblConfig);
             topPanel.Controls.Add(_cboLang);
 
-            // ===== 底部: 标签参数与校准入口(校准/参数配置已合并到独立窗口) =====
-            var bottomPanel = new Panel { Dock = DockStyle.Bottom, Height = 56, BackColor = Color.FromArgb(245, 247, 250) };
-            var btnConfig = new Button { Text = "标签参数与校准", Location = new Point(16, 12), Width = 150, Height = 32 };
-            btnConfig.Click += (s, e) =>
+            // ===== 底部: 打印机状态/测试页 + 最小配置入口(服务地址/门店密钥) =====
+            var bottomPanel = new Panel { Dock = DockStyle.Bottom, Height = 92, BackColor = Color.FromArgb(245, 247, 250) };
+
+            _lblPrinter = new Label
             {
-                using var dlg = new FormPrinterConfig(_config);
-                dlg.ShowDialog(this);
+                Location = new Point(16, 14),
+                AutoSize = true,
+                Font = new Font("Microsoft YaHei", 9f, FontStyle.Bold),
+                ForeColor = Color.Gray,
+                Text = I18nService.T("PrinterChecking")
             };
-            bottomPanel.Controls.Add(btnConfig);
+            var btnTestPage = new Button { Text = I18nService.T("BtnTestPage"), Location = new Point(730, 8), Width = 130, Height = 30 };
+            btnTestPage.Click += (s, e) => _ = Task.Run(() =>
+            {
+                var (ok, msg) = UsbPcleService.PrintConfigPage();
+                try
+                {
+                    this.BeginInvoke(new Action(() =>
+                        _trayIcon.ShowBalloonTip(3000, I18nService.T("BtnTestPage"), msg, ok ? ToolTipIcon.Info : ToolTipIcon.Warning)));
+                }
+                catch { }
+            });
+
+            var lblServer = new Label { Text = I18nService.T("LblServerUrl"), Location = new Point(16, 52), AutoSize = true };
+            _txtServer = new TextBox { Location = new Point(90, 48), Width = 250 };
+            var lblKey = new Label { Text = I18nService.T("LblStoreKey"), Location = new Point(355, 52), AutoSize = true };
+            _txtStoreKey = new TextBox { Location = new Point(430, 48), Width = 240 };
+            var btnSave = new Button { Text = I18nService.T("BtnSaveReconnect"), Location = new Point(690, 46), Width = 170, Height = 30 };
+            btnSave.Click += (s, e) => SaveConnectionConfig();
+
+            bottomPanel.Controls.Add(_lblPrinter);
+            bottomPanel.Controls.Add(btnTestPage);
+            bottomPanel.Controls.Add(lblServer);
+            bottomPanel.Controls.Add(_txtServer);
+            bottomPanel.Controls.Add(lblKey);
+            bottomPanel.Controls.Add(_txtStoreKey);
+            bottomPanel.Controls.Add(btnSave);
+
+            // 打印机状态轮询: 10s/轮, 仅本机枚举(USB SN 判定), 不打打印任务
+            _printerTimer.Interval = 10000;
+            _printerTimer.Tick += (s, e) => RefreshPrinterStatus();
+            _printerTimer.Start();
+            RefreshPrinterStatus(); // 启动即刷一次
 
             _taskListView = new ListView
             {
@@ -200,16 +236,6 @@ namespace PrintAgent.Forms
                 }));
             };
 
-            // 本地打印机与服务端记录不匹配(缺失/离线)时报警
-            _cloudSync.OnPrinterMismatch += problems =>
-            {
-                this.Invoke(new Action(() =>
-                {
-                    string detail = string.Join("\n", problems);
-                    _trayIcon.ShowBalloonTip(5000, "打印机资源不匹配", detail, ToolTipIcon.Warning);
-                }));
-            };
-
             Action<PrintTask> insertTask = (task) =>
             {
                 this.Invoke(new Action(() =>
@@ -272,6 +298,63 @@ namespace PrintAgent.Forms
             {
                 _lblConfig.Text = I18nService.T("ConfigStatusWaiting");
             }
+
+            // 配置输入框回显当前值(未被用户编辑时)
+            if (_txtServer != null && !_txtServer.Focused && _txtServer.Text != _config.ServerUrl)
+                _txtServer.Text = _config.ServerUrl;
+            if (_txtStoreKey != null && !_txtStoreKey.Focused && _txtStoreKey.Text != _config.StoreKey)
+                _txtStoreKey.Text = _config.StoreKey;
+        }
+
+        /// <summary>最小配置入口: 保存服务地址/门店密钥并重连云端(与 /api/init 注入同一套持久化逻辑)</summary>
+        private void SaveConnectionConfig()
+        {
+            string serverUrl = _txtServer.Text.Trim();
+            string storeKey = _txtStoreKey.Text.Trim();
+            if (string.IsNullOrWhiteSpace(serverUrl) || string.IsNullOrWhiteSpace(storeKey))
+            {
+                MessageBox.Show(this, I18nService.T("ConfigInputsRequired"), "PrintAgent",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            _config.ServerUrl = serverUrl;
+            _config.StoreKey = storeKey;
+            _config.IsConfigured = true;
+            _config.Save();
+            UpdateConfigUI();
+            _trayIcon.ShowBalloonTip(2000, "PrintAgent", I18nService.T("CloudConnecting"), ToolTipIcon.Info);
+            _cloudSync.Restart();
+        }
+
+        /// <summary>打印机状态显示: 固定 ZMIN X19D USB, 后台枚举本机免驱 USB 设备判定在线, 回 UI 线程刷新</summary>
+        private void RefreshPrinterStatus()
+        {
+            _ = Task.Run(() =>
+            {
+                string text; Color color;
+                try
+                {
+                    var usbPrinter = PrinterDiscoveryService.GetAllLocalPrinters()
+                        .FirstOrDefault(p => p.Brand == "zmin" && p.Interface == "USB");
+                    if (usbPrinter != null)
+                    {
+                        text = I18nService.T("PrinterOnline", usbPrinter.Address);
+                        color = Color.Green;
+                    }
+                    else
+                    {
+                        text = I18nService.T("PrinterOffline");
+                        color = Color.Red;
+                    }
+                }
+                catch
+                {
+                    text = I18nService.T("PrinterOffline");
+                    color = Color.Red;
+                }
+                try { this.BeginInvoke(new Action(() => { _lblPrinter.Text = text; _lblPrinter.ForeColor = color; })); } catch { }
+            });
         }
 
         private void UpdateCloudStatusUI()

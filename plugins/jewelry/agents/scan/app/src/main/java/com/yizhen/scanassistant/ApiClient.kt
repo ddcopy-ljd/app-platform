@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit
  * 激活成功后 device_token 即唯一凭证，后续所有业务（任务推送、扫描上报、提交完结）
  * 均通过 [ScanWsClient] 的 WebSocket 常驻连接完成，不再使用 HTTP 轮询。
  *
- * - baseUrl 为服务器 origin（如 http://192.168.1.10:8002），自动去末尾斜杠/补协议头；
+ * - baseUrl 为服务器 base（如 http://192.168.1.10:8002 直连，或 http://host/app/jewelry/t001 经平台网关），自动去末尾斜杠/补协议头；
  * - 请求/响应均为 JSON；activate 无 token；
  * - 非 2xx 响应体为 {"detail":"中文消息"}，原样解析为 [ApiException.detail] 供弹窗；
  * - 网络层异常统一包装为 code=0 的 [ApiException]。
@@ -64,16 +64,17 @@ object ApiClient {
     }
 
     /**
-     * 从输入中提取服务器 origin（协议+主机+端口）。
-     * 输入既可能是手填的 `192.168.1.10:8002`，也可能是扫码后整串贴入的
-     * `http://192.168.1.10:8002/api/device/activate?key=xxx`——后者必须剥掉路径，
-     * 否则拼激活端点会变成 .../activate/api/device/activate 导致 404。
+     * 从输入中提取服务器 base（协议+主机+端口+可选网关前缀）。
+     * 输入既可能是手填的 `192.168.1.10:8002` / 含前缀 base，也可能是扫码后整串贴入的
+     * `http://host[/app/jewelry/t001]/api/device/activate?key=xxx`——后者截取接口路径
+     * 之前的部分并保留网关前缀（经平台网关访问时前缀是路由必需，只取 origin 会 404）。
      */
     fun serverOrigin(raw: String?): String {
         val s = (raw ?: "").trim()
         if (s.isEmpty()) return ""
-        Regex("^(https?://[^/]+)", RegexOption.IGNORE_CASE).find(s)
-            ?.let { return it.groupValues[1].trimEnd('/') }
+        val idx = listOf(PATH_ACTIVATE, PATH_CLAIM)
+            .map { s.indexOf(it, ignoreCase = true) }.filter { it > 0 }.minOrNull()
+        if (idx != null) return s.substring(0, idx).trimEnd('/')
         return normalizeBase(s)
     }
 
@@ -88,16 +89,22 @@ object ApiClient {
     }
 
     /**
-     * 从二维码 URL 解析 (origin, key)：
-     * origin = 协议+主机(+端口)，key 为 query 参数；解析失败返回 null。
+     * 从二维码 URL 解析 (base, key)：
+     * base = 激活接口路径之前的部分（协议+主机+端口+可选网关前缀），key 为 query 参数；
+     * 解析失败返回 null。
      */
     fun parseQr(raw: String?): Pair<String, String>? {
         val s = (raw ?: "").trim()
-        val origin = Regex("^(https?://[^/]+)", RegexOption.IGNORE_CASE).find(s)?.groupValues?.get(1)
-            ?: return null
+        val idx = s.indexOf(PATH_ACTIVATE, ignoreCase = true)
+        if (idx <= 0) return null
+        val base = s.substring(0, idx).trimEnd('/')
+        if (!base.startsWith("http://", ignoreCase = true) &&
+            !base.startsWith("https://", ignoreCase = true)
+        ) {
+            return null
+        }
         val key = queryParam(s, "key")?.takeIf { it.isNotEmpty() } ?: return null
-        // 去掉 origin 末尾可能带的端口后多余斜杠（正则已排除路径），原样保留主机大小写
-        return Pair(origin.trimEnd('/'), key)
+        return Pair(base, key)
     }
 
     /** 读取 URL query 参数并 URL 解码（支持 ?key= 与片段前任意位置）。 */

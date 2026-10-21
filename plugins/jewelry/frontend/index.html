@@ -2024,46 +2024,26 @@
               <div class="empty" v-else>{{ t('sb.noHandheld') }}</div>
             </div>
 
-            <!-- 打印机（本机打印助手）：列表/用途备注/移除/标签纸绑定/校准/测试页，档案仅存门店电脑本地 -->
+            <!-- 打印机（本机打印助手）：只读展示本机打印机清单 + 测试页（固定 ZMIN X19D · 66×25.4mm） -->
             <div class="card-item" v-if="curStore">
               <div class="flex-between" style="margin-bottom:8px">
                 <div class="card-title" style="margin:0">🖨 {{ t('sb.printers') }} <span class="prod-meta">({{ agentPrinters().length }})</span></div>
                 <button class="btn-small" @click="openStorePrinters">{{ t('sb.refresh') }}</button>
               </div>
-              <div class="hint" style="margin-bottom:10px">{{ printerManage() ? t('sb.printersHint') : t('sb.printersRO') }}</div>
               <template v-if="localAgent">
                 <div v-if="agentPrinters().length">
                   <div class="sec-dev" v-for="p in agentPrinters()" :key="p.name + p.interface">
                     <div class="flex-between">
                       <b>{{ p.name }} <span class="prod-meta">{{ p.brand ? p.brand.toUpperCase() : '' }} · {{ p.interface }}</span>
                         <span class="prod-meta" v-if="p.isDefault">· {{ t('sb.printerDefault') }}</span></b>
-                      <span class="bridge-state" :class="p.online ? 'st-on' : 'st-off'">● {{ p.online ? t('sb.online') : t('sb.offline') }}</span>
-                    </div>
-                    <div class="prod-meta" v-if="agentNoteOf(p)" style="margin-top:4px">📝 {{ agentNoteOf(p) }}</div>
-                    <div class="flex-between" style="margin-top:6px;gap:8px;flex-wrap:wrap">
-                      <span class="prod-meta">{{ t('sb.printerPaper') }}：{{ agentBoundPaperName(p) || t('sb.noPaper') }}</span>
-                      <span v-if="printerManage()" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-                        <select :value="agentPaperSelOf(p)" @change="setAgentPaperSel(p, $event.target.value)" style="max-width:190px">
-                          <option value="">{{ t('sb.noPaper') }}</option>
-                          <option v-for="lp in agentPapers" :key="lp.id" :value="lp.id">{{ lp.name }}（{{ lp.width }}×{{ lp.height }}mm）</option>
-                        </select>
-                        <button class="btn-small" @click="saveAgentPaperBind(p)">{{ t('sb.bindPaperSave') }}</button>
-                        <button class="btn-small" v-if="p.brand === 'zmin'" @click="agentCalibrate('paper')">{{ t('sb.calibrate') }}</button>
-                        <button class="btn-small" v-if="p.brand === 'zmin'" @click="agentCalibrate('config')">{{ t('sb.test') }}</button>
-                        <button class="btn-small" @click="notePrinter(p)">{{ t('lbl.remark') }}</button>
-                        <button class="btn-small btn-danger" @click="hidePrinter(p)">{{ t('act.remove') }}</button>
+                      <span style="display:flex;gap:8px;align-items:center">
+                        <button class="btn-small" @click="agentCalibrate('config')">{{ t('sb.test') }}</button>
+                        <span class="bridge-state" :class="p.online ? 'st-on' : 'st-off'">● {{ p.online ? t('sb.online') : t('sb.offline') }}</span>
                       </span>
                     </div>
                   </div>
                 </div>
                 <div class="empty" v-else>{{ t('sb.noPrinter') }}</div>
-                <div v-if="printerManage() && agentHiddenPrinters().length" style="margin-top:8px">
-                  <div class="prod-meta">{{ t('sb.printerHidden') }} ({{ agentHiddenPrinters().length }})</div>
-                  <div class="flex-between" v-for="p in agentHiddenPrinters()" :key="'h-' + p.name + p.interface" style="padding:2px 0">
-                    <span class="prod-meta">{{ p.name }} · {{ p.interface }}</span>
-                    <button class="btn-small" @click="restorePrinter(p)">{{ t('sb.printerRestore') }}</button>
-                  </div>
-                </div>
               </template>
               <div class="empty" v-else>{{ t('sb.agentOfflineHint') }}</div>
             </div>
@@ -2125,32 +2105,6 @@
             <div class="hint">{{ t('sb.hint') }}</div>
             <div v-if="!anyAgentOnline" class="agent-warn">⚠ {{ t('sb.agentDownPc') }}</div>
 
-            <!-- 标签纸形状库(租户级): 网页端维护, 保存/删除自动下发到各门店在线助手 -->
-            <details class="bridge-biz lp-lib">
-              <summary>📚 {{ t('lp.libTitle') }} <span class="prod-meta" v-if="labelPapers.length">({{ labelPapers.length }})</span></summary>
-              <div class="hint" style="margin:4px 0">{{ t('lp.libHint') }}</div>
-              <div v-if="labelPapers.length">
-                <div class="sec-dev" v-for="lp in labelPapers" :key="lp.id"
-                     style="padding:6px 0;border-bottom:1px dashed #eee">
-                  <div class="flex-between" style="font-size:14px">
-                    <span>
-                      <b>{{ lp.name }}</b>
-                      <span class="prod-meta mono">{{ lp.width }}×{{ lp.height }}mm · G{{ lp.gap }}</span>
-                      <span class="prod-meta">{{ t('lp.printable') }} {{ (lp.width - lp.margin_left - lp.margin_right).toFixed(1) }}×{{ (lp.height - lp.margin_top - lp.margin_bottom).toFixed(1) }}mm</span>
-                      <span class="prod-meta" v-if="lp.antenna_w > 0">📡 {{ lp.antenna_x }},{{ lp.antenna_y }} ({{ lp.antenna_w }}×{{ lp.antenna_h }})</span>
-                    </span>
-                    <span>
-                      <button class="btn-small" @click="lpEditOpen(lp)">{{ t('act.edit') }}</button>
-                      <button class="btn-small btn-danger" @click="lpDel(lp)">{{ t('act.delete') }}</button>
-                    </span>
-                  </div>
-                  <div class="prod-meta" v-if="lp.updated_at">{{ lp.updated_at }} · {{ lp.updated_by }}<template v-if="lp.notes"> · {{ lp.notes }}</template></div>
-                </div>
-              </div>
-              <div class="hint" v-else style="margin:4px 0">{{ t('lp.libEmpty') }}</div>
-              <button class="btn-small" style="margin-top:6px" @click="lpEditOpen(null)">＋ {{ t('lp.add') }}</button>
-            </details>
-
             <div class="bridge-grid">
               <div class="bridge-store" v-for="s in nonHqStores()" :key="s.id">
               <div class="flex-between">
@@ -2175,73 +2129,10 @@
               </div>
               <div class="prod-meta" v-else style="margin:4px 0">{{ t('sb.noAgent') }}</div>
 
-              <details class="bridge-biz" v-if="bridgeOfStore(s.id) && bridgeOfStore(s.id).agents && bridgeOfStore(s.id).agents.length">
-                <summary>{{ t('sb.assignTitle') }}</summary>
-                <!-- Group A：标签格式（纸方案+撕纸位置，仅影响出纸排版） -->
-                <div class="cfg-group">
-                  <div class="cfg-group-title">🏷 {{ t('prcfg.grpFormat') }}</div>
-                  <div class="hint" style="margin:2px 0 6px">{{ t('prcfg.grpFormatHint') }}</div>
-                  <div class="biz-line">
-                    <span class="biz-line-name">{{ t('prcfg.scheme') }}</span>
-                    <select class="biz-line-sel" :value="labelSchemeOf(s.id).paper_id" :disabled="!printerManage()"
-                            @change="setLabelScheme(s.id,'paper_id',$event.target.value)">
-                      <option value="">{{ t('prcfg.noScheme') }}</option>
-                      <option v-for="p in (agentPapers || [])" :key="p.id" :value="p.id">{{ p.name }}（{{ p.width }}×{{ p.height }}mm）</option>
-                    </select>
-                  </div>
-                  <div class="biz-line">
-                    <span class="biz-line-name">{{ t('prcfg.tear') }}</span>
-                    <input class="cfg-input" type="number" step="0.5" min="0" max="30" style="width:76px" :disabled="!printerManage()"
-                           :value="labelSchemeOf(s.id).tear_mm" @change="setLabelScheme(s.id,'tear_mm',$event.target.value)">
-                    <span class="prod-meta">mm</span>
-                    <button class="btn-small biz-test" :disabled="!printerManage()" @click="saveLabelScheme(s.id)">{{ t('prcfg.applyScheme') }}</button>
-                  </div>
-                  <div class="prod-meta" v-if="labelSchemeOf(s.id).updated_at" style="margin-top:4px">
-                    {{ labelSchemeOf(s.id).updated_at }} · {{ labelSchemeOf(s.id).updated_by }}
-                  </div>
-                </div>
-                <!-- Group B：设备与连接（指派/链路/巡检状态，与格式无关） -->
-                <div class="cfg-group">
-                  <div class="cfg-group-title">⚙ {{ t('prcfg.grpDevice') }}
-                    <button class="btn-small" style="margin-left:auto"
-                            :disabled="!localAgent || localAgent.code !== 0"
-                            @click="probeAgentNow()">{{ t('prcfg.probeNow') }}</button>
-                  </div>
-                  <div class="hint" style="margin:2px 0 6px">{{ t('prcfg.grpDeviceHint') }}</div>
-                  <div v-for="g in bizGroups()" :key="g.group" class="biz-grp">
-                    <div class="biz-grp-title">{{ t('pbizg.' + g.group) }}</div>
-                    <div class="biz-line" v-for="code in g.items" :key="code">
-                      <span class="biz-line-name">{{ t('pbiz.' + code) }}</span>
-                      <select class="biz-line-sel" :value="bizPrinterOf(bridgeOfStore(s.id), code)" :disabled="!printerManage()"
-                              @change="bindBizPrinter(s.id, code, { printer: $event.target.value })">
-                        <option value="">{{ bridgeOfStore(s.id) && bridgeOfStore(s.id).online ? t('sb.notAssigned') : t('sb.waitOnline') }}</option>
-                        <option v-if="bizPrinterOf(bridgeOfStore(s.id),code) && bridgeOfStore(s.id) && bridgeOfStore(s.id).printers.indexOf(bizPrinterOf(bridgeOfStore(s.id),code)) < 0"
-                                disabled :value="bizPrinterOf(bridgeOfStore(s.id),code)">{{ bizPrinterOf(bridgeOfStore(s.id),code) }}</option>
-                        <option v-for="n in (bridgeOfStore(s.id) ? bridgeOfStore(s.id).printers : [])" :key="n" :value="n">{{ n }}</option>
-                      </select>
-                      <select class="cfg-iface" :value="bizIfaceOf(bridgeOfStore(s.id), code)"
-                              @change="bindBizPrinter(s.id, code, { iface: $event.target.value })" :title="t('prcfg.iface')">
-                        <option value="USB">USB</option>
-                        <option value="NET">NET</option>
-                        <option value="BT">BT</option>
-                      </select>
-                      <input v-if="bizIfaceOf(bridgeOfStore(s.id), code)==='NET'" class="cfg-input" style="width:112px" :disabled="!printerManage()"
-                             placeholder="192.168.x.x" :value="bizIpOf(bridgeOfStore(s.id), code)"
-                             @change="bindBizPrinter(s.id, code, { printer_ip: $event.target.value })">
-                      <span class="bridge-state"
-                            :class="prnStatusClass(s.id, code)"
-                            :title="prnStatusTip(s.id, code)">●</span>
-                      <button class="btn-small biz-test" :disabled="!bridgeOfStore(s.id) || !bridgeOfStore(s.id).online || !bizPrinterOf(bridgeOfStore(s.id),code) || !printerManage()"
-                              @click="storeControl(s.id,'test',code)" :title="t('sb.test')">T</button>
-                    </div>
-                  </div>
-                </div>
-              </details>
-
               <div class="bridge-actions" v-if="bridgeOfStore(s.id)">
                 <button class="btn-small" :disabled="!bridgeOfStore(s.id).online || !printerManage()" @click="storeControl(s.id,'test')">{{ t('sb.test') }}</button>
-                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online || !printerManage()" @click="storeControl(s.id,'feed')">{{ t('sb.feed') }}</button>
-                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online || !printerManage()" @click="storeControl(s.id,'backfeed')">{{ t('sb.backfeed') }}</button>
+                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online || !printerManage() || bridgeOfStore(s.id).agent_type === 'csharp'" @click="storeControl(s.id,'feed')">{{ t('sb.feed') }}</button>
+                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online || !printerManage() || bridgeOfStore(s.id).agent_type === 'csharp'" @click="storeControl(s.id,'backfeed')">{{ t('sb.backfeed') }}</button>
                 <button class="btn-small" :disabled="!bridgeOfStore(s.id).online" @click="storeControl(s.id,'refresh')">⟳ {{ t('sb.refresh') }}</button>
               </div>
               <div class="prod-meta" v-if="bridgeOfStore(s.id) && bridgeOfStore(s.id).last_job" style="margin-top:4px">
@@ -3496,64 +3387,6 @@ Content-Type: application/json
         <button type="button" class="btn btn-outline" @click="cfmCancel">{{ t('act.cancel') }}</button>
         <span style="flex:1"></span>
         <button type="button" class="btn" :class="cfm.danger ? 'btn-danger-solid' : 'btn-gold'" @click="cfmOk">{{ cfm.okText }}</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 标签纸形状库编辑弹窗：新增/编辑方案, 保存后自动下发各门店在线助手 -->
-  <div class="modal-mask" v-if="lpEdit" @click.self="lpEdit = null">
-    <div class="modal-box cfm-box" @click.stop>
-      <div class="modal-head"><span>{{ lpEdit.id ? t('lp.editTitle') : t('lp.addTitle') }}</span><button class="sheet-close" @click="lpEdit = null">×</button></div>
-      <div class="sheet-body" style="max-height:62vh;overflow:auto">
-        <div class="cfg-grid2">
-          <label class="cfg-field cfg-span2">{{ t('lp.name') }}
-            <input v-model.trim="lpEdit.name" type="text" :placeholder="t('lp.namePh')">
-          </label>
-          <label class="cfg-field">{{ t('lp.width') }} (mm)
-            <input v-model.number="lpEdit.width" type="number" step="0.1" min="5" max="200">
-          </label>
-          <label class="cfg-field">{{ t('lp.height') }} (mm)
-            <input v-model.number="lpEdit.height" type="number" step="0.1" min="5" max="200">
-          </label>
-          <label class="cfg-field">{{ t('lp.gap') }} (mm)
-            <input v-model.number="lpEdit.gap" type="number" step="0.5" min="0" max="30">
-          </label>
-          <label class="cfg-field">{{ t('lp.notes') }}
-            <input v-model.trim="lpEdit.notes" type="text" :placeholder="t('lp.notesPh')">
-          </label>
-          <div class="cfg-span2" style="font-weight:600;margin-top:4px">{{ t('lp.margins') }}</div>
-          <label class="cfg-field">{{ t('lp.mLeft') }} (mm)
-            <input v-model.number="lpEdit.margin_left" type="number" step="0.5" min="0" max="50">
-          </label>
-          <label class="cfg-field">{{ t('lp.mRight') }} (mm)
-            <input v-model.number="lpEdit.margin_right" type="number" step="0.5" min="0" max="50">
-          </label>
-          <label class="cfg-field">{{ t('lp.mTop') }} (mm)
-            <input v-model.number="lpEdit.margin_top" type="number" step="0.5" min="0" max="50">
-          </label>
-          <label class="cfg-field">{{ t('lp.mBottom') }} (mm)
-            <input v-model.number="lpEdit.margin_bottom" type="number" step="0.5" min="0" max="50">
-          </label>
-          <div class="cfg-span2" style="font-weight:600;margin-top:4px">{{ t('lp.antenna') }}</div>
-          <label class="cfg-field">{{ t('lp.antX') }} (mm)
-            <input v-model.number="lpEdit.antenna_x" type="number" step="0.5" min="0" max="200">
-          </label>
-          <label class="cfg-field">{{ t('lp.antY') }} (mm)
-            <input v-model.number="lpEdit.antenna_y" type="number" step="0.5" min="0" max="200">
-          </label>
-          <label class="cfg-field">{{ t('lp.antW') }} (mm)
-            <input v-model.number="lpEdit.antenna_w" type="number" step="0.5" min="0" max="200">
-          </label>
-          <label class="cfg-field">{{ t('lp.antH') }} (mm)
-            <input v-model.number="lpEdit.antenna_h" type="number" step="0.5" min="0" max="200">
-          </label>
-          <div class="hint cfg-span2">{{ t('lp.coordHint') }}</div>
-        </div>
-      </div>
-      <div class="modal-foot">
-        <button type="button" class="btn btn-outline" @click="lpEdit = null">{{ t('act.cancel') }}</button>
-        <span style="flex:1"></span>
-        <button type="button" class="btn btn-gold" @click="lpSave">{{ t('lp.savePush') }}</button>
       </div>
     </div>
   </div>

@@ -103,11 +103,6 @@ var ST = Vue.reactive({
   // 本地打印桥（门店级）：各门店代理状态/上报打印机/绑定信息
   bridges: [],
   localAgent: null,
-  agentPapers: [],       // 本机助手标签纸档案（GET 本机 /api/labelpapers，门店详情卡片用）
-  labelPapers: [],       // 标签纸形状库主库（云端 /api/label-papers，租户级，打印与扫描助手页维护）
-  lpEdit: null,          // 形状库编辑弹窗数据（null=关闭）
-  agentProfiles: {},     // 本机助手设备档案（GET 本机 /api/profiles，回显已绑定标签纸）
-  agentPaperSel: {},     // 卡片上打印机→标签纸的暂选（重探测不丢）
   agentToken: '',
   agentStoreId: 0,   // 手动连接时缓存的门店ID（30 秒自动跟随重推配置用，仅内存不落盘）
   // 系统自检铃铛：面板开关 / 被关闭的检查项（localStorage 持久化）/ 轮询定时器
@@ -1408,123 +1403,13 @@ function pushAgentConfig(serverUrl, storeKey, storeId) {
   });
 }
 
-// ---- 门店详情「RFID 打印机」卡片：直连本机助手（打印机/标签纸绑定/校准，档案仅存门店电脑本地，不经云端）----
-function loadAgentPapers() {
-  fetch(AGENT_LOCAL + '/api/labelpapers').then(function (r) { return r.json(); }).then(function (j) {
-    // data 为 {version, papers:[...]} 包裹结构
-    ST.agentPapers = (j && j.code === 0 && j.data) ? (j.data.papers || []) : [];
-  }).catch(function () { ST.agentPapers = []; });
-}
-function loadAgentProfiles() {
-  fetch(AGENT_LOCAL + '/api/profiles').then(function (r) { return r.json(); }).then(function (j) {
-    ST.agentProfiles = (j && j.code === 0) ? (j.data || {}) : {};
-  }).catch(function () { ST.agentProfiles = {}; });
-}
+// ---- 门店详情「打印机」卡片：直连本机助手（/api/status 只读清单 + 测试页，不经云端）----
 function openStorePrinters() {
   probeLocalAgent();
-  loadAgentPapers();
-  loadAgentProfiles();
-  loadAgentStatus();
-  loadLabelPapers();
 }
-// ---- 标签纸形状库(租户级主库): 网页端新增/编辑/删除, 保存时云端自动下发各门店在线助手 ----
-function loadLabelPapers() {
-  api('GET', '/api/label-papers').then(function (j) {
-    ST.labelPapers = (j && j.papers) ? j.papers : [];
-  }).catch(function () { ST.labelPapers = []; });
-}
-function lpEditOpen(p) {
-  ST.lpEdit = p ? JSON.parse(JSON.stringify(p)) : {
-    id: '', name: '', width: 30, height: 25, gap: 2,
-    margin_left: 2, margin_right: 2, margin_top: 2, margin_bottom: 2,
-    antenna_x: 0, antenna_y: 0, antenna_w: 0, antenna_h: 0, notes: ''
-  };
-}
-function lpSave() {
-  var d = ST.lpEdit;
-  if (!d || !d.name) { toast(t('lp.nameRequired'), 'error'); return; }
-  if (!(d.width > 0) || !(d.height > 0)) { toast(t('lp.whRequired'), 'error'); return; }
-  api('POST', '/api/label-papers', d).then(function (j) {
-    var n = (j && j.pushed) ? j.pushed.filter(function (x) { return x.ok; }).length : 0;
-    toast(t('lp.saved', { n: n }));
-    ST.lpEdit = null;
-    loadLabelPapers();
-    loadAgentPapers();   // 本机助手刚被下发, 形状库下拉立即可见
-  }).catch(function (e) { toast(e.message || t('lp.saveFail'), 'error'); });
-}
-function lpDel(p) {
-  if (!confirm(t('lp.cfDel', { name: p.name }))) return;
-  api('DELETE', '/api/label-papers/' + encodeURIComponent(p.id)).then(function () {
-    toast(t('lp.deleted'));
-    loadLabelPapers();
-    loadAgentPapers();
-  }).catch(function (e) { toast(e.message || t('lp.saveFail'), 'error'); });
-}
-function agentAllPrinters() {
+function agentPrinters() {   // 本机打印机清单（来自助手 /api/status）
   var a = ST.localAgent;
   return (a && a.code === 0 && a.printers) ? a.printers : [];
-}
-function agentPrefOf(p) { return (ST.agentProfiles || {})[agentProfKeyOf(p)] || null; }
-function agentPrinters() {   // 卡片可见列表（已移除的隐藏）
-  return agentAllPrinters().filter(function (p) { var pr = agentPrefOf(p); return !(pr && pr.hidden); });
-}
-function agentHiddenPrinters() {
-  return agentAllPrinters().filter(function (p) { var pr = agentPrefOf(p); return pr && pr.hidden; });
-}
-function agentNoteOf(p) { var pr = agentPrefOf(p); return (pr && pr.note) || ''; }
-// 设备档案 key（与 C# ProfileKey 同构：brand|iface==NET?ip:name）
-function agentProfKeyOf(p) {
-  return (p.brand || '') + '|' + (String(p.interface || '').toUpperCase() === 'NET' ? (p.address || '') : (p.name || ''));
-}
-function agentBoundPaperName(p) {
-  var prof = (ST.agentProfiles || {})[agentProfKeyOf(p)];
-  if (!prof || !prof.labelPaperId) return '';
-  var f = (ST.agentPapers || []).find(function (x) { return x.id === prof.labelPaperId; });
-  return f ? f.name : '';
-}
-function agentPaperSelOf(p) {
-  var k = agentProfKeyOf(p);
-  if (ST.agentPaperSel[k] != null) return ST.agentPaperSel[k];
-  var prof = (ST.agentProfiles || {})[k];
-  return (prof && prof.labelPaperId) || '';
-}
-function setAgentPaperSel(p, v) { ST.agentPaperSel[agentProfKeyOf(p)] = v; }
-// 打印机 UI 偏好（用途备注/从列表移除）→ POST 本机 /api/printer-prefs，仅存门店电脑本地
-function savePrinterPref(p, patch, okMsg) {
-  fetch(AGENT_LOCAL + '/api/printer-prefs', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      brand: p.brand || '', interface: p.interface || 'USB',
-      ip: String(p.interface || '').toUpperCase() === 'NET' ? (p.address || '') : '', name: p.name || '',
-      hidden: patch.hidden != null ? !!patch.hidden : !!(agentPrefOf(p) && agentPrefOf(p).hidden),
-      note: patch.note != null ? patch.note : agentNoteOf(p)
-    })
-  }).then(function (r) { return r.json(); }).then(function (j) {
-    if (j && j.code === 0) { toast(okMsg); loadAgentProfiles(); }
-    else toast((j && j.msg) || '保存失败', 'error');
-  }).catch(function () { toast(t('toast.agentNoAgent'), 'error'); });
-}
-function notePrinter(p) {
-  var v = prompt(t('sb.printerNotePh'), agentNoteOf(p));
-  if (v === null) return;
-  v = v.trim();
-  savePrinterPref(p, { note: v }, v ? t('sb.printerNoteSaved') : t('sb.printerNoteCleared'));
-}
-function hidePrinter(p) {
-  if (!confirm(t('sb.printerCfHide', { name: p.name }))) return;
-  savePrinterPref(p, { hidden: true }, t('sb.printerHiddenToast'));
-}
-function restorePrinter(p) { savePrinterPref(p, { hidden: false }, t('sb.printerRestored')); }
-function saveAgentPaperBind(p) {
-  fetch(AGENT_LOCAL + '/api/labelpapers', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'bind', brand: p.brand || 'zmin', interface: p.interface || 'USB',
-      ip: String(p.interface || '').toUpperCase() === 'NET' ? (p.address || '') : '', name: p.name || '',
-      labelPaperId: ST.agentPaperSel[agentProfKeyOf(p)] || '' })
-  }).then(function (r) { return r.json(); }).then(function (j) {
-    if (j && j.code === 0) { toast(j.msg || '已保存'); loadAgentProfiles(); }
-    else toast((j && j.msg) || '保存失败', 'error');
-  }).catch(function () { toast(t('toast.agentNoAgent'), 'error'); });
 }
 function agentCalibrate(action) {
   fetch(AGENT_LOCAL + '/api/calibrate', {
@@ -5271,27 +5156,6 @@ function toggleDeviceStatus(d) {
 function devOnlineText(d) { return d.online ? t('dev.online') : t('dev.offline'); }
 
 // ---- 本地打印桥（门店级）----
-// 打印业务固定枚举镜像（须与 db.py PRINT_BIZ 一致）：[code, 分组]
-var PRINT_BIZ = [
-  ['label_product', 'label'], ['label_shelf', 'label'],
-  ['receipt_sale', 'receipt'], ['receipt_deposit', 'receipt'], ['receipt_loan', 'receipt'],
-  ['receipt_repair', 'receipt'], ['receipt_purchase', 'receipt'],
-  ['receipt_outsourcing', 'receipt'], ['receipt_inout', 'receipt'],
-  ['cert_warranty', 'doc'], ['report_stocktake', 'doc'], ['report_business', 'doc'],
-];
-
-function bizGroups() {
-  return ['label', 'receipt', 'doc'].map(function (g) {
-    return {group: g, items: PRINT_BIZ.filter(function (x) { return x[1] === g; })
-      .map(function (x) { return x[0]; })};
-  });
-}
-
-// 某门店某打印业务当前指派的打印机名
-function bizPrinterOf(b, code) {
-  var row = ((b && b.biz) || []).find(function (x) { return x.code === code; });
-  return row ? (row.printer || '') : '';
-}
 
 function loadBridgeList() {
   return api('GET', '/api/print-agent/status').then(function (r) {
@@ -5437,134 +5301,6 @@ function revokePrintAgent(aid) {
     loadBridgeList();
     toast(t('sb.revoked'));
   }).catch(function (e) { toast(e.message, 'error'); });
-}
-function bindBizPrinter(sid, code, patch) {
-  // patch 兼容旧签名（字符串=printer）；对象则按字段合并当前指派后整体保存
-  if (typeof patch === 'string') patch = { printer: patch };
-  var b = ST.bridges.find(function (x) { return x.store_id === sid; });
-  var cur = bizRowOf(b, code);
-  var body = {
-    biz: code,
-    printer: patch.printer != null ? patch.printer : cur.printer,
-    iface: patch.iface != null ? patch.iface : cur.iface,
-    printer_ip: patch.printer_ip != null ? patch.printer_ip : cur.printer_ip,
-    media: patch.media != null ? patch.media : cur.media
-  };
-  return api('POST', '/api/stores/' + sid + '/bind-printer', body).then(function (r) {
-    if (b) {
-      var row = (b.biz || []).find(function (x) { return x.code === code; });
-      if (row) {
-        row.printer = r.printer || '';
-        row.iface = r.iface || 'USB';
-        row.printer_ip = r.printer_ip || '';
-        row.media = r.media || {};
-        row.rev = (row.rev || 0) + 1;
-      }
-      if (code === 'label_product') b.printer_name = r.printer || '';
-    }
-    toast(t('toast.saveOk'));
-    loadBridgeList();
-    // NET 指派目标登记到本机助手（下轮巡检覆盖该 IP；旧版助手无此接口，静默）
-    if (body.iface === 'NET' && body.printer_ip) {
-      fetch(AGENT_LOCAL + '/api/printer-status/register', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brand: 'zmin', interface: 'NET', ip: body.printer_ip, name: body.printer })
-      }).then(function () { loadAgentStatus(); }).catch(function () {});
-    }
-  }).catch(function (e) { toast(e.message, 'error'); });
-}
-// ---- 打印设置：链路读取 / 标签方案草稿 / 连接巡检状态 ----
-function bizRowOf(b, code) {
-  var row = ((b && b.biz) || []).find(function (x) { return x.code === code; }) || {};
-  return { printer: row.printer || '', iface: row.iface || 'USB', printer_ip: row.printer_ip || '',
-           media: row.media || {}, rev: row.rev || 0,
-           updated_at: row.updated_at || '', updated_by: row.updated_by || '' };
-}
-function bizIfaceOf(b, code) { return bizRowOf(b, code).iface; }
-function bizIpOf(b, code) { return bizRowOf(b, code).printer_ip; }
-// Group A：标签方案（纸 + 撕纸位置），草稿编辑、点「应用」才保存
-function labelSchemeOf(sid) {
-  var b = ST.bridges.find(function (x) { return x.store_id === sid; });
-  var cur = bizRowOf(b, 'label_product');
-  var m = cur.media || {};
-  var d = (ST.labelSchemeDraft && ST.labelSchemeDraft[sid]) || {};
-  return {
-    paper_id: d.paper_id != null ? d.paper_id : (m.paper_id || ''),
-    paper_name: d.paper_name != null ? d.paper_name : (m.paper_name || ''),
-    tear_mm: d.tear_mm != null ? d.tear_mm : (m.tear_mm != null ? m.tear_mm : ''),
-    updated_at: cur.updated_at, updated_by: cur.updated_by
-  };
-}
-function setLabelScheme(sid, key, val) {
-  if (!ST.labelSchemeDraft) ST.labelSchemeDraft = {};
-  var d = ST.labelSchemeDraft[sid] = ST.labelSchemeDraft[sid] || {};
-  d[key] = key === 'tear_mm' ? (val === '' ? '' : Number(val)) : val;
-  if (key === 'paper_id') {
-    var p = (ST.agentPapers || []).find(function (x) { return x.id === val; });
-    d.paper_name = p ? p.name : '';
-  }
-}
-function saveLabelScheme(sid) {
-  var b = ST.bridges.find(function (x) { return x.store_id === sid; });
-  var cur = bizRowOf(b, 'label_product');
-  var m = cur.media || {};
-  var d = (ST.labelSchemeDraft && ST.labelSchemeDraft[sid]) || {};
-  var media = {
-    paper_id: d.paper_id != null ? d.paper_id : (m.paper_id || ''),
-    paper_name: d.paper_name != null ? d.paper_name : (m.paper_name || ''),
-    tear_mm: d.tear_mm != null ? d.tear_mm : (m.tear_mm != null ? m.tear_mm : '')
-  };
-  if (media.tear_mm === '') delete media.tear_mm;
-  bindBizPrinter(sid, 'label_product', { media: media }).then(function () {
-    if (ST.labelSchemeDraft) ST.labelSchemeDraft[sid] = null;
-    // 撕纸位置即下发助手（CONFIG tear，NV 持久）；旧版助手无此接口静默跳过
-    var cur = bizRowOf(ST.bridges.find(function (x) { return x.store_id === sid; }), 'label_product');
-    if (media.tear_mm) {
-      fetch(AGENT_LOCAL + '/api/print-config/apply', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brand: 'zmin', interface: cur.iface, ip: cur.printer_ip,
-          name: cur.printer, tear_mm: media.tear_mm })
-      }).then(function (r2) { return r2.json(); }).then(function (j2) {
-        if (j2 && j2.code === 0) toast(t('prcfg.tearOk') || '撕纸位置已下发');
-      }).catch(function () {});
-    }
-  });
-}
-// Group B：连接巡检状态（读本机助手，配置与状态分离——状态只展示不落云端配置）
-// key 与助手 ProfileKey 同构：brand|NET?ip:枚举名
-function prnStatusKey(iface, name, ip) {
-  var f = (iface || 'USB').toUpperCase();
-  return 'zmin|' + (f === 'NET' ? (ip || '') : (name || ''));
-}
-function loadAgentStatus() {
-  return fetch(AGENT_LOCAL + '/api/printer-status').then(function (r) { return r.json(); }).then(function (j) {
-    ST.agentPrnStatus = (j && j.code === 0 && j.data) ? j.data : {};
-  }).catch(function () { ST.agentPrnStatus = {}; });
-}
-function probeAgentNow() {
-  return fetch(AGENT_LOCAL + '/api/printer-status', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'probe' })
-  }).then(function (r) { return r.json(); }).then(function (j) {
-    if (j && j.code === 0) { ST.agentPrnStatus = j.data || {}; toast(t('prcfg.probeDone')); }
-    else toast((j && j.msg) || t('prcfg.probeFail'), 'error');
-  }).catch(function () { toast(t('toast.agentNoAgent'), 'error'); });
-}
-function prnStatusClass(sid, code) {
-  var b = ST.bridges.find(function (x) { return x.store_id === sid; });
-  var row = bizRowOf(b, code);
-  if (!row.printer) return 'st-idle';
-  var st = (ST.agentPrnStatus || {})[prnStatusKey(row.iface, row.printer, row.printer_ip)];
-  if (!st) return 'st-idle';
-  return st.ok ? 'st-on' : 'st-off';
-}
-function prnStatusTip(sid, code) {
-  var b = ST.bridges.find(function (x) { return x.store_id === sid; });
-  var row = bizRowOf(b, code);
-  if (!row.printer) return t('prcfg.stNone');
-  var st = (ST.agentPrnStatus || {})[prnStatusKey(row.iface, row.printer, row.printer_ip)];
-  if (!st) return t('prcfg.stUnknown');
-  return (st.ok ? t('prcfg.stOk') : t('prcfg.stFail')) + (st.ts ? ' · ' + st.ts : '');
 }
 function storeControl(sid, action, biz) {
   api('POST', '/api/stores/' + sid + '/print-control',
@@ -5890,11 +5626,6 @@ var app = Vue.createApp({
   },
   methods: {
     go: go, mtipUrl: mtipUrl, mtipClose: mtipClose, switchAdminSub: switchAdminSub, goInvStatus: goInvStatus, clearInvStatusFilter: clearInvStatusFilter,
-    // 打印设置（带参函数，模板以 bizGroups() / labelSchemeOf(sid) 形式调用）
-    bizGroups: bizGroups,
-    bizIfaceOf: bizIfaceOf, bizIpOf: bizIpOf,
-    labelSchemeOf: labelSchemeOf, setLabelScheme: setLabelScheme, saveLabelScheme: saveLabelScheme,
-    probeAgentNow: probeAgentNow, prnStatusClass: prnStatusClass, prnStatusTip: prnStatusTip,
     openLockedItems: openLockedItems, closeLockedItems: closeLockedItems,
     invCatDonut: invCatDonut, invCatPct: invCatPct,
     invPtypeDonut: invPtypeDonut, invPtypePct: invPtypePct,
@@ -5902,12 +5633,8 @@ var app = Vue.createApp({
     openPsiTab: openPsiTab, loadPsi: loadPsi,
     exportInvCSV: exportInvCSV, printInv: printInv,
     probeLocalAgent: probeLocalAgent,
-    openStorePrinters: openStorePrinters, agentPrinters: agentPrinters, agentHiddenPrinters: agentHiddenPrinters,
-    labelPapers: function () { return ST.labelPapers; }, lpEdit: function () { return ST.lpEdit; },
-    loadLabelPapers: loadLabelPapers, lpEditOpen: lpEditOpen, lpSave: lpSave, lpDel: lpDel,
-    agentNoteOf: agentNoteOf, notePrinter: notePrinter, hidePrinter: hidePrinter, restorePrinter: restorePrinter,
-    agentBoundPaperName: agentBoundPaperName,
-    agentPaperSelOf: agentPaperSelOf, setAgentPaperSel: setAgentPaperSel, saveAgentPaperBind: saveAgentPaperBind, agentCalibrate: agentCalibrate,
+    openStorePrinters: openStorePrinters, agentPrinters: agentPrinters,
+    agentCalibrate: agentCalibrate,
     setDashRange: setDashRange, applyDashCustomRange: applyDashCustomRange,
     setSaleRange: setSaleRange, applySaleCustomRange: applySaleCustomRange,
     setListRange: setListRange, customRangeQuery: customRangeQuery, loadDeposits: loadDeposits,
@@ -6016,7 +5743,6 @@ var app = Vue.createApp({
     setRecvOk: setRecvOk, quickReason: quickReason, submitReceive: submitReceive,
     loadBridgeList: loadBridgeList, createStore: createStore,
     revokePrintAgent: revokePrintAgent,
-    bindBizPrinter: bindBizPrinter, bizPrinterOf: bizPrinterOf,
     storeControl: storeControl,
     loadShops: loadShops, loadStores: loadStores, storesByShop: storesByShop,
     selectStore: selectStore, bridgeOfStore: bridgeOfStore, storeSecStore: storeSecStore, shopOfStore: shopOfStore,
@@ -6143,6 +5869,5 @@ setInterval(function () {
     if (!a || !a.configured || !ST.agentToken || !ST.agentStoreId) return;
     pushAgentConfig(agentWsUrl(), ST.agentToken, ST.agentStoreId).catch(function () {});
   });
-  loadAgentStatus();   // 打印设置页：巡检状态跟随刷新（读本机助手，失败静默置空）
 }, 30000);
 

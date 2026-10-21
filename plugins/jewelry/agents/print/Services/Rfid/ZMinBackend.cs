@@ -33,24 +33,24 @@ namespace PrintAgent.Services
             _ => null
         };
 
-        public string TranslatePreview(IReadOnlyList<RfidCommand> cmds, TransportSpec spec, DeviceProfile? profile)
+        public string TranslatePreview(IReadOnlyList<RfidCommand> cmds, TransportSpec spec)
         {
-            double dpm = ResolveDpi(cmds, profile) / 25.4;
+            double dpm = ResolveDpi(cmds) / 25.4;
             var sb = new StringBuilder();
             foreach (var c in cmds) AppendTranslate(c, dpm, spec, sb);
             return sb.ToString();
         }
 
         public async Task<(bool ok, string msg, string? readData)> ExecuteAsync(
-            IReadOnlyList<RfidCommand> cmds, TransportSpec spec, DeviceProfile? profile, int timeoutMs)
+            IReadOnlyList<RfidCommand> cmds, TransportSpec spec, int timeoutMs)
         {
-            double dpm = ResolveDpi(cmds, profile) / 25.4;
+            double dpm = ResolveDpi(cmds) / 25.4;
             var reads = new List<string>();
             var layout = new StringBuilder();
             var pendingReads = new List<string>(); // 本任务缓冲内 RD 的标签名, W 执行后经反馈口回传
             string? err = null;
 
-            // expectFeedback=true: 任务含 RD, 发送后读回反馈数据(USB: ZM_GetData_USB / BT: 同口 / NET: socket)
+            // expectFeedback=true: 任务含 RD, 发送后读回反馈数据(USB: ZM_GetData_USB / NET: socket)
             async Task<(bool ok, string? resp)> FlushAsync(bool expectFeedback)
             {
                 if (layout.Length == 0) return (true, null);
@@ -68,12 +68,6 @@ namespace PrintAgent.Services
                     var (ok2, msg2) = UsbPcleService.SendRaw(text);
                     if (!ok2) { err = msg2; return (false, null); }
                     return (true, null);
-                }
-                else if (spec.IsBt)
-                {
-                    var (ok, msg, resp) = BtSppPrintService.SendAndRead(text, spec.Target, expectFeedback ? wait : 1200);
-                    if (!ok) { err = msg; return (false, null); }
-                    return (true, resp);
                 }
                 else
                 {
@@ -126,12 +120,6 @@ namespace PrintAgent.Services
                             if (!ok) return (false, msg, Summarize(reads));
                             reads.Add($"RQ{n}={msg}");
                         }
-                        else if (spec.IsBt)
-                        {
-                            var (ok, msg, resp) = BtSppPrintService.SendAndRead($"RQ0,{n}\r\n", spec.Target, 8000);
-                            if (!ok) return (false, msg, Summarize(reads));
-                            reads.Add($"RQ{n}={resp ?? "(无回传)"}");
-                        }
                         else
                         {
                             var (ok, msg, resp) = await RfidTransport.TcpSendReceiveAsync(
@@ -153,12 +141,6 @@ namespace PrintAgent.Services
                                 var (ok, msg) = UsbPcleService.QueryInfo(3); // 3=网络 IP/掩码/网关/MAC
                                 if (!ok) return (false, msg, Summarize(reads));
                                 reads.Add($"网络参数={msg}");
-                            }
-                            else if (spec.IsBt)
-                            {
-                                var (ok, msg, resp) = BtSppPrintService.SendAndRead("RQ0,3\r\n", spec.Target, 8000);
-                                if (!ok) return (false, msg, Summarize(reads));
-                                reads.Add($"网络参数={resp ?? "(无回传)"}");
                             }
                             else
                             {
@@ -210,12 +192,6 @@ namespace PrintAgent.Services
                                 var (ok, msg) = UsbPcleService.RfidCalibrate();
                                 if (!ok) return (false, msg, Summarize(reads));
                                 reads.Add("RFID天线校准完成");
-                            }
-                            else if (spec.IsBt)
-                            {
-                                var (ok, msg, _) = BtSppPrintService.SendAndRead("RM\r\n", spec.Target, 35000);
-                                if (!ok) return (false, msg, Summarize(reads));
-                                reads.Add("RM 天线校准已下发(约30秒)");
                             }
                             else
                             {
@@ -284,11 +260,6 @@ namespace PrintAgent.Services
                                 var (ok, msg) = UsbPcleService.SendRaw(priv);
                                 if (!ok) return (false, msg, Summarize(reads));
                             }
-                            else if (spec.IsBt)
-                            {
-                                var (ok, msg, _) = BtSppPrintService.SendAndRead(priv, spec.Target, 1200);
-                                if (!ok) return (false, msg, Summarize(reads));
-                            }
                             else
                             {
                                 var (ok, msg) = new ZMinRfidService().SendRawCommands(priv, "NET", spec.Ip, spec.Target);
@@ -310,15 +281,10 @@ namespace PrintAgent.Services
                                 gw = o.Length == 4 ? $"{o[0]}.{o[1]}.{o[2]}.1" : ip;
                             }
                             string priv = $"#UM>IA{ip}\r\n#UM>MK{mask}\r\n#UM>GT{gw}\r\n";
-                            bool sameChannel = !spec.IsUsb && !spec.IsBt && spec.Ip == ip; // NET 改本通道 IP: 重启后本通道地址才变
+                            bool sameChannel = !spec.IsUsb && spec.Ip == ip; // NET 改本通道 IP: 重启后本通道地址才变
                             if (spec.IsUsb)
                             {
                                 var (ok, msg) = UsbPcleService.SendRaw(priv);
-                                if (!ok) return (false, msg, Summarize(reads));
-                            }
-                            else if (spec.IsBt)
-                            {
-                                var (ok, msg, _) = BtSppPrintService.SendAndRead(priv, spec.Target, 1500);
                                 if (!ok) return (false, msg, Summarize(reads));
                             }
                             else
@@ -353,8 +319,8 @@ namespace PrintAgent.Services
 
         // ---------- PCLE 翻译 ----------
 
-        /// <summary>PCLE 反馈口参数: 0=串口(BT SPP 同链路回读) 1=USB 2=LAN</summary>
-        static int FeedbackPort(TransportSpec spec) => spec.IsUsb ? 1 : spec.IsBt ? 0 : 2;
+        /// <summary>PCLE 反馈口参数: 1=USB 2=LAN</summary>
+        static int FeedbackPort(TransportSpec spec) => spec.IsUsb ? 1 : 2;
 
         void AppendTranslate(RfidCommand c, double dpm, TransportSpec spec, StringBuilder sb)
         {
@@ -500,11 +466,11 @@ namespace PrintAgent.Services
             _ => "1"
         };
 
-        static double ResolveDpi(IReadOnlyList<RfidCommand> cmds, DeviceProfile? profile)
+        static double ResolveDpi(IReadOnlyList<RfidCommand> cmds)
         {
             var s = cmds.FirstOrDefault(c => c.Op == "S" && c.Args.Count >= 3);
             if (s != null && double.TryParse(s.Args[2], out double dpi) && dpi > 0) return dpi;
-            return profile?.Dpi ?? 203.2; // 203.2dpi = 精确 8 dots/mm (X19D 名义 203dpi, 真机验证 q528=66mm)
+            return 300; // 固定 ZMIN X19D 300dpi
         }
 
         static string? Summarize(List<string> reads)

@@ -54,7 +54,15 @@ namespace PrintAgent.Services
                 ["UpdateRestart"] = "升级完成，正在重启...",
                 ["UpdateFailed"] = "自动升级失败: {0}",
                 ["UpdateLatest"] = "已是最新版本",
-                ["UpdateNoServer"] = "未配置服务器，无法检查更新"
+                ["UpdateNoServer"] = "未配置服务器，无法检查更新",
+                ["LblServerUrl"] = "服务地址:",
+                ["LblStoreKey"] = "门店密钥:",
+                ["BtnSaveReconnect"] = "保存并重连",
+                ["BtnTestPage"] = "打印测试页",
+                ["ConfigInputsRequired"] = "服务地址与门店密钥不能为空",
+                ["PrinterChecking"] = "打印机: 检测中...",
+                ["PrinterOnline"] = "打印机: ZMIN X19D 已连接 (SN: {0})",
+                ["PrinterOffline"] = "打印机: 未检测到 ZMIN X19D (USB)"
             },
             ["zh-TW"] = new()
             {
@@ -126,7 +134,15 @@ namespace PrintAgent.Services
                 ["UpdateRestart"] = "Update complete, restarting...",
                 ["UpdateFailed"] = "Auto-update failed: {0}",
                 ["UpdateLatest"] = "Already up to date",
-                ["UpdateNoServer"] = "No server configured, cannot check updates"
+                ["UpdateNoServer"] = "No server configured, cannot check updates",
+                ["LblServerUrl"] = "Server URL:",
+                ["LblStoreKey"] = "Store Key:",
+                ["BtnSaveReconnect"] = "Save && Reconnect",
+                ["BtnTestPage"] = "Print Test Page",
+                ["ConfigInputsRequired"] = "Server URL and Store Key are required",
+                ["PrinterChecking"] = "Printer: checking...",
+                ["PrinterOnline"] = "Printer: ZMIN X19D connected (SN: {0})",
+                ["PrinterOffline"] = "Printer: ZMIN X19D (USB) not found"
             },
             ["ja-JP"] = new()
             {

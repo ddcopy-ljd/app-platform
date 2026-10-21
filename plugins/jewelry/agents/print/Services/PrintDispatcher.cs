@@ -67,29 +67,18 @@ namespace PrintAgent.Services
                     }
 
                     case "raw_passthrough":
-                        // 指令透传模式: BLE 走 GATT 通道, BT/SPP 走蓝牙虚拟串口, 其余走 ZMIN SDK
+                        // 指令透传模式: 打印机/接口已固定, 只走 ZMIN USB(SDK 免驱)通道
                         string rawCmd = content.Value<string>("rawCommands") ?? "";
-                        if (string.Equals(task.Interface, "BLE", StringComparison.OrdinalIgnoreCase))
-                            result = await BlePrintService.SendRawAsync(rawCmd, task.PrinterName);
-                        else if (string.Equals(task.Interface, "BT", StringComparison.OrdinalIgnoreCase)
-                              || string.Equals(task.Interface, "SPP", StringComparison.OrdinalIgnoreCase))
-                            result = BtSppPrintService.SendRaw(rawCmd, task.PrinterName);
-                        else
-                            result = _rfidService.SendRawCommands(rawCmd, task.Interface, task.PrinterIp, task.PrinterName);
+                        result = _rfidService.SendRawCommands(rawCmd, "USB", "", task.PrinterName);
                         break;
 
                     case "pos":
-                        // ESC/POS 小票: DRIVER/USB 走驱动假脱机 RAW 字节, 其余走网络 9100 直连
+                        // ESC/POS 小票: 固定走 Windows 驱动假脱机 RAW 字节
                         string posDataStr = content.Value<string>("rawBase64") ?? "";
                         byte[] posBytes = !string.IsNullOrEmpty(posDataStr)
                             ? Convert.FromBase64String(posDataStr)
                             : Encoding.GetEncoding("GBK").GetBytes(content.Value<string>("text") ?? "");
-
-                        if (string.Equals(task.Interface, "DRIVER", StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(task.Interface, "USB", StringComparison.OrdinalIgnoreCase))
-                            result = StandardAndPosPrintService.PrintPosRawViaDriver(task.PrinterName, posBytes);
-                        else
-                            result = await StandardAndPosPrintService.PrintPosRawAsync(task.PrinterIp, 9100, posBytes);
+                        result = StandardAndPosPrintService.PrintPosRawViaDriver(task.PrinterName, posBytes);
                         break;
 
                     case "standard":

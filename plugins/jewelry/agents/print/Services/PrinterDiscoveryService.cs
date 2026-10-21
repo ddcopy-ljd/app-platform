@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.Drawing.Printing;
 using System.IO.Ports;
 using System.Linq;
-using System.Net.Sockets;
-using System.Threading.Tasks;
 using LabelPrinter;
 using Microsoft.Win32;
 
@@ -25,10 +23,9 @@ namespace PrintAgent.Services
         }
 
         /// <summary>
-        /// 枚举本机可连接的物理打印机: 驱动打印机 + 致明兴免驱USB + 串口(含蓝牙SPP虚拟口) + 配置的网口打印机探测
-        /// netProbeIps: 额外探测的 IP(逗号分隔), 为空则用配置中的 NetPrinterIps
+        /// 枚举本机可连接的物理打印机: 驱动打印机 + 致明兴免驱USB + 串口(含蓝牙SPP虚拟口)
         /// </summary>
-        public static List<PrinterDevice> GetAllLocalPrinters(string? netProbeIps = null)
+        public static List<PrinterDevice> GetAllLocalPrinters()
         {
             var list = new List<PrinterDevice>();
 
@@ -97,26 +94,6 @@ namespace PrintAgent.Services
                 });
             }
 
-            // 4. 网口打印机探测 (配置的固定IP + 请求参数临时IP), TCP 9100 快速探测
-            var ips = new List<string>();
-            var cfg = Models.AppConfig.Load();
-            if (cfg.NetPrinterIps != null) ips.AddRange(cfg.NetPrinterIps);
-            if (!string.IsNullOrWhiteSpace(netProbeIps)) ips.AddRange(netProbeIps.Split(',', StringSplitOptions.RemoveEmptyEntries));
-            foreach (var ip in ips.Distinct())
-            {
-                bool ok = ProbeTcp(ip.Trim(), 9100, 600);
-                list.Add(new PrinterDevice
-                {
-                    Name = $"NET_{ip.Trim()}",
-                    Type = "label",
-                    Interface = "NET",
-                    Address = $"{ip.Trim()}:9100",
-                    Detail = ok ? "网口打印机 9100 端口可达, 可直发 PCLE/ESC-POS" : "9100 端口不可达(未开机/IP错误/非打印机)",
-                    Brand = "zmin", // 网口探测目标以 ZMIN PCLE 为主, 其他品牌接入后按端口指纹细分
-                    Online = ok
-                });
-            }
-
             return list;
         }
 
@@ -149,17 +126,6 @@ namespace PrintAgent.Services
             }
             catch { }
             return map;
-        }
-
-        private static bool ProbeTcp(string ip, int port, int timeoutMs)
-        {
-            try
-            {
-                using var client = new TcpClient();
-                var task = client.ConnectAsync(ip, port);
-                return task.Wait(timeoutMs) && client.Connected;
-            }
-            catch { return false; }
         }
     }
 }

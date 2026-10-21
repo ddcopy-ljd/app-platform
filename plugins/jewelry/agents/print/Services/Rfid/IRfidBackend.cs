@@ -6,15 +6,14 @@ using PrintAgent.Models;
 
 namespace PrintAgent.Services
 {
-    /// <summary>执行通道规格: USB=致明兴免驱(主板SN可选), NET=TCP 9100, BT=经典蓝牙SPP虚拟串口</summary>
+    /// <summary>执行通道规格: 固定 USB=致明兴免驱(主板SN可选); NET 字段仅为兼容保留</summary>
     public class TransportSpec
     {
-        public string Interface { get; set; } = "USB"; // USB / NET / BT
+        public string Interface { get; set; } = "USB"; // 固定 USB
         public string Ip { get; set; } = string.Empty;
-        public string Target { get; set; } = string.Empty; // USB: 主板SN(可空); BT: COM 口号
+        public string Target { get; set; } = string.Empty; // USB: 主板SN(可空)
         public int Port { get; set; } = 9100;
         public bool IsUsb => Interface.Equals("USB", StringComparison.OrdinalIgnoreCase);
-        public bool IsBt => Interface.Equals("BT", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -30,10 +29,10 @@ namespace PrintAgent.Services
         string? UnsupportedReason(string key) => null;
 
         /// <summary>只翻译不执行, 返回品牌原生指令文本(无真机验证翻译正确性)</summary>
-        string TranslatePreview(IReadOnlyList<RfidCommand> cmds, TransportSpec spec, DeviceProfile? profile);
+        string TranslatePreview(IReadOnlyList<RfidCommand> cmds, TransportSpec spec);
 
         Task<(bool ok, string msg, string? readData)> ExecuteAsync(
-            IReadOnlyList<RfidCommand> cmds, TransportSpec spec, DeviceProfile? profile, int timeoutMs);
+            IReadOnlyList<RfidCommand> cmds, TransportSpec spec, int timeoutMs);
     }
 
     public static class RfidBackendExtensions

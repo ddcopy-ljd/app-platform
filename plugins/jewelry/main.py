@@ -4465,9 +4465,9 @@ def _products_to_zmin_items(conn, products: list[dict], *, body, store_name: str
             items.append(rfid_print.build_zmin_content(
                 p, store_name=store_name, write_epc=body.write_epc,
                 template=tpl_i, rfid_prefix=epc_prefix_cfg,
-                width=float(tpl_i.get("size_width") or 70.0),
-                height=float(tpl_i.get("size_height") or 35.0),
-                gap=float(tpl_i.get("gap") or 3.0)))
+                width=float(tpl_i.get("size_width") or 66.0),
+                height=float(tpl_i.get("size_height") or 25.4),
+                gap=float(tpl_i.get("gap") or 5.0)))
         else:
             items.append(rfid_print.build_zmin_content(
                 p, fields=fields, store_name=store_name,
@@ -4525,6 +4525,7 @@ def print_agent_status(request: Request):
             out.append({
                 "store_id": r["id"], "store_name": r["name"], "code": r["code"],
                 "online": online, "agent_name": (b.name if online else ""),
+                "agent_type": (b.agent_type if b else "legacy"),
                 "printers": list(b.printers) if online else [],
                 "printer_name": biz_map.get("label_product", "") or r["printer_name"] or "",
                 "biz": [{"code": c0, "printer": biz_map.get(c0, ""),
@@ -4978,6 +4979,10 @@ async def store_print_control(sid: int, body: dict, request: Request):
         raise HTTPException(400, f"门店「{s['name']}」打印代理不在线")
     with _bridges_lock:
         is_csharp = b.agent_type == "csharp" if b else False
+    if is_csharp and action in ("feed", "backfeed"):
+        # 简化版固定方案：C# 助手不处理 control 消息（进纸/退纸为旧 Python 桥功能），
+        # 直接明确拒绝，避免前端空等 12 秒超时
+        raise HTTPException(400, "新版打印助手不支持软件进纸/退纸：请在打印机面板按 FEED 键走纸")
     if is_csharp and action == "test":
         # C# 代理不识别 control 消息；ZMIN 不识别 ZPL → 测试页用结构化 rfid 任务
         with _bridges_lock:
@@ -4987,16 +4992,16 @@ async def store_print_control(sid: int, body: dict, request: Request):
         payload = {
             "type": "print_task", "taskId": cid,
             "printerType": "rfid", "brand": "zmin",
-            "interface": target_iface.upper(),
-            "printerIp": target_ip,
+            "interface": "USB",
+            "printerIp": "",
             "printerName": target_printer or "Default", "storeId": str(sid),
             "content": {
-                "width": 70.0, "height": 35.0, "gap": 3.0, "dpi": 203,
+                "width": 66.0, "height": 25.4, "gap": 5.0, "dpi": 300,
                 "texts": [
-                    {"text": "PrintAgent Test", "x": 3.0, "y": 3.0, "size": 14.0},
-                    {"text": str(s["name"] or "")[:20], "x": 3.0, "y": 10.0, "size": 9.0},
-                    {"text": ts, "x": 3.0, "y": 16.0, "size": 9.0},
-                    {"text": str(target_printer or "")[:20], "x": 3.0, "y": 22.0, "size": 9.0},
+                    {"text": "PrintAgent Test", "x": 2.0, "y": 2.5, "size": 12.0},
+                    {"text": str(s["name"] or "")[:20], "x": 2.0, "y": 9.0, "size": 8.0},
+                    {"text": ts, "x": 2.0, "y": 15.0, "size": 8.0},
+                    {"text": str(target_printer or "")[:20], "x": 2.0, "y": 21.0, "size": 8.0},
                 ],
             },
         }
