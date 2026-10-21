@@ -1,5 +1,26 @@
 # CHANGELOG — 懿臻珠宝云
 
+## v1.2.54.261021（未发布）
+
+### 标签打印对齐 X19D 真实分辨率 203dpi（修「一张标签打成三四张」）
+
+- **根因**：ZMIN X19D 实为 203dpi（1mm=8dots），助手按 300dpi 渲染 SDK 结构化标签，画布被放大 1.48 倍，内容溢出到下张／连出多张纸
+- **助手**：`ZMinRfidService.PrintRfidLabel` 强制 `printer.printerdpi = 203`，不再采信云端 `content.dpi`
+- **排版引擎**：`rfid_print.py` 画布改 528×203 点（`DOTS_PER_MM≈7.992`），内建回退布局 slots 全部按 203dpi 重排；`build_zmin_content` 默认 dpi=203
+- **内建模板**：`db.py _ensure_builtin_label_templates` 版本升到 `_builtin=4`，老库模板幂等覆盖为 203dpi 坐标
+- **云端测试页**：`main.py` 测试页 content 改 203dpi，4 行 y=2/7/12/17mm（真机验证 4 行同张）
+- **前端**：标签预览按 528 点缩放，`.label-inner` 实物尺寸 66×25.4mm；六语言文案同步为 66×25.4mm / 203dpi · ZMIN X19D；缓存版本 → 20261021b11（app.css b03）
+- 文档：`agents/print/AGENTS.md` 补「SDK 结构化打印 203dpi 铁律」（含 mm 单位、raw 透传不出纸的结论）
+
+### 标签条码丢失 + 模板槽位越界（修「模板有字段、预览和实物没有条码」）
+
+- **根因一**：业务标签任务走助手 `rfid`（SDK 结构化通道），SDK 把整张标签栅格化成位图，**不渲染条码指令**且照样返回成功
+- **根因二**：模板编辑器按 300dpi 换算画布（`tplDotScale`/`_getCanvasScale`），实际打印机 203dpi，拖到「画布底部」的槽位落库后 `y` 超过 203 点，预览被裁、打印落在标签外
+- **打印通道**：`main.py` 标签任务改 `printerType=rfid_cmd`，新增 `rfid_print.content_to_commands()` 把结构化 content 翻成统一指令流（`T`/`B`/`RF`/`PRINT`），由助手 `UsbPcleService.WriteToPort` 发 PCLE，条码才能出
+- **模板保存**：`rfid_print.normalize_template_slots()` + `main.py _normalize_template_definition()`，保存时把越界槽位等比缩回画布、字号抬到 PCLE 最小 24 点，保证预览与实物一致
+- **前端编辑器**：`tplDotScale` / `_getCanvasScale` 改 203dpi（1 dot = 4/(203/25.4) px），拖动不再越界；版本串 → 20261021b25
+- **内建模板**：`_BUILTIN_VER` 5 → 6，老库模板幂等覆盖为 528×203 坐标
+
 ## v1.2.53.261021（未发布）
 
 ### 总部 / 门店页面彻底分拆，系统管理也拆两页

@@ -63,7 +63,7 @@ var ST = Vue.reactive({
   tagList: [], prodTags: [],   // 标签字典 / 商品页标签筛选（多选=命中任一）
   tagEdit: { id: 0, name: '', color: '#C9A227', sort_order: 0, group_name: '' }, tagEditMode: 'new',
   tagStats: null, tagSel: [],  // 销售额统计结果 / 标签维度下选中标签 id（空=全部）
-  tagsExpanded: false,   // 商品列表标签列：默认收起，点「展开标签」后同行显示全部标签
+  tagsExpanded: false,   // 商品列表分类列：默认收起，点「展开分类」后同行显示全部分类
   saleStatsDim: 'category',  // 销售额统计卡：维度(category品类/tag标签)；时间范围跟随页面级 dashRange
   rankData: null,   // 看板 TOP5 排行榜（7 榜）；统计时间跟随页面级 dashRange
   tagGroupList: [],            // 标签分组名枚举（后端 /api/product-tags 的 groups；分组块渲染顺序）
@@ -118,7 +118,7 @@ var ST = Vue.reactive({
   btPrinter: { address: '', name: '' }, btPrinters: [],
   labelFields: { store: true, name: true, spec: true, price: true, cert: false, barcode: true, epc_text: false, epc_barcode: false },
   writeEpc: true, labelCopies: 1, labelFont: 'E:SIMSUN.FNT',
-  simulatePrint: true, labelBusy: false, labelResult: null,
+  simulatePrint: false, labelBusy: false, labelResult: null,
   // 标签模板设计器
   labelTemplates: [],      // 模板列表
   tplDlg: false,           // 模板设计器弹窗
@@ -165,6 +165,9 @@ var ST = Vue.reactive({
   // 扫描设备管理
   devModal: false, devices: [], allDevices: [],
   hhAddModal: false, hhAddUrl: '', hhAddQr: '',
+  paDlModal: false, paDlUrl: '',
+  paBindModal: false, paBindUrl: '', paBindKey: '', paBindStoreId: 0,
+  hhBindModal: false, hhBindUrl: '', hhBindQr: '', hhBindStoreId: 0, hhBindLeft: 0,
   devStoreScope: 0,   // 门店管理内打开设备弹窗时锁定的门店（0=盘点页全部）
   yzScanReady: false,   // App WebView 注入 YzApp 桥接后为 true，出单表单显示扫码按钮
   // 摄像头扫码（本地 zxing，无需 App/外网）
@@ -477,10 +480,15 @@ var NAV_ITEMS = [
   { id: 'appointments', icon: '📅', key: 'nav.appointments' },
   { id: 'shops', icon: '🏬', key: 'nav.shops' },
   { id: 'stores', icon: '🏪', key: 'nav.stores' },
+  { id: 'hq-system', icon: '⚙️', key: 'nav.system' },
   { id: 'showcase', icon: '🪟', key: 'nav.showcase' },
-  { id: 'system', icon: '⚙️', key: 'nav.system' },
-  { id: 'hq-system', icon: '⚙️', key: 'nav.hqSystem' },
 ];
+// 门店级系统设置并入总部「系统管理」；system 仅作旧入口兼容，不再出现在导航
+// 操作日志是门店管理页的子页，导航高亮沿用门店管理
+var NAV_PARENT = { system: 'hq-system', logs: 'stores' };
+function isNavActive(id) {
+  return (NAV_PARENT[ST.tab] || ST.tab) === id;
+}
 // 系统管理拆成两页：总部级（仅总部账号可见）vs 门店级（所有账号）
 var HQ_ADMIN_SUBS = [
   { key: 'users', icon: '👥', label: '用户与门店权限' },
@@ -784,7 +792,8 @@ function checkFrozen() {
 
 function currentTitle() {
   var lang = ST.lang;  // 建立响应式依赖：切换语言后标题随之更新（t() 本身非响应式）
-  var item = NAV_ITEMS.find(function (n) { return n.id === ST.tab; });
+  if (ST.tab === 'logs') return t('nav.logs');  // 门店管理内的子页：标题显示操作日志
+  var item = NAV_ITEMS.find(function (n) { return n.id === (NAV_PARENT[ST.tab] || ST.tab); });
   return item ? t(item.key) : '';
 }
 
@@ -822,12 +831,10 @@ function isAdminSubAllowed(key) {
 // 把非法（当前 tab 视图不可见）的系统管理子页校正为首个可见子页
 function normalizeAdminSub() {
   if (ST.tab === 'hq-system') {
-    var ok = HQ_ADMIN_SUBS.some(function (s) { return s.key === ST.adminSub; });
+    // 总部系统管理 = 总部级 4 项 + 门店级 4 项（安防/打印助手/日志/上报）
+    var ok = ADMIN_SUBS.some(function (s) { return s.key === ST.adminSub; });
     if (!ok) ST.adminSub = 'epc';
     if (ST.adminSub === 'users' && !isAdminRole()) ST.adminSub = 'epc';
-  } else if (ST.tab === 'system') {
-    var ok2 = STORE_ADMIN_SUBS.some(function (s) { return s.key === ST.adminSub; });
-    if (!ok2) ST.adminSub = 'security';
   }
 }
 // 门店管理页可见门店：总店看全部，分店只看当前工作门店
@@ -1058,14 +1065,15 @@ function setLang(lang) {
 
 // ---- navigation ----
 function go(tab) {
-  // 「总部系统管理」仅总部账号可见；其他 tab 沿用原有角色过滤
+  // 「总部管理 / 系统管理」仅总部视图可见；门店视图只保留门店管理
   if (tab === 'hq-system' && !isHqStore()) tab = 'dashboard';
   if (tab === 'shops' && !isHqStore()) tab = 'dashboard';
+  if (tab === 'system') tab = isHqStore() ? 'hq-system' : 'stores';  // 门店级系统设置已并入总部系统管理
   // 旧入口兼容：企业级子页（EPC/模板/经办人/用户权限）全部归到总部系统管理
   if (tab === 'profile') { ST.tab = 'hq-system'; ST.adminSub = 'users'; }
   else if (tab === 'epc' || tab === 'tpl' || tab === 'clerk' || tab === 'users') { ST.tab = 'hq-system'; ST.adminSub = tab; }
-  else if (tab === 'security') { ST.tab = 'system'; ST.adminSub = 'security'; }
-  else if (tab === 'logs') { ST.tab = 'system'; ST.adminSub = 'logs'; }
+  else if (tab === 'security') { ST.tab = isHqStore() ? 'hq-system' : 'dashboard'; ST.adminSub = 'security'; }
+  else if (tab === 'logs') { ST.tab = isHqStore() ? 'hq-system' : 'logs'; ST.adminSub = 'logs'; }
   else { ST.tab = tab; }
   ST.subView = '';
   if (ST.tab === 'inventory') { loadInv(); loadStockBatches(); loadCoTask(); }
@@ -1079,18 +1087,14 @@ function go(tab) {
   if (ST.tab === 'shops' && ST.shopsTab === 'types') { loadProductTypes(); loadTemplates(); }
   if (ST.tab === 'shops' && ST.shopsTab === 'categories') { loadTagGroups(); loadTags(); }
   if (ST.tab === 'stores') { syncManageStore(); loadShops(); loadStores(true); loadBridgeList(); loadLocations(); loadAllDevices(); }
-  if (ST.tab === 'system') {
+  if (ST.tab === 'hq-system') {
     normalizeAdminSub();
     loadProfile(); loadBizConfig(); loadClerkTypes(); loadProductTypes(); loadLocations();
+    if (ST.adminSub === 'tpl') loadTemplates();
+    if (ST.adminSub === 'users' && isAdminRole()) { loadAdminUsers(); loadStores(true); }
     if (ST.adminSub === 'security') loadSecurity();
     if (ST.adminSub === 'logs') { ST.subView = 'logs'; loadSubList(); }
     if (ST.adminSub === 'bridge') { loadStores(true); loadBridgeList(); loadSecurity(); loadAllDevices(); openStorePrinters(); }
-  }
-  if (ST.tab === 'hq-system') {
-    normalizeAdminSub();
-    loadBizConfig(); loadClerkTypes(); loadProductTypes();
-    if (ST.adminSub === 'tpl') loadTemplates();
-    if (ST.adminSub === 'users' && isAdminRole()) { loadAdminUsers(); loadStores(true); }
   }
   // PC 侧边栏直接进入子列表页（维修/采购/委外/借货/客户）时也要拉数据
   if (SUB_VIEWS.indexOf(ST.tab) >= 0) { ST.subView = ST.tab; ST.subPage = 1; loadSubList(); if (ST.tab === 'customers') loadCustStats(); }
@@ -1107,8 +1111,8 @@ function clearInvStatusFilter() {
 }
 function switchAdminSub(key) {
   ST.adminSub = key;
-  // 按当前 tab 走 go() 的 system / hq-system 分支触发数据加载
-  go(ST.tab === 'hq-system' ? 'hq-system' : 'system');
+  // 系统设置集中在总部视图的「系统管理」页
+  go('hq-system');
 }
 function switchShopsTab(key) {
   ST.shopsTab = key;
@@ -1123,7 +1127,7 @@ function openSubView(name) {
   // PC 内容区按 tab 渲染列表；从看板快捷入口/KPI 卡进入时必须同步切 tab（移动端走 sub-page 覆盖层，不改 tab）
   if (ST.isPc) {
     if (['customers', 'loans', 'repairs', 'purchases', 'outsourcings'].indexOf(name) >= 0) ST.tab = name;
-    else if (name === 'logs') { ST.adminSub = 'logs'; go('system'); return; }
+    else if (name === 'logs') { ST.adminSub = 'logs'; go('hq-system'); return; }
   }
   ST.subView = name;
   ST.subPage = 1;
@@ -1498,7 +1502,7 @@ function refreshAll() {
   // 切店/业务变更后，当前停留页面的列表按新工作门店同步重载（否则分店视图停留在旧门店数据）
   // 注意 switchStore 会先清空 ST.subView，这里按当前 tab 重设后再加载
   if (SUB_VIEWS.indexOf(ST.tab) >= 0) { ST.subView = ST.tab; ST.subPage = 1; loadSubList(); if (ST.tab === 'customers') loadCustStats(); }
-  if (ST.tab === 'system' && ST.adminSub === 'logs') { ST.subView = 'logs'; loadSubList(); }
+  if (ST.tab === 'hq-system' && ST.adminSub === 'logs') { ST.subView = 'logs'; loadSubList(); }
   if (ST.tab === 'inventory') loadInv();
   if (ST.tab === 'appointments') loadAppt();
 }
@@ -1994,24 +1998,29 @@ function mustPwdSubmit() {
 
 function switchStore(sid) {
   sid = Number(sid);
-  if (!sid) return;
+  if (!sid) return Promise.resolve();
   // 与当前视图门店相同也照常调用（幂等）：会话可能被其他标签页/接口切换过，
   // 短路 return 会让前端视图与后端会话永久脱节。
-  api('POST', '/api/auth/switch-store', { store_id: sid }).then(function (r) {
+  return api('POST', '/api/auth/switch-store', { store_id: sid }).then(function (r) {
     ST.curStoreId = r.store_id;
     ST.stores = r.stores || ST.stores;
-    // 切店后按新门店视图校正页面：分店账号没有「总部管理」，停留在该页时回首页
-    if (ST.tab === 'shops' && !isHqStore()) ST.tab = 'dashboard';
-    // 系统管理子页在新视图下不可见时（如分店看不到 EPC/账号权限）校正到门店级子页
-    if (ST.tab === 'system') normalizeAdminSub();
-    // 门店管理页选中态：分店锁定本店
-    if (ST.tab === 'stores') syncManageStore();
+    // 切视图后页面跟随：总部视图 = 总部管理 / 系统管理；门店视图 = 门店管理（门店无系统管理）
+    if (isHqStore()) {
+      if (ST.tab === 'stores') ST.tab = 'shops';
+      else if (ST.tab === 'system') ST.tab = 'hq-system';
+      if (ST.tab === 'hq-system') normalizeAdminSub();
+    } else {
+      if (ST.tab === 'shops' || ST.tab === 'hq-system' || ST.tab === 'system') ST.tab = 'stores';
+      syncManageStore();
+    }
     // 切店后当前页所有弹窗/选择态失效，回到列表态并整页重载
     ST.sheet = null; ST.detail = null; ST.subView = '';
     toast(t('store.switched').replace('{name}', curStoreName()));
     refreshAll();
+    go(ST.tab);   // 按新视图重载当前页数据（门店列表 / 总部子页 / 系统管理子页）
   }).catch(function (e) { toast(e.message || t('store.noAccess'), 'error'); });
 }
+
 
 function doLogin() {
   var u = ST.loginUser.trim();
@@ -4533,12 +4542,12 @@ function _getCanvasScale() {
   var el = document.querySelector('.tpl-canvas');
   if (!el || !ST.tplEdit) return 1;
   var w = ST.tplEdit.size_width || 70;
-  var dotsW = Math.round(w * 300 / 25.4); // mm → 300dpi dots
+  var dotsW = Math.round(w * 203 / 25.4); // mm → 203dpi dots（与实际打印机一致，300dpi 会让坐标超界）
   return el.clientWidth / dotsW;
 }
 
-// 画布像素比例：画布 CSS 宽度固定为 mm*4 px，1 dot = 4*25.4/300 px
-function tplDotScale() { return 4 * 25.4 / 300; }
+// 画布像素比例：画布 CSS 宽度固定为 mm*4 px，1 dot = 4/(203/25.4) px
+function tplDotScale() { return 4 / (203 / 25.4); }  // 画布 4px/mm，坐标按 X19D 实测 203dpi（7.99 点/mm），不能用 300dpi
 
 function _onDragMove(e) {
   if (!_dragState || !ST.tplEdit) return;
@@ -4632,7 +4641,8 @@ function openLabelPrint(items) {
       }
       ST.printers = list;
     } else {
-      ST.simulatePrint = true;
+      // 本机无云端打印驱动：默认「仅生成指令」；但若门店打印助手在线，则不需要模拟（由助手出纸）
+      if (!(ST.agent && ST.agent.online)) ST.simulatePrint = true;
       ST.printers = [];
     }
   }).catch(function () {});
@@ -4644,6 +4654,9 @@ function openLabelPrint(items) {
 function updateLabelAgent() {
   var b = labelStoreBridge();
   ST.agent = b ? { online: !!b.online, name: b.agent_name || '' } : { online: false, name: '' };
+  // 助手在线则由助手出纸，取消「仅生成指令」；助手离线且本机无打印驱动时才默认勾选
+  if (ST.agent.online) ST.simulatePrint = false;
+  else if (!ST.printSupported) ST.simulatePrint = true;
 }
 
 function _autoPickTemplate() {
@@ -4701,7 +4714,7 @@ function _labelVal(field, it, store) {
   return '';
 }
 
-// 返回每个已选商品的预览数据：{id, code, epc, slots:[...]}（单位：点 827×413）
+// 返回每个已选商品的预览数据：{id, code, epc, slots:[...]}（单位：点 528×203）
 function labelPreview() {
   if (!ST.labelItems.length) return [];
   var store = (ST.profile && ST.profile.name) || '';
@@ -5180,6 +5193,28 @@ function openDevices(storeId) {
 }
 // ---- 手持机助手 APP 下载（门店详情「添加」：二维码 + 链接复制）----
 function hhApkUrl() { return location.origin + API + '/api/scan-app/download'; }
+
+// 打印助手：下载安装包 / 与门店绑定（服务地址 + 门店密钥，绑定一次长期有效）
+function openPrintAgentDownload() {
+  ST.paDlUrl = location.origin + API + '/api/print-agent/download';
+  ST.paDlModal = true;
+}
+function closePrintAgentDownload() { ST.paDlModal = false; }
+function openPrintAgentBind(sid) {
+  ST.paBindStoreId = Number(sid) || ST.curStoreId || 0;
+  ST.paBindUrl = location.origin + API;
+  ST.paBindKey = '';
+  ST.paBindModal = true;
+  if (!ST.paBindStoreId) return;
+  api('GET', '/api/stores/' + ST.paBindStoreId + '/print-agents').then(function (list) {
+    var a = (list || []).find(function (x) { return x.status === 'active'; }) || (list || [])[0];
+    if (a) { ST.paBindKey = a.agent_key; return; }
+    return api('POST', '/api/stores/' + ST.paBindStoreId + '/print-agent-key', {}).then(function (r) {
+      ST.paBindKey = r.agent_key || '';
+    });
+  }).catch(function (e) { toast(e.message || t('paBind.hint'), 'error'); });
+}
+function closePrintAgentBind() { ST.paBindModal = false; }
 function openHandheldAdd() {
   ST.hhAddUrl = hhApkUrl();
   ST.hhAddQr = '';
@@ -5192,6 +5227,40 @@ function openHandheldAdd() {
   ST.hhAddModal = true;
 }
 function closeHandheldAdd() { ST.hhAddModal = false; }
+
+// 手持机与门店绑定：向云端申请一次性激活码（15 分钟有效），把激活地址做成二维码给手持机扫
+var _hhBindTimer = null;
+function openHandheldBind(sid) {
+  ST.hhBindStoreId = Number(sid) || ST.curStoreId || 0;
+  ST.hhBindModal = true;
+  ST.hhBindUrl = ''; ST.hhBindQr = ''; ST.hhBindLeft = 0;
+  genHandheldBind();
+}
+function closeHandheldBind() {
+  ST.hhBindModal = false;
+  if (_hhBindTimer) { clearInterval(_hhBindTimer); _hhBindTimer = null; }
+}
+function genHandheldBind() {
+  if (!ST.hhBindStoreId) return;
+  api('POST', '/api/devices/activation', { store_id: ST.hhBindStoreId, name: '' }).then(function (r) {
+    ST.hhBindUrl = r.url || '';
+    ST.hhBindLeft = r.expires_in || 900;
+    try {
+      var qr = qrcode(0, 'M');
+      qr.addData(ST.hhBindUrl);
+      qr.make();
+      ST.hhBindQr = qr.createSvgTag({ cellSize: 4, margin: 2 });
+    } catch (e) { ST.hhBindQr = ''; }
+    if (_hhBindTimer) clearInterval(_hhBindTimer);
+    _hhBindTimer = setInterval(function () {
+      if (ST.hhBindLeft > 0) ST.hhBindLeft--;
+    }, 1000);
+  }).catch(function (e) { toast(e.message || t('hhbind.title') + ' ✕', 'error'); });
+}
+function hhBindLeftText() {
+  var s = Math.max(0, Number(ST.hhBindLeft) || 0);
+  return (s > 0 ? Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2) : '⏳');
+}
 function closeDevices() {
   ST.devModal = false; ST.devStoreScope = 0;
   loadAllDevices();  // 弹窗内绑定/解绑后同步门店管理列表
@@ -5356,8 +5425,17 @@ function selectStore(id) {
   ST.locStore = id || 0;
   openStorePrinters();   // 选中门店后同步探测本机打印助手（RFID 打印机卡片数据源）
 }
-// 总部 → 门店：跳到独立「门店管理」页并选中该店（edit=true 时直接进资料编辑态）
+// 总部 → 门店：切到该门店视图后进入独立「门店管理」页并选中该店（edit=true 时直接进资料编辑态）
 function openStorePage(sid, edit) {
+  sid = Number(sid);
+  if (!sid) return;
+  if (ST.curStoreId !== sid) {
+    switchStore(sid).then(function () { enterStorePage(sid, edit); });
+    return;
+  }
+  enterStorePage(sid, edit);
+}
+function enterStorePage(sid, edit) {
   selectStore(sid);
   go('stores');
   if (edit) {
@@ -5622,10 +5700,11 @@ var app = Vue.createApp({
     subTitle: subTitle,
     exportHref: exportHref,
     nav: function () {
-      // 两个独立系统管理页：总部系统管理仅总部账号可见；门店系统管理所有账号可见
+      // 菜单随顶部「总部 / 门店」切换：总部视图=总部管理+系统管理；门店视图=仅门店管理
+      var hq = isHqStore();
       return NAV_ITEMS.filter(function (n) {
-        if (n.id === 'shops' && !isHqStore()) return false;
-        if (n.id === 'hq-system' && !isHqStore()) return false;
+        if (n.id === 'shops' || n.id === 'hq-system') return hq;
+        if (n.id === 'stores') return !hq;  // 门店视图：仅门店管理（操作日志收在该页内）
         return true;
       });
     },
@@ -5714,7 +5793,7 @@ var app = Vue.createApp({
     detailRows: detailRows,
   },
   methods: {
-    go: go, mtipUrl: mtipUrl, mtipClose: mtipClose, switchAdminSub: switchAdminSub, goInvStatus: goInvStatus, clearInvStatusFilter: clearInvStatusFilter,
+    go: go, isNavActive: isNavActive, mtipUrl: mtipUrl, mtipClose: mtipClose, switchAdminSub: switchAdminSub, goInvStatus: goInvStatus, clearInvStatusFilter: clearInvStatusFilter,
     openLockedItems: openLockedItems, closeLockedItems: closeLockedItems,
     invCatDonut: invCatDonut, invCatPct: invCatPct,
     invPtypeDonut: invPtypeDonut, invPtypePct: invPtypePct,
@@ -5850,7 +5929,11 @@ var app = Vue.createApp({
     copyCoUrl: copyCoUrl,
     copyH5Url: copyH5Url,
     openDevices: openDevices, closeDevices: closeDevices, loadDevices: loadDevices,
-    openHandheldAdd: openHandheldAdd, closeHandheldAdd: closeHandheldAdd, copyText: copyText,
+    openHandheldAdd: openHandheldAdd, closeHandheldAdd: closeHandheldAdd,
+    openHandheldBind: openHandheldBind, closeHandheldBind: closeHandheldBind,
+    genHandheldBind: genHandheldBind, hhBindLeftText: hhBindLeftText, copyText: copyText,
+    openPrintAgentDownload: openPrintAgentDownload, closePrintAgentDownload: closePrintAgentDownload,
+    openPrintAgentBind: openPrintAgentBind, closePrintAgentBind: closePrintAgentBind,
     loadAllDevices: loadAllDevices, devicesOfStore: devicesOfStore, deviceTaskLabel: deviceTaskLabel,
     coopTypeName: coopTypeName, coopTaskLabel: coopTaskLabel,
     unbindDevice: unbindDevice, toggleDeviceStatus: toggleDeviceStatus, devOnlineText: devOnlineText,
@@ -5955,7 +6038,7 @@ setInterval(function () { if (ST.token) loadCoTask(); }, 15000);
 // 本机代理定时维护：管理页打开期间每 30 秒探测状态；已手动连接过（缓存密钥）时
 // 顺带推送当前 server——切换运行模式/地址后自动跟随，无需重新下载
 setInterval(function () {
-  if (!ST.token || (ST.tab !== 'shops' && ST.tab !== 'system')) return;
+  if (!ST.token || (ST.tab !== 'shops' && ST.tab !== 'stores' && ST.tab !== 'hq-system')) return;
   probeLocalAgent().then(function (a) {
     // 30 秒自动跟随：本机代理已配置且本页缓存过密钥时，重推配置（服务器地址变更后自动跟随）
     if (!a || !a.configured || !ST.agentToken || !ST.agentStoreId) return;

@@ -928,11 +928,11 @@ body.mt-dragging { cursor: col-resize !important; user-select: none !important; 
 @media (max-width: 560px) { .pv-grid { grid-template-columns: 1fr; } .pv-cell.pv-wide { grid-column: span 1; } }
 @keyframes modalIn { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
 .label-items { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
-/* 标签打印预览：内层 827×413 点阵按容器宽度等比缩放（cqw 容器查询单位） */
+/* 标签打印预览：内层 528×203 点阵按容器宽度等比缩放（cqw 容器查询单位） */
 .label-preview-scroll { max-height: 46vh; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 12px; padding: 8px; border: 1px dashed var(--border); border-radius: 10px; background: var(--cream, #faf6ec); }
-.label-preview-item { position: relative; width: 70mm; margin: 0 auto; }
-/* 实物等比预览：70mm×35mm（浏览器缩放 100% 时与标签纸同尺寸），槽位用 cqw 随标签宽度缩放 */
-.label-inner { position: relative; width: 70mm; height: 35mm; flex-shrink: 0; background: #fff; border: 1px solid #d9c9a3; border-radius: 2px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.07); container-type: inline-size; }
+.label-preview-item { position: relative; width: 66mm; margin: 0 auto; }
+/* 实物等比预览：66mm×25.4mm（浏览器缩放 100% 时与标签纸同尺寸），槽位用 cqw 随标签宽度缩放 */
+.label-inner { position: relative; width: 66mm; height: 25.4mm; flex-shrink: 0; background: #fff; border: 1px solid #d9c9a3; border-radius: 2px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.07); container-type: inline-size; }
 .lp-remove { position: absolute; top: -9px; right: -9px; z-index: 2; width: 20px; height: 20px; line-height: 18px; text-align: center; border-radius: 50%; background: #8a6d1f; color: #fff; font-size: 14px; cursor: pointer; opacity: 0; transition: opacity .15s; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
 .label-preview-item:hover .lp-remove { opacity: 1; }
 .lp-slot { position: absolute; z-index: 1; overflow: hidden; white-space: nowrap; color: #111; font-family: Arial, 'Segoe UI', sans-serif; line-height: 1.08; }

@@ -1029,19 +1029,19 @@ def _reconcile_customers_due(conn: sqlite3.Connection) -> None:
 def _ensure_builtin_label_templates(conn: sqlite3.Connection) -> None:
     """内置标签模板（幂等，按名字判重）：标签打印统一走模板排版。
     租户可在此基础上修改/按品类绑定；未绑定模板的品类默认绑定「珠宝RFID标准签」。
-    坐标单位为打印点（300dpi，÷11.811=mm），字段与 rfid_print._field_value 对齐。
-    画布按 ZMIN 实测纸型 66×25.4mm 间隙5mm（=779×299 点）；definition._builtin 为内置版本号，
+    坐标单位为打印点（203dpi，÷7.992=mm），字段与 rfid_print._field_value 对齐。
+    画布按 ZMIN X19D 实测纸型 66×25.4mm 间隙5mm（=528×203 点）；definition._builtin 为内置版本号，
     低于当前版本时自动升级覆盖（租户自改请另存新名，避免被升级覆盖）。"""
-    _BUILTIN_VER = 3
-    # 可打印区域 = 标签左侧 25×25mm（对折珠宝签），≈295×295 点；右边为折叠/粘贴区不排内容
+    _BUILTIN_VER = 6
+    # 可打印区域 = 标签左侧 25×25mm（对折珠宝签），≈200×200 点；右边为折叠/粘贴区不排内容
     tpl_rfid = {
         "_builtin": _BUILTIN_VER,
         "slots": [
-            {"field": "name", "x": 8, "y": 8, "w": 280, "h": 28, "font": {"type": "cn", "w": 26, "h": 26}},
-            {"field": "price", "x": 8, "y": 42, "w": 280, "h": 34, "font": {"type": "ascii", "w": 30, "h": 30}},
-            {"field": "barcode", "x": 8, "y": 84, "w": 270, "h": 70, "font": {"type": "barcode", "h": 50}},
-            {"field": "epc_text", "x": 8, "y": 196, "w": 280, "h": 18, "font": {"type": "ascii", "w": 14, "h": 14}},
-            {"field": "spec", "x": 8, "y": 224, "w": 280, "h": 18, "font": {"type": "cn", "w": 14, "h": 14}},
+            {"field": "name", "x": 5, "y": 5, "w": 189, "h": 19, "font": {"type": "cn", "w": 18, "h": 18}},
+            {"field": "price", "x": 5, "y": 28, "w": 189, "h": 23, "font": {"type": "ascii", "w": 20, "h": 20}},
+            {"field": "barcode", "x": 5, "y": 57, "w": 183, "h": 47, "font": {"type": "barcode", "h": 34}},
+            {"field": "epc_text", "x": 5, "y": 133, "w": 189, "h": 12, "font": {"type": "ascii", "w": 9, "h": 9}},
+            {"field": "spec", "x": 5, "y": 152, "w": 189, "h": 12, "font": {"type": "cn", "w": 9, "h": 9}},
         ]
     }
     builtin = [

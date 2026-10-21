@@ -2894,11 +2894,20 @@ def label_templates_list(request: Request):
         return {"list": [_tpl_row(r) for r in rows]}
 
 
+def _normalize_template_definition(definition, width_mm, height_mm) -> str:
+    """保存模板时把越界槽位缩回画布内，统一存 JSON 字符串。"""
+    raw = json.loads(definition) if isinstance(definition, str) else dict(definition or {})
+    if not isinstance(raw, dict):
+        return definition if isinstance(definition, str) else json.dumps(definition or {}, ensure_ascii=False)
+    rfid_print.normalize_template_slots(raw, width_mm, height_mm)
+    return json.dumps(raw, ensure_ascii=False)
+
+
 @app.post("/api/label-templates")
 def label_template_create(body: LabelTemplateIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
-        definition = body.definition if isinstance(body.definition, str) else json.dumps(body.definition, ensure_ascii=False)
+        definition = _normalize_template_definition(body.definition, body.size_width, body.size_height)
         cur = conn.execute(
             "INSERT INTO label_templates(name,size_width,size_height,definition,cols,gap,copies,default_printer,is_rfid) VALUES(?,?,?,?,?,?,?,?,?)",
             (body.name, body.size_width, body.size_height, definition, body.cols, body.gap, body.copies, body.default_printer, body.is_rfid),
@@ -2912,7 +2921,7 @@ def label_template_create(body: LabelTemplateIn, request: Request):
 def label_template_update(tid: int, body: LabelTemplateIn, request: Request):
     op = _require_auth(request)
     with _db(request) as conn:
-        definition = body.definition if isinstance(body.definition, str) else json.dumps(body.definition, ensure_ascii=False)
+        definition = _normalize_template_definition(body.definition, body.size_width, body.size_height)
         conn.execute(
             "UPDATE label_templates SET name=?,size_width=?,size_height=?,definition=?,cols=?,gap=?,copies=?,default_printer=?,is_rfid=? WHERE id=?",
             (body.name, body.size_width, body.size_height, definition, body.cols, body.gap, body.copies, body.default_printer, body.is_rfid, tid),
@@ -4419,13 +4428,13 @@ def _bridge_enqueue(sid: int, zpl: str, count: int,
             payload = {
                 "type": "print_task",
                 "taskId": jid,
-                "printerType": "rfid",
+                "printerType": "rfid_cmd",
                 "brand": "zmin",
                 "interface": (iface or "USB").upper(),
                 "printerIp": printer_ip or "",
                 "printerName": printer or "Default",
                 "storeId": str(sid),
-                "content": content,
+                "content": {"commands": rfid_print.content_to_commands(content)},
             }
             _bridge_send(sid, payload)
             last_jid = jid
@@ -5019,12 +5028,12 @@ async def store_print_control(sid: int, body: dict, request: Request):
                 "printerIp": "",
                 "printerName": target_printer or "Default", "storeId": str(sid),
                 "content": {
-                    "width": 66.0, "height": 25.4, "gap": 5.0, "dpi": 300,
+                    "width": 66.0, "height": 25.4, "gap": 5.0, "dpi": 203,
                     "texts": [
-                        {"text": "PrintAgent Test", "x": 2.0, "y": 2.5, "size": 12.0},
-                        {"text": str(s["name"] or "")[:20], "x": 2.0, "y": 9.0, "size": 8.0},
-                        {"text": ts, "x": 2.0, "y": 15.0, "size": 8.0},
-                        {"text": str(target_printer or "")[:20], "x": 2.0, "y": 21.0, "size": 8.0},
+                        {"text": "PrintAgent Test", "x": 2.0, "y": 2.0, "size": 10.0},
+                        {"text": str(s["name"] or "")[:20], "x": 2.0, "y": 7.0, "size": 8.0},
+                        {"text": ts, "x": 2.0, "y": 12.0, "size": 8.0},
+                        {"text": str(target_printer or "")[:20], "x": 2.0, "y": 17.0, "size": 8.0},
                     ],
                 },
             }

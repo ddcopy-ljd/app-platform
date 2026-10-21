@@ -34,6 +34,12 @@ dotnet publish -c Release -r win-x64 --self-contained true
 4. **CORS 全开放是有意为之**（网页端需跨域调用），不要收紧后再"修复"它；如要收紧需与用户确认。
 5. **`config.json` 存于 exe 所在目录**（`Environment.ProcessPath` 目录；单文件发布时 `AppDomain.CurrentDomain.BaseDirectory` 指向解包临时目录，不可用于定位配置）。调试时修改项目根下的 `config.json` 不会影响运行实例，除非同步到输出目录。
 6. **RFID 图元命名规则**：`LabelObject.ObjectName` 必须以 `rfiduhf` / `text` / `barcode` 开头，这是 ZMIN SDK 的解析约定，改名将导致打印失败。
+7. **写任何打印新代码前，先读 `C:\Users\俊达\Desktop\RFID打印机\NetProxyTest\`**（真机验收过的参考实现，与本文档冲突时以它为准）：
+   - `BtPrintTest\README.md`：X19D 实测 203dpi、528×203 dots、间隙 40 dots、PCLE `\r` 结尾
+   - `JewelryLabel\Program.cs` / `QuickTest.cs` / `Diagnose.cs`：10-18 验收通过的 PCLE 打印序列（`N / q528 / Q203,40 / T / S / W1`）
+   - `ZMIN_RFID\SDK\.Net Framework\C#\LabelPrinter_Dll_1.27_Demo\Form1.cs`：官方 SDK 结构化打印（宽高/坐标单位 mm、`printerdpi` 对齐实际硬件）
+   - `LabelSimulator\` / `net_feed_test.py` / `ws_store_test.py`：仿真与链路测试
+   - 特别注意：raw 透传（`SetPrinterParams`）只下发配置不出纸，不能当打印通道。
 
 ## 代码约定
 
@@ -92,6 +98,16 @@ dotnet publish -c Release -r win-x64 --self-contained true
     - **NET 回读**：打印走 TCP 9100；RD/RQ 回读数据由打印机**反连主机 9200** 反馈口送回（RfidTransport 已实现监听，9200 被占时退化同链路读）；有数据则重置超时窗口。
     - **统一指令坐标一律 mm**：超 `L` 声明的标签高度=静默打到纸外（勿按点阵，EEEEEE 消失真因）；**不认 PCLE 裸 `q/Q`**，尺寸/间隙用 `L 66,25.4,5`。三通道通用纯打印序列：`N / L 66,25.4,5 / S 4,12 / T x,y,0,4,1,1,N,"文本" / PRINT 1`（双行安全布局 y=6/14mm）。
   - 助手进程 USB 卡死（区别于打印机挂死）：连续混打十数次后 USB 派发可挂起（任务不落账、无回执，BT/NET 不受影响），**重启 PrintAgent.exe 即恢复**，打印机无需断电。疑 UsbPcleService 无超时保护，待查（TC-53）。
+
+- SDK 结构化打印（`printerType="rfid"`，`PrintUtility.PrintLabel`）203dpi 铁律（2026-10-21 真机实证）:
+  - **X19D 实际分辨率是 203dpi（1mm=8dots）**，66×25.4mm = **528×203 dots**、间隙 40 dots。此前当 300dpi 渲染会把画布放大 1.48 倍，表现为 4 行内容跨 2-3 张、连出多张纸。
+  - `ZMLabel.labelwidth/labelheight/labelrowgap` 与 `LabelObject.Xposition/Yposition` 单位是 **mm**（官方 Demo `Form1.cs` 注释实锤），不要传点阵坐标；传点阵会直接把标签尺寸放大成 500mm+。
+  - `printer.printerdpi` 必须 = **203**，`ZMinRfidService.PrintRfidLabel` 已强制固定，不再采信云端 `content.dpi`；改回可配置前先在真机复测。
+  - 排版基准统一 203dpi：`rfid_print.py` 的 `LABEL_WIDTH_DOTS=528 / LABEL_HEIGHT_DOTS=203 / DOTS_PER_MM≈7.992`，内建模板 slots 与 `FALLBACK_DEFINITION` 均为点值；`db.py _ensure_builtin_label_templates` 版本 `_BUILTIN_VER=6` 会幂等覆盖老库模板。
+  - raw 透传通道（`ZMinRfidService.SendRawCommands` → `SetPrinterParams`）**只下发配置、不出纸**，不能当打印通道；裸 PCLE 打印须以 `\r` 结尾并用 `W1` 触发（参考 NetProxyTest/JewelryLabel，10-18 真机验收过）。
+  - **SDK 结构化通道不渲染条码**（2026-10-21 实证）：`PrintLabel` 把整张标签栅格化成 GM/GG 位图，dump 里没有 `B` 指令，商品条码/二维码一律丢失，且仍返回「打印并写入成功」。业务标签必须走 `printerType="rfid_cmd"` 统一指令 → `UsbPcleService.WriteToPort`，条码才能出。
+  - PCLE `B` 指令类型码必须是 `1`（Code 128 Auto），传 `128`/`0` 都不出条；统一指令层 `B x,y,高mm,窄bar mm,文字位,码制,"内容"` 已映射到 `1`，窄条 0.15mm 才放得下 12 位条码。
+  - PCLE 单字节字体最小 **24 点**（中文点阵同为 24×24），模板字号低于 24 时打印机会按 24 出字；模板保存时由 `rfid_print.normalize_template_slots` 抬到 24，保证预览=实物。
 
 ## RFID 标签纸形状库（Models/LabelPaper.cs + Services/LabelPaperStore.cs）
 

@@ -1,6 +1,6 @@
 """RFID 珠宝标签 ZPL 排版引擎（得实 DL-735RE 等 ZPL 指令打印机）。
 
-标签规格（固定）：宽 66mm × 高 25.4mm 横版，300 DPI → 779 × 300 dots，
+标签规格（固定）：宽 66mm × 高 25.4mm 横版，203 DPI → 528 × 203 dots，
 间隙 5mm；可打印区域为标签左侧 25×25mm（对折珠宝签）。
 - ASCII 内容（货号/价格/条码/EPC）用内置字体 ^A0N
 - 中文使用机内字体 ^A@N（默认宋体 E:SIMSUN.FNT，可按打印机实际字体调整）
@@ -117,9 +117,9 @@ def decode_chip_epc(raw: str, prefix: str = "E28", seq_bits: int = 6,
                 return cand
     return s
 
-# 300 DPI 下的标签尺寸（固定 66×25.4mm 横版，与内建模板画布一致）
-LABEL_WIDTH_DOTS = 779   # 66mm
-LABEL_HEIGHT_DOTS = 300  # 25.4mm
+# 203 DPI 下的标签尺寸（固定 66×25.4mm 横版，与内建模板画布一致）
+LABEL_WIDTH_DOTS = 528   # 66mm
+LABEL_HEIGHT_DOTS = 203  # 25.4mm
 
 # 可输出字段：key → 中文名称
 FIELD_OPTIONS = {
@@ -144,14 +144,14 @@ DEFAULT_FIELDS = {"store", "name", "spec", "price", "barcode"}
 DEFAULT_FONT = "E:SIMSUN.FNT"  # 打印机内中文字体（无中文字体的机器可改为空）
 
 # 无模板时的回退布局：与 db.py 内建「珠宝RFID标准签（66×25.4）」同版式，
-# 可打印区域为标签左侧 25×25mm（≈295×300 点），坐标单位 300dpi 点
+# 可打印区域为标签左侧 25×25mm（≈200×200 点），坐标单位 203dpi 点
 FALLBACK_DEFINITION = {
     "slots": [
-        {"field": "name", "x": 8, "y": 8, "w": 280, "h": 28, "font": {"type": "cn", "w": 26, "h": 26}},
-        {"field": "price", "x": 8, "y": 42, "w": 280, "h": 34, "font": {"type": "ascii", "w": 30, "h": 30}},
-        {"field": "barcode", "x": 8, "y": 84, "w": 270, "h": 70, "font": {"type": "barcode", "h": 50}},
-        {"field": "epc_text", "x": 8, "y": 196, "w": 280, "h": 18, "font": {"type": "ascii", "w": 14, "h": 14}},
-        {"field": "spec", "x": 8, "y": 224, "w": 280, "h": 18, "font": {"type": "cn", "w": 14, "h": 14}},
+        {"field": "name", "x": 5, "y": 5, "w": 189, "h": 19, "font": {"type": "cn", "w": 18, "h": 18}},
+        {"field": "price", "x": 5, "y": 28, "w": 189, "h": 23, "font": {"type": "ascii", "w": 20, "h": 20}},
+        {"field": "barcode", "x": 5, "y": 57, "w": 183, "h": 47, "font": {"type": "barcode", "h": 34}},
+        {"field": "epc_text", "x": 5, "y": 133, "w": 189, "h": 12, "font": {"type": "ascii", "w": 9, "h": 9}},
+        {"field": "spec", "x": 5, "y": 152, "w": 189, "h": 12, "font": {"type": "cn", "w": 9, "h": 9}},
     ]
 }
 
@@ -347,8 +347,42 @@ def build_batch_zpl(products: list[dict], *, fields: set[str] | None = None,
 # ---------------------------------------------------------------- ZMIN 结构化任务
 # ZMIN X19D 固件不识别 ZPL：^XA 文本经 SDK 透传"成功"但零出纸（假成功）。
 # 唯一可靠路径 = PrintAgent 的 printerType:"rfid" 结构化任务（SDK 原生 ZMLabel 排版）。
-# 坐标换算：模板 slots 为 300DPI 点阵（11.811 dots = 1mm）→ 结构化 content 用 mm。
-DOTS_PER_MM = 300 / 25.4            # ≈11.811（模板点阵为 300DPI）
+# 坐标换算：模板 slots 为 203DPI 点阵（7.992 dots = 1mm）→ 结构化 content 用 mm。
+DOTS_PER_MM = 203 / 25.4            # ≈7.992（X19D 实测为 203DPI）
+
+
+def normalize_template_slots(definition: dict, width_mm: float, height_mm: float) -> dict:
+    """把越界槽位等比缩回标签画布内（保存模板时调用）。
+
+    编辑器允许字段框拖到画布外，落库后预览会裁掉、打印也不会出现；
+    这里按最大边界等比压缩坐标与尺寸，保证所有字段都落在画布内。
+    """
+    canvas_w = max(1, round(float(width_mm or 66) * DOTS_PER_MM))
+    canvas_h = max(1, round(float(height_mm or 25.4) * DOTS_PER_MM))
+    slots = definition.get("slots") or []
+    if not slots:
+        return definition
+    bottom = max(int(s.get("y", 0)) + int(s.get("h", 0)) for s in slots)
+    right = max(int(s.get("x", 0)) + int(s.get("w", 0)) for s in slots)
+    ky = canvas_h / bottom if bottom > canvas_h else 1.0
+    kx = canvas_w / right if right > canvas_w else 1.0
+    for s in slots:
+        s["x"] = max(0, round(int(s.get("x", 0)) * kx))
+        s["y"] = max(0, round(int(s.get("y", 0)) * ky))
+        s["w"] = max(1, round(int(s.get("w", 0)) * kx))
+        s["h"] = max(1, round(int(s.get("h", 0)) * ky))
+        font = s.get("font")
+        if isinstance(font, dict):
+            # 字号同步压缩，保持画布上的相对观感（否则缩完文字会盖住下一行）
+            if int(font.get("h") or 0):
+                font["h"] = max(8, round(int(font["h"]) * ky))
+            if int(font.get("w") or 0):
+                font["w"] = max(8, round(int(font["w"]) * kx))
+            # PCLE 单字节字体最小 24 点（中文点阵同为 24×24），字号低于 24 时
+            # 打印机会按 24 点出字，模板一并抬到 24 保证预览与实物一致
+            if font.get("type", "ascii") != "barcode" and int(font.get("h") or 0):
+                font["h"] = max(24, int(font["h"]))
+    return definition
 
 
 def _slot_to_content_el(slot: dict, product: dict, store_name: str,
@@ -385,7 +419,7 @@ def build_zmin_content(product: dict, *, fields: set[str] | None = None,
                        store_name: str = "", write_epc: bool = True,
                        template: dict | None = None, rfid_prefix: str = "E280",
                        width: float = 66.0, height: float = 25.4,
-                       gap: float = 5.0, dpi: int = 300) -> dict:
+                       gap: float = 5.0, dpi: int = 203) -> dict:
     """单件商品 → PrintAgent 结构化 rfid 任务 content。
 
     优先模板 slots 布局；无模板回退到 FALLBACK_DEFINITION（与 ZPL 回退同版式）。
@@ -409,6 +443,46 @@ def build_zmin_content(product: dict, *, fields: set[str] | None = None,
     for slot in slots:
         _slot_to_content_el(slot, p, store_name, rfid_prefix, content)
     return content
+
+
+def content_to_commands(content: dict) -> str:
+    """结构化 content → ZMIN 统一指令流（助手按 brand 翻译为 PCLE）。
+
+    SDK 结构化通道会把整张标签栅格化成位图，条码不渲染（假成功）；
+    统一指令 USB 通道走 UsbPcleService.WriteToPort，可正常输出 Code128 条码，
+    因此业务标签一律改走这里生成的指令流。
+    """
+    w = float(content.get("width") or 66.0)
+    h = float(content.get("height") or 25.4)
+    gap = float(content.get("gap") or 5.0)
+    lines = [
+        "N",
+        f"L {w},{h},{gap}",
+        f"S {int(content.get('speed') or 4)},{int(content.get('darkness') or 12)}",
+    ]
+    for t in content.get("texts") or []:
+        txt = str(t.get("text") or "").replace('"', " ")
+        if not txt:
+            continue
+        x = float(t.get("x") or 0)
+        y = float(t.get("y") or 0)
+        # pt → 点高 → 倍率（机内 ASCII 字体高 24 点；中文自动换 24×24 点阵字体 a）
+        h_dot = float(t.get("size") or 9) / 2.835 * DOTS_PER_MM
+        mult = max(1, min(4, round(h_dot / 24)))
+        lines.append(f'T {x},{y},0,1,{mult},{mult},N,"{txt}"')
+    bc = content.get("barcode") or {}
+    code = str(bc.get("code") or "").replace('"', " ")
+    if code:
+        # B x,y,条码高mm,窄条mm,文字位,码制(1=Code128 Auto),"内容"
+        lines.append(
+            f'B {float(bc.get("x") or 0)},{float(bc.get("y") or 0)},'
+            f'{float(bc.get("height") or 8)},0.15,1,1,"{code}"'
+        )
+    epc = str(content.get("epc") or "")
+    if epc:
+        lines.append(f'RF 0,0,0,"{epc}"')
+    lines.append("PRINT 1")
+    return "\r\n".join(lines) + "\r\n"
 
 
 def list_printers() -> list[str]:

@@ -19,6 +19,12 @@
 5. **前端缓存**：`frontend/` 的 css/js/i18n 引用带 `?v=` 版本串；**改了 app.css / app.js / i18n.js / index.html 内联样式必须同步升版本号**，否则用户浏览器吃旧缓存（症状：改了没生效）。
 6. **助手下载接口**：已在平台 `_MACHINE_PATHS` 白名单，免登录且与租户无关；`downloads/` 不进打包清单，**发布升级包后会被重置为空**，需提醒用户经运维端重新上传扫描助手 APK / 打印助手 EXE。
 7. **运维端访问**：`ops_api.py` 只能经平台「生产运维穿透模式」票据进入，普通业务路径访问返回 403——这是平台行为，不要在插件内"修复"。
+8. **打印相关改动先读权威参考程序**：凡是涉及标签打印 / PCLE 指令 / RFID 写芯的新代码或调试脚本（`rfid_print.py`、`agents/print/`、临时验证脚本一律适用），动笔前必须先读 `C:\Users\俊达\Desktop\RFID打印机\NetProxyTest\` 下真机验收过的程序：
+   - `BtPrintTest\README.md`：X19D 实测 **203dpi（1mm=8dots）**、标签 66×25.4mm=**528×203 dots**、间隙 40 dots、PCLE 以 `\r` 结尾
+   - `JewelryLabel\Program.cs` / `QuickTest.cs` / `Diagnose.cs`：10-18 真机验收的 PCLE 打印序列（`N / q528 / Q203,40 / T / S / W1`）
+   - `ZMIN_RFID\SDK\.Net Framework\C#\LabelPrinter_Dll_1.27_Demo\Form1.cs`：官方 SDK 结构化打印的单位约定（宽高/坐标为 **mm**）与调用姿势（`printerdpi` 须与实际一致）
+   - `LabelSimulator\`、`net_feed_test.py`、`ws_store_test.py`：仿真与链路测试参考
+   该目录与本文档或代码注释冲突时，**以该目录的实测程序为准**，并回头修正文档。
 
 ## 代码约定
 

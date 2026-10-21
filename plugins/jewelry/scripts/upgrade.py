@@ -33,6 +33,8 @@
   分组并把既有标签出现过的分组名一并纳入；SCHEMA 幂等建表，无 ALTER）；
   标签种子 _SEED_PRODUCT_TAGS 常量化，ensure_new_seeds 仅全新演示库（products 本次新灌）
   联动灌入——外网沙箱基线库可得演示标签，真实租户删光标签后升级不复活（TC-40）；
+  dataVersion 1.2.25 标签画布对齐 X19D 203dpi：内建标签模板 _builtin 升到 4，
+  slots 全部重排为 528×203 点（migrate_schema 幂等覆盖，老库无需手工改模板）；
 - 幂等执行 EPC 现行规则化（前缀+门店段+品类码+序号）与材质英文长码收敛为简写。
 参数/环境变量与平台约定一致：
   OLD_DB_PATH / NEW_DB_PATH / OLD_STORAGE / NEW_STORAGE /

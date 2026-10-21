@@ -32,7 +32,8 @@ namespace PrintAgent.Services
                 }
             }
 
-            printer.printerdpi = dpi;
+            // X19D 实测为 203dpi；按 300dpi 渲染会把画布放大 1.48 倍导致内容跨标签，此处固定
+            printer.printerdpi = 203;
             printer.printSpeed = content.Value<int?>("speed") ?? 4;
             printer.printDarkness = content.Value<int?>("darkness") ?? 12;
             printer.labelhavegap = content.Value<bool?>("haveGap") ?? true;
