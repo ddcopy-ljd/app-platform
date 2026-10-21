@@ -128,11 +128,27 @@ a { text-decoration: none; color: inherit; }
 .gold-bar .gb-val { font-size: 17px; font-weight: 400; color: var(--wine-dark); }
 .gold-bar .gb-sub { font-size: 14px; color: var(--text3); }
 .gold-bar .gb-fail { color: var(--text3); font-weight: 400; font-size: 14px; cursor: pointer; }
-/* 看板 · 金价栏置顶行：国际金价在前、本地金价在后，右侧同一行放页面时间范围下拉（PC 生效，移动端仍整行堆叠） */
+/* 金价合并小面板：国际/本地同卡同一行（极窄时兜底换行） */
+.gold-bar .gb-merged { flex-direction: row; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; padding: 7px 10px; }
+.gold-bar .gb-row { display: flex; align-items: baseline; gap: 4px; min-width: 0; white-space: nowrap; }
+/* PC 端单行空间有限：字号微降；窄屏（<1250px）隐藏次要信息（更新时间/币种，悬停 title 可见） */
+.app-shell.pc .gold-bar .gb-merged .gb-label { font-size: 13px; }
+@media (max-width: 1250px) { .gold-bar .gb-merged .gb-sub { display: none; } .gold-bar .gb-merged .gb-val { font-size: 14px; } }
+/* 看板 · 金价栏置顶行：合并金价面板在前，右侧同一行放页面时间范围页签（PC 生效，移动端仍整行堆叠） */
 .app-shell.pc .gold-bar { align-items: center; justify-content: space-between; }
-/* 两张金价卡等分剩余宽度，时间范围下拉靠右固定宽 */
-.app-shell.pc .gold-bar .gb-item { flex: 1 1 0; min-width: 0; }
-.app-shell.pc .gold-bar .gold-range-select { flex: 0 0 auto; }
+/* 金价面板占满剩余宽度（与下方 KPI 区同宽）；面板最小需求 320px（容纳国际+本地同一行），
+   列宽不足时时间页签自动换到下一行，面板独占整列 */
+.app-shell.pc .gold-bar .gb-item { flex: 1 0 320px; min-width: 0; }
+.app-shell.pc .gold-bar .range-bar { flex: 0 1 auto; margin: 0; }
+.gold-bar .range-cur { white-space: nowrap; }
+/* 待办提醒：可点开对应单据详情（定金单/借货/维修） */
+.reminder-item.clickable { cursor: pointer; }
+.reminder-item.clickable:hover { background: #FBF7F1; }
+.ri-code { color: var(--wine-dark); font-weight: 600; margin-right: 6px; }
+/* 详情面板顶部：锁定商品实物照（取货核对） */
+.detail-photo { margin: 0 0 8px; text-align: center; }
+.detail-photo img { max-width: 100%; max-height: 220px; border-radius: 10px; border: 1px solid var(--border); object-fit: contain; }
+.detail-photo-code { display: block; margin-top: 4px; font-size: 13px; color: var(--wine-dark); font-weight: 600; }
 /* 资产风控条 */
 .risk-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
 .risk-bar .risk-card { flex: 1; min-width: 220px; background: #FFF7F0; border: 1px solid #F3D9C2; border-radius: 12px; padding: 8px 14px; display: flex; align-items: baseline; gap: 8px; font-size: 14px; }
@@ -325,9 +341,8 @@ a { text-decoration: none; color: inherit; }
    除「业务说明」外，看板所有面板按 DOM 顺序进入两列；每个面板高度贴合自身内容（不再跨列拉伸对齐），
    列内容自动均衡，行尾不再留大段空白。手机版不受影响（.app-shell.mobile 仍为单列）。 */
 .app-shell.pc .dash-pg { column-count: 2; column-gap: 12px; }
-/* 业务说明、金价栏通栏；「提醒 + 最近销售」不再通栏，改为随上方面板在同一列内自然流动 */
-.app-shell.pc .dash-pg > .biz-guide,
-.app-shell.pc .dash-pg > .gold-bar { column-span: all; }
+/* 业务说明通栏；金价栏不通栏，流入左列 → 与下方 KPI 区同宽对齐 */
+.app-shell.pc .dash-pg > .biz-guide { column-span: all; }
 /* 原有列/行包裹层在多列容器内「消失」，其面板子项提升为多列直接子项，按顺序流式排布 */
 .app-shell.pc .dash-pg .dash-top,
 .app-shell.pc .dash-pg .dash-top-main,
@@ -385,6 +400,8 @@ a { text-decoration: none; color: inherit; }
 /* ---------- card list ---------- */
 .card-list { margin-top: 8px; }
 .card-item { background: var(--white); border-radius: 14px; padding: 16px; border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(92,34,51,.04), 0 4px 16px -8px rgba(92,34,51,.08); margin-bottom: 12px; position: relative; overflow: hidden; }
+/* 低密度表单卡限宽: 内容只有一列却拉满整行, 扫视易串行(系统管理: 门店设备/EPC/经办人/标签模板) */
+.card-narrow { max-width: 880px; }
 
 /* ---------- 自适应网格卡片（内容较少的列表：维修/采购/委外/借货/预约/日志） ---------- */
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; margin-top: 8px; }
@@ -803,6 +820,7 @@ body.mt-dragging { cursor: col-resize !important; user-select: none !important; 
 .epc-rule-fields .form-group { flex: 0 0 auto; margin-bottom: 0; }
 .epc-rule-fields input.epc-in-prefix { flex: 0 0 88px; width: 88px; }
 .epc-rule-fields input.epc-in-bits { flex: 0 0 64px; width: 64px; }
+.epc-rule-fields input.epc-in-lock { flex: 0 0 72px; width: 72px; background: #f7f8fa; color: #555; cursor: not-allowed; }  /* 只读段(门店/品类编号): 系统自动分配 */
 .epc-rule-fields .epc-save-btn { margin-left: 4px; }
 
 /* 模板设计器：槽位右下角缩放手柄 */
@@ -1046,6 +1064,9 @@ select.lang-code {
 .table-products .th-check input, .table-products td.cell-check input { width: 15px; height: 15px; cursor: pointer; vertical-align: middle; accent-color: var(--gold, #c9a227); }
 .table-products .printed-ico { margin-right: 3px; font-size: 14px; }
 .tag-printed { background: #eef6ec; color: #3d7a35; border-color: #bfe0b8; }
+/* RFID 打标状态：issued=已下发（黄）/ verified=已验证（绿） */
+.tag-lbl-issued { background: rgba(230,126,34,.14); color: #C0661A; border-color: rgba(230,126,34,.4); margin-right: 4px; }
+.tag-lbl-verified { background: #eef6ec; color: #3d7a35; border-color: #bfe0b8; margin-right: 4px; }
 .table-products td.cell-img { width: 56px; padding: 5px 6px; text-align: center; }
 .table-products .cell-img .prod-thumb-img { width: 48px; height: 36px; border-radius: 6px; }
 .table-products .cell-img .prod-thumb-ph {
@@ -1264,6 +1285,15 @@ tr.row-flash, tr.row-flash:hover { background-color: #FFF3CD !important; transit
 /* 门店卡片列表：PC 卡片宽度 360–520px 自适应（太窄太宽都不好看），窄屏回落单列 */
 .store-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 520px)); gap: 10px; margin-top: 10px; justify-content: center; }
 .store-grid > .bridge-store { margin-top: 0; min-width: 0; }
+/* 打印代理页门店卡网格: 固定两列(单卡居中 520 封顶不满宽), 窄屏回落单列 */
+.bridge-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 520px)); gap: 10px; margin-top: 10px; justify-content: center; }
+.bridge-grid > .bridge-store { margin-top: 0; min-width: 0; }
+@media (max-width: 720px) { .bridge-grid { grid-template-columns: minmax(0, 520px); } }
+/* 标签纸形状库编辑弹窗: 两列字段网格 */
+.cfg-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+.cfg-field { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--text2); }
+.cfg-field input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 14px; }
+.cfg-span2 { grid-column: span 2; }
 .store-grid .hqs-stat-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
 .store-grid .hqs-stat { padding: 4px 2px; }
 .store-grid .hqs-stat > span { font-size: 14px; }
@@ -1320,8 +1350,15 @@ tr.row-flash, tr.row-flash:hover { background-color: #FFF3CD !important; transit
 .biz-line-sel { flex: 1; min-width: 0; padding: 3px 4px; font-size: 14px; }
 .biz-test { flex: 0 0 auto; min-width: 30px; padding: 2px 6px; }
 .biz-test:disabled { opacity: .45; cursor: not-allowed; }
+/* 打印设置两个配置分组：标签格式 / 设备与连接（视觉上圈起来） */
+.cfg-group { border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 10px 0; background: rgba(0,0,0,.015); }
+.cfg-group-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; color: var(--wine-dark, #6B2737); margin-bottom: 6px; }
+.cfg-iface { flex: 0 0 74px; padding: 3px 2px; font-size: 13px; }
+.cfg-input { flex: 0 0 auto; padding: 3px 6px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; }
+.cfg-input:focus { outline: none; border-color: var(--gold); }
 @media (max-width: 768px) {
   .biz-line-name { flex-basis: 38%; }
+  .cfg-iface { flex-basis: 64px; }
 }
 
 /* ===== 安防中心 ===== */
@@ -1503,7 +1540,7 @@ tr.tr-row-hit { animation: tr-hit-flash 1.2s ease; }
 .coop-task-label { font-size: 14px; font-weight: 700; color: var(--wine-dark); white-space: nowrap; }
 .upgrade-badge { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 9px; background: #fff3e0; color: #c8791b; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .coop-taskno { font-size: 14px; color: var(--text3); }
-.sb-handheld { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e3d9cf; }
+/* 手持机区块已并入 .bridge-biz details 统一小三角样式 */
 .coop-exit { margin-left: auto; }
 .coop-pulse {
   width: 12px; height: 12px; border-radius: 50%; background: #2e9e5b;
@@ -1781,16 +1818,37 @@ tr.tr-row-hit { animation: tr-hit-flash 1.2s ease; }
 .ptag-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 .ptag { display: inline-block; font-size: 14px; line-height: 1.5; padding: 0 8px; border-radius: 9px; background: var(--border); color: var(--text); white-space: nowrap; }
 /* 商品列表：标签独立列（chips 自动换行，窄列不撑破表格） */
-.prod-tags-toggle { margin: 8px 0 2px; }
+.prod-tags-toggle { margin: 8px 0 2px; display: flex; gap: 8px; align-items: center; }
 .table-products .th-tags { min-width: 72px; }
 .table-products td.cell-tags { min-width: 84px; white-space: normal; word-break: break-word; line-height: 1.6; }
 .table-products td.cell-tags .ptag-row { margin-top: 0; }
 .table-products td.cell-tags .ptag { font-size: 13px; padding: 0 7px; margin: 0; }
 .tag-pick-chips { padding: 2px 0 6px; }
+/* 二级分类（标签）筛选 / 企业推广语言：圆角胶囊按钮 */
+.tag-chip {
+  display: inline-flex; align-items: center; gap: 5px; vertical-align: middle;
+  font-size: 14px; line-height: 1; font-weight: 600; font-family: inherit;
+  padding: 7px 15px; margin: 0 8px 8px 0;
+  border: 1.5px solid var(--border); border-radius: 999px; background: var(--white, #fff);
+  color: var(--text2); cursor: pointer; white-space: nowrap;
+  transition: .15s var(--ease); -webkit-tap-highlight-color: transparent;
+}
+.tag-chip:hover:not(.tag-chip-on) { border-color: var(--gold); color: var(--wine-dark); background: rgba(201,169,97,.10); }
+.tag-chip-on { background: var(--wine); border-color: var(--wine); color: #fff; box-shadow: 0 2px 8px rgba(92,34,51,.22); }
+.tag-chip .pf-i18n-ok { font-size: 12px; opacity: .9; }
 .tag-form-empty { font-size: 14px; color: var(--text2); padding: 4px 0; }
 /* 标签按组分块展示（看板统计/商品筛选/库存分析/销售分析/商品表单 5 处共用；
    组名 chip 视觉与「商品品类分组选择弹窗」的 tp-group-label 保持一致） */
 .tag-pick-wrap { display: flex; flex-direction: column; gap: 8px; }
+/* 属性标签筛选：可折叠（默认收起），summary 做成圆角胶囊按钮 */
+details.tag-fold { margin: 8px 0 2px; }
+details.tag-fold > summary { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; list-style: none; background: var(--white); border: 1px solid var(--border); border-radius: 12px; padding: 4px 12px; font-size: 14px; color: var(--text); }
+details.tag-fold > summary::-webkit-details-marker { display: none; }
+details.tag-fold > summary::after { content: '▸'; color: var(--text3); transition: transform .15s; }
+details.tag-fold[open] > summary::after { transform: rotate(90deg); }
+details.tag-fold > summary:hover { border-color: var(--wine); }
+details.tag-fold > summary .tag-fold-count { color: var(--wine); font-weight: 600; }
+details.tag-fold[open] > summary { border-bottom: none; border-radius: 12px 12px 0 0; }
 .tag-pick-wrap .tag-pick-chips { padding: 0; }
 .tag-group-name {
   display: inline-block; font-size: 14px; font-weight: 700; color: var(--wine, #5C2233);

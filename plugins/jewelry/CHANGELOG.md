@@ -1,6 +1,47 @@
 # CHANGELOG — 懿臻珠宝云
 
+## v1.2.51.261020（未发布）
+
+### 打印配置管理：三层模型 + 链路指派 + 连接巡检
+
+- **数据模型**：`store_printers` 表扩展 6 列（`iface` 链路 USB/NET/BT、`printer_ip` NET 地址、`media_json` 标签方案、`rev` 版本、`updated_at/updated_by` 审计），`migrate_schema` 幂等补列，复用原 PK(store_id,biz_code) 不建新表
+- **bind-printer API 扩展**：校验 `iface∈{USB,NET,BT}`，NET 必填 IP（否则 400），写 `media_json`（纸方案+撕纸位置），`rev+1` 乐观锁，返回新字段；标签类业务同步旧列 `stores.printer_name` 保持兼容
+- **打印下发带链路**：`_bridge_enqueue` / 回退重打 / `print-control` 测试页三处 payload 增加 `interface`/`printerIp`，由门店指派行驱动，不再硬编码 "USB"
+- **前端打印配置页两 Group**：🏷 标签格式（标签方案下拉 + 撕纸位置 mm + 应用按钮，下发助手 `/api/print-config/apply` 发 `CONFIG tear` 指令改 NV）/ ⚙ 设备与连接（业务行=打印机下拉+链路下拉+NET IP 框+状态点+测连接）；状态点 key 对齐助手 `ProfileKey(brand|NET?ip:name)`
+- **助手连接巡检（不打打印任务）**：新增 `ConnectionProbeService` 60s 定时巡检——USB=SDK 主板 SN 枚举（不开端口）、BT=SERIALCOMM 串口在位、NET=TCP 9100、DRIVER=Windows 打印队列；结果存内存+`status.json`；新增本地接口 `GET/POST /api/printer-status`（立即巡检）、`POST /api/printer-status/register`（登记云端指派目标）、`POST /api/print-config/apply`（撕纸 NV 持久）
+- 修复 `print_agent_status` 中 `bd` 变量未定义导致 500 的 bug；biz 数组补齐 iface/printer_ip/media/rev/审计字段
+- 前端缓存版本 → 20261020b19
+
 ## v1.2.50.261019（未发布）
+
+### 打印助手改 http 回环 + 门店管理内置「打印机」管理卡片
+
+- **C# PrintAgent 本地服务改 http 仅回环监听**（127.0.0.1:18180）：原 https 自签证书需手动导入系统信任才能被浏览器放行（死结），改 http 后浏览器直连零配置；csproj 同步移除 pfx 复制项，顺带对齐助手「仅回环」约束
+- 新增本地接口 `GET /api/profiles`（设备档案回显）与 `POST /api/printer-prefs`（用途备注/列表移除，按 ProfileKey 存设备档案）
+- **门店详情页新增「🖨 打印机」卡片**（与安防/手持机并列，覆盖本机全部打印机，不止 RFID）：打印机列表（品牌/接口/在线态/系统默认）、**用途备注**（prompt 输入，行内 📝 显示）、**从列表移除**（confirm 后隐藏，底部「已移除」区可一键恢复）、标签纸绑定下拉、ZMIN 校准/测试页；**全部直发本机助手，档案仅存门店电脑本地，不经云端下发**（云端 WS 任务通道不变）；助手不在线时提示「请在门店电脑上启动 PrintAgent」
+- **总店视图可达**：总部管理「分店管理」子页门店卡片新增「管理」按钮（selectStore），门店详情卡组（基本信息/安防/手持机/打印机/库位）上提为共用块，总店/分店两视图均可用；修复打印机偏好保存时 hidden 被「旧值 OR」覆盖导致「恢复显示」无效的问题
+- 手机/电脑选择门店时自动探测本机助手并加载标签纸档案与设备档案；i18n 六语言补齐卡片文案，`toast.agentNoAgent` 去除证书字样
+- 前端缓存版本 → 20261020a07
+
+### 打印全链路排查修复（录入→打印→盘点 E2E 实测）
+
+- **盘点对账归一化缺失（严重）**：`rfid-scan` 隔空盘点与手持机批量上传 `stocktake/upload` 原样拿 UHF 回读的芯片编码值（BCD+版本+校验 24 hex）直接对账，全部匹配不上、账面整单盘亏；补 `_norm_epc` 归一化（与协同盘点任务 `_do_scan` 同口径），芯片 hex 与明文 EPC 双格式实测均正确匹配。新旧 EPC 格式（字母前缀 ASCII-hex / 20 位数字 BCD）均兼容
+- **补打条码漂移（严重）**：`print/labels` 每次打印都重新分配 12 位印刷条码并覆盖库存，已贴出标签的条码随即失效（扫码找不到商品）；改为条码仅在首次打印时分配，补打沿用原条码
+- **`_epc_cfg` 兜底前缀位数不一致（防御）**：默认数字前缀从 10 位 `6901234567` 改为 8 位 `69012345`，与 `db.py` 迁移及 AGENTS 的 20 位 EPC 结构对齐（配置缺失的租户库不再生成 22 位异形 EPC）
+- E2E 回归：录入自动分配 20 位 EPC → 打印 ZPL `^RFW` 写芯值与 `chip_epc_hex` 一致、`decode_chip_epc` 回读还原一致 → 盘点芯片 hex/明文双通 → 补打条码不变
+
+### 标签模板收敛为单一 66mm 标准签
+
+- 内置模板只保留「珠宝RFID标准签（66×25.4）」；「简约价签（条码66×25.4）」「EPC盘点签（66×25.4）」及旧版「标准标签」等全部列入幂等清理名单，启动时自动删除
+- 清理前先解绑引用再删行，避免悬空；未绑定品类自动落到标准签（原逻辑保留）
+- 老库升级即生效：`_ensure_builtin_label_templates` 每次启动幂等执行，25 个品类已全部绑定标准签
+
+### 品类管理补齐「所属分组」读写（group_name）
+
+- `main.py` `ProductTypeIn` 新增 `group_name` 字段（默认「主播希川」）；GET 返回、POST/PUT 写入 `group_name`，旧库默认已按「主播希川」回填（建表迁移已做）
+- 电脑端品类管理：列表增加「所属分组」列，新增/编辑表单改为分组下拉（从已有品类动态聚合）
+- 手机端品类管理：每条品类显示所属分组 tag；编辑表单「所属分组」= 常用分组下拉 + 自由输入（可存任意新分组名）；多语言 i18n 同步补齐
+- 分组查询排序 `ORDER BY group_name, sort_order`，不同分组品类自然分组展示
 
 ### 看板出库 store_id 过滤补漏
 

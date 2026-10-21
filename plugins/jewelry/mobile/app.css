@@ -555,3 +555,42 @@ input, select, textarea { font-family: inherit; color: var(--text); }
 .hq-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0;
   border: 1px solid rgba(0,0,0,.08); }
 a.btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+/* ===== 商品多选 / 批量操作栏 ===== */
+.prod-head-ops{display:flex;gap:6px;align-items:center}
+.row-check{width:22px;height:22px;border-radius:50%;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;color:transparent;flex:none;margin-right:10px;background:#fff}
+.row-check.on{background:linear-gradient(135deg,var(--gold),var(--gold-dark));border-color:var(--gold-dark);color:#fff}
+.sel-bar{position:sticky;bottom:calc(10px + var(--safe-bottom));display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;margin-top:8px;box-shadow:0 4px 16px rgba(92,34,51,.12);z-index:5}
+.sel-bar-all{font-size:12px;color:var(--gold-dark);font-weight:600;padding:6px 4px;flex:none}
+.sel-bar-ops{display:flex;gap:6px}
+/* ===== 标签打印 ===== */
+.agent-row{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fff;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:10px;font-size:12px}
+.agent-row .dot{width:8px;height:8px;border-radius:50%;flex:none}
+.agent-row .dot-on{background:var(--green)}
+.agent-row .dot-off{background:var(--red)}
+.agent-name{color:var(--text2)}
+.row-x{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:13px}
+.row-x:active{background:rgba(168,54,47,.1);color:var(--red)}
+.check-row{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text);min-height:38px}
+.label-result{margin:10px 0;padding:8px 10px;border-radius:var(--radius-sm);font-size:12px;background:rgba(91,122,58,.1);color:var(--green)}
+.label-result.err{background:rgba(168,54,47,.08);color:var(--red)}
+/* ===== 商品图片 ===== */
+.prod-img-box{display:flex;align-items:center;gap:12px}
+.prod-img-box img{width:84px;height:63px;object-fit:cover;border-radius:var(--radius-sm);border:1px solid var(--border);flex:none}
+.prod-img-ph{width:84px;height:63px;border:1.5px dashed var(--border);border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--text3);flex:none}
+.prod-img-ops{display:flex;gap:8px;flex-wrap:wrap}
+.prod-view-img{margin:4px 14px 10px}
+.prod-view-img img{width:100%;max-height:220px;object-fit:cover;border-radius:var(--radius);border:1px solid var(--border);display:block}
+/* ===== 图片裁切 ===== */
+.img-crop-tools{display:flex;gap:8px;justify-content:center;margin-bottom:10px}
+.img-crop-frame{position:relative;overflow:hidden;background:#2B2622;border-radius:var(--radius-sm);margin:0 auto;touch-action:none;width:min(calc(100vw - 56px),320px);aspect-ratio:4/3}
+.img-crop-frame.portrait{width:min(calc(100vw - 56px),250px);aspect-ratio:3/4}
+.img-crop-frame img{max-width:none;max-height:none;user-select:none;-webkit-user-select:none}
+.img-crop-zoom{margin:12px 8px 4px}
+.img-crop-zoom input[type=range]{width:100%;accent-color:var(--gold-dark)}
+.img-crop-hint{text-align:center;font-size:11px;color:var(--text3);margin-bottom:10px}
+/* ===== Excel 导入 ===== */
+.import-result{margin:8px 0 12px}
+.imp-line{font-size:13px;padding:4px 0}
+.imp-line.ok{color:var(--green)}
+.imp-line.err{color:var(--red)}
+.imp-fail-row{font-size:11px;color:var(--text2);padding:3px 0 3px 14px;border-bottom:1px dashed var(--border)}

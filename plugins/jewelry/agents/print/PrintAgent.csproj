@@ -48,11 +48,6 @@
       <Link>ZMPCLx64.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <!-- HTTPS 自签名证书: 复制到输出根目录供 Kestrel 加载 -->
-    <Content Include="libs\printagent.pfx">
-      <Link>printagent.pfx</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
 
   <ItemGroup>

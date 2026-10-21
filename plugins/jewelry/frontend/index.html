@@ -1,11 +1,11 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>懿臻珠宝云</title>
 <link rel="icon" href="/logo/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./app.css?v=20261018a19">
+<link rel="stylesheet" href="./app.css?v=20261021b01">
 </head>
 <body>
 <div id="app">
@@ -138,25 +138,34 @@
           <details class="biz-guide"><summary>📖 {{ t('biz.title') }}</summary><div class="biz-body">{{ t('biz.dashboard') }}</div></details>
           <!-- 实时金价栏（看板最上方）：金价卡变窄，右侧同一行放页面时间范围下拉 -->
           <div class="gold-bar">
-            <div class="gb-item" v-if="goldData">
-              <span class="gb-label">🌍 {{ t('dash.goldIntl') }}</span>
-              <span class="gb-val" v-if="goldData.intlUsd">${{ fmt(goldData.intlUsd) }}/oz</span>
-              <span class="gb-val gb-fail" v-else @click="loadGold()">{{ t('dash.goldFail') }}</span>
-              <span class="gb-sub" v-if="goldData.intlTime">{{ goldData.intlTime }}</span>
+            <div class="gb-item gb-merged" v-if="goldData">
+              <div class="gb-row" :title="goldData.intlTime ? '更新时间 ' + goldData.intlTime : ''">
+                <span class="gb-label">🌍 {{ t('dash.goldIntl') }}</span>
+                <span class="gb-val" v-if="goldData.intlUsd">${{ fmt(goldData.intlUsd) }}/oz</span>
+                <span class="gb-val gb-fail" v-else @click="loadGold()">{{ t('dash.goldFail') }}</span>
+                <span class="gb-sub" v-if="goldData.intlTime">{{ goldData.intlTime }}</span>
+              </div>
+              <div class="gb-row" :title="goldData.ccy || ''">
+                <span class="gb-label">📍 {{ t('dash.goldLocal') }}</span>
+                <span class="gb-val">{{ goldData.ccySymbol }}{{ fmt(goldData.intlPrice) }}/{{ t('misc.gram') }}</span>
+                <span class="gb-sub">{{ goldData.ccy }}</span>
+              </div>
             </div>
-            <div class="gb-item" v-if="goldData && goldData.intlPrice">
-              <span class="gb-label">📍 {{ t('dash.goldLocal') }}</span>
-              <span class="gb-val">{{ goldData.ccySymbol }}{{ fmt(goldData.intlPrice) }}/{{ t('misc.gram') }}</span>
-              <span class="gb-sub">{{ goldData.ccy }}</span>
+            <div class="range-bar gold-range-bar">
+              <div class="range-tabs">
+                <button class="range-tab" :class="{on: dashRange.mode==='today'}" @click="setDashRange('today')">{{ t('dash.today') }}</button>
+                <button class="range-tab" :class="{on: dashRange.mode==='yesterday'}" @click="setDashRange('yesterday')">{{ t('dash.yesterday') }}</button>
+                <button class="range-tab" :class="{on: dashRange.mode==='7d'}" @click="setDashRange('7d')">{{ t('dash.last7d') }}</button>
+                <button class="range-tab" :class="{on: dashRange.mode==='month'}" @click="setDashRange('month')">{{ t('dash.month') }}</button>
+                <button class="range-tab" :class="{on: dashRange.mode==='3m'}" @click="setDashRange('3m')">{{ t('dash.last3m') }}</button>
+                <button class="range-tab" :class="{on: dashRange.mode==='custom'}" @click="setDashRange('custom')">{{ t('dash.custom') }}</button>
+              </div>
+              <div class="range-custom" v-if="dashRange.mode==='custom'">
+                <input type="date" v-model="dashRange.start"> <span class="range-to">~</span> <input type="date" v-model="dashRange.end">
+                <button class="btn btn-sm btn-gold" @click="applyDashCustomRange">{{ t('dash.query') }}</button>
+              </div>
+              <div class="range-cur" v-else>{{ dashRange.curStart }} ~ {{ dashRange.curEnd }}</div>
             </div>
-            <select class="trend-range-select gold-range-select" :value="dashRange.mode" @change="setDashRange($event.target.value)">
-              <option value="today">{{ t('dash.today') }}</option>
-              <option value="week">{{ t('dash.week') }}</option>
-              <option value="month">{{ t('dash.month') }}</option>
-              <option value="3m">{{ t('rg.3m') }}</option>
-              <option value="6m">{{ t('rg.6m') }}</option>
-              <option value="year">{{ t('rg.year') }}</option>
-            </select>
           </div>
           <div class="dash-top">
           <div class="dash-top-main">
@@ -340,9 +349,9 @@
           <div class="reminder-section" v-if="remindData">
             <div class="reminder-head" @click="showRemind=!showRemind"><span>🕐 {{ t('kpi.todo') }}</span><span class="badge">{{ todoCount }}</span></div>
             <div class="reminder-body" v-if="showRemind">
-              <div v-for="d in remindData.deposits" :key="'d'+d.id" class="reminder-item"><div class="ri-left"><span class="ri-tag rt-deposit">{{ reminderHint(d,'deposit') }}</span><span class="ri-name">{{ d.customer }}</span><span class="ri-date">{{ d.product }} · {{ d.promised_date }}</span></div><span class="ri-amount">￥{{ fmt(d.balance) }}</span></div>
-              <div v-for="l in remindData.loansOverdue" :key="'l'+l.id" class="reminder-item"><div class="ri-left"><span class="ri-tag rt-loan">{{ reminderHint(l,'loan') }}</span><span class="ri-name">{{ l.product }}</span><span class="ri-date">{{ l.party }} · {{ t('common.overdue') }} {{ l.due_date }}</span></div></div>
-              <div v-for="r in remindData.repairsPending" :key="'r'+r.id" class="reminder-item"><div class="ri-left"><span class="ri-tag rt-repair">{{ reminderHint(r,'repair') }}</span><span class="ri-name">{{ r.item }}</span><span class="ri-date">{{ r.customer }} · {{ r.promised_date || statusText(r.status) }}</span></div></div>
+              <div v-for="d in remindData.deposits" :key="'d'+d.id" class="reminder-item clickable" @click="openRecordDetail('deposits', d)"><div class="ri-left"><span class="ri-tag rt-deposit">{{ reminderHint(d,'deposit') }}</span><span class="ri-name">{{ d.customer }}</span><span class="ri-date"><span class="ri-code" v-if="d.product_code">{{ t('lbl.huohao') }} {{ d.product_code }}</span>{{ d.product }} · {{ d.promised_date }}</span></div><span class="ri-amount">￥{{ fmt(d.balance) }}</span></div>
+              <div v-for="l in remindData.loansOverdue" :key="'l'+l.id" class="reminder-item clickable" @click="openRecordDetail('loans', l)"><div class="ri-left"><span class="ri-tag rt-loan">{{ reminderHint(l,'loan') }}</span><span class="ri-name">{{ l.product }}</span><span class="ri-date"><span class="ri-code" v-if="l.code">{{ t('lbl.huohao') }} {{ l.code }}</span>{{ l.party }} · {{ t('common.overdue') }} {{ l.due_date }}</span></div></div>
+              <div v-for="r in remindData.repairsPending" :key="'r'+r.id" class="reminder-item clickable" @click="openRecordDetail('repairs', r)"><div class="ri-left"><span class="ri-tag rt-repair">{{ reminderHint(r,'repair') }}</span><span class="ri-name">{{ r.item }}</span><span class="ri-date">{{ r.customer }} · {{ r.promised_date || statusText(r.status) }}</span></div></div>
               <div v-for="p in remindData.purchasesIncoming" :key="'p'+p.id" class="reminder-item" @click="go('purchases')"><div class="ri-left"><span class="ri-tag rt-purchase">{{ reminderHint(p,'purchase') }}</span><span class="ri-name">{{ p.product }}</span><span class="ri-date">{{ p.supplier }} · {{ p.expected_date }}</span></div><span class="ri-amount" v-if="p.qty">×{{ p.qty }}</span></div>
               <div v-for="(c,ci) in remindData.care" :key="'c'+ci" class="reminder-item"><div class="ri-left"><span class="ri-tag rt-care">{{ careHint(c) }}</span><span class="ri-name">{{ c.customer }}</span><span class="ri-date">{{ c.phone }} · {{ c.date }}</span></div></div>
               <div class="reminder-empty" v-if="!todoCount">{{ t('empty.todo') }}</div>
@@ -375,14 +384,6 @@
               <summary>📖 {{ t('biz.title') }}</summary>
               <div class="biz-body">{{ t('biz.products') }}</div>
             </details>
-            <div class="biz-actions">
-              <button v-if="printSelCount" class="btn btn-sm btn-outline" @click="batchEditProducts">✏️ {{ t('act.edit') }} ({{ printSelCount }})</button>
-              <button v-if="printSelCount" class="btn btn-sm btn-outline" @click="batchCopyProducts">📋 {{ t('act.copyNew') }} ({{ printSelCount }})</button>
-              <button v-if="printSelCount" class="btn btn-sm btn-danger" @click="batchDelProducts">🗑 {{ t('act.del') }} ({{ printSelCount }})</button>
-              <button class="btn btn-sm btn-outline" @click="openImportDlg">📥 {{ t('act.importBatch') }}</button>
-              <button class="btn btn-sm btn-outline" @click="onPrintLabelBtn">🏷 {{ t('act.print') }}<span v-if="printSelCount"> ({{ printSelCount }})</span></button>
-              <button class="btn btn-primary btn-sm" :disabled="frozen" @click="addProduct">+ {{ t('act.add') }}</button>
-            </div>
           </div>
           <div class="search-wrap mt-sm"><input class="search-input" v-model="prodQ" :placeholder="t('ph.searchProd')"><button class="btn btn-sm btn-outline" @click="prodQ=''">{{ t('act.clear') }}</button></div>
           <div class="prod-filter-row mt-sm">
@@ -396,7 +397,8 @@
             <div class="cat-chip" :class="{active:!prodCat}" @click="prodCat=''">{{ t('cat.all') }}</div>
             <div class="cat-chip" v-for="o in typeList" :key="o.code" :class="{active:prodCat===o.code}" @click="prodCat=o.code">{{ catNameOf(o) }}</div>
           </div>
-          <div class="tag-pick-wrap" v-if="tagList.length">
+          <details class="tag-pick-wrap tag-fold" v-if="tagList.length">
+            <summary>🏷 {{ t('tag.filter') }}<span class="tag-fold-count" v-if="prodTags.length">{{ t('tag.pickedCount', { n: prodTags.length }) }}</span></summary>
             <div class="cat-chips tag-pick-chips">
               <div class="cat-chip" :class="{active:!prodTags.length}" @click="prodTags=[]">{{ t('cat.all') }}</div>
             </div>
@@ -406,9 +408,15 @@
                 <div class="cat-chip" v-for="o in tg.tags" :key="'pf'+o.id" :class="{active:prodTags.indexOf(o.id)>=0}" @click="toggleProdTagFilter(o.id)">{{ o.name }}</div>
               </div>
             </div>
-          </div>
-          <div class="prod-tags-toggle" v-if="tagList.length">
-            <button class="btn btn-sm btn-outline" @click="tagsExpanded = !tagsExpanded">🏷 {{ tagsExpanded ? t('tag.collapse') : t('tag.expand') }}</button>
+          </details>
+          <div class="prod-tags-toggle">
+            <button class="btn btn-sm btn-outline" @click="onPrintLabelBtn">🏷 {{ t('act.print') }}<span v-if="printSelCount"> ({{ printSelCount }})</span></button>
+            <button v-if="tagList.length" class="btn btn-sm btn-outline" @click="tagsExpanded = !tagsExpanded">🏷 {{ tagsExpanded ? t('tag.collapse') : t('tag.expand') }}</button>
+            <button v-if="printSelCount" class="btn btn-sm btn-outline" @click="batchEditProducts">✏️ {{ t('act.edit') }} ({{ printSelCount }})</button>
+            <button v-if="printSelCount" class="btn btn-sm btn-outline" @click="batchCopyProducts">📋 {{ t('act.copyNew') }} ({{ printSelCount }})</button>
+            <button v-if="printSelCount" class="btn btn-sm btn-danger" @click="batchDelProducts">🗑 {{ t('act.del') }} ({{ printSelCount }})</button>
+            <button class="btn btn-sm btn-outline" @click="openImportDlg">📥 {{ t('act.importBatch') }}</button>
+            <button class="btn btn-primary btn-sm" :disabled="frozen" @click="addProduct">+ {{ t('act.add') }}</button>
           </div>
           <div class="table-wrap table-wide" v-if="isPc">
             <table class="data-table table-products">
@@ -464,7 +472,7 @@
                 <input type="checkbox" class="card-print-check" :checked="!!printSel[p.id]" @click.stop @change="togglePrintSel(p.id)" :title="t('act.printSel')">
                 <div class="prod-thumb"><img v-if="p.image_ts" :src="productImageUrl(p)" class="prod-thumb-img" alt=""><template v-else>💎</template></div>
                 <div class="prod-info">
-                  <div class="prod-name">{{ p.name }}<span class="tag tag-printed" v-if="p.label_print_count" :title="printedTip(p)">🖨{{ p.label_print_count }}</span><span class="tag tag-hv" v-if="p.high_value">⭐{{ t('lbl.highValue') }}</span><span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span></div>
+                  <div class="prod-name">{{ p.name }}<span class="tag tag-lbl-verified" v-if="p.label_status==='verified'">✔ {{ t('lbl.lblVerified') }}</span><span class="tag tag-lbl-issued" v-else-if="p.label_status==='issued'">🖨 {{ t('lbl.lblIssued') }}</span><span class="tag tag-printed" v-if="p.label_print_count" :title="printedTip(p)">🖨{{ p.label_print_count }}</span><span class="tag tag-hv" v-if="p.high_value">⭐{{ t('lbl.highValue') }}</span><span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span></div>
                   <div class="ptag-row" v-if="tagsExpanded && p.tags && p.tags.length"><span class="ptag" v-for="tg in p.tags" :key="'mt'+p.id+'-'+tg.id" :style="tagChipStyle(tg)">{{ tg.name }}</span></div>
                   <div class="prod-meta">{{ t('lbl.huohao') }}：{{ p.code }} · {{ productTypeName(p) }} · {{ materialText(p.material) || '—' }} · {{ p.weight }}g<span v-if="p.location_name"> · {{ p.location_name }}</span></div>
                   <div class="prod-meta mono" v-if="p.barcode">🏷 {{ p.barcode }}</div>
@@ -1628,6 +1636,10 @@
             <button v-for="s in shopsTabs" :key="s.key" class="btn btn-sm"
                     :class="shopsTab===s.key ? 'btn-gold' : 'btn-outline'"
                     @click="switchShopsTab(s.key)">{{ s.icon }} {{ s.label }}</button>
+            <span style="margin-left:auto;display:flex;gap:14px">
+              <a class="login-dl-link" :href="dlUrl('/api/scan-app/download')" download>📱 {{ t('login.scanApp') }}</a>
+              <a class="login-dl-link" :href="dlUrl('/api/print-agent/download')" download>🖨 {{ t('login.printAgent') }}</a>
+            </span>
           </div>
 
           <!-- ========== 分店管理：分店信息 + 分店设备清单 ========== -->
@@ -1695,6 +1707,7 @@
                   </div>
                   <!-- 分店设备清单：打印助手 / 扫描助手 / 安防设备，点按钮展开明细 -->
                   <div style="margin-top:6px">
+                    <button class="btn-small" :class="{'btn-gold': locStore===s.id}" @click="selectStore(s.id)">{{ t('store.manage') }}</button>
                     <button class="btn-small" @click="toggleDevicePanel(s.id)">
                       {{ devicePanelOpen[s.id] ? t('shops.devHide') : t('shops.devShow') }}
                       （{{ devicesOfStore(s.id).length + storeSecStore(s.id).length + (bridgeOfStore(s.id) ? (bridgeOfStore(s.id).agents || []).length : 0) }}）
@@ -1790,11 +1803,12 @@
           <div class="card-item" v-if="shopsTab==='types'">
             <div class="card-title">{{ t('type.mgrTitle') }}</div>
             <table class="data-table" style="margin-bottom:12px">
-              <thead><tr><th>{{ t('lbl.code') }}</th><th>{{ t('cat.name') }}</th><th>{{ t('cat.sort') }}</th><th>{{ t('type.pricingMode') }}</th><th>{{ t('tpl.boundTpl') }}</th><th>{{ t('common.op') }}</th></tr></thead>
+              <thead><tr><th>{{ t('lbl.code') }}</th><th>{{ t('cat.name') }}</th><th>{{ t('type.groupName') }}</th><th>{{ t('cat.sort') }}</th><th>{{ t('type.pricingMode') }}</th><th>{{ t('tpl.boundTpl') }}</th><th>{{ t('common.op') }}</th></tr></thead>
               <tbody>
                 <tr v-for="o in typeList" :key="o.code">
                   <td class="mono">{{ o.code }}</td>
                   <td>{{ catNameOf(o) }}</td>
+                  <td>{{ o.group_name || t('type.groupDefault') }}</td>
                   <td>{{ o.sort_order }}</td>
                   <td><span class="tag" :class="o.pricing_mode==='weight'?'tag-gold':'tag-stock'">{{ o.pricing_mode==='weight' ? t('type.modeWeight') : t('type.modePiece') }}</span></td>
                   <td>
@@ -1803,13 +1817,14 @@
                       <option v-for="tp in labelTemplates" :key="tp.id" :value="tp.id">{{ tp.name }}</option>
                     </select>
                   </td>
-                  <td><button class="btn-small" :class="{'btn-gold': typeEditMode==='edit' && typeEdit.code===o.code}" @click="(typeEditMode==='edit' && typeEdit.code===o.code) ? resetTypeEdit() : editType(o)">{{ (typeEditMode==='edit' && typeEdit.code===o.code) ? t('act.cancel') : t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delType(o.code)">{{ t('act.del') }}</button></td>
+                  <td><button class="btn-small" @click="printTypeProducts(o)" :title="t('act.print')">🖨</button> <button class="btn-small" :class="{'btn-gold': typeEditMode==='edit' && typeEdit.code===o.code}" @click="(typeEditMode==='edit' && typeEdit.code===o.code) ? resetTypeEdit() : editType(o)">{{ (typeEditMode==='edit' && typeEdit.code===o.code) ? t('act.cancel') : t('act.edit') }}</button> <button class="btn-small btn-danger" @click="delType(o.code)">{{ t('act.del') }}</button></td>
                 </tr>
               </tbody>
             </table>
             <div id="type-edit-form" style="margin-top:10px;padding:10px;border:1px solid #eee;border-radius:6px">
               <div class="form-row">
                 <div class="form-group"><label>{{ t('lbl.code') }}</label><input v-model="typeEdit.code" :disabled="typeEditMode==='edit'" :placeholder="t('type.codePh')"></div>
+                <div class="form-group"><label>{{ t('type.groupName') }}</label><select v-model="typeEdit.group_name"><option v-for="g in typeGroupOptions" :key="g" :value="g">{{ g }}</option></select></div>
                 <div class="form-group"><label>{{ t('cat.zhName') }}</label><input v-model="typeEdit.names.zh" :placeholder="t('type.namePh')"></div>
                 <div class="form-group"><label>{{ t('cat.enName') }}</label><input v-model="typeEdit.names.en" placeholder="Ring"></div>
                 <div class="form-group"><label>Italiano</label><input v-model="typeEdit.names.it" placeholder="Anello"></div>
@@ -1902,8 +1917,12 @@
           <div class="card-item">
             <div class="flex-between" style="margin-bottom:8px">
               <div class="card-title" style="margin:0">{{ t('store.title') }}</div>
-              <!-- 开分店是总部能力，分店视图不显示 -->
-              <button class="btn btn-gold" v-if="isHqStore()" @click="createStore">＋ {{ t('store.add') }}</button>
+              <span style="display:flex;gap:14px;align-items:center">
+                <a class="login-dl-link" :href="dlUrl('/api/scan-app/download')" download>📱 {{ t('login.scanApp') }}</a>
+                <a class="login-dl-link" :href="dlUrl('/api/print-agent/download')" download>🖨 {{ t('login.printAgent') }}</a>
+                <!-- 开分店是总部能力，分店视图不显示 -->
+                <button class="btn btn-gold" v-if="isHqStore()" @click="createStore">＋ {{ t('store.add') }}</button>
+              </span>
             </div>
 
             <!-- 门店新增/编辑表单：新增仅总部；编辑=总部任意店，或分店改本店资料（归属店铺由总部决定） -->
@@ -1944,8 +1963,11 @@
             </div>
           </div>
 
-          <!-- 选中门店的详情：基本信息/打印代理/库位 -->
-          <template v-if="curStore">
+
+        </section>
+
+          <!-- 选中门店的详情：基本信息/安防/手持机/打印机/库位（门店管理与总部管理-分店管理共用） -->
+          <template v-if="curStore && (tab==='stores' || (tab==='shops' && shopsTab==='branches'))">
             <!-- 基本信息 -->
             <div class="card-item">
               <div class="card-title">{{ curStore.name }} · {{ t('store.baseInfo') }}</div>
@@ -1982,9 +2004,8 @@
               <div class="flex-between" style="margin-bottom:8px">
                 <div class="card-title" style="margin:0">📱 {{ t('sb.handheld') }} <span class="prod-meta">({{ devicesOfStore(curStore.id).length }})</span></div>
                 <span>
-                  <button class="btn-small" @click="openHandheldLogin(curStore.id)">＋ {{ t('sb.bindNew') }}</button>
-                  <button class="btn-small" @click="openDevices(curStore.id)">{{ t('sb.handheldMgr') }}</button>
-                </span>
+                    <button class="btn-small" @click="openDevices(curStore.id)">{{ t('sb.handheldMgr') }}</button>
+                  </span>
               </div>
               <div v-if="devicesOfStore(curStore.id).length">
                 <div class="sec-dev" v-for="dv in devicesOfStore(curStore.id)" :key="dv.id">
@@ -2001,6 +2022,50 @@
                 </div>
               </div>
               <div class="empty" v-else>{{ t('sb.noHandheld') }}</div>
+            </div>
+
+            <!-- 打印机（本机打印助手）：列表/用途备注/移除/标签纸绑定/校准/测试页，档案仅存门店电脑本地 -->
+            <div class="card-item" v-if="curStore">
+              <div class="flex-between" style="margin-bottom:8px">
+                <div class="card-title" style="margin:0">🖨 {{ t('sb.printers') }} <span class="prod-meta">({{ agentPrinters().length }})</span></div>
+                <button class="btn-small" @click="openStorePrinters">{{ t('sb.refresh') }}</button>
+              </div>
+              <div class="hint" style="margin-bottom:10px">{{ printerManage() ? t('sb.printersHint') : t('sb.printersRO') }}</div>
+              <template v-if="localAgent">
+                <div v-if="agentPrinters().length">
+                  <div class="sec-dev" v-for="p in agentPrinters()" :key="p.name + p.interface">
+                    <div class="flex-between">
+                      <b>{{ p.name }} <span class="prod-meta">{{ p.brand ? p.brand.toUpperCase() : '' }} · {{ p.interface }}</span>
+                        <span class="prod-meta" v-if="p.isDefault">· {{ t('sb.printerDefault') }}</span></b>
+                      <span class="bridge-state" :class="p.online ? 'st-on' : 'st-off'">● {{ p.online ? t('sb.online') : t('sb.offline') }}</span>
+                    </div>
+                    <div class="prod-meta" v-if="agentNoteOf(p)" style="margin-top:4px">📝 {{ agentNoteOf(p) }}</div>
+                    <div class="flex-between" style="margin-top:6px;gap:8px;flex-wrap:wrap">
+                      <span class="prod-meta">{{ t('sb.printerPaper') }}：{{ agentBoundPaperName(p) || t('sb.noPaper') }}</span>
+                      <span v-if="printerManage()" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                        <select :value="agentPaperSelOf(p)" @change="setAgentPaperSel(p, $event.target.value)" style="max-width:190px">
+                          <option value="">{{ t('sb.noPaper') }}</option>
+                          <option v-for="lp in agentPapers" :key="lp.id" :value="lp.id">{{ lp.name }}（{{ lp.width }}×{{ lp.height }}mm）</option>
+                        </select>
+                        <button class="btn-small" @click="saveAgentPaperBind(p)">{{ t('sb.bindPaperSave') }}</button>
+                        <button class="btn-small" v-if="p.brand === 'zmin'" @click="agentCalibrate('paper')">{{ t('sb.calibrate') }}</button>
+                        <button class="btn-small" v-if="p.brand === 'zmin'" @click="agentCalibrate('config')">{{ t('sb.test') }}</button>
+                        <button class="btn-small" @click="notePrinter(p)">{{ t('lbl.remark') }}</button>
+                        <button class="btn-small btn-danger" @click="hidePrinter(p)">{{ t('act.remove') }}</button>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div class="empty" v-else>{{ t('sb.noPrinter') }}</div>
+                <div v-if="printerManage() && agentHiddenPrinters().length" style="margin-top:8px">
+                  <div class="prod-meta">{{ t('sb.printerHidden') }} ({{ agentHiddenPrinters().length }})</div>
+                  <div class="flex-between" v-for="p in agentHiddenPrinters()" :key="'h-' + p.name + p.interface" style="padding:2px 0">
+                    <span class="prod-meta">{{ p.name }} · {{ p.interface }}</span>
+                    <button class="btn-small" @click="restorePrinter(p)">{{ t('sb.printerRestore') }}</button>
+                  </div>
+                </div>
+              </template>
+              <div class="empty" v-else>{{ t('sb.agentOfflineHint') }}</div>
             </div>
 
             <!-- 库位主数据 -->
@@ -2038,7 +2103,6 @@
               </div>
             </div>
           </template>
-        </section>
 
         <!-- ================= 系统管理子导航（始终置顶，先于各子视图内容渲染） ================= -->
         <section v-if="tab==='system'">
@@ -2060,21 +2124,35 @@
             <div class="card-title">{{ t('sb.title') }}</div>
             <div class="hint">{{ t('sb.hint') }}</div>
             <div v-if="!anyAgentOnline" class="agent-warn">⚠ {{ t('sb.agentDownPc') }}</div>
-            <div class="bridge-row" style="margin:8px 0">
-              <select v-model="agentDlStore" style="flex:1;min-width:0" :disabled="!keyedStores.length">
-                <option v-if="!keyedStores.length" :value="0">{{ t('sb.noKeyStore') }}</option>
-                <option v-for="b in keyedStores" :key="b.store_id" :value="b.store_id">{{ b.store_name }}</option>
-              </select>
-              <a class="btn btn-sm btn-outline" :href="agentDlUrl" download
-                 style="text-decoration:none;white-space:nowrap">⬇ {{ t('sb.getAgent') }}</a>
-              <button class="btn btn-sm btn-outline" :disabled="!agentDlStore"
-                      @click="connectLocalAgent(agentDlStore)"
-                      style="white-space:nowrap">🔗 {{ t('sb.connectAgent') }}</button>
-            </div>
-            <div class="hint" style="margin-bottom:8px">{{ t('sb.dlHint') }}</div>
-            <div class="hint" style="margin-bottom:8px" v-if="localAgentText">🖥 {{ t('sb.localAgent') }}：{{ localAgentText }}</div>
 
-            <div class="bridge-store" v-for="s in stores" :key="s.id">
+            <!-- 标签纸形状库(租户级): 网页端维护, 保存/删除自动下发到各门店在线助手 -->
+            <details class="bridge-biz lp-lib">
+              <summary>📚 {{ t('lp.libTitle') }} <span class="prod-meta" v-if="labelPapers.length">({{ labelPapers.length }})</span></summary>
+              <div class="hint" style="margin:4px 0">{{ t('lp.libHint') }}</div>
+              <div v-if="labelPapers.length">
+                <div class="sec-dev" v-for="lp in labelPapers" :key="lp.id"
+                     style="padding:6px 0;border-bottom:1px dashed #eee">
+                  <div class="flex-between" style="font-size:14px">
+                    <span>
+                      <b>{{ lp.name }}</b>
+                      <span class="prod-meta mono">{{ lp.width }}×{{ lp.height }}mm · G{{ lp.gap }}</span>
+                      <span class="prod-meta">{{ t('lp.printable') }} {{ (lp.width - lp.margin_left - lp.margin_right).toFixed(1) }}×{{ (lp.height - lp.margin_top - lp.margin_bottom).toFixed(1) }}mm</span>
+                      <span class="prod-meta" v-if="lp.antenna_w > 0">📡 {{ lp.antenna_x }},{{ lp.antenna_y }} ({{ lp.antenna_w }}×{{ lp.antenna_h }})</span>
+                    </span>
+                    <span>
+                      <button class="btn-small" @click="lpEditOpen(lp)">{{ t('act.edit') }}</button>
+                      <button class="btn-small btn-danger" @click="lpDel(lp)">{{ t('act.delete') }}</button>
+                    </span>
+                  </div>
+                  <div class="prod-meta" v-if="lp.updated_at">{{ lp.updated_at }} · {{ lp.updated_by }}<template v-if="lp.notes"> · {{ lp.notes }}</template></div>
+                </div>
+              </div>
+              <div class="hint" v-else style="margin:4px 0">{{ t('lp.libEmpty') }}</div>
+              <button class="btn-small" style="margin-top:6px" @click="lpEditOpen(null)">＋ {{ t('lp.add') }}</button>
+            </details>
+
+            <div class="bridge-grid">
+              <div class="bridge-store" v-for="s in nonHqStores()" :key="s.id">
               <div class="flex-between">
                 <b>{{ s.name }} <span class="mono" style="font-size:14px;color:var(--text3)">#{{ s.code }}</span></b>
                 <span class="bridge-state" v-if="bridgeOfStore(s.id)"
@@ -2085,11 +2163,7 @@
               </div>
               <div class="prod-meta" v-if="bridgeOfStore(s.id) && bridgeOfStore(s.id).online">🖥 {{ bridgeOfStore(s.id).agent_name }}</div>
 
-              <div class="bridge-row">
-                <label>{{ t('pa.key') }}</label>
-                <button class="btn-small" @click="genPrintAgentKey(s.id)">＋ {{ t('sb.genKey') }}</button>
-              </div>
-              <!-- 打印代理实例列表: 每个实例一个 key, 含在线状态和吊销 -->
+              <!-- 打印代理实例列表: 建店时已自动生成密钥, 长期使用, 无需手动生成/重置 -->
               <div v-if="bridgeOfStore(s.id) && bridgeOfStore(s.id).agents && bridgeOfStore(s.id).agents.length" style="margin:6px 0">
                 <div v-for="a in bridgeOfStore(s.id).agents" :key="a.id"
                      style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px dashed #eee;font-size:13px">
@@ -2103,27 +2177,71 @@
 
               <details class="bridge-biz" v-if="bridgeOfStore(s.id) && bridgeOfStore(s.id).agents && bridgeOfStore(s.id).agents.length">
                 <summary>{{ t('sb.assignTitle') }}</summary>
-                <div v-for="g in bizGroups" :key="g.group" class="biz-grp">
-                  <div class="biz-grp-title">{{ t('pbizg.' + g.group) }}</div>
-                  <div class="biz-line" v-for="code in g.items" :key="code">
-                    <span class="biz-line-name">{{ t('pbiz.' + code) }}</span>
-                    <select class="biz-line-sel" :value="bizPrinterOf(bridgeOfStore(s.id), code)"
-                            @change="bindBizPrinter(s.id, code, $event.target.value)">
-                      <option value="">{{ bridgeOfStore(s.id) && bridgeOfStore(s.id).online ? t('sb.notAssigned') : t('sb.waitOnline') }}</option>
-                      <option v-if="bizPrinterOf(bridgeOfStore(s.id),code) && bridgeOfStore(s.id) && bridgeOfStore(s.id).printers.indexOf(bizPrinterOf(bridgeOfStore(s.id),code)) < 0"
-                              disabled :value="bizPrinterOf(bridgeOfStore(s.id),code)">{{ bizPrinterOf(bridgeOfStore(s.id),code) }}</option>
-                      <option v-for="n in (bridgeOfStore(s.id) ? bridgeOfStore(s.id).printers : [])" :key="n" :value="n">{{ n }}</option>
+                <!-- Group A：标签格式（纸方案+撕纸位置，仅影响出纸排版） -->
+                <div class="cfg-group">
+                  <div class="cfg-group-title">🏷 {{ t('prcfg.grpFormat') }}</div>
+                  <div class="hint" style="margin:2px 0 6px">{{ t('prcfg.grpFormatHint') }}</div>
+                  <div class="biz-line">
+                    <span class="biz-line-name">{{ t('prcfg.scheme') }}</span>
+                    <select class="biz-line-sel" :value="labelSchemeOf(s.id).paper_id" :disabled="!printerManage()"
+                            @change="setLabelScheme(s.id,'paper_id',$event.target.value)">
+                      <option value="">{{ t('prcfg.noScheme') }}</option>
+                      <option v-for="p in (agentPapers || [])" :key="p.id" :value="p.id">{{ p.name }}（{{ p.width }}×{{ p.height }}mm）</option>
                     </select>
-                    <button class="btn-small biz-test" :disabled="!bridgeOfStore(s.id) || !bridgeOfStore(s.id).online || !bizPrinterOf(bridgeOfStore(s.id),code)"
-                            @click="storeControl(s.id,'test',code)" :title="t('sb.test')">T</button>
+                  </div>
+                  <div class="biz-line">
+                    <span class="biz-line-name">{{ t('prcfg.tear') }}</span>
+                    <input class="cfg-input" type="number" step="0.5" min="0" max="30" style="width:76px" :disabled="!printerManage()"
+                           :value="labelSchemeOf(s.id).tear_mm" @change="setLabelScheme(s.id,'tear_mm',$event.target.value)">
+                    <span class="prod-meta">mm</span>
+                    <button class="btn-small biz-test" :disabled="!printerManage()" @click="saveLabelScheme(s.id)">{{ t('prcfg.applyScheme') }}</button>
+                  </div>
+                  <div class="prod-meta" v-if="labelSchemeOf(s.id).updated_at" style="margin-top:4px">
+                    {{ labelSchemeOf(s.id).updated_at }} · {{ labelSchemeOf(s.id).updated_by }}
+                  </div>
+                </div>
+                <!-- Group B：设备与连接（指派/链路/巡检状态，与格式无关） -->
+                <div class="cfg-group">
+                  <div class="cfg-group-title">⚙ {{ t('prcfg.grpDevice') }}
+                    <button class="btn-small" style="margin-left:auto"
+                            :disabled="!localAgent || localAgent.code !== 0"
+                            @click="probeAgentNow()">{{ t('prcfg.probeNow') }}</button>
+                  </div>
+                  <div class="hint" style="margin:2px 0 6px">{{ t('prcfg.grpDeviceHint') }}</div>
+                  <div v-for="g in bizGroups()" :key="g.group" class="biz-grp">
+                    <div class="biz-grp-title">{{ t('pbizg.' + g.group) }}</div>
+                    <div class="biz-line" v-for="code in g.items" :key="code">
+                      <span class="biz-line-name">{{ t('pbiz.' + code) }}</span>
+                      <select class="biz-line-sel" :value="bizPrinterOf(bridgeOfStore(s.id), code)" :disabled="!printerManage()"
+                              @change="bindBizPrinter(s.id, code, { printer: $event.target.value })">
+                        <option value="">{{ bridgeOfStore(s.id) && bridgeOfStore(s.id).online ? t('sb.notAssigned') : t('sb.waitOnline') }}</option>
+                        <option v-if="bizPrinterOf(bridgeOfStore(s.id),code) && bridgeOfStore(s.id) && bridgeOfStore(s.id).printers.indexOf(bizPrinterOf(bridgeOfStore(s.id),code)) < 0"
+                                disabled :value="bizPrinterOf(bridgeOfStore(s.id),code)">{{ bizPrinterOf(bridgeOfStore(s.id),code) }}</option>
+                        <option v-for="n in (bridgeOfStore(s.id) ? bridgeOfStore(s.id).printers : [])" :key="n" :value="n">{{ n }}</option>
+                      </select>
+                      <select class="cfg-iface" :value="bizIfaceOf(bridgeOfStore(s.id), code)"
+                              @change="bindBizPrinter(s.id, code, { iface: $event.target.value })" :title="t('prcfg.iface')">
+                        <option value="USB">USB</option>
+                        <option value="NET">NET</option>
+                        <option value="BT">BT</option>
+                      </select>
+                      <input v-if="bizIfaceOf(bridgeOfStore(s.id), code)==='NET'" class="cfg-input" style="width:112px" :disabled="!printerManage()"
+                             placeholder="192.168.x.x" :value="bizIpOf(bridgeOfStore(s.id), code)"
+                             @change="bindBizPrinter(s.id, code, { printer_ip: $event.target.value })">
+                      <span class="bridge-state"
+                            :class="prnStatusClass(s.id, code)"
+                            :title="prnStatusTip(s.id, code)">●</span>
+                      <button class="btn-small biz-test" :disabled="!bridgeOfStore(s.id) || !bridgeOfStore(s.id).online || !bizPrinterOf(bridgeOfStore(s.id),code) || !printerManage()"
+                              @click="storeControl(s.id,'test',code)" :title="t('sb.test')">T</button>
+                    </div>
                   </div>
                 </div>
               </details>
 
               <div class="bridge-actions" v-if="bridgeOfStore(s.id)">
-                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online" @click="storeControl(s.id,'test')">{{ t('sb.test') }}</button>
-                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online" @click="storeControl(s.id,'feed')">{{ t('sb.feed') }}</button>
-                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online" @click="storeControl(s.id,'backfeed')">{{ t('sb.backfeed') }}</button>
+                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online || !printerManage()" @click="storeControl(s.id,'test')">{{ t('sb.test') }}</button>
+                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online || !printerManage()" @click="storeControl(s.id,'feed')">{{ t('sb.feed') }}</button>
+                <button class="btn-small" :disabled="!bridgeOfStore(s.id).online || !printerManage()" @click="storeControl(s.id,'backfeed')">{{ t('sb.backfeed') }}</button>
                 <button class="btn-small" :disabled="!bridgeOfStore(s.id).online" @click="storeControl(s.id,'refresh')">⟳ {{ t('sb.refresh') }}</button>
               </div>
               <div class="prod-meta" v-if="bridgeOfStore(s.id) && bridgeOfStore(s.id).last_job" style="margin-top:4px">
@@ -2144,15 +2262,8 @@
                 <button class="btn-small" @click="go('security')">{{ t('sb.gotoSec') }}</button>
               </details>
 
-              <div class="sb-handheld">
-                <div class="flex-between">
-                  <span>📱 {{ t('sb.handheld') }} <span class="prod-meta">({{ devicesOfStore(s.id).length }})</span></span>
-                  <span>
-                    <button class="btn-small" @click="genScanDeviceKey(s.id)">🔑 {{ t('sb.genScanKey') }}</button>
-                    <button class="btn-small" @click="openHandheldLogin(s.id)">＋ {{ t('sb.bindNew') }}</button>
-                    <button class="btn-small" @click="openDevices(s.id)">{{ t('sb.handheldMgr') }}</button>
-                  </span>
-                </div>
+              <details class="bridge-biz">
+                <summary>{{ t('sb.handheld') }} <span class="prod-meta" v-if="devicesOfStore(s.id).length">({{ devicesOfStore(s.id).length }})</span></summary>
                 <div v-if="devicesOfStore(s.id).length" style="margin-top:4px">
                   <div class="sec-dev" v-for="dv in devicesOfStore(s.id)" :key="dv.id"
                        style="padding:4px 0;border-bottom:1px dashed #eee">
@@ -2174,6 +2285,8 @@
                   </div>
                 </div>
                 <div class="hint" v-else style="margin:4px 0">{{ t('sb.noHandheld') }}</div>
+                <button class="btn-small" style="margin-top:4px" @click="openDevices(s.id)">{{ t('sb.handheldMgr') }}</button>
+              </details>
               </div>
             </div>
           </div>
@@ -2613,10 +2726,12 @@ Content-Type: application/json
         <section v-if="tab==='system'">
           <!-- EPC 编码规则（企业整体级，仅总店） -->
           <div v-if="adminSub==='epc' && isHqStore()">
-          <div class="card-item">
+          <div class="card-item card-narrow">
             <div class="card-title">{{ t('epc.title') }}</div>
             <div class="form-row epc-rule-fields">
               <div class="form-group inline"><label>{{ t('epc.prefix') }}</label><input v-model="bizConfig.epc_prefix" placeholder="YZZ" maxlength="6" class="epc-in-prefix"></div>
+              <div class="form-group inline"><label>{{ t('epc.storeNum') }}</label><input :value="bizConfig.store_num || '----'" readonly class="epc-in-lock"></div>
+              <div class="form-group inline"><label>{{ t('epc.catCode') }}</label><input :value="catCodeSample()" readonly class="epc-in-lock"></div>
               <div class="form-group inline"><label>{{ t('epc.seqBits') }}</label><input v-model.number="bizConfig.seq_bits" type="number" min="4" max="6" class="epc-in-bits"></div>
               <button class="btn btn-gold epc-save-btn" @click="saveBizConfig">{{ t('epc.save') }}</button>
             </div>
@@ -2626,7 +2741,7 @@ Content-Type: application/json
 
           <!-- 经办人类别（企业整体级，仅总店；销售开单必选，默认店员；单据保存名称快照） -->
           <div v-if="adminSub==='clerk' && isHqStore()">
-          <div class="card-item">
+          <div class="card-item card-narrow">
             <div class="card-title">{{ t('clerk.title') }}</div>
             <div class="hint" style="margin-bottom:10px">{{ t('clerk.hint') }}</div>
             <table class="data-table" style="margin-bottom:12px">
@@ -2660,7 +2775,7 @@ Content-Type: application/json
 
           <!-- 标签打印模板（企业整体级，仅总店；品类绑定在「总部管理」品类表中操作） -->
           <div v-if="adminSub==='tpl' && isHqStore()">
-          <div class="card-item">
+          <div class="card-item card-narrow">
             <div class="card-title">{{ t('tpl.title') }} <button class="btn btn-sm btn-gold" style="margin-left:8px" @click="openTplDesigner(null)">{{ t('tpl.new') }}</button></div>
             <table class="data-table" style="margin-bottom:12px" v-if="labelTemplates.length">
               <thead><tr><th>{{ t('tpl.name') }}</th><th>{{ t('tpl.size') }}</th><th>{{ t('common.op') }}</th></tr></thead>
@@ -2863,25 +2978,8 @@ Content-Type: application/json
     </div>
   </div>
 
-  <!-- 手持机绑定：为当前工作门店生成扫描助手激活码（15 分钟一次性，App 扫码即绑定） -->
-  <div class="sheet-mask" :class="{show:hqShow}" @click.self="closeHandheldLogin">
-    <div class="sheet" style="max-width:380px" @click.stop>
-      <div class="sheet-head"><span class="sheet-title">📱 {{ t('login.handheld') }}</span><button class="sheet-close" @click="closeHandheldLogin">×</button></div>
-      <div class="sheet-body hq-body">
-        <div class="hq-sub" style="margin-bottom:6px">{{ t('hq.storeBind') }}：<b>{{ curStoreName || '#' + curStoreId }}</b></div>
-        <div class="hq-qr"><img v-if="hqImg" :src="hqImg" alt=""></div>
-        <div v-if="hqStatus==='loading'" class="hq-tip">{{ t('hq.generating') }}</div>
-        <template v-else-if="hqStatus==='ready'">
-          <div class="hq-tip">{{ t('dev.actQrHint') }}</div>
-          <div class="url-line"><code class="small" style="word-break:break-all">{{ hqUrl }}</code><button class="btn btn-sm btn-outline" @click="copyHqUrl">{{ t('common.copy') }}</button></div>
-        </template>
-        <div v-else-if="hqStatus==='error'" class="hq-tip err">{{ hqErr }}</div>
-      </div>
-    </div>
-  </div>
-
   <div class="sheet-mask" :class="{show:sheetMode, pc:isPc}" @click.self="closeSheet">
-    <div class="sheet" :class="{'sheet-wide':sheetMode==='sale'||sheetMode==='deposit'}" @click.stop>
+    <div class="sheet" :class="{'sheet-wide':sheetMode==='sale'||sheetMode==='deposit'||sheetMode==='product'||sheetMode==='inbound'}" @click.stop>
       <div class="sheet-head"><span class="sheet-title">{{ sheetTitle }}</span><button class="sheet-close" @click="closeSheet">×</button></div>
       <div class="sheet-body">
         <template v-if="sheetMode==='sale'">
@@ -3016,7 +3114,7 @@ Content-Type: application/json
             <input :value="curStoreName || (stores.find(x=>x.id===sheetData.store_id)||{}).name || ('#'+sheetData.store_id)" readonly>
           </div>
           <div class="form-row">
-            <div class="form-group"><label>{{ t('lbl.huohao') }}</label><input v-model="sheetData.code"></div>
+            <div class="form-group" style="flex:0 0 32%"><label>{{ t('lbl.huohao') }}</label><input v-model="sheetData.code"></div>
             <div class="form-group" v-if="sheetMode==='product'">
               <label>{{ t('lbl.name') }} <select class="lang-mini lang-code" v-model="sheetNameLang" :title="t('form.nameLangTitle')">
                 <option v-for="lk in langKeys" :key="lk" :value="lk" :style="{color: langNameFilled(lk) ? '#1a7f37' : '#c0392b'}">{{ normLang(lk) }}</option>
@@ -3026,11 +3124,11 @@ Content-Type: application/json
             <div class="form-group" v-else><label>{{ t('lbl.name') }}</label><input v-model="sheetData.name"></div>
           </div>
           <div class="form-row">
-            <div class="form-group"><label>{{ t('lbl.category') }}</label>
-              <button class="btn btn-type-picker" type="button" @click="typePickerOpen = true">
-                <span v-if="sheetData.product_type_code">{{ typeNameByCode(sheetData.product_type_code) }}</span>
+            <div class="form-group"><label>{{ t('lbl.category') }} <span style="color:#c0392b">*</span></label>
+              <button class="btn btn-type-picker" type="button" @click="typePickerOpen = true" :disabled="!!sheetData.rfid_epc" :title="sheetData.rfid_epc ? t('tip.typeLocked') : ''">
+                <span v-if="sheetData.product_type_code">{{ typeNameByCode(sheetData.product_type_code) }}<template v-if="sheetData.rfid_epc"> 🔒</template></span>
                 <span v-else class="ph">{{ t('cat.pick') || '选择分类' }}</span>
-                <span class="caret">▾</span>
+                <span class="caret" v-if="!sheetData.rfid_epc">▾</span>
               </button>
             </div>
             <div class="form-group"><label>{{ t('lbl.material') }}</label>
@@ -3039,9 +3137,37 @@ Content-Type: application/json
                 <option v-for="m in materials" :key="m" :value="m">{{ m }}</option>
               </select>
             </div>
+            <div class="form-group"><label>{{ t('lbl.weight') }}</label><input v-model.number="sheetData.weight" type="number"></div>
           </div>
-          <div class="form-row"><div class="form-group"><label>{{ t('lbl.weight') }}</label><input v-model.number="sheetData.weight" type="number"></div><div class="form-group"><label>{{ t('lbl.size') }}</label><input v-model="sheetData.size"></div></div>
-          <div class="form-row"><div class="form-group"><label>{{ t('lbl.cost') }}</label><input v-model.number="sheetData.cost" type="number" :disabled="!!sheetData.id && !isCostVisible()" :placeholder="(!!sheetData.id && !isCostVisible()) ? '***' : ''" :title="(!!sheetData.id && !isCostVisible()) ? t('role.costHidden') : ''"></div><div class="form-group"><label>{{ t('lbl.price') }}</label><input v-model.number="sheetData.price" type="number"></div></div>
+          <div class="form-row"><div class="form-group"><label>{{ t('lbl.size') }}</label><input v-model="sheetData.size"></div><div class="form-group"><label>{{ t('lbl.cost') }}</label><input v-model.number="sheetData.cost" type="number" :disabled="!!sheetData.id && !isCostVisible()" :placeholder="(!!sheetData.id && !isCostVisible()) ? '***' : ''" :title="(!!sheetData.id && !isCostVisible()) ? t('role.costHidden') : ''"></div><div class="form-group"><label>{{ t('lbl.price') }}</label><input v-model.number="sheetData.price" type="number"></div></div>
+
+          <div class="form-row" v-if="sheetMode==='inbound'">
+            <div class="form-group"><label>RFID EPC</label>
+              <div class="scan-anchor">
+                <input v-model="sheetData.rfid_epc" placeholder="YZZ...">
+                <span class="scan-icons">
+                  <button type="button" class="si-btn" :class="{on:anchorCoopActive('epc_inbound')}" @click="anchorCoop('epc_inbound',$event)" :title="t('anchor.coopTitle')">📱</button>
+                  <button type="button" class="si-btn" @click="anchorCamera('epc_inbound',$event)" :title="t('anchor.camTitle')">⤢</button>
+                </span>
+              </div>
+            </div>
+            <div class="form-group" style="flex:0 0 32%"><label>{{ t('lbl.date') }}</label><input v-model="sheetData.biz_date" type="date"></div>
+          </div>
+          <div class="form-row" v-if="sheetMode==='product'"><div class="form-group" style="flex:0 0 140px"><label>{{ t('lbl.status') }}</label><select v-model="sheetData.status"><option value="在库">{{ t('st.inStock') }}</option><option value="已定">{{ t('st.reserved') }}</option><option value="已售">{{ t('st.sold') }}</option><option value="借出">{{ t('st.loaned') }}</option></select></div>
+            <div class="form-group"><label>RFID EPC</label>
+              <div style="display:flex;gap:6px">
+                <div class="scan-anchor" style="flex:1">
+                  <input v-model="sheetData.rfid_epc" :placeholder="sheetData.id ? '' : t('tip.epcAutoGen')">
+                  <span class="scan-icons">
+                    <button type="button" class="si-btn" :class="{on:anchorCoopActive('epc_product')}" @click="anchorCoop('epc_product',$event)" :title="t('anchor.coopTitle')">📱</button>
+                    <button type="button" class="si-btn" @click="anchorCamera('epc_product',$event)" :title="t('anchor.camTitle')">⤢</button>
+                  </span>
+                </div>
+                <button type="button" class="btn-small" @click="generateEpc" :title="sheetData.id ? '' : t('toast.saveFirst')">{{ t('act.genEpc') }}</button>
+                <button type="button" class="btn-small btn-gold" @click="printSheetLabel" :title="t('tip.printLabel')">🖨 {{ t('act.labelPrint') }}</button>
+              </div>
+              <div class="pay-warn" v-if="epcDirty()" style="margin-top:4px">{{ t('toast.epcDirty') }}</div>
+            </div></div>
 
           <!-- 价格策略区块 -->
           <div class="form-section-card">
@@ -3109,31 +3235,6 @@ Content-Type: application/json
             </div>
             <div class="tag-form-empty" v-else>{{ t('tag.noneHint') }}</div>
           </div>
-          <div class="form-row" v-if="sheetMode==='inbound'">
-            <div class="form-group"><label>RFID EPC</label>
-              <div class="scan-anchor">
-                <input v-model="sheetData.rfid_epc" placeholder="YZZ...">
-                <span class="scan-icons">
-                  <button type="button" class="si-btn" :class="{on:anchorCoopActive('epc_inbound')}" @click="anchorCoop('epc_inbound',$event)" :title="t('anchor.coopTitle')">📱</button>
-                  <button type="button" class="si-btn" @click="anchorCamera('epc_inbound',$event)" :title="t('anchor.camTitle')">⤢</button>
-                </span>
-              </div>
-            </div>
-            <div class="form-group"><label>{{ t('lbl.date') }}</label><input v-model="sheetData.biz_date" type="date"></div>
-          </div>
-          <div class="form-row" v-if="sheetMode==='product'"><div class="form-group"><label>{{ t('lbl.status') }}</label><select v-model="sheetData.status"><option value="在库">{{ t('st.inStock') }}</option><option value="已定">{{ t('st.reserved') }}</option><option value="已售">{{ t('st.sold') }}</option><option value="借出">{{ t('st.loaned') }}</option></select></div>
-            <div class="form-group"><label>RFID EPC</label>
-              <div style="display:flex;gap:6px">
-                <div class="scan-anchor" style="flex:1">
-                  <input v-model="sheetData.rfid_epc">
-                  <span class="scan-icons">
-                    <button type="button" class="si-btn" :class="{on:anchorCoopActive('epc_product')}" @click="anchorCoop('epc_product',$event)" :title="t('anchor.coopTitle')">📱</button>
-                    <button type="button" class="si-btn" @click="anchorCamera('epc_product',$event)" :title="t('anchor.camTitle')">⤢</button>
-                  </span>
-                </div>
-                <button type="button" class="btn-small" @click="generateEpc" :disabled="!sheetData.id">{{ t('act.genEpc') }}</button>
-              </div>
-            </div></div>
           <div class="img-edit" v-if="sheetMode==='product'">
             <div class="img-edit-thumb">
               <img v-if="sheetData.image_ts" :src="productImageUrl(sheetData)" alt="">
@@ -3150,14 +3251,14 @@ Content-Type: application/json
         </template>
         <template v-if="sheetMode==='deposit'">
           <div class="form-row"><div class="form-group"><label>{{ t('lbl.customer') }}</label><input v-model="sheetData.customer"></div><div class="form-group"><label>{{ t('lbl.phone') }}</label><input v-model="sheetData.phone"></div>
-            <div class="form-group"><label>{{ t('dep.lockHint') }}</label>
+            <div class="form-group" v-if="!sheetData.id"><label>{{ t('dep.lockHint') }}</label>
               <select v-model="sheetData.product_id" @change="onPickProduct"><option :value="null">{{ t('dep.noStock') }}</option>
                 <option v-for="p in stockOptions" :key="p.id" :value="p.id">{{ p.code }} {{ p.name }}</option></select>
             </div></div>
           <div class="form-row"><div class="form-group"><label>{{ t('lbl.product') }}</label>
             <div class="scan-anchor">
-              <input v-model="sheetData.product" @keyup.enter="applyDepositScan(sheetData.product)" :placeholder="t('dep.scanPh')">
-              <span class="scan-icons">
+              <input v-model="sheetData.product" @keyup.enter="applyDepositScan(sheetData.product)" :readonly="!!sheetData.product_id" :placeholder="t('dep.scanPh')">
+              <span class="scan-icons" v-if="!sheetData.product_id">
                 <button type="button" class="si-btn" :class="{on:anchorCoopActive('deposit')}" @click="anchorCoop('deposit',$event)" :title="t('anchor.coopTitle')">📱</button>
                 <button type="button" class="si-btn" @click="anchorCamera('deposit',$event)" :title="t('anchor.camTitle')">⤢</button>
               </span>
@@ -3249,6 +3350,11 @@ Content-Type: application/json
           </div>
         </template>
         <template v-if="sheetMode==='detail'">
+          <!-- 锁定商品实物照：定金单/销售单详情顶部展示，取货核对用 -->
+          <div class="detail-photo" v-if="sheetData.product_id && sheetData.image_ts">
+            <img :src="productImageUrl({ id: sheetData.product_id, image_ts: sheetData.image_ts })" :alt="sheetData.product || ''" loading="lazy">
+            <span class="detail-photo-code" v-if="sheetData.product_code">{{ t('lbl.huohao') }} {{ sheetData.product_code }}</span>
+          </div>
           <!-- 维修进度时间线（仅 repairs） -->
           <div v-if="detailKind==='repairs'" class="detail-section">
             <div class="ds-title">{{ t('rec.progress') }}</div>
@@ -3390,6 +3496,64 @@ Content-Type: application/json
         <button type="button" class="btn btn-outline" @click="cfmCancel">{{ t('act.cancel') }}</button>
         <span style="flex:1"></span>
         <button type="button" class="btn" :class="cfm.danger ? 'btn-danger-solid' : 'btn-gold'" @click="cfmOk">{{ cfm.okText }}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 标签纸形状库编辑弹窗：新增/编辑方案, 保存后自动下发各门店在线助手 -->
+  <div class="modal-mask" v-if="lpEdit" @click.self="lpEdit = null">
+    <div class="modal-box cfm-box" @click.stop>
+      <div class="modal-head"><span>{{ lpEdit.id ? t('lp.editTitle') : t('lp.addTitle') }}</span><button class="sheet-close" @click="lpEdit = null">×</button></div>
+      <div class="sheet-body" style="max-height:62vh;overflow:auto">
+        <div class="cfg-grid2">
+          <label class="cfg-field cfg-span2">{{ t('lp.name') }}
+            <input v-model.trim="lpEdit.name" type="text" :placeholder="t('lp.namePh')">
+          </label>
+          <label class="cfg-field">{{ t('lp.width') }} (mm)
+            <input v-model.number="lpEdit.width" type="number" step="0.1" min="5" max="200">
+          </label>
+          <label class="cfg-field">{{ t('lp.height') }} (mm)
+            <input v-model.number="lpEdit.height" type="number" step="0.1" min="5" max="200">
+          </label>
+          <label class="cfg-field">{{ t('lp.gap') }} (mm)
+            <input v-model.number="lpEdit.gap" type="number" step="0.5" min="0" max="30">
+          </label>
+          <label class="cfg-field">{{ t('lp.notes') }}
+            <input v-model.trim="lpEdit.notes" type="text" :placeholder="t('lp.notesPh')">
+          </label>
+          <div class="cfg-span2" style="font-weight:600;margin-top:4px">{{ t('lp.margins') }}</div>
+          <label class="cfg-field">{{ t('lp.mLeft') }} (mm)
+            <input v-model.number="lpEdit.margin_left" type="number" step="0.5" min="0" max="50">
+          </label>
+          <label class="cfg-field">{{ t('lp.mRight') }} (mm)
+            <input v-model.number="lpEdit.margin_right" type="number" step="0.5" min="0" max="50">
+          </label>
+          <label class="cfg-field">{{ t('lp.mTop') }} (mm)
+            <input v-model.number="lpEdit.margin_top" type="number" step="0.5" min="0" max="50">
+          </label>
+          <label class="cfg-field">{{ t('lp.mBottom') }} (mm)
+            <input v-model.number="lpEdit.margin_bottom" type="number" step="0.5" min="0" max="50">
+          </label>
+          <div class="cfg-span2" style="font-weight:600;margin-top:4px">{{ t('lp.antenna') }}</div>
+          <label class="cfg-field">{{ t('lp.antX') }} (mm)
+            <input v-model.number="lpEdit.antenna_x" type="number" step="0.5" min="0" max="200">
+          </label>
+          <label class="cfg-field">{{ t('lp.antY') }} (mm)
+            <input v-model.number="lpEdit.antenna_y" type="number" step="0.5" min="0" max="200">
+          </label>
+          <label class="cfg-field">{{ t('lp.antW') }} (mm)
+            <input v-model.number="lpEdit.antenna_w" type="number" step="0.5" min="0" max="200">
+          </label>
+          <label class="cfg-field">{{ t('lp.antH') }} (mm)
+            <input v-model.number="lpEdit.antenna_h" type="number" step="0.5" min="0" max="200">
+          </label>
+          <div class="hint cfg-span2">{{ t('lp.coordHint') }}</div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-outline" @click="lpEdit = null">{{ t('act.cancel') }}</button>
+        <span style="flex:1"></span>
+        <button type="button" class="btn btn-gold" @click="lpSave">{{ t('lp.savePush') }}</button>
       </div>
     </div>
   </div>
@@ -3768,32 +3932,13 @@ Content-Type: application/json
   </div>
 
   <!-- 盘点批次明细弹窗 -->
-  <!-- 扫描设备（扫描助手）管理：激活码生成 / 设备列表 / 解绑停用 -->
+  <!-- 扫描设备（扫描助手）管理：设备列表 / 解绑停用（无生成激活码入口） -->
   <div class="modal-mask" v-if="devModal" @click.self="closeDevices">
     <div class="modal-box modal-lg">
       <div class="sheet-head"><h3>📱 {{ t('dev.manage') }}<span v-if="devStoreScope"> · {{ (stores.find(x=>x.id===devStoreScope)||{}).name || ('#'+devStoreScope) }}</span></h3><span class="sheet-close" @click="closeDevices">✕</span></div>
       <div class="sheet-body">
-        <!-- 生成激活码 -->
-        <div class="dev-act-box">
-          <div class="section-title" style="font-size:15px;margin:0 0 8px"><span class="dot"></span>{{ t('dev.genAct') }}</div>
-          <div class="dev-act-form">
-            <select class="search-input" v-model="actStoreId" :disabled="!!devStoreScope" style="max-width:200px">
-              <option v-for="s in stores" :key="s.id" :value="s.id">{{ s.name }}</option>
-            </select>
-            <input class="search-input" v-model="actName" :placeholder="t('dev.devNamePh')" style="max-width:220px">
-            <button class="btn btn-gold btn-sm" @click="genActivation">{{ t('dev.genBtn') }}</button>
-          </div>
-          <div v-if="actQrUrl" class="dev-act-qr">
-            <img class="qr-img" :src="actQrUrl" alt="activation qr">
-            <div>
-              <div class="small" style="margin-bottom:6px">{{ t('dev.actQrHint') }}</div>
-              <div class="url-line"><code class="small">{{ actUrl }}</code><button class="btn btn-sm btn-outline" @click="copyActUrl">{{ t('common.copy') }}</button></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 设备列表 -->
-        <div class="section-title" style="font-size:15px;margin:16px 0 8px"><span class="dot"></span>{{ t('dev.listTitle') }}</div>
+        <!-- 设备列表: 仅查看/停用/解绑, 不提供生成激活码入口 -->
+        <div class="section-title" style="font-size:15px;margin:0 0 8px"><span class="dot"></span>{{ t('dev.listTitle') }}</div>
         <table class="data-table">
           <thead><tr><th>{{ t('dev.code') }}</th><th>{{ t('th.devName') }}</th><th>{{ t('dev.store') }}</th><th>{{ t('th.lastSeen') }}</th><th>{{ t('dev.currentTask') }}</th><th>{{ t('lbl.status') }}</th><th>{{ t('common.op') }}</th></tr></thead>
           <tbody>
@@ -3958,14 +4103,14 @@ Content-Type: application/json
 <script src="./vendor/vue.global.prod.js"></script>
 <script src="./vendor/qrcode.min.js"></script>
 <script src="./vendor/zxing.min.js"></script>
-<script src="./i18n.js?v=20261018a19"></script>
+<script src="./i18n.js?v=20261021b01"></script>
 <script>
 // 非中文时同步加载对应语言字典（i18n.<dict>.js），确保 app.js 挂载前字典就绪
 (function () {
   var _dict = (typeof i18nDictFile === 'function') ? i18nDictFile() : '';
-  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261018a19"><\/script>');
+  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261021b01"><\/script>');
 })();
 </script>
-<script src="./app.js?v=20261018a20"></script>
+<script src="./app.js?v=20261021b01"></script>
 </body>
 </html>

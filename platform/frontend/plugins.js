@@ -386,6 +386,18 @@ createApp({
       }
     }
 
+    // 版本行「🛠 运维」直达：自动切到生产运维穿透模式，未选租户时默认取第一个真实租户
+    async function openOps(v) {
+      if (!realTenants.value.length) return toast('当前没有可用的真实租户', true);
+      if (!gw.tenant_id) {
+        gw.tenant_id = realTenants.value[0].id;
+        toast(`未选择企业租户，运维端默认使用「${realTenants.value[0].name}」，可在下方「插件版本调试」切换`);
+      }
+      gw.mode = 'PRODUCTION_SUPPORT';
+      gw.version = v.software_version;
+      return openEntry('ops');
+    }
+
     // ------------------------------------------------ 展示辅助
     const statusMeta = v => {
       const [text, cls] = STATUS[v.status] || [v.status, 'b-gray'];
@@ -407,7 +419,7 @@ createApp({
       setAppStatus, serviceAction, confirmStopService,
       modal, modalVer, prepareTenants, confirmBox, logData, logBox, logLines,
       act, openPrepare, doPrepare, confirmSwitch, confirmFormal, confirmDelete, openLog, openServiceLog, syncPromo,
-      gw, openEntry, fixedUrl,
+      gw, openEntry, openOps, fixedUrl,
       statusMeta, rowClass, isNewer, fmtSize, toastMsg, toastErr, version: Platform.version,
     };
   },

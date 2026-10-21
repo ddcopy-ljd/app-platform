@@ -2,18 +2,14 @@
  * 其余语言字典拆分在 i18n.<dict>.js（en/it/ja/ko/zhHant），由 index.html 按需同步加载。
  * 回退：目标语言缺词时自动回退到中文
  */
-
 var LANG_MAP = {
   'zh-Hans': 'zh', 'zh': 'zh', 'en': 'en', 'it': 'it',
   'ja': 'ja', 'ko': 'ko', 'zh-Hant': 'zhHant'
 };
-
 var LANG_LABELS = {
   'zh-Hans': 'ZH', 'en': 'EN', 'it': 'IT', 'ja': '日本語', 'ko': '한국어', 'zh-Hant': '繁体'
 };
-
 var LANG_KEYS = ['zh-Hans', 'en', 'it', 'ja', 'ko', 'zh-Hant'];
-
 /* 中文为基线字典常驻本文件；其余语言拆分为 i18n.<lang>.js 按需加载。
  * 新增语言：在此登记 LANG_MAP/LANG_LABELS/LANG_KEYS，并新建 i18n.<dict>.js 即可。 */
 var I18N = {
@@ -30,7 +26,7 @@ var I18N = {
     // login
     'login.user': '用户名', 'login.userPh': '请输入用户名', 'login.pass': '密码',
     'login.passPh': '请输入密码', 'login.submit': '登 录', 'login.hint': '演示账号：admin / 123456',
-    'login.scanApp': '手持机扫描助手 App', 'login.printAgent': '打印代理 PrintBridge',
+    'login.scanApp': '手持机扫描助手 App', 'login.printAgent': '打印与扫描助手 PrintAgent',
     'login.title': '懿臻珠宝云', 'login.sub': 'Jewelry Cloud · 独立工作台',
     'login.err': '用户名或密码错误', 'login.success': '登录成功',
     'login.handheld': '手持机绑定',
@@ -105,7 +101,7 @@ var I18N = {
     'empty.appt': '暂无预约，可从公开页 /site 提交', 'empty.todo': '暂无待办',
     // sheet
     'sheet.sale': '快速开单', 'sheet.product': '商品信息', 'sheet.inbound': '入库登记',
-    'sheet.deposit': '收定金', 'sheet.loan': '新增借货', 'sheet.repair': '接维修单',
+    'sheet.deposit': '收定金', 'sheet.depositEdit': '编辑定金单', 'sheet.loan': '新增借货', 'sheet.repair': '接维修单',
     'sheet.purchase': '新增采购', 'sheet.outsource': '新增委外加工', 'sheet.customer': '会员信息',
     'sheet.rfid': 'RFID 隔空盘点',
     // form labels
@@ -127,6 +123,7 @@ var I18N = {
     'lbl.sendDate': '发出日期', 'lbl.expectedDate': '预计到货', 'lbl.orderDate': '下单日期',
     'lbl.level': '等级', 'lbl.birthday': '生日', 'lbl.preference': '偏好',
     'lbl.out': '借出', 'lbl.in': '借入', 'lbl.remark': '备注', 'lbl.highValue': '高价值',
+    'lbl.lblIssued': '已下发打标', 'lbl.lblVerified': '打标已验证',
     'lbl.name2': '姓名', 'lbl.contact': '联系人', 'lbl.contactType': '联系方式',
     'lbl.wantDate': '期望日期', 'lbl.wantSlot': '期望时段',
     // statuses
@@ -152,6 +149,12 @@ var I18N = {
     'toast.fillCustomer': '请填写客户姓名', 'toast.fillProduct': '请填写商品名称',
     'toast.fillCode': '请填写商品编码', 'toast.fillAmount': '请填写金额',
     'toast.saveFirst': '请先保存商品再生成EPC', 'toast.epcGenOk': 'EPC 已生成：', 'toast.epcReused': '已存在EPC：',
+    'toast.needType': '请先选择品类（生成EPC前必须确认品类）',
+    'toast.epcDirty': '⚠ EPC已修改，保存后需重新打印标签并替换旧标签',
+    'toast.epcDirtySave': 'EPC已修改，请先保存商品再打印标签',
+    'tip.typeLocked': '该商品已生成EPC，品类不可修改（如需变更请重新建档）',
+    'tip.epcAutoGen': '留空保存后自动生成EPC',
+    'tip.printLabel': '打印RFID标签（新增商品会先自动保存）',
     'toast.fillCatCode': '请填写分类编码', 'toast.fillCatName': '请填写分类名称（中文或英文）',
     'toast.returnOk': '已归还，库存已恢复', 'toast.receiveOk': '已收货入库',
     'toast.custSaveOk': '客户已保存', 'toast.profileSaveOk': '店铺信息已保存',
@@ -225,7 +228,6 @@ var I18N = {
     'report.openNew': '🔗 新窗口打开',
     'report.beautify': '美观输出',
     'report.tip': '上报内容将提交到 BugTracker「外部上报箱」，来源与上报人已自动记录。',
-
     // 门店切换 / 用户与门店授权
     'store.switch': '切换工作门店',
     'store.switched': '已切换到 {name}',
@@ -397,8 +399,7 @@ var I18N = {
     'co.name.stocktake': '盘点', 'co.name.sale': '销售开单', 'co.name.loan': '借货', 'co.name.deposit': '收定金',
     'co.name.transferOut': '调拨出库', 'co.name.transferIn': '调拨收货',
     'co.name.epcProduct': '商品EPC', 'co.name.epcInbound': '入库EPC', 'co.name.generic': '扫码',
-    'sb.handheld': '手持机', 'sb.handheldMgr': '管理 / 绑定', 'sb.noHandheld': '本店暂无绑定的手持机',
-    'sb.bindNew': '绑定新手持机',
+    'sb.handheld': '手持机', 'sb.handheldMgr': '管理', 'sb.noHandheld': '本店暂无绑定的手持机',
     'scan.coopExit': '退出协同',
     // 多模态输入基座（输入框右侧 📱/⤢ 图标）
     'scan.gunReady': '激光扫码枪已就绪，请直接对准条码扫描',
@@ -420,7 +421,7 @@ var I18N = {
     'store.manage': '管理', 'store.inbound': '入库', 'store.devices': '扫描设备',
     'store.baseInfo': '基本信息', 'store.editInfo': '修改资料',
     'store.emptyInShop': '该总部下暂无门店', 'store.inboundStore': '入库门店（直接关联，不可更改）',
-    'store.bridge': '打印代理', 'store.saleMonth': '本月销售', 'store.saleCount': '累计销售笔数', 'store.saleAmount': '累计销售额',
+    'store.bridge': '打印助手', 'store.saleMonth': '本月销售', 'store.saleCount': '累计销售笔数', 'store.saleAmount': '累计销售额',
     // 定金
     'dep.paid': '已付', 'dep.createdAt': '创建于', 'dep.lockHint': '锁定在库商品（可选）', 'dep.noStock': '无现货定制',
     'dep.deliveryTime': '交付时间', 'dep.deliveryTimePh': '如 10月20日 下午2-4点',
@@ -457,12 +458,14 @@ var I18N = {
     'shops.devPrint': '打印助手', 'shops.devScan': '扫描助手', 'shops.devSec': '安防设备',
     'shops.devNone': '暂无设备', 'shops.lastSeen': '最后心跳',
     'epc.title': 'EPC 编码规则', 'epc.prefix': '企业前缀', 'epc.seqBits': '序号位数',
-    'epc.hint': 'EPC = 企业前缀 + 门店码(2位字母/数字) + 品类码(2位) + 序号(4-6位十六进制)。序号按「门店+品类」独立递增；前缀取企业名称拼音首字母前三位（如 懿臻珠宝→YZZ），留空保存自动生成、可手填修改；门店编码取门店资料中的 2 位字母/数字（如 HQ、A1、06）；含字母的前缀或门店码写入芯片时自动转 ASCII 十六进制（YZZ→595A5A，HQ→4851）', 'epc.save': '保存规则',
+    'epc.hint': 'EPC 结构（新签一律 20 位纯数字）＝ 数字前缀(8位) + 门店编号(4位) + 品类编号(2位) + 序号(6位)；序号按「门店+品类」独立递增。门店编号由系统按门店自动分配、品类编号取商品品类编号前2位，均为只读不可编辑。「企业前缀」用于旧字母格式（存量标签兼容），取企业名称拼音首字母前三位（如 懿臻珠宝→YZZ），留空保存自动生成；含字母的前缀写入芯片时自动转 ASCII 十六进制（YZZ→595A5A）', 'epc.save': '保存规则',
+    'epc.storeNum': '门店编号(4位)', 'epc.catCode': '品类编号(2位)',
     'cat.mgrTitle': '商品分类管理', 'cat.title': '商品分类', 'cat.name': '名称', 'cat.zhName': '中文名', 'cat.enName': '英文名',
     'cat.sort': '排序', 'cat.saveEdit': '保存修改', 'cat.addNew': '新增分类', 'cat.codePh': '如 08',
     'cat.pick': '选择分类', 'cat.addCustom': '自定义',
     // 商品品类（戒指/项链…）与材质
     'type.mgrTitle': '商品品类管理', 'type.title': '商品品类', 'type.addNew': '新增品类',
+    'type.groupName': '所属分组', 'type.groupDefault': '主播希川',
     'type.namePh': '如：戒指', 'type.codePh': '如 10', 'type.confirmDel': '该品类下仍有商品，不能删除',
     'type.pricingMode': '计价方式', 'type.modePiece': '计件（一口价）', 'type.modeWeight': '计重（克重×金价+工费）',
     'type.noTypes': '暂无品类，请先在总部管理中添加',
@@ -489,22 +492,18 @@ var I18N = {
     'label.add': '＋ 添加在库商品…', 'label.fields': '标签内容字段',
     'label.printer': '打印机', 'label.selPrinter': '— 请选择 —', 'label.noPrinter': '未检测到打印机',
     'label.btSel': '蓝牙打印机', 'label.btNone': '无已配对蓝牙打印机（请先在系统蓝牙中配对）', 'label.btSent': '已发送到蓝牙打印机', 'label.btFail': '蓝牙打印失败',
-    'label.bridge': '打印桥',
-    'pa.title': '本地打印桥', 'pa.key': '桥接密钥', 'pa.rotate': '重新生成',
+    'label.bridge': '打印助手',
+    'pa.title': '本地打印助手', 'pa.key': '桥接密钥', 'pa.rotate': '重新生成',
     'pa.hint': '在店里连标签机的电脑上运行 scripts/print_agent.py，首次运行按提示填云端地址与该密钥即可；此后全店手机/电脑点打印均由这台电脑出纸。重新生成会使旧桥接失效，需在桥接机更新密钥。',
     // 门店与打印代理（多门店）
-    'sb.title': '门店与打印代理',
-    'sb.hint': '每家门店一把密钥。代理是通用程序（不绑定环境）：拷到该门店连打印机的电脑上双击运行，回到本页选门店点【连接本机代理】，服务器地址与密钥即推送给它，开始接收任务；打印机不过滤，全部上报，由你在此指派。',
-    'sb.getAgent': '下载代理（通用版）',
+    'sb.title': '打印与扫描助手',
+    'sb.hint': '每家门店一把密钥。打印助手是通用程序（不绑定环境）：拷到该门店连打印机的电脑上运行即可接入，开始接收任务；打印机不过滤，全部上报，由你在此指派。',
     'sb.noKeyStore': '（请先在下方为门店生成密钥）',
-    'sb.dlHint': '下载的 exe 不绑定环境；门店电脑双击运行后，点【连接本机代理】推送服务器地址与密钥。切换运行模式/地址后重新连接一次即可（本页打开期间每 30 秒自动跟随）。',
-    'sb.connectAgent': '连接本机代理',
-    'sb.localAgent': '本机代理',
+    'sb.noStore': '暂无门店',
     'sb.agentOn': '已连接门店「{s}」，可接收云端任务',
     'sb.agentIdle': '运行中，已配置但未连上云端',
-    'sb.agentWaiting': '运行中，等待推送配置（点【连接本机代理】）',
-    'sb.agentDownPc': '未检测到在线打印代理。若门店电脑还没装代理，在下方选门店下载后拷过去双击运行即可。',
-    'sb.agentDownMobile': '打印代理未启动。请在电脑端打开本页面，进入【门店管理】下载代理并拷到门店电脑上运行。',
+    'sb.agentDownPc': '未检测到在线打印助手。请在门店电脑上运行「打印与扫描助手」程序，自动接入本系统。',
+    'sb.agentDownMobile': '打印助手未启动。请在门店电脑上运行「打印与扫描助手」程序。',
     // 库位主数据 / 商品位置
     'loc.title': '库位管理',
     'loc.hint': '为每家门店维护库位清单；商品的「存放位置」「证书存放位置」从本门店库位中选取。停用后不再出现在商品表单中，已引用的商品仍保留显示。',
@@ -560,7 +559,7 @@ var I18N = {
     'tr.sentBy': '发出', 'tr.receivedBy': '验收', 'tr.counts': '件数',
     'tr.locked': '商品调拨在途中，验收完成前不可编辑',
     'hc.title': '系统自检',
-    'hc.print_agent': '打印代理在线',
+    'hc.print_agent': '打印助手在线',
     'hc.anti_theft': '防盗系统运行',
     'hc.sec_pending': '防盗报警已处理',
     'hc.task_stall': '盘点任务正常推进',
@@ -576,6 +575,13 @@ var I18N = {
     'sb.jobQueued': '已写入打印队列（物理出纸请人眼核对）',
     'sb.assignTitle': '按业务指派打印机（多个业务可共用一台）', 'sb.notAssigned': '— 未指派 —',
     'pbizg.label': '标签 · ZPL标签机', 'pbizg.receipt': '票据 · 热敏小票机', 'pbizg.doc': '单据报表 · A4办公机/PDF',
+    // 打印设置：标签格式 / 设备与连接 两分组
+    'prcfg.grpFormat': '标签格式', 'prcfg.grpFormatHint': '纸方案与撕纸位置，仅影响出纸排版；变更后点「应用」保存并下发',
+    'prcfg.scheme': '标签方案', 'prcfg.noScheme': '未选择（用助手默认）', 'prcfg.tear': '撕纸位置', 'prcfg.applyScheme': '应用',
+    'prcfg.grpDevice': '设备与连接', 'prcfg.grpDeviceHint': '打印业务指派打印机与链路（USB/NET/BT）；状态来自本机助手连接巡检，不打打印任务',
+    'prcfg.iface': '链路', 'prcfg.probeNow': '立即测连接', 'prcfg.probeDone': '巡检完成', 'prcfg.probeFail': '巡检失败',
+    'prcfg.stNone': '未指派', 'prcfg.stUnknown': '待巡检', 'prcfg.stOk': '已连接', 'prcfg.stFail': '失联',
+    'prcfg.tearOk': '撕纸位置已下发打印机',
     'pbiz.label_product': '商品RFID标签', 'pbiz.label_shelf': '货架库位标签',
     'pbiz.receipt_sale': '销售小票', 'pbiz.receipt_deposit': '定金收据', 'pbiz.receipt_loan': '借货单',
     'pbiz.receipt_repair': '维修单', 'pbiz.receipt_purchase': '采购入库单',
@@ -584,16 +590,19 @@ var I18N = {
     'sb.addStore': '新增门店', 'sb.storeName': '请输入门店名称',
     'sb.secPanel': '安防设备', 'sb.noSecDev': '本店暂无安防设备', 'sb.gotoSec': '前往安防中心',
     'sb.notConnected': '已生成密钥 · 未连接', 'sb.noKey': '未生成密钥',
-    'sb.keyGen': '已生成打印代理密钥', 'sb.ctlOk': '指令已下发',
+    'sb.keyGen': '已生成打印助手密钥', 'sb.ctlOk': '指令已下发',
     'sb.revoke': '吊销', 'sb.revokeConfirm': '吊销后该代理 key 立即失效，确定？', 'sb.revoked': '已吊销',
-    'sb.noAgent': '暂无打印代理实例，点上方「生成」创建',
+    'sb.noAgent': '暂无助手实例（建店时自动生成，部署后自动注册）',
     'sb.keyCopyHint': '请复制此密钥填入打印助手（StoreKey），仅显示一次：',
-    'sb.genScanKey': '生成 Key', 'sb.scanKeyHint': '请复制此密钥填入扫描助手（device_token），仅显示一次：',
-    'sb.offlineToast': '打印代理不在线，请先在该门店电脑上启动 PrintBridge',
-    'sb.agentRoute': '标签将由该门店的打印代理出纸',
+    'sb.offlineToast': '打印助手不在线，请先在该门店电脑上启动 PrintAgent',
+    'sb.agentRoute': '标签将由该门店的打印助手出纸',
     'toast.keyCopied': '已复制',
     'toast.agentPushed': '配置已推送到本机代理',
     'toast.agentFail': '推送失败：{e}',
+    'sb.printers': '打印机', 'sb.printersHint': '列表来自门店电脑本机打印助手；可备注用途、移除不用的打印机（档案仅存本机，不经云端）', 'sb.printerHidden': '已移除', 'sb.printerRestore': '恢复显示', 'sb.printerNotePh': '输入该打印机的用途，如：标签 / 票据 / 备用（留空清除）', 'sb.printerCfHide': '确定从列表移除「{name}」？仅在本机列表隐藏，不影响驱动与打印', 'sb.printerNoteSaved': '已保存用途备注', 'sb.printerNoteCleared': '已清除用途备注', 'sb.printerHiddenToast': '已从列表移除', 'sb.printerRestored': '已恢复显示', 'sb.printerDefault': '系统默认', 'sb.printerPaper': '标签纸', 'sb.noPaper': '未绑定', 'sb.bindPaperSave': '保存绑定', 'sb.calibrate': '校准', 'sb.noPrinter': '本机未发现可连接的打印机', 'sb.agentOfflineHint': '未检测到本机打印助手：请在门店电脑上启动 PrintAgent，然后点「刷新列表」',
+    'lp.libTitle': '标签纸形状库', 'lp.libHint': '方案保存在云端主库；保存或删除时自动下发到各门店在线的打印助手。', 'lp.libEmpty': '还没有标签纸方案，点「新增方案」创建', 'lp.add': '新增方案', 'lp.addTitle': '新增标签纸方案', 'lp.editTitle': '编辑标签纸方案', 'lp.name': '方案名称', 'lp.namePh': '如：珠宝标签 25×30', 'lp.width': '标签宽', 'lp.height': '标签高', 'lp.gap': '纸间隙', 'lp.margins': '可打印区域边距', 'lp.mLeft': '左边距', 'lp.mRight': '右边距', 'lp.mTop': '上边距', 'lp.mBottom': '下边距', 'lp.antenna': '天线（inlay）位置与尺寸', 'lp.antX': '天线 X', 'lp.antY': '天线 Y', 'lp.antW': '天线宽', 'lp.antH': '天线高', 'lp.coordHint': '坐标相对标签左上角，单位 mm；天线宽高填 0 表示未知（不做压天线警告）。', 'lp.notes': '备注', 'lp.notesPh': '用途等，可留空', 'lp.printable': '可打印区', 'lp.savePush': '保存并下发', 'lp.saved': '已保存，并下发到 {n} 家在线门店', 'lp.saveFail': '保存失败', 'lp.cfDel': '确定删除「{name}」？将同时从云端主库和各门店助手删除。', 'lp.deleted': '已删除',
+    'toast.agentNoAgent': '无法访问本机打印助手（http://127.0.0.1:18180），请确认门店电脑上 PrintAgent 已启动',
+    'sb.printersRO': '总部视图仅查看；请在门店电脑上登录该门店账号管理打印机',
     'label.copies': '份数', 'label.font': '机内中文字体（^A@ 字体名，按打印机实际配置）',
     'label.writeEpc': '同时写入 RFID 芯片 EPC（^RFW）',
     'label.simulate': '仅生成 ZPL 指令（不实际打印，用于预览/调试）',
@@ -648,6 +657,7 @@ var I18N = {
     'rg.3m': '近3月', 'rg.6m': '近6月', 'rg.year': '今年',
     'tag.statsTitle': '标签统计', 'tag.pieceUnit': '件', 'tag.inStock': '在库', 'tag.salesAmt': '销售额',
     'tag.expand': '展开标签', 'tag.collapse': '收起标签',
+    'tag.filter': '商品分类', 'tag.pickedCount': '（已选 {n}）',
     'tag.dupNote': '多标签商品在各标签组重复计入，占比分母为各组合计',
     'tag.group': '分组', 'tag.groupPh': '如：古董款', 'tag.ungrouped': '未分组',
     // 分类管理：一级分类=标签类别，二级分类=标签
@@ -668,13 +678,10 @@ var I18N = {
     'fpwd.mismatch': '两次输入的新密码不一致', 'fpwd.same': '新密码不能与原密码相同',
     'fpwd.ok': '密码已修改，欢迎继续使用', 'fpwd.need': '请先修改密码再继续操作',
     'fpwd.err': '修改失败，请重试',
-
   }
 };
 var currentLang = 'zh';
-
 function dictOf(lang) { return I18N[LANG_MAP[lang]] || I18N.zh; }
-
 function t(key, params) {
   // 优先读响应式状态 ST.lang（app.js 定义后）：
   // 使所有使用 t() 的绑定/计算属性建立对语言的响应式依赖，切换语言全界面即时刷新
@@ -692,7 +699,6 @@ function t(key, params) {
   }
   return s;
 }
-
 // 语言键规范化：'zh' 等历史/简写键统一为界面标准键（zh-Hans/en/it），
 // 避免状态值与下拉选项(zh-Hans/en/it)不匹配导致语言选择器显示空白
 function canonLang(k) {
@@ -701,7 +707,6 @@ function canonLang(k) {
   if (LANG_KEYS.indexOf(k) >= 0) return k;
   return '';
 }
-
 function detectLang() {
   var saved = null;
   try { saved = localStorage.getItem('yi_lang'); } catch (e) {}
@@ -716,7 +721,6 @@ function detectLang() {
   if (nav.indexOf('en') === 0) return 'en';
   return 'zh-Hans';
 }
-
 function switchLang(lang) {
   lang = canonLang(lang);
   if (lang) {
@@ -724,10 +728,8 @@ function switchLang(lang) {
     try { localStorage.setItem('yi_lang', lang); } catch (e) {}
   }
 }
-
 currentLang = detectLang();
 switchLang(currentLang);   // 回写规范键，清理历史脏值（如 'zh'）
-
 var I18N_VER = '20261013e161';   // 语言字典文件缓存版本（与 index.html 同步升级）
 function registerLang(key, dict) { I18N[key] = dict; }
 // index.html 启动时调用：返回需在 app.js 前同步加载的字典文件名后缀（中文返回 ''）

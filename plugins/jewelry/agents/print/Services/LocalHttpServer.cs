@@ -33,14 +33,11 @@ namespace PrintAgent.Services
 
         public void Start()
         {
-            // 单文件模式下 pfx 被解压到临时目录, 用 AppContext.BaseDirectory 定位
-            string baseDir = AppContext.BaseDirectory;
-            string pfx = Path.Combine(baseDir, "printagent.pfx");
-
             var builder = WebApplication.CreateBuilder();
             builder.WebHost.ConfigureKestrel(options =>
             {
-                options.ListenAnyIP(_port, listen => listen.UseHttps(pfx, "printagent"));
+                // 仅回环 http 监听: 浏览器直接访问无需自签证书, 同时对齐 AGENTS.md 仅回环约束
+                options.Listen(System.Net.IPAddress.Loopback, _port);
             });
             // 静默 Kestrel 控制台日志
             builder.Logging.ClearProviders();
@@ -127,6 +124,65 @@ namespace PrintAgent.Services
             });
 
             app.MapGet("/api/labelpapers", () => Results.Json(new { code = 0, data = LabelPaperStore.Load() }));
+
+            // 连接巡检状态（不打打印任务）：GET 读缓存 / POST action=probe 立即巡检
+            app.MapGet("/api/printer-status", () => Results.Json(new { code = 0, data = ConnectionProbeService.Snapshot() }));
+            app.MapPost("/api/printer-status", async (HttpContext ctx) =>
+            {
+                var j = await ReadBody(ctx);
+                if ((j.Value<string>("action") ?? "").Equals("probe", StringComparison.OrdinalIgnoreCase))
+                    ConnectionProbeService.ProbeOnce();
+                return Results.Json(new { code = 0, data = ConnectionProbeService.Snapshot() });
+            });
+
+            // 云端指派目标登记（NET IP 等）：前端保存指派后调用，确保下轮巡检覆盖该目标
+            app.MapPost("/api/printer-status/register", async (HttpContext ctx) =>
+            {
+                var j = await ReadBody(ctx);
+                ConnectionProbeService.RegisterTarget(
+                    j.Value<string>("brand") ?? "zmin",
+                    j.Value<string>("interface") ?? "USB",
+                    j.Value<string>("ip") ?? "",
+                    j.Value<string>("name") ?? "");
+                return Results.Json(new { code = 0, msg = "已登记巡检目标" });
+            });
+
+            // 标签方案应用（撕纸位置）：CONFIG tear 走统一指令层（NV 持久，三通道）
+            app.MapPost("/api/print-config/apply", async (HttpContext ctx) =>
+            {
+                var j = await ReadBody(ctx);
+                double? tear = j.Value<double?>("tear_mm");
+                if (tear == null || tear <= 0)
+                    return Results.Json(new { code = 1, msg = "缺少 tear_mm" });
+                string cmds = $"CONFIG tear,{(tear.Value).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+                var (code, msg, _) = await RfidCommandExecutor.ExecuteAsync(
+                    j.Value<string>("brand") ?? "zmin",
+                    j.Value<string>("interface") ?? "USB",
+                    j.Value<string>("ip") ?? "",
+                    j.Value<string>("name") ?? "",
+                    cmds, 8000, false);
+                return Results.Json(new { code, msg });
+            });
+
+            // 设备档案(含已绑定标签纸 Id): 门店详情卡片回显绑定用
+            app.MapGet("/api/profiles", () => Results.Json(new { code = 0, data = AppConfig.Load().DeviceProfiles }));
+
+            // 打印机 UI 偏好(用途备注/从列表移除): 按 ProfileKey 存设备档案, 仅本机
+            app.MapPost("/api/printer-prefs", async (HttpContext ctx) =>
+            {
+                var j = await ReadBody(ctx);
+                string brand = j.Value<string>("brand") ?? "zmin";
+                string iface = j.Value<string>("interface") ?? "USB";
+                string name = j.Value<string>("name") ?? "";
+                string key = RfidCommandExecutor.ProfileKey(brand, iface, j.Value<string>("ip") ?? "", name);
+                var cfg = AppConfig.Load();
+                if (!cfg.DeviceProfiles.TryGetValue(key, out var prof) || prof == null)
+                    cfg.DeviceProfiles[key] = prof = new DeviceProfile();
+                if (j["hidden"] != null) prof.Hidden = j.Value<bool?>("hidden") ?? false;
+                if (j["note"] != null) prof.Note = j.Value<string>("note") ?? "";
+                cfg.Save();
+                return Results.Json(new { code = 0, msg = $"已保存打印机偏好: {key}" });
+            });
 
             app.MapPost("/api/labelpapers", async (HttpContext ctx) =>
             {

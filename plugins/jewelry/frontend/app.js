@@ -50,15 +50,15 @@ var ST = Vue.reactive({
   _trendReqSeq: 0,   // 趋势请求序号：连续拖动只接受最后一次响应
   goldData: null,   // 实时金价（国际+门店零售）
   riskData: null,   // 资产风控（滞销库龄+最近盘点）
-  // 看板时间范围（页面级）：mode=today|week|month|3m|6m|year（顶部金价栏右侧下拉）；默认近6月（沿用原销售额统计卡下拉默认值）
-  dashRange: { mode: '6m' },
+  // 看板时间范围（页面级）：mode=today|yesterday|7d|month|3m|custom（金价栏右侧页签，与销售分析一致）；默认近3个月
+  dashRange: { mode: '3m', start: '', end: '', curStart: '', curEnd: '' },
   saleRange: { mode: 'today', start: '', end: '' },   // 销售列表时间过滤（同看板工具栏）
   products: [], prodTotal: 0, prodCat: '', prodQ: '', prodHasCert: false, prodLoc: 0, prodStatusFilter: '',
   cats: [], bizConfig: { epc_prefix: 'E280', seq_bits: 8 }, languages: [],
   catEdit: { code: '', names: { zh: '', en: '' }, sort_order: 0 }, catEditMode: 'new',
   // 商品品类（戒指/项链…）
   productTypes: [],
-  typeEdit: { code: '', names: { zh: '', en: '', it: '' }, sort_order: 0, pricing_mode: 'piece' }, typeEditMode: 'new',
+  typeEdit: { code: '', names: { zh: '', en: '', it: '' }, sort_order: 0, pricing_mode: 'piece', group_name: '主播希川' }, typeEditMode: 'new',
   // 商品标签（多标签 + 按标签分组统计）
   tagList: [], prodTags: [],   // 标签字典 / 商品页标签筛选（多选=命中任一）
   tagEdit: { id: 0, name: '', color: '#C9A227', sort_order: 0, group_name: '' }, tagEditMode: 'new',
@@ -102,12 +102,14 @@ var ST = Vue.reactive({
   printers: [], printerName: '', printSupported: true,
   // 本地打印桥（门店级）：各门店代理状态/上报打印机/绑定信息
   bridges: [],
-  // 代理下载下拉框选中的门店（连接本机代理 / 生成密钥的目标门店）
-  agentDlStore: 0,
-  // 本机打印代理探测状态（GET http://127.0.0.1:18080/ 结果，null=未检测到）/
-  // 手动连接时缓存的门店密钥（定时刷新 server 用，仅内存不落盘）
   localAgent: null,
+  agentPapers: [],       // 本机助手标签纸档案（GET 本机 /api/labelpapers，门店详情卡片用）
+  labelPapers: [],       // 标签纸形状库主库（云端 /api/label-papers，租户级，打印与扫描助手页维护）
+  lpEdit: null,          // 形状库编辑弹窗数据（null=关闭）
+  agentProfiles: {},     // 本机助手设备档案（GET 本机 /api/profiles，回显已绑定标签纸）
+  agentPaperSel: {},     // 卡片上打印机→标签纸的暂选（重探测不丢）
   agentToken: '',
+  agentStoreId: 0,   // 手动连接时缓存的门店ID（30 秒自动跟随重推配置用，仅内存不落盘）
   // 系统自检铃铛：面板开关 / 被关闭的检查项（localStorage 持久化）/ 轮询定时器
   healthOpen: false,
   storePopOpen: false,   // 手机版顶栏门店切换面板
@@ -167,10 +169,7 @@ var ST = Vue.reactive({
   taskReport: null, reportTaskId: 0,
   // 扫描设备管理
   devModal: false, devices: [], allDevices: [],
-  activations: [], actStoreId: 0, actName: '', actQrUrl: '', actUrl: '',
   devStoreScope: 0,   // 门店管理内打开设备弹窗时锁定的门店（0=盘点页全部）
-  // 手持机扫码登录（网页端弹窗）
-  hqShow: false, hqStatus: '', hqDevice: '', hqImg: '', hqKey: '', hqUrl: '', hqErr: '', hqTimer: null,
   yzScanReady: false,   // App WebView 注入 YzApp 桥接后为 true，出单表单显示扫码按钮
   // 摄像头扫码（本地 zxing，无需 App/外网）
   camOpen: false, camBusy: false, camErr: '', _camControls: null,
@@ -266,7 +265,7 @@ function hasLastYear(arr) {
 
 // 趋势折线：时间范围跟随页面级 dashRange（金价栏右侧下拉）；区间跨度 ≤45 天按天、否则按月（与后端判定一致）
 function trendByDay() {
-  var rg = dateRangeCompute(ST.dashRange.mode);
+  var rg = dateRangeCompute(ST.dashRange.mode, ST.dashRange.start, ST.dashRange.end);
   var a = rg.start.split('-'), b = rg.end.split('-');
   var s = new Date(+a[0], +a[1] - 1, +a[2]), e = new Date(+b[0], +b[1] - 1, +b[2]);
   return Math.round((e - s) / 86400000) <= 45;
@@ -276,7 +275,7 @@ function trendShiftMax() { return trendByDay() ? 730 : 36; }
 function loadTrend(shift) {
   if (shift != null) ST.trendShift = shift;
   var sh = ST.trendShift || 0;
-  var rg = dateRangeCompute(ST.dashRange.mode);
+  var rg = dateRangeCompute(ST.dashRange.mode, ST.dashRange.start, ST.dashRange.end);
   var u = '/api/dashboard/trend?start=' + rg.start + '&end=' + rg.end + '&offset=' + sh;
   var token = ++ST._trendReqSeq;   // 连续拖动中只接受最后一次响应，防止乱序覆盖
   api('GET', u).then(function (d) { if (ST._trendReqSeq === token) ST.trendData = d; }).catch(function () {});
@@ -429,7 +428,7 @@ if (typeof window.t !== 'function') { window.t = function (key) { return key; };
 // 行政/系统类写路径（与后端 executive_write_guard 白名单一致）：仅总店视图下放行
 var EXEC_ADMIN_PREFIXES = ['/api/admin/', '/api/shops', '/api/stores', '/api/profile', '/api/biz-config',
   '/api/categories', '/api/product-types', '/api/label-templates', '/api/clerk-types',
-  '/api/locations', '/api/sensors'];
+  '/api/locations', '/api/sensors', '/api/label-papers'];
 
 function api(m, url, body) {
   // 高管只读闸门（前端提示层；后端中间件同时强拒兜底）：
@@ -493,7 +492,7 @@ var ADMIN_SUBS = [
   { key: 'tpl', icon: '🏷', label: '标签打印模板' },
   { key: 'clerk', icon: '🧑‍💼', label: '经办人类别' },
   { key: 'security', icon: '🛡️', label: '安防中心' },
-  { key: 'bridge', icon: '🖨', label: '打印代理' },
+  { key: 'bridge', icon: '🖨', label: '打印与扫描助手' },
   { key: 'logs', icon: '📋', label: '操作日志' },
   { key: 'report', icon: '🐞', label: '问题上报' },
 ];
@@ -797,12 +796,21 @@ function curStoreName() {
   var s = workStore();
   return s ? s.name : '';
 }
-// 当前工作门店是否为总店（种子总店 code=HQ）：
+// 当前工作门店是否为总店（种子总店 code=HQ）或"总部汇总"（id=-1）：
 // 总店视图有「总部管理」无「门店管理」；分店视图相反，且系统管理只剩门店级子页
 function isHqStore() {
   var s = workStore();
-  return !!s && (s.code || '').toUpperCase() === 'HQ';
+  if (!s) return false;
+  if (s.id === -1) return true;  // 总部汇总视图 = 总部级别
+  return (s.code || '').toUpperCase() === 'HQ';
 }
+// 门店设备列表(打印代理页): 排除总店——总部是管理机构不挂门店设备, 总部电脑无需部署代理
+function nonHqStores() {
+  return (ST.stores || []).filter(function (s) { return (s.code || '').toUpperCase() !== 'HQ'; });
+}
+// 打印机管理权限：门店视图可管，总部视图（总店/总部汇总）只读——
+// 打印机档案直连本机助手，仅门店电脑上操作才有意义，总部界面只看状态
+function printerManage() { return !isHqStore(); }
 
 // ===== 总店/分店视图可见性（单一判断口径，导航/子页/门店页共用） =====
 // 系统管理子页归属：企业整体级（账号门店权限/EPC/打印模板/经办人）仅总店；门店级（安防/日志）分店保留
@@ -1053,7 +1061,7 @@ function go(tab) {
   else { ST.tab = tab; }
   ST.subView = '';
   if (ST.tab === 'inventory') { loadInv(); loadStockBatches(); loadCoTask(); }
-  if (ST.tab === 'shops') probeLocalAgent();   // 总部管理：立即探测本机代理（另有 30 秒定时）
+  if (ST.tab === 'shops' || ST.tab === 'stores') openStorePrinters();   // 总部管理/门店管理：立即探测本机代理并预载打印机数据（另有 30 秒定时）
   if (ST.tab === 'transfers') loadTransfers();
   if (ST.tab === 'sales' && ST.saleSub === 'analysis' && !ST.saleAna.data) loadSaleAnalysis();
   if (ST.tab === 'appointments') loadAppt();
@@ -1073,7 +1081,7 @@ function go(tab) {
     if (ST.adminSub === 'security') loadSecurity();
     if (ST.adminSub === 'logs') { ST.subView = 'logs'; loadSubList(); }
     if (ST.adminSub === 'users' && isAdminRole()) { loadAdminUsers(); loadStores(true); }
-    if (ST.adminSub === 'bridge') { loadStores(true); loadBridgeList(); loadSecurity(); loadAllDevices(); probeLocalAgent(); }
+    if (ST.adminSub === 'bridge') { loadStores(true); loadBridgeList(); loadSecurity(); loadAllDevices(); openStorePrinters(); }
   }
   // PC 侧边栏直接进入子列表页（维修/采购/委外/借货/客户）时也要拉数据
   if (SUB_VIEWS.indexOf(ST.tab) >= 0) { ST.subView = ST.tab; ST.subPage = 1; loadSubList(); if (ST.tab === 'customers') loadCustStats(); }
@@ -1141,6 +1149,18 @@ function setDashRange(mode) {
   ST.dashRange.mode = mode;
   ST.trendShift = 0;   // 切换全局时间段后趋势窗口长度变化，回到当前窗口
   ST.trendDragX = 0;
+  if (mode !== 'custom') {
+    var rg = dateRangeCompute(mode, ST.dashRange.start, ST.dashRange.end);
+    ST.dashRange.curStart = rg.start; ST.dashRange.curEnd = rg.end;
+    loadDash();
+  }
+}
+// 看板自定义区间查询（与销售分析 applySaleCustomRange 同款）
+function applyDashCustomRange() {
+  if (!ST.dashRange.start || !ST.dashRange.end) { toast(t('dash.pickRange'), 'error'); return; }
+  var rg = dateRangeCompute('custom', ST.dashRange.start, ST.dashRange.end);
+  ST.dashRange.curStart = rg.start; ST.dashRange.curEnd = rg.end;
+  ST.trendShift = 0; ST.trendDragX = 0;
   loadDash();
 }
 // 销售列表时间过滤（复用 dashRangeCompute 的区间推导）
@@ -1278,7 +1298,8 @@ function saleClerkDonut() {
   });
 }
 function loadDash() {
-  var rg = dateRangeCompute(ST.dashRange.mode);
+  var rg = dateRangeCompute(ST.dashRange.mode, ST.dashRange.start, ST.dashRange.end);
+  ST.dashRange.curStart = rg.start; ST.dashRange.curEnd = rg.end;   // 首屏也要显示当前区间文本
   var q = '?start=' + rg.start + '&end=' + rg.end;
   api('GET', '/api/dashboard/overview' + q).then(function (r) { ST.dashData = r; }).catch(function () {});
   loadTrend();
@@ -1351,51 +1372,167 @@ function openReportWindow() {
   window.open(reportPageUrl(), '_blank');
 }
 
-// ---- 本机打印代理：云端管理页 → 127.0.0.1:18080 运行时推送配置（任意运行模式通用）----
+// ---- 本机打印代理：云端管理页 → 127.0.0.1:18180 运行时推送配置（C# PrintAgent，任意运行模式通用）----
 
-var AGENT_LOCAL = 'http://127.0.0.1:18080';
+var AGENT_LOCAL = 'http://127.0.0.1:18180';   // C# PrintAgent 本地 http 回环端口（仅监听 127.0.0.1，无需证书，旧 Python 桥 18080 已废弃）
+
+// 本机代理云端 WS 地址（与 scan-page/security 同构：proto://host + 网关前缀 + 路径）
+function agentWsUrl() {
+  var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  return proto + '://' + location.host + API + '/ws/print-agent';
+}
 
 function probeLocalAgent() {
   return new Promise(function (resolve) {
     var done = false;
     var ac = ('AbortController' in window) ? new AbortController() : null;
     if (ac) setTimeout(function () { if (!done) ac.abort(); }, 2500);
-    fetch(AGENT_LOCAL + '/').then(function (r) { return r.json(); }).then(function (j) {
-      done = true; ST.localAgent = j; resolve(j);
+    fetch(AGENT_LOCAL + '/api/status').then(function (r) { return r.json(); }).then(function (j) {
+      done = true; ST.localAgent = (j && j.code === 0) ? j : null; resolve(ST.localAgent);
     }).catch(function () { done = true; ST.localAgent = null; resolve(null); });
   });
 }
 
-function pushAgentConfig(server, token) {
+function pushAgentConfig(serverUrl, storeKey, storeId) {
   return new Promise(function (resolve, reject) {
     var done = false;
     var ac = ('AbortController' in window) ? new AbortController() : null;
     if (ac) setTimeout(function () { if (!done) ac.abort(); }, 4000);
-    fetch(AGENT_LOCAL + '/configure', {
+    fetch(AGENT_LOCAL + '/api/init', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ server: server, token: token })
+      body: JSON.stringify({ serverUrl: serverUrl, storeKey: storeKey, storeId: String(storeId || '') })
     }).then(function (r) { return r.json(); }).then(function (j) {
       done = true;
-      if (j.ok) resolve(j); else reject(new Error(j.message || 'configure failed'));
+      if (j && j.code === 0) resolve(j); else reject(new Error((j && j.msg) || 'init failed'));
     }).catch(function (e) { done = true; reject(e); });
   });
 }
 
-// 连接本机代理：轮换新密钥（连接=发新密钥，密钥即用即换不回显）→ 取云端公开地址 → 推送给本机代理
-function connectLocalAgent(sid) {
-  if (!sid) return;
-  api('POST', '/api/stores/' + sid + '/bridge-key').then(function (k) {
-    ST.agentToken = k.key;
-    return api('GET', '/api/agent-server').then(function (s) {
-      return pushAgentConfig(s.server, k.key);
-    });
-  }).then(function () {
-    toast(t('toast.agentPushed'));
-    probeLocalAgent();
-    api('GET', '/api/print-agent/status').then(function (r) { ST.bridges = r.bridges || []; }).catch(function () {});
-  }).catch(function (e) {
-    toast(t('toast.agentFail', { e: (e && e.message) || e }), 'err');
-  });
+// ---- 门店详情「RFID 打印机」卡片：直连本机助手（打印机/标签纸绑定/校准，档案仅存门店电脑本地，不经云端）----
+function loadAgentPapers() {
+  fetch(AGENT_LOCAL + '/api/labelpapers').then(function (r) { return r.json(); }).then(function (j) {
+    // data 为 {version, papers:[...]} 包裹结构
+    ST.agentPapers = (j && j.code === 0 && j.data) ? (j.data.papers || []) : [];
+  }).catch(function () { ST.agentPapers = []; });
+}
+function loadAgentProfiles() {
+  fetch(AGENT_LOCAL + '/api/profiles').then(function (r) { return r.json(); }).then(function (j) {
+    ST.agentProfiles = (j && j.code === 0) ? (j.data || {}) : {};
+  }).catch(function () { ST.agentProfiles = {}; });
+}
+function openStorePrinters() {
+  probeLocalAgent();
+  loadAgentPapers();
+  loadAgentProfiles();
+  loadAgentStatus();
+  loadLabelPapers();
+}
+// ---- 标签纸形状库(租户级主库): 网页端新增/编辑/删除, 保存时云端自动下发各门店在线助手 ----
+function loadLabelPapers() {
+  api('GET', '/api/label-papers').then(function (j) {
+    ST.labelPapers = (j && j.papers) ? j.papers : [];
+  }).catch(function () { ST.labelPapers = []; });
+}
+function lpEditOpen(p) {
+  ST.lpEdit = p ? JSON.parse(JSON.stringify(p)) : {
+    id: '', name: '', width: 30, height: 25, gap: 2,
+    margin_left: 2, margin_right: 2, margin_top: 2, margin_bottom: 2,
+    antenna_x: 0, antenna_y: 0, antenna_w: 0, antenna_h: 0, notes: ''
+  };
+}
+function lpSave() {
+  var d = ST.lpEdit;
+  if (!d || !d.name) { toast(t('lp.nameRequired'), 'error'); return; }
+  if (!(d.width > 0) || !(d.height > 0)) { toast(t('lp.whRequired'), 'error'); return; }
+  api('POST', '/api/label-papers', d).then(function (j) {
+    var n = (j && j.pushed) ? j.pushed.filter(function (x) { return x.ok; }).length : 0;
+    toast(t('lp.saved', { n: n }));
+    ST.lpEdit = null;
+    loadLabelPapers();
+    loadAgentPapers();   // 本机助手刚被下发, 形状库下拉立即可见
+  }).catch(function (e) { toast(e.message || t('lp.saveFail'), 'error'); });
+}
+function lpDel(p) {
+  if (!confirm(t('lp.cfDel', { name: p.name }))) return;
+  api('DELETE', '/api/label-papers/' + encodeURIComponent(p.id)).then(function () {
+    toast(t('lp.deleted'));
+    loadLabelPapers();
+    loadAgentPapers();
+  }).catch(function (e) { toast(e.message || t('lp.saveFail'), 'error'); });
+}
+function agentAllPrinters() {
+  var a = ST.localAgent;
+  return (a && a.code === 0 && a.printers) ? a.printers : [];
+}
+function agentPrefOf(p) { return (ST.agentProfiles || {})[agentProfKeyOf(p)] || null; }
+function agentPrinters() {   // 卡片可见列表（已移除的隐藏）
+  return agentAllPrinters().filter(function (p) { var pr = agentPrefOf(p); return !(pr && pr.hidden); });
+}
+function agentHiddenPrinters() {
+  return agentAllPrinters().filter(function (p) { var pr = agentPrefOf(p); return pr && pr.hidden; });
+}
+function agentNoteOf(p) { var pr = agentPrefOf(p); return (pr && pr.note) || ''; }
+// 设备档案 key（与 C# ProfileKey 同构：brand|iface==NET?ip:name）
+function agentProfKeyOf(p) {
+  return (p.brand || '') + '|' + (String(p.interface || '').toUpperCase() === 'NET' ? (p.address || '') : (p.name || ''));
+}
+function agentBoundPaperName(p) {
+  var prof = (ST.agentProfiles || {})[agentProfKeyOf(p)];
+  if (!prof || !prof.labelPaperId) return '';
+  var f = (ST.agentPapers || []).find(function (x) { return x.id === prof.labelPaperId; });
+  return f ? f.name : '';
+}
+function agentPaperSelOf(p) {
+  var k = agentProfKeyOf(p);
+  if (ST.agentPaperSel[k] != null) return ST.agentPaperSel[k];
+  var prof = (ST.agentProfiles || {})[k];
+  return (prof && prof.labelPaperId) || '';
+}
+function setAgentPaperSel(p, v) { ST.agentPaperSel[agentProfKeyOf(p)] = v; }
+// 打印机 UI 偏好（用途备注/从列表移除）→ POST 本机 /api/printer-prefs，仅存门店电脑本地
+function savePrinterPref(p, patch, okMsg) {
+  fetch(AGENT_LOCAL + '/api/printer-prefs', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      brand: p.brand || '', interface: p.interface || 'USB',
+      ip: String(p.interface || '').toUpperCase() === 'NET' ? (p.address || '') : '', name: p.name || '',
+      hidden: patch.hidden != null ? !!patch.hidden : !!(agentPrefOf(p) && agentPrefOf(p).hidden),
+      note: patch.note != null ? patch.note : agentNoteOf(p)
+    })
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    if (j && j.code === 0) { toast(okMsg); loadAgentProfiles(); }
+    else toast((j && j.msg) || '保存失败', 'error');
+  }).catch(function () { toast(t('toast.agentNoAgent'), 'error'); });
+}
+function notePrinter(p) {
+  var v = prompt(t('sb.printerNotePh'), agentNoteOf(p));
+  if (v === null) return;
+  v = v.trim();
+  savePrinterPref(p, { note: v }, v ? t('sb.printerNoteSaved') : t('sb.printerNoteCleared'));
+}
+function hidePrinter(p) {
+  if (!confirm(t('sb.printerCfHide', { name: p.name }))) return;
+  savePrinterPref(p, { hidden: true }, t('sb.printerHiddenToast'));
+}
+function restorePrinter(p) { savePrinterPref(p, { hidden: false }, t('sb.printerRestored')); }
+function saveAgentPaperBind(p) {
+  fetch(AGENT_LOCAL + '/api/labelpapers', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'bind', brand: p.brand || 'zmin', interface: p.interface || 'USB',
+      ip: String(p.interface || '').toUpperCase() === 'NET' ? (p.address || '') : '', name: p.name || '',
+      labelPaperId: ST.agentPaperSel[agentProfKeyOf(p)] || '' })
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    if (j && j.code === 0) { toast(j.msg || '已保存'); loadAgentProfiles(); }
+    else toast((j && j.msg) || '保存失败', 'error');
+  }).catch(function () { toast(t('toast.agentNoAgent'), 'error'); });
+}
+function agentCalibrate(action) {
+  fetch(AGENT_LOCAL + '/api/calibrate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: action })
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    if (j && j.code === 0) toast(j.msg || '完成'); else toast((j && j.msg) || '执行失败', 'error');
+  }).catch(function () { toast(t('toast.agentNoAgent'), 'error'); });
 }
 
 function refreshAll() {
@@ -1779,6 +1916,7 @@ function editFromDetail() {
   var d = ST.sheetData || {}, kind = ST.detailKind;
   if (kind === 'repairs') editRepair(d);
   else if (kind === 'customers') editCustomer(d);
+  else if (kind === 'deposits') openSheet('deposit', t('sheet.depositEdit'), Object.assign({}, d));
   else if (kind === 'loans') openSheet('loan', t('sheet.loan'), Object.assign({}, d));
   else if (kind === 'purchases') openSheet('purchase', t('sheet.purchase'), Object.assign({}, d));
   else if (kind === 'outsourcings') openSheet('outsource', t('sheet.outsource'), Object.assign({}, d));
@@ -1867,6 +2005,12 @@ function pubShowcaseUrl() {
 function loadBizConfig() {
   api('GET', '/api/biz-config').then(function (r) { ST.bizConfig = r; }).catch(function () {});
 }
+// EPC 规则卡「品类编号」只读示意值: 取第一个品类编号前2位(实际按商品所属品类的编号取码)
+function catCodeSample() {
+  var c = ((ST.productTypes && ST.productTypes[0] && ST.productTypes[0].code) || '') + '';
+  c = c.trim().toUpperCase() || '01';
+  return (c + '00').slice(0, 2);
+}
 
 // ---- login ----
 // 运行模式（NORMAL/SANDBOX/PRODUCTION_SUPPORT）由平台网关按「每个请求」注入，
@@ -1951,33 +2095,6 @@ function doLogout() {
   ST.mustPwdOpen = false; ST.mustPwdOld = ST.mustPwdNew = ST.mustPwdNew2 = '';
   syncDocTitle();
   syncToken();
-}
-
-// ---- 手持机绑定（为当前工作门店生成扫描助手激活码，App 扫码即激活绑定）----
-function openHandheldLogin(storeId) {
-  if (!ST.token) { toast(t('login.err'), 'error'); return; }
-  var sid = storeId || ST.curStoreId || (ST.stores[0] && ST.stores[0].id) || 0;
-  if (!sid) { toast(t('hq.needStore'), 'error'); return; }
-  ST.hqShow = true;
-  ST.hqStatus = 'loading';
-  ST.hqImg = ''; ST.hqUrl = ''; ST.hqErr = '';
-  api('POST', '/api/devices/activation', { store_id: sid, name: '' }).then(function (r) {
-    ST.hqImg = qrSvgDataUrl(r.url, 6);
-    ST.hqUrl = r.url;
-    ST.hqStatus = 'ready';
-  }).catch(function (e) {
-    ST.hqStatus = 'error';
-    ST.hqErr = (e && e.message) || t('login.err');
-  });
-}
-
-function copyHqUrl() {
-  if (ST.hqUrl) copyText(ST.hqUrl);
-}
-
-function closeHandheldLogin() {
-  clearInterval(ST.hqTimer);
-  ST.hqShow = false; ST.hqKey = ''; ST.hqStatus = ''; ST.hqDevice = ''; ST.hqImg = ''; ST.hqUrl = ''; ST.hqErr = '';
 }
 
 // ---- 手持机 App 扫码桥接 ----
@@ -2430,6 +2547,7 @@ function editProduct(p) {
   var d = Object.assign({}, p);
   ensureTypeCode(d);
   d.tag_ids = (p.tags || []).map(function (x) { return x.id; });
+  d._origEpc = d.rfid_epc || '';
   openSheet('product', t('sheet.product'), d);
 }
 
@@ -2497,20 +2615,60 @@ function batchDelProducts() {
   }).catch(function (e) { toast(e.message, 'error'); });
 }
 
-function printLabel(p) {
-  api('POST', '/api/products/' + p.id + '/print-label', { template: 'fold', copies: 1 }).then(function (r) {
-    ST.printItem = Object.assign({}, p, { rfid_epc: r.rfid_epc });
-    toast(t('toast.printOk'));
-    refreshAll();
-  }).catch(function (e) { toast(e.message, 'error'); });
+// 列表行「打印」：统一走模板化打印（先确认内容）
+function printLabel(p) { confirmPrintLabel(p); }
+
+// EPC 是否被手改过（相对上次保存值），改动后需保存并重新打印标签
+function epcDirty() {
+  var d = ST.sheetData;
+  return !!(d && d.id && (d.rfid_epc || '') !== (d._origEpc || ''));
 }
 
-// 为已有商品按「前缀+分类码+序号」生成 EPC（编辑态使用）
+// 打印前确认：如实告知将打印的内容（品名/款号/EPC），确认后才出纸。
+// 实际打印走模板化管线 /api/print/labels：服务端按品类绑定模板生成 ZPL
+//（无绑定回退字段布局），打印桥/本地直打/云端自动路由，并登记打印次数与制卡状态。
+function confirmPrintLabel(p) {
+  var msg = '🖨 ' + t('act.labelPrint') + ' RFID ?\n'
+    + t('lbl.name') + '：' + (p.name || '') + '\n'
+    + t('lbl.huohao') + '：' + (p.code || '') + '\n'
+    + 'EPC：' + (p.rfid_epc || '');
+  if (!confirm(msg)) return;
+  ST.labelItems = [_labelItemOf(p)];
+  ST.labelResult = null;
+  if (!ST.labelTemplates.length) loadTemplates();
+  Promise.resolve(loadBridgeList()).then(updateLabelAgent).catch(function () {}).finally(function () {
+    submitLabelPrint();
+  });
+}
+
+// 详情面板「打印标签」（新增/编辑共用）：新增态先保存（服务端自动生成EPC），再确认打印
+function printSheetLabel() {
+  var d = ST.sheetData;
+  if (!d) return;
+  if (!d.code || !String(d.code).trim()) { toast(t('toast.fillCode'), 'error'); return; }
+  if (!d.product_type_code) { toast(t('toast.needType'), 'error'); return; }
+  if (!d.id) {
+    saveProductForm(d).then(function () {
+      if (d.id) confirmPrintLabel({ id: d.id, code: d.code, name: d.name, rfid_epc: d.rfid_epc });
+    }).catch(function () {});
+    return;
+  }
+  // 编辑态：EPC 被手改但未保存时不允许打印（避免打出的标签与档案不一致）
+  if (epcDirty()) { toast(t('toast.epcDirtySave'), 'error'); return; }
+  confirmPrintLabel({ id: d.id, code: d.code, name: d.name, rfid_epc: d.rfid_epc });
+}
+
+// 「生成EPC」：新建态先自动保存（货号必填，表单不关闭），服务端保存时即分配 EPC 并回填；编辑态按规则补/复用
 function generateEpc() {
   var d = ST.sheetData;
-  if (!d || !d.id) { toast(t('toast.saveFirst'), 'error'); return; }
+  if (!d || !d.code || !String(d.code).trim()) { toast(t('toast.fillCode'), 'error'); return; }
+  if (!d.id) {
+    saveProductForm(d).catch(function () {});
+    return;
+  }
   api('POST', '/api/products/' + d.id + '/generate-epc').then(function (r) {
     d.rfid_epc = r.epc;
+    d._origEpc = r.epc || '';
     toast((r.reused ? t('toast.epcReused') : t('toast.epcGenOk')) + ' ' + r.epc);
   }).catch(function (e) { toast(e.message, 'error'); });
 }
@@ -2563,13 +2721,18 @@ function loadProductTypes() {
   api('GET', '/api/product-types').then(function (r) { ST.productTypes = r || []; }).catch(function () {});
 }
 function resetTypeEdit() {
-  ST.typeEdit = { code: '', names: { zh: '', en: '', it: '' }, sort_order: (ST.productTypes || []).length + 1, pricing_mode: 'piece' };
+  ST.typeEdit = { code: '', names: { zh: '', en: '', it: '' }, sort_order: (ST.productTypes || []).length + 1, pricing_mode: 'piece', group_name: '主播希川' };
   ST.typeEditMode = 'new';
+  setTimeout(function () {
+    var el = document.getElementById('type-edit-form');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 60);
 }
 function editType(o) {
   ST.typeEditMode = 'edit';
   ST.typeEdit = { code: o.code, names: Object.assign({ zh: '', en: '', it: '' }, o.names || {}),
-    sort_order: o.sort_order || 0, pricing_mode: o.pricing_mode === 'weight' ? 'weight' : 'piece' };
+    sort_order: o.sort_order || 0, pricing_mode: o.pricing_mode === 'weight' ? 'weight' : 'piece',
+    group_name: o.group_name || '主播希川' };
   setTimeout(function () {
     var el = document.getElementById('type-edit-form');
     if (el) {
@@ -2587,7 +2750,8 @@ function saveType() {
   var body = { code: te.code.trim(),
     names: { zh: te.names.zh || '', en: te.names.en || '', it: te.names.it || '' },
     sort_order: Number(te.sort_order) || 0,
-    pricing_mode: te.pricing_mode === 'weight' ? 'weight' : 'piece' };
+    pricing_mode: te.pricing_mode === 'weight' ? 'weight' : 'piece',
+    group_name: (te.group_name || '主播希川').trim() };
   var method = ST.typeEditMode === 'edit' ? 'PUT' : 'POST';
   var url = ST.typeEditMode === 'edit' ? '/api/product-types/' + te.code : '/api/product-types';
   api(method, url, body).then(function () {
@@ -2605,6 +2769,11 @@ function delType(code) {
     loadProductTypes();
   }).catch(function (e) { toast(e.message, 'error'); });
 }
+function typeGroupOptions() {
+  var seen = { '主播希川': true, '古董款': true, '专柜款': true }, out = ['主播希川', '古董款', '专柜款'];
+  (ST.productTypes || []).forEach(function (o) { var g = o.group_name || ''; if (g && !seen[g]) { seen[g] = true; out.push(g); } });
+  return out;
+}
 function bindTypeTemplate(code, tplId) {
   api('PUT', '/api/product-types/' + code + '/template', { label_template_id: tplId || null }).then(function () {
     toast(t('tpl.bindOk'));
@@ -2619,9 +2788,9 @@ function loadTags() {
     ST.tagGroupList = (r && r.groups) || [];
   }).catch(function () {});
 }
-// 销售额统计（看板卡）：维度品类 top10 / 标签可切换；时间范围跟随页面级 dashRange（顶部下拉）
+// 销售额统计（看板卡）：维度品类 top10 / 标签可切换；时间范围跟随页面级 dashRange（顶部页签）
 function loadSaleStats() {
-  var rg = dateRangeCompute(ST.dashRange.mode);
+  var rg = dateRangeCompute(ST.dashRange.mode, ST.dashRange.start, ST.dashRange.end);
   var q = '?dim=' + ST.saleStatsDim + '&start=' + rg.start + '&end=' + rg.end;
   if (ST.saleStatsDim === 'tag' && ST.tagSel && ST.tagSel.length) q += '&tag_ids=' + ST.tagSel.join(',');
   api('GET', '/api/dashboard/tag-stats' + q).then(function (r) { ST.tagStats = r; }).catch(function () {});
@@ -2630,7 +2799,7 @@ function setSaleStatsDim(d) { ST.saleStatsDim = d; loadSaleStats(); }
 
 // ===== 看板 TOP5 排行榜（7 榜）=====
 function loadRankings() {
-  var rg = dateRangeCompute(ST.dashRange.mode);   // 时间跟随页面级 dashRange
+  var rg = dateRangeCompute(ST.dashRange.mode, ST.dashRange.start, ST.dashRange.end);   // 时间跟随页面级 dashRange
   api('GET', '/api/dashboard/rankings?start=' + rg.start + '&end=' + rg.end)
     .then(function (r) { ST.rankData = r; }).catch(function () {});
 }
@@ -3835,6 +4004,8 @@ var FROZEN_SHEETS = { sale: 1, deposit: 1, product: 1, inbound: 1, loan: 1 };
 function saveProductForm(d, opts) {
   opts = opts || {};
   if (!d.code || !d.name) { toast(t('toast.fillCode'), 'error'); return Promise.reject(new Error('fill')); }
+  // 品类必选：EPC 内嵌品类码，生成前必须人工确认品类（不允许静默默认）
+  if (!d.product_type_code) { toast(t('toast.needType'), 'error'); return Promise.reject(new Error('fill')); }
   var tc = ensureTypeCode(d);
   var typeZh = typeNameByCode(tc) || d.product_type || '其他';
   var cc2 = ensureCatCode(d);
@@ -3853,9 +4024,16 @@ function saveProductForm(d, opts) {
   return api(isNew ? 'POST' : 'PUT', isNew ? '/api/products' : '/api/products/' + d.id, body2).then(function (r) {
     d.id = r.id;
     d.rfid_epc = r.rfid_epc || d.rfid_epc;
+    d._origEpc = d.rfid_epc || '';
     toast(t('toast.saveOk') + (isNew && r.rfid_epc ? ' EPC: ' + r.rfid_epc : ''));
     refreshAll();
     if (opts.closeAfter) closeSheet();
+    // 录一件打一张：新建保存成功后提示立即打印 RFID 标签
+    if (opts.askPrint && isNew && r.rfid_epc) {
+      setTimeout(function () {
+        confirmPrintLabel({ id: r.id, code: body2.code, name: body2.name, rfid_epc: r.rfid_epc });
+      }, 80);
+    }
     return r;
   }).catch(function (e) { if (e && e.message !== 'fill') toast(e.message, 'error'); throw e; });
 }
@@ -3899,11 +4077,14 @@ function submitSheet() {
     }).catch(function (e) { toast(e.message, 'error'); });
   } else if (ST.sheetMode === 'deposit') {
     if (!d.customer) { toast(t('toast.fillCustomer'), 'error'); return; }
-    api('POST', '/api/deposits', { customer: d.customer || '', phone: d.phone || '', product_id: d.product_id || null, product: d.product || '', total: Number(d.total) || 0, deposit: Number(d.deposit) || 0, balance: Number(d.balance) || 0, promised_date: d.promised_date || '', delivery_time: d.delivery_time || '', deliver_requirements: d.deliver_requirements || '', reminder_days: Number(d.reminder_days) || 7 }).then(function () {
+    // 带 id 走编辑（仅「已定」单可改，锁定商品不可更换），无 id 走新开
+    var depMethod = d.id ? 'PUT' : 'POST';
+    var depUrl = d.id ? '/api/deposits/' + d.id : '/api/deposits';
+    api(depMethod, depUrl, { customer: d.customer || '', phone: d.phone || '', product_id: d.product_id || null, product: d.product || '', total: Number(d.total) || 0, deposit: Number(d.deposit) || 0, balance: Number(d.balance) || 0, promised_date: d.promised_date || '', delivery_time: d.delivery_time || '', deliver_requirements: d.deliver_requirements || '', reminder_days: Number(d.reminder_days) || 7 }).then(function () {
       toast(t('toast.saveOk')); closeSheet(); refreshAll();
     }).catch(function (e) { toast(e.message, 'error'); });
   } else if (ST.sheetMode === 'product') {
-    saveProductForm(d, { closeAfter: true });
+    saveProductForm(d, { closeAfter: true, askPrint: !d.id });
   } else if (ST.sheetMode === 'inbound') {
     if (!d.name) { toast(t('toast.fillProduct'), 'error'); return; }
     var itc = ensureTypeCode(d);
@@ -4472,6 +4653,16 @@ function openPrintSelected() {
   var list = ST.products.filter(function (p) { return ST.printSel[p.id]; });
   if (!list.length) { toast(t('toast.pickLabel'), 'error'); return; }
   openLabelPrint(list);
+}
+// 品类行一键打印：装入该品类全部未售商品 → 打开标签打印弹窗（清单确认后才出纸）
+function printTypeProducts(o) {
+  api('GET', '/api/products?page=1&size=200').then(function (r) {
+    var items = (r.items || []).filter(function (p) {
+      return p.product_type_code === o.code && p.status !== '已售';
+    });
+    if (!items.length) { toast(t('empty.prod'), 'error'); return; }
+    openLabelPrint(items);
+  }).catch(function (e) { toast(e.message, 'error'); });
 }
 
 function _labelItemOf(p) {
@@ -5044,9 +5235,7 @@ function clearCoTimer() {
 function openDevices(storeId) {
   ST.devStoreScope = storeId || 0;
   ST.devModal = true;
-  if (ST.devStoreScope) ST.actStoreId = ST.devStoreScope;
   loadDevices();
-  loadActivations();
 }
 function closeDevices() {
   ST.devModal = false; ST.devStoreScope = 0;
@@ -5067,23 +5256,6 @@ function devicesOfStore(sid) {
 function deviceTaskLabel(d) {
   if (!d || !d.current_task_type) return '';
   return coopTaskLabel(d.current_task_type, d.current_task_seq || 0);
-}
-function genActivation() {
-  var sid = ST.actStoreId || (ST.stores[0] && ST.stores[0].id) || 1;
-  ST.actStoreId = sid;
-  api('POST', '/api/devices/activation', { store_id: sid, name: (ST.actName || '').trim() }).then(function (r) {
-    ST.actQrUrl = qrSvgDataUrl(r.url, 6);
-    ST.actUrl = r.url;
-    ST.actName = '';
-    loadActivations();
-    toast(t('dev.actCreated'));
-  }).catch(function (e) { toast(e.message, 'error'); });
-}
-function loadActivations() {
-  api('GET', '/api/devices/activations').then(function (r) { ST.activations = r || []; }).catch(function () {});
-}
-function copyActUrl() {
-  if (ST.actUrl) copyText(ST.actUrl);
 }
 function unbindDevice(id) {
   if (!confirm(t('dev.cfUnbind'))) return;
@@ -5124,11 +5296,6 @@ function bizPrinterOf(b, code) {
 function loadBridgeList() {
   return api('GET', '/api/print-agent/status').then(function (r) {
     ST.bridges = r.bridges || [];
-    // 下载下拉框默认选中第一个已生成密钥的门店；已选门店失效时回退
-    var keyed = ST.bridges.filter(function (b) { return b.has_key; });
-    if (!keyed.some(function (b) { return b.store_id === ST.agentDlStore; })) {
-      ST.agentDlStore = keyed.length ? keyed[0].store_id : 0;
-    }
   }).catch(function () {});
 }
 
@@ -5253,6 +5420,7 @@ function selectStore(id) {
   // 分店视图只能选本店（列表也只有本店，此处为兜底，防止脏状态切到其他门店）
   if (!isHqStore() && workStore() && id !== workStore().id) return;
   ST.locStore = id || 0;
+  openStorePrinters();   // 选中门店后同步探测本机打印助手（RFID 打印机卡片数据源）
 }
 function bridgeOfStore(sid) { return ST.bridges.find(function (b) { return b.store_id === sid; }) || null; }
 function storeSecStore(sid) { return ST.secSensors.filter(function (x) { return (x.store_id || 1) === sid; }); }
@@ -5263,18 +5431,6 @@ function loadSecSensors() {
 function shopOfStore(s) { return ST.shops.find(function (p) { return p.id === (s && s.shop_id); }) || null; }
 // 门店内入库：固定门店打开入库面板
 function inboundForStore(s) { openInbound(s); }
-function genPrintAgentKey(sid) {
-  api('POST', '/api/stores/' + sid + '/print-agent-key', {}).then(function (r) {
-    // 生成新的打印代理实例 key, 回显一次供填入助手
-    var key = r.agent_key || '';
-    if (key) {
-      // 弹出显示 key 供复制
-      prompt(t('sb.keyCopyHint'), key);
-    }
-    loadBridgeList();
-    toast(t('sb.keyGen'));
-  }).catch(function (e) { toast(e.message, 'error'); });
-}
 function revokePrintAgent(aid) {
   if (!confirm(t('sb.revokeConfirm'))) return;
   api('POST', '/api/print-agents/' + aid + '/revoke', {}).then(function () {
@@ -5282,27 +5438,133 @@ function revokePrintAgent(aid) {
     toast(t('sb.revoked'));
   }).catch(function (e) { toast(e.message, 'error'); });
 }
-function genScanDeviceKey(sid) {
-  api('POST', '/api/stores/' + sid + '/scan-device-key', {}).then(function (r) {
-    var key = r.device_token || '';
-    if (key) {
-      prompt(t('sb.scanKeyHint'), key);
-    }
-    loadDevices();
-    toast(t('sb.keyGen'));
-  }).catch(function (e) { toast(e.message, 'error'); });
-}
-function bindBizPrinter(sid, code, printer) {
-  api('POST', '/api/stores/' + sid + '/bind-printer',
-      { biz: code, printer: printer || '' }).then(function (r) {
-    var b = ST.bridges.find(function (x) { return x.store_id === sid; });
+function bindBizPrinter(sid, code, patch) {
+  // patch 兼容旧签名（字符串=printer）；对象则按字段合并当前指派后整体保存
+  if (typeof patch === 'string') patch = { printer: patch };
+  var b = ST.bridges.find(function (x) { return x.store_id === sid; });
+  var cur = bizRowOf(b, code);
+  var body = {
+    biz: code,
+    printer: patch.printer != null ? patch.printer : cur.printer,
+    iface: patch.iface != null ? patch.iface : cur.iface,
+    printer_ip: patch.printer_ip != null ? patch.printer_ip : cur.printer_ip,
+    media: patch.media != null ? patch.media : cur.media
+  };
+  return api('POST', '/api/stores/' + sid + '/bind-printer', body).then(function (r) {
     if (b) {
       var row = (b.biz || []).find(function (x) { return x.code === code; });
-      if (row) row.printer = r.printer || '';
+      if (row) {
+        row.printer = r.printer || '';
+        row.iface = r.iface || 'USB';
+        row.printer_ip = r.printer_ip || '';
+        row.media = r.media || {};
+        row.rev = (row.rev || 0) + 1;
+      }
       if (code === 'label_product') b.printer_name = r.printer || '';
     }
     toast(t('toast.saveOk'));
+    loadBridgeList();
+    // NET 指派目标登记到本机助手（下轮巡检覆盖该 IP；旧版助手无此接口，静默）
+    if (body.iface === 'NET' && body.printer_ip) {
+      fetch(AGENT_LOCAL + '/api/printer-status/register', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brand: 'zmin', interface: 'NET', ip: body.printer_ip, name: body.printer })
+      }).then(function () { loadAgentStatus(); }).catch(function () {});
+    }
   }).catch(function (e) { toast(e.message, 'error'); });
+}
+// ---- 打印设置：链路读取 / 标签方案草稿 / 连接巡检状态 ----
+function bizRowOf(b, code) {
+  var row = ((b && b.biz) || []).find(function (x) { return x.code === code; }) || {};
+  return { printer: row.printer || '', iface: row.iface || 'USB', printer_ip: row.printer_ip || '',
+           media: row.media || {}, rev: row.rev || 0,
+           updated_at: row.updated_at || '', updated_by: row.updated_by || '' };
+}
+function bizIfaceOf(b, code) { return bizRowOf(b, code).iface; }
+function bizIpOf(b, code) { return bizRowOf(b, code).printer_ip; }
+// Group A：标签方案（纸 + 撕纸位置），草稿编辑、点「应用」才保存
+function labelSchemeOf(sid) {
+  var b = ST.bridges.find(function (x) { return x.store_id === sid; });
+  var cur = bizRowOf(b, 'label_product');
+  var m = cur.media || {};
+  var d = (ST.labelSchemeDraft && ST.labelSchemeDraft[sid]) || {};
+  return {
+    paper_id: d.paper_id != null ? d.paper_id : (m.paper_id || ''),
+    paper_name: d.paper_name != null ? d.paper_name : (m.paper_name || ''),
+    tear_mm: d.tear_mm != null ? d.tear_mm : (m.tear_mm != null ? m.tear_mm : ''),
+    updated_at: cur.updated_at, updated_by: cur.updated_by
+  };
+}
+function setLabelScheme(sid, key, val) {
+  if (!ST.labelSchemeDraft) ST.labelSchemeDraft = {};
+  var d = ST.labelSchemeDraft[sid] = ST.labelSchemeDraft[sid] || {};
+  d[key] = key === 'tear_mm' ? (val === '' ? '' : Number(val)) : val;
+  if (key === 'paper_id') {
+    var p = (ST.agentPapers || []).find(function (x) { return x.id === val; });
+    d.paper_name = p ? p.name : '';
+  }
+}
+function saveLabelScheme(sid) {
+  var b = ST.bridges.find(function (x) { return x.store_id === sid; });
+  var cur = bizRowOf(b, 'label_product');
+  var m = cur.media || {};
+  var d = (ST.labelSchemeDraft && ST.labelSchemeDraft[sid]) || {};
+  var media = {
+    paper_id: d.paper_id != null ? d.paper_id : (m.paper_id || ''),
+    paper_name: d.paper_name != null ? d.paper_name : (m.paper_name || ''),
+    tear_mm: d.tear_mm != null ? d.tear_mm : (m.tear_mm != null ? m.tear_mm : '')
+  };
+  if (media.tear_mm === '') delete media.tear_mm;
+  bindBizPrinter(sid, 'label_product', { media: media }).then(function () {
+    if (ST.labelSchemeDraft) ST.labelSchemeDraft[sid] = null;
+    // 撕纸位置即下发助手（CONFIG tear，NV 持久）；旧版助手无此接口静默跳过
+    var cur = bizRowOf(ST.bridges.find(function (x) { return x.store_id === sid; }), 'label_product');
+    if (media.tear_mm) {
+      fetch(AGENT_LOCAL + '/api/print-config/apply', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brand: 'zmin', interface: cur.iface, ip: cur.printer_ip,
+          name: cur.printer, tear_mm: media.tear_mm })
+      }).then(function (r2) { return r2.json(); }).then(function (j2) {
+        if (j2 && j2.code === 0) toast(t('prcfg.tearOk') || '撕纸位置已下发');
+      }).catch(function () {});
+    }
+  });
+}
+// Group B：连接巡检状态（读本机助手，配置与状态分离——状态只展示不落云端配置）
+// key 与助手 ProfileKey 同构：brand|NET?ip:枚举名
+function prnStatusKey(iface, name, ip) {
+  var f = (iface || 'USB').toUpperCase();
+  return 'zmin|' + (f === 'NET' ? (ip || '') : (name || ''));
+}
+function loadAgentStatus() {
+  return fetch(AGENT_LOCAL + '/api/printer-status').then(function (r) { return r.json(); }).then(function (j) {
+    ST.agentPrnStatus = (j && j.code === 0 && j.data) ? j.data : {};
+  }).catch(function () { ST.agentPrnStatus = {}; });
+}
+function probeAgentNow() {
+  return fetch(AGENT_LOCAL + '/api/printer-status', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'probe' })
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    if (j && j.code === 0) { ST.agentPrnStatus = j.data || {}; toast(t('prcfg.probeDone')); }
+    else toast((j && j.msg) || t('prcfg.probeFail'), 'error');
+  }).catch(function () { toast(t('toast.agentNoAgent'), 'error'); });
+}
+function prnStatusClass(sid, code) {
+  var b = ST.bridges.find(function (x) { return x.store_id === sid; });
+  var row = bizRowOf(b, code);
+  if (!row.printer) return 'st-idle';
+  var st = (ST.agentPrnStatus || {})[prnStatusKey(row.iface, row.printer, row.printer_ip)];
+  if (!st) return 'st-idle';
+  return st.ok ? 'st-on' : 'st-off';
+}
+function prnStatusTip(sid, code) {
+  var b = ST.bridges.find(function (x) { return x.store_id === sid; });
+  var row = bizRowOf(b, code);
+  if (!row.printer) return t('prcfg.stNone');
+  var st = (ST.agentPrnStatus || {})[prnStatusKey(row.iface, row.printer, row.printer_ip)];
+  if (!st) return t('prcfg.stUnknown');
+  return (st.ok ? t('prcfg.stOk') : t('prcfg.stFail')) + (st.ts ? ' · ' + st.ts : '');
 }
 function storeControl(sid, action, biz) {
   api('POST', '/api/stores/' + sid + '/print-control',
@@ -5601,27 +5863,9 @@ var app = Vue.createApp({
     FIELD_LABELS: function () { return FIELD_LABELS; },
     LABEL_FIELDS: function () { return LABEL_FIELDS; },
     labelFieldGroups: function () { return LABEL_FIELD_GROUPS; },
-    // 已生成打印代理 key 的门店（代理下载下拉框数据源）
-    keyedStores: function () {
-      return ST.bridges.filter(function (b) { return b.has_key; })
-        .map(function (b) { return { store_id: b.store_id, store_name: b.store_name }; });
-    },
     // 是否有任一门店代理在线（PC 端据此提示下载，移动端仅提示）
     anyAgentOnline: function () { return ST.bridges.some(function (b) { return b.online; }); },
-    // 代理下载地址：通用版 exe（不烧录环境信息），配置由管理页运行时推送到本机代理
-    agentDlUrl: function () {
-      return API + '/api/print-agent/download';
-    },
-    // 本机代理状态文案（管理页探测回显；未探测到返回 '' 隐藏状态行）
-    localAgentText: function () {
-      var a = ST.localAgent;
-      if (!a || !a.ok) return '';
-      if (a.ws_connected) return t('sb.agentOn', { s: a.store_name || '?' });
-      if (a.token_set) return t('sb.agentIdle');
-      return t('sb.agentWaiting');
-    },
-    // 打印业务分组（标签 / 票据 / 单据报表）
-    bizGroups: bizGroups,
+    // 打印业务分组（标签 / 票据 / 单据报表）及打印设置（链路/标签方案/巡检）——均带参，必须注册 methods
     // 门店管理：当前选中门店 / 其打印桥 / 其库位 / 所属店铺
     curStore: function () { return ST.stores.find(function (s) { return s.id === ST.locStore; }) || null; },
     curLocations: function () { return ST.locations.filter(function (l) { return l.store_id === ST.locStore; }); },
@@ -5646,14 +5890,25 @@ var app = Vue.createApp({
   },
   methods: {
     go: go, mtipUrl: mtipUrl, mtipClose: mtipClose, switchAdminSub: switchAdminSub, goInvStatus: goInvStatus, clearInvStatusFilter: clearInvStatusFilter,
+    // 打印设置（带参函数，模板以 bizGroups() / labelSchemeOf(sid) 形式调用）
+    bizGroups: bizGroups,
+    bizIfaceOf: bizIfaceOf, bizIpOf: bizIpOf,
+    labelSchemeOf: labelSchemeOf, setLabelScheme: setLabelScheme, saveLabelScheme: saveLabelScheme,
+    probeAgentNow: probeAgentNow, prnStatusClass: prnStatusClass, prnStatusTip: prnStatusTip,
     openLockedItems: openLockedItems, closeLockedItems: closeLockedItems,
     invCatDonut: invCatDonut, invCatPct: invCatPct,
     invPtypeDonut: invPtypeDonut, invPtypePct: invPtypePct,
     invTagDonut: invTagDonut, invTagTop5: invTagTop5, invTagTop5Sum: invTagTop5Sum, invTagRows: invTagRows,
     openPsiTab: openPsiTab, loadPsi: loadPsi,
     exportInvCSV: exportInvCSV, printInv: printInv,
-    probeLocalAgent: probeLocalAgent, connectLocalAgent: connectLocalAgent,
-    setDashRange: setDashRange,
+    probeLocalAgent: probeLocalAgent,
+    openStorePrinters: openStorePrinters, agentPrinters: agentPrinters, agentHiddenPrinters: agentHiddenPrinters,
+    labelPapers: function () { return ST.labelPapers; }, lpEdit: function () { return ST.lpEdit; },
+    loadLabelPapers: loadLabelPapers, lpEditOpen: lpEditOpen, lpSave: lpSave, lpDel: lpDel,
+    agentNoteOf: agentNoteOf, notePrinter: notePrinter, hidePrinter: hidePrinter, restorePrinter: restorePrinter,
+    agentBoundPaperName: agentBoundPaperName,
+    agentPaperSelOf: agentPaperSelOf, setAgentPaperSel: setAgentPaperSel, saveAgentPaperBind: saveAgentPaperBind, agentCalibrate: agentCalibrate,
+    setDashRange: setDashRange, applyDashCustomRange: applyDashCustomRange,
     setSaleRange: setSaleRange, applySaleCustomRange: applySaleCustomRange,
     setListRange: setListRange, customRangeQuery: customRangeQuery, loadDeposits: loadDeposits,
     loadSubList: loadSubList,
@@ -5667,6 +5922,9 @@ var app = Vue.createApp({
     saleClerkDonut: saleClerkDonut, saleClerkSum: saleClerkSum,
     switchStore: switchStore,
     isHqStore: isHqStore,   // 总店/分店视图判定（模板以 isHqStore() 调用，故放 methods）
+    nonHqStores: nonHqStores, // 排除总店的门店列表（打印代理页专用）
+    printerManage: printerManage, // 打印机管理权限：门店可管、总部只读
+    catCodeSample: catCodeSample, // EPC 规则卡品类编号只读示意值
     isExecRole: isExecRole, // 高管只读标识（模板可用于只读角标）
     roleText: roleText,
     t: t, fmt: fmt, fmtY: fmtY, dateFmt: dateFmt, agoText: agoText,
@@ -5684,13 +5942,13 @@ var app = Vue.createApp({
     reportPageUrl: reportPageUrl, openReportWindow: openReportWindow,
     fieldLabelText: fieldLabelText, labelFieldText: labelFieldText,
     doLogin: doLogin, doLogout: doLogout, mustPwdSubmit: mustPwdSubmit,
-    openHandheldLogin: openHandheldLogin, closeHandheldLogin: closeHandheldLogin,
-    copyHqUrl: copyHqUrl, yzScan: yzScan,
+    yzScan: yzScan,
     go: go, openSubView: openSubView, goInvStatus: goInvStatus, clearInvStatusFilter: clearInvStatusFilter, setLang: setLang,
     sortTbl: sortTbl, sortCls: sortCls,
     openSheet: openSheet, closeSheet: closeSheet, submitSheet: submitSheet,
     onPickProduct: onPickProduct,
-    addProduct: addProduct, editProduct: editProduct, delProduct: delProduct, printLabel: printLabel,
+    addProduct: addProduct, editProduct: editProduct, delProduct: delProduct, printLabel: printLabel, printTypeProducts: printTypeProducts,
+    printSheetLabel: printSheetLabel, epcDirty: epcDirty,
     copyProduct: copyProduct, generateEpc: generateEpc,
     batchEditProducts: batchEditProducts, batchCopyProducts: batchCopyProducts, batchDelProducts: batchDelProducts,
     catNameByCode: catNameByCode, catCodeByName: catCodeByName,
@@ -5700,7 +5958,7 @@ var app = Vue.createApp({
     normLang: normLang,
     sheetNameGet: sheetNameGet, sheetNameSet: sheetNameSet, langNameFilled: langNameFilled,
     resetCatEdit: resetCatEdit, editCat: editCat, saveCat: saveCat, delCat: delCat,
-    resetTypeEdit: resetTypeEdit, editType: editType, saveType: saveType, delType: delType,
+    resetTypeEdit: resetTypeEdit, editType: editType, saveType: saveType, delType: delType, typeGroupOptions: typeGroupOptions,
     bindTypeTemplate: bindTypeTemplate,
     // 商品标签（多标签 + 分组统计）
     loadTags: loadTags, loadSaleStats: loadSaleStats, setSaleStatsDim: setSaleStatsDim,
@@ -5757,8 +6015,7 @@ var app = Vue.createApp({
     startReceive: startReceive, cancelReceive: cancelReceive,
     setRecvOk: setRecvOk, quickReason: quickReason, submitReceive: submitReceive,
     loadBridgeList: loadBridgeList, createStore: createStore,
-    genPrintAgentKey: genPrintAgentKey, revokePrintAgent: revokePrintAgent,
-    genScanDeviceKey: genScanDeviceKey,
+    revokePrintAgent: revokePrintAgent,
     bindBizPrinter: bindBizPrinter, bizPrinterOf: bizPrinterOf,
     storeControl: storeControl,
     loadShops: loadShops, loadStores: loadStores, storesByShop: storesByShop,
@@ -5779,7 +6036,6 @@ var app = Vue.createApp({
     openDevices: openDevices, closeDevices: closeDevices, loadDevices: loadDevices,
     loadAllDevices: loadAllDevices, devicesOfStore: devicesOfStore, deviceTaskLabel: deviceTaskLabel,
     coopTypeName: coopTypeName, coopTaskLabel: coopTaskLabel,
-    genActivation: genActivation, loadActivations: loadActivations, copyActUrl: copyActUrl,
     unbindDevice: unbindDevice, toggleDeviceStatus: toggleDeviceStatus, devOnlineText: devOnlineText,
     quickSale: quickSale, openDeposit: openDeposit,
     addSaleItem: addSaleItem, removeSaleItem: removeSaleItem,
@@ -5883,10 +6139,10 @@ setInterval(function () { if (ST.token) loadCoTask(); }, 15000);
 setInterval(function () {
   if (!ST.token || (ST.tab !== 'shops' && ST.tab !== 'system')) return;
   probeLocalAgent().then(function (a) {
-    if (!a || !a.ok || !ST.agentToken) return;
-    api('GET', '/api/agent-server').then(function (s) {
-      pushAgentConfig(s.server, ST.agentToken).catch(function () {});
-    }).catch(function () {});
+    // 30 秒自动跟随：本机代理已配置且本页缓存过密钥时，重推配置（服务器地址变更后自动跟随）
+    if (!a || !a.configured || !ST.agentToken || !ST.agentStoreId) return;
+    pushAgentConfig(agentWsUrl(), ST.agentToken, ST.agentStoreId).catch(function () {});
   });
+  loadAgentStatus();   // 打印设置页：巡检状态跟随刷新（读本机助手，失败静默置空）
 }, 30000);
 

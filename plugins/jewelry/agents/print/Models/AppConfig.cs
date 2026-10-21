@@ -73,5 +73,7 @@ namespace PrintAgent.Models
         public int? ReadPower { get; set; }     // 读功率 dBm
         public int? WritePower { get; set; }    // 写功率 dBm
         public string? LabelPaperId { get; set; } // 绑定的标签纸形状库条目 Id(勾选所用标签纸)
+        public bool Hidden { get; set; }          // 门店卡片列表隐藏(移除)标记, 仅本机 UI 偏好
+        public string Note { get; set; } = "";    // 用途备注(标签/票据/备用等), 仅本机
     }
 }

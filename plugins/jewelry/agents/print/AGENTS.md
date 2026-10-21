@@ -32,7 +32,7 @@ dotnet publish -c Release -r win-x64 --self-contained true
 2. **单实例互斥锁**：`Program.cs` 使用 `Global\PrintAgent_SingleInstance_Mutex`，不要改动锁名，否则旧版本用户会双开冲突。
 3. **HTTP 仅监听回环地址**（`127.0.0.1` / `localhost`），禁止绑定 `0.0.0.0`，避免局域网攻击面。
 4. **CORS 全开放是有意为之**（网页端需跨域调用），不要收紧后再"修复"它；如要收紧需与用户确认。
-5. **`config.json` 存于程序运行目录**（`AppDomain.CurrentDomain.BaseDirectory`），不是项目根目录；调试时修改项目根下的 `config.json` 不会影响运行实例，除非同步到输出目录。
+5. **`config.json` 存于 exe 所在目录**（`Environment.ProcessPath` 目录；单文件发布时 `AppDomain.CurrentDomain.BaseDirectory` 指向解包临时目录，不可用于定位配置）。调试时修改项目根下的 `config.json` 不会影响运行实例，除非同步到输出目录。
 6. **RFID 图元命名规则**：`LabelObject.ObjectName` 必须以 `rfiduhf` / `text` / `barcode` 开头，这是 ZMIN SDK 的解析约定，改名将导致打印失败。
 
 ## 代码约定
@@ -66,7 +66,7 @@ dotnet publish -c Release -r win-x64 --self-contained true
 
 业务模板产出一条统一文本指令流（一行一条、`#` 注释、大小写不敏感、坐标单位 mm），由品牌后端翻译为原生指令：
 
-- 语法：`N | L w,h,gap | S speed,darkness[,dpi] | T x,y,size,font,style,"文本" | B x,y,h,scale,textPos,type,"内容" | RF block,mode,len,"HEX"(0=EPC,1=USER) | RD [epc|tid|both] | RTID | FEED n | BACKFEED n | CAL paper|rfid | PWR read,write | IP query|static a,m,g|dhcp|feedback 口,ip[,协议] | RQ n | PRINT [份数]`
+- 语法：`N | L w,h,gap | S speed,darkness[,dpi] | T x,y,size,font,style,"文本" | B x,y,h,scale,textPos,type,"内容" | RF block,mode,len,"HEX"(0=EPC,1=USER) | RD [epc|tid|both] | RTID | FEED n | BACKFEED n | CAL paper|rfid | PWR read,write | IP query|static a,m,g|dhcp|feedback 口,ip[,协议] | RQ n | PRINT [份数] | CONFIG tear,<mm> | TEST bounds,<宽>,<高> | LINE/BOX <线框>`
 - 触发面：`POST /api/rfid/exec`（同步, 支持 dryRun 翻译预览）、`GET /api/rfid/capabilities?brand=zmin`、打印任务 `printerType="rfid_cmd"`（`content.commands`）、云端 `device_cmd`→`device_ack`（远程维护预留通道）。
 - 唯一入口：`RfidCommandExecutor.ExecuteAsync(brand, iface, ip, target, commands, timeoutMs, dryRun)`，三方（HTTP/调度器/云端）复用，禁止绕过。
 - 能力矩阵：后端 `SupportedOps` 声明细粒度支持（含 `IP.static` 等）；不在清单内的指令执行前明确报错，不静默忽略。ZMIN 限制：PCLE 无退纸指令（BACKFEED 不支持）、无静态IP设置指令（IP static/dhcp 不支持，仅 IP query/feedback）、纸校准仅 USB 通道（ZM_MediaDetect）。
@@ -74,17 +74,24 @@ dotnet publish -c Release -r win-x64 --self-contained true
 - 通道：USB=ZMPCLx64 免驱（回读 ZM_GetData_USB，可开箱配网校准）；NET=SDK 透传排版 + TCP 9100 socket 回读（RD{r},2,0,0 / RQ2,n）。
 - tspl/zpl 后端规划中，仅在注册表预留；新增品牌 = 实现 `IRfidBackend` 并注册进 `RfidCommandExecutor.Backends`。
 - ZMIN 通道: USB(免驱 DLL, 若被 Windows 打印驱动占用则写入无效且无回传——设备枚举出现 USBPRINT 驱动即为此状态) / NET(TCP 9100) / BT(经典蓝牙 SPP 虚拟串口, 复用 `BtSppPrintService`, PCLE 反馈口=0 同链路回读, GBK 编码)。
-- X19D 实测铁律（2026-10-17 真机验证, 勿再踩坑）:
-  - **任务缓冲内禁放 RD**：RD 与 RF 同任务会卡死固件（灯闪、不出纸、U 也无响应），只能断电恢复。USB 读标签用 `ZM_ReadRFTagDataUSB`（天线位=走纸后停留的下一张标签；刚打印的标签已送出天线区，无法回读）。
-  - **验证过的打印+写EPC 序列**：`N / q528 / Q208,32 / T.. / B.. / b..QR / RF1,0,1,8,1,"3000"+EPC / W1`。EPC 为时间 BCD：`202610171511` 12位hex直接作字节（勿 ASCII 转 hex）。**不要**加 `I8/RS/RW/S40/H10`（曾致写入失败+错误标记），`W1` 不带第二参数。
-  - 写入成功判据 = 标签无错误标记块；USB 反馈口回读的是天线位标签（非本次写入张）。
+- X19D 实测铁律（2026-10-17/18 真机验证, 勿再踩坑）:
+  - **任务缓冲内禁放 RD**：RD 与 RF 同任务会卡死固件（灯闪、不出纸、U 也无响应），只能断电恢复。天线位/射频场回读均**不可用于校验本次写入**（详见下文「天线区读数」条），校验唯一可靠手段 = 手持机 UHF 扫 / 标签错误标记块判据。
+  - **连打抖动**：连续 USB 任务时单张可能报 `PR verification failed. USB has been reset, please try again.`——直接重试同任务即可恢复，勿重启助手/勿断电（10-18 连打 3 张实踩，第 3 张失败、重发即成）。
+  - **打印+写 EPC 走统一指令**（三通道通用，勿用裸 PCLE 序列）：`N / L 66,25.4,5 / S 4,12 / T.. / B.. / RF1,0,<字节数>,"<BCD打包HEX>" / PRINT 1`。EPC 纯数字按 **BCD 打包**（每字节 2 位数字，20 位 EPC=10 字节，勿 ASCII 转 hex）。**不要**加 `I8/RS/RW/S40/H10`（曾致写入失败+错误标记）。
   - 撕纸位置：固件参数，PCLE/DLL 层无指令。私有指令 `#UM>FD{点}\r\n`（点=mm×8@203dpi，如 17mm=FD136）经 Frida 抓 LabelSoft(WritePrinter 走 spooler)破译并双点验证。统一指令 `CONFIG tear,<mm>` 已实现（三通道, NV 持久保存, 真机双标签对比验收通过）。LabelSoft 是 .NET Reactor 加密, 静态反编译不可行; Frida 17 hook 方法与坑见项目记忆。
   - 天线位置：`CAL rfid`=自动定位(ZM_AutoRFTagDetc/RM)；`CAL rfid,manual,芯片距离mm,错误标识偏移mm,重试次数`=手动(ZM_SetRFIDPosition, 仅 USB)。
-  - 退纸：`ZM_FeedBack`/`ZM_UserBackFeed` 在 USB 通道报 -3200/-3259（端口错误）不可用。
+  - **天线区读数与身份对应（10-18 两轮实测）**：`ZM_ReadRFTagDataUSB` 读的是**射频场内某张**（含出纸口堆放张），非固定"天线位"；场边仅一张时读数 100% 稳定（10/10 同值零抖动），多张同场才随机应答。打印前后对比：前读 EPC 3000…1524/TID…1428 → 打印写入 3000…1917 → 后读 3000…1525/TID…1828，**写入值永不出现**；打印后立即退纸也仅 -100 dots 即 -3200（行程不足，二次实锤）。**「打印前读TID→打印→按TID回读」实测同样无法闭环。芯片写入校验唯一可靠手段=手持机 UHF 扫 / 标签错误标记块判据**。
+  - **TID 读取（10-18 新增, 官方参数）**：`ZM_ReadRFTagDataUSB(255,0,0,2,buf,1000)` 读出厂 TID（`E2806A96…` 格式，写EPC不变）；与 EPC 读取 `(255,1,15,0,buf,8000)` 同会话稳定配对。来源：Java SDK（ZMPrinter-4.69.jar）LSF Demo `readUHFTag(0,2)`=读TID不写EPC / `readUHFTag(0,3)`=读TID后写EPC，字节码实锤映射 `ZM_ReadRFTagDataUSB(255,p1,0,p2,buf,1000)`。NET 通道官方读取协议：先发 `NB{端口},{本机IP},1\r\n`（动态反连 13000-31000 随机口），再发 `RD{天线},2,{功率},2\r\n`（末参 3=读了要写EPC/2=只读），打印机反连送 512B 标签数据。
+  - **退纸真实行为（10-18 实测）**：`ZM_SetPrinterState(1)`+`ZM_EnableBackFeed` 是 `ZM_FeedBack` 的前置（缺前者恒报 -3200）；`ZM_SetPrinterState(1)` 在打印机冷启动后 SDK 未初始化时报 -3243（跑过一次 SDK 任务后才成功）。退纸行程=**纸道松弛余量**非固定值：打印后纸绷紧，仅能退 1-2 步（-3200=行程耗尽，需断电复位），SDK 通道打完的标签（停撕纸位外）**无法退回天线区回读**；`ZM_FeedMedia` 在该状态下恒报 -3237。
   - **EAN13(E30) 条码宽度**：固定 95 模块，总宽=95×窄bar点数+左右静区各11模块。窄bar 3 点=285 点(35.6mm)，x33mm 起必超 66mm 纸宽右边界（最后一位被裁，真机踩过）；靠右布局用窄bar 2 点(190 点)+x≤35mm。Code128 等可变码制按 模块数×窄bar 估算。
   - **打印头横向偏移（TEST bounds 实测）**：逻辑 x=0 打在纸面约 10mm 处——纸左 10mm 打不到，逻辑 x>56mm 出纸右缘（全坐标系相对纸面右移~10mm，条码裁字的真正根因）。业务端布局内容限 x≤56mm(448dots)。统一指令 `TEST bounds,宽,高` 打印边界测试页可复测。
   - 三通道真机验收（2026-10-17）：USB 全功能（打印/写入/读/校准/配置）；BT=打印+写入（读不做，固件限制），出向口 COM6；NET=打印+写入（SDK 透传，IP 经 USB `RQ 3` 查询）。同一统一指令序列三通道通用，业务端只换 interface。
   - USB 挂死特征：OpenPort 成功但所有指令无实物反应 → 断电重启打印机即可恢复。
+  - 三通道成功要素（2026-10-18 实钉, TC-52, 勿动参数）:
+    - **BT 时序**：开壳后等 RFCOMM 链路 **5 秒**（1 秒=拨号未完成指令全丢）；发送后保活 **≥6 秒**再关串口（发完即关=数据截断）；响应不按单次 read<buf 提前断开。BT 打印稳定后仍不做读（RQ/RD 无回传，固件限制）。
+    - **NET 回读**：打印走 TCP 9100；RD/RQ 回读数据由打印机**反连主机 9200** 反馈口送回（RfidTransport 已实现监听，9200 被占时退化同链路读）；有数据则重置超时窗口。
+    - **统一指令坐标一律 mm**：超 `L` 声明的标签高度=静默打到纸外（勿按点阵，EEEEEE 消失真因）；**不认 PCLE 裸 `q/Q`**，尺寸/间隙用 `L 66,25.4,5`。三通道通用纯打印序列：`N / L 66,25.4,5 / S 4,12 / T x,y,0,4,1,1,N,"文本" / PRINT 1`（双行安全布局 y=6/14mm）。
+  - 助手进程 USB 卡死（区别于打印机挂死）：连续混打十数次后 USB 派发可挂起（任务不落账、无回执，BT/NET 不受影响），**重启 PrintAgent.exe 即恢复**，打印机无需断电。疑 UsbPcleService 无超时保护，待查（TC-53）。
 
 ## RFID 标签纸形状库（Models/LabelPaper.cs + Services/LabelPaperStore.cs）
 

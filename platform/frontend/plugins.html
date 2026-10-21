@@ -149,6 +149,9 @@
                       <div class="cell-row">
                         <button v-if="v.service.state !== 'running'" class="btn primary sm" :disabled="svcBusy === v.id || !canStart(v)" :title="canStart(v) ? '' : '数据就绪（初始化/试运行/已切换）后可启动'" @click="serviceAction(v, 'start')">{{ svcBusy === v.id ? '启动中…' : '▶ 启动' }}</button>
                         <button v-else class="btn danger-ghost sm" :disabled="svcBusy === v.id" @click="confirmStopService(v)">■ 停止</button>
+                        <button v-if="detail.id === 'jewelry' && v.has_entry && v.service.state === 'running'"
+                                class="btn ghost sm" @click="openOps(v)"
+                                title="进入珠宝云运维端（自动切换为生产运维穿透模式，以本行运行中的服务为入口）">🛠 运维</button>
                         <button class="btn ghost sm" @click="openServiceLog(v)">服务日志</button>
                       </div>
                       <span v-if="v.service.error" class="sub err">{{ v.service.error }}</span>

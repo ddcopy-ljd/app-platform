@@ -13,11 +13,15 @@
 from __future__ import annotations
 
 import json
+import re
 
 
 def chip_epc_hex(epc: str, prefix: str = "E280") -> str:
     """可读 EPC → 写入芯片的十六进制串。
 
+    - 新格式（20 位纯数字，GS1 式）：按 BCD 打包 10 字节 + 版本号 0x01 +
+      前 10 字节逐字节异或校验，共 12 字节 96bit；
+      例：69012345670104000001 → 690123456701040000016D。
     - 纯十六进制码（旧 E280 开头）原样写入；
     - 含企业拼音字母前缀（如 YZZ）时，前缀按 ASCII 编码为十六进制
       （YZZ → 595A5A），品类码与十六进制序号保持原样；
@@ -29,6 +33,11 @@ def chip_epc_hex(epc: str, prefix: str = "E280") -> str:
     epc = (epc or "").strip().upper()
     if not epc:
         return ""
+    if len(epc) == 20 and epc.isdigit():  # 新格式：BCD 打包 + 版本/校验
+        x = 0
+        for v in bytes.fromhex(epc):
+            x ^= v
+        return epc + "01" + f"{x:02X}"
     try:
         int(epc, 16)
         return epc
@@ -47,6 +56,65 @@ def chip_epc_hex(epc: str, prefix: str = "E280") -> str:
                 return head + seg_hex + body[2:]
             return head + body
         return epc.encode("ascii", "ignore").hex().upper()
+
+
+def decode_chip_epc(raw: str, prefix: str = "E28", seq_bits: int = 6,
+                    pat: "re.Pattern | None" = None,
+                    num_pat: "re.Pattern | None" = None) -> str:
+    """芯片回读值 → 库内可读 EPC（chip_epc_hex 的逆变换）；认不出就原样返回。
+
+    需要归一化的原因：芯片里存的是编码后的 hex（前缀 ASCII + 门店段 ASCII/hex +
+    品类码 + 序号），库内 rfid_epc 存的是明文；且 Gen2 的 EPC 长度以 16 位字为单位，
+    奇数长度会被写侧补 00 到偶数字节，回读值尾部会多出 1 字节。
+
+    自检用传入的合规正则（db._epc_rule 的 pat / num_pat），匹配不上就宁可原样返回、不猜。
+
+    新格式（20 位纯数字 BCD + 版本/校验，共 12 字节 24 hex）：倒数第 2 字节为版本号
+    0x01，末字节为前 10 字节逐字节异或校验；校验通过且（有 num_pat 时）符合数字规则，
+    即还原 20 位数字 EPC。
+    """
+    s = (raw or "").strip().upper()
+    if not s:
+        return s
+    # ---- 新格式判别：须在旧逻辑前，避免 24 hex 被旧纯 hex 分支截尾 ----
+    if len(s) == 24 and s[20:22] == "01":
+        try:
+            x = 0
+            for v in bytes.fromhex(s[:20]):
+                x ^= v
+        except ValueError:
+            x = -1
+        if x >= 0 and f"{x:02X}" == s[22:24] and (num_pat is None or num_pat.fullmatch(s[:20])):
+            return s[:20]
+    bits = max(4, min(6, int(seq_bits or 6)))
+    p = (prefix or "").strip().upper() or "E28"
+    rx = pat or re.compile(re.escape(p) + r"([0-9A-Z]{2})(\d{2})([0-9A-F]{%d})" % bits)
+    if rx.fullmatch(s):
+        return s
+    head_hex = p.encode("ascii", "ignore").hex().upper()
+    if s.startswith(head_hex) and len(s) > len(head_hex) + 4:
+        # 前缀 + 门店段(2 字节) + 品类码/序号（编码时原样保留）
+        base = len(head_hex)
+        for trim in (0, 2, 4):
+            cand = s[:len(s) - trim] if trim else s
+            if len(cand) <= base + 4:
+                break
+            try:
+                seg_b = bytes.fromhex(cand[base:base + 4])
+            except ValueError:
+                break
+            seg = seg_b.decode("ascii") if all(32 <= b < 127 for b in seg_b) else cand[base:base + 4]
+            if rx.fullmatch(p + seg + cand[base + 4:]):
+                return p + seg + cand[base + 4:]
+    # 旧格式：明文本身即 hex 串、芯片直接存该 hex 值；奇数 nibble 会被补 1 个 0 位
+    if re.fullmatch(r"[0-9A-F]+", s):
+        for trim in (1, 2, 3, 4):
+            if len(s) <= trim + 8:
+                break
+            cand = s[:len(s) - trim]
+            if rx.fullmatch(cand):
+                return cand
+    return s
 
 # 300 DPI 下的标签尺寸
 LABEL_WIDTH_DOTS = 827   # 70mm
@@ -96,8 +164,13 @@ def _spec_str(product: dict) -> str:
 
 
 def _strip_epc_prefix(epc: str, prefix: str = "E280") -> str:
-    """去掉 EPC 企业前缀，仅保留品类+序号段（店内全局唯一），用于缩短印刷条码。"""
+    """去掉 EPC 企业前缀，仅保留品类+序号段（店内全局唯一），用于缩短印刷条码。
+
+    新格式（20 位纯数字）：前 8 位为数字前缀，截去后剩 门店4+品类2+序号6=12 位纯数字。
+    """
     epc = (epc or "").strip().upper()
+    if len(epc) == 20 and epc.isdigit():
+        return epc[8:]
     prefix = (prefix or "").strip().upper()
     if prefix and epc.startswith(prefix):
         return epc[len(prefix):]

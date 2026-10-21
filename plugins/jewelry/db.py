@@ -59,10 +59,17 @@ CREATE TABLE IF NOT EXISTS shops (
 );
 
 -- 门店按打印业务指派打印机（store_id × biz_code 唯一；多个业务可指向同一台打印机）
+-- 链路维度：iface=USB/NET/BT（NET 时 printer_ip 必填）；media_json=标签方案（纸ID/名称/撕纸位置mm）
 CREATE TABLE IF NOT EXISTS store_printers (
   store_id INTEGER NOT NULL,
   biz_code TEXT NOT NULL,
   printer_name TEXT DEFAULT '',
+  iface TEXT DEFAULT '',
+  printer_ip TEXT DEFAULT '',
+  media_json TEXT DEFAULT '',
+  rev INTEGER DEFAULT 0,
+  updated_at TEXT DEFAULT '',
+  updated_by TEXT DEFAULT '',
   PRIMARY KEY (store_id, biz_code)
 );
 
@@ -75,6 +82,26 @@ CREATE TABLE IF NOT EXISTS print_agents (
   status TEXT DEFAULT 'active',
   last_seen INTEGER DEFAULT 0,
   created TEXT DEFAULT (datetime('now','localtime'))
+);
+
+-- 标签纸形状库(租户级主库): 网页端新增/编辑/删除, 保存时经 device_cmd 下发到各门店助手本机 labelpapers.json
+CREATE TABLE IF NOT EXISTS label_papers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  width REAL NOT NULL,
+  height REAL NOT NULL,
+  gap REAL DEFAULT 2,
+  margin_left REAL DEFAULT 2,
+  margin_right REAL DEFAULT 2,
+  margin_top REAL DEFAULT 2,
+  margin_bottom REAL DEFAULT 2,
+  antenna_x REAL DEFAULT 0,
+  antenna_y REAL DEFAULT 0,
+  antenna_w REAL DEFAULT 0,
+  antenna_h REAL DEFAULT 0,
+  notes TEXT DEFAULT '',
+  updated_at TEXT DEFAULT '',
+  updated_by TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS languages (
@@ -918,6 +945,13 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("devices", "apk_md5", "TEXT DEFAULT ''"),
         # 商品标签分组（主播希川/古董款/专柜款…，标签管理页可配）
         ("product_tags", "group_name", "TEXT DEFAULT ''"),
+        # 打印路由增强：链路(USB/NET/BT)/NET地址/标签方案(纸+撕纸)/同步版本
+        ("store_printers", "iface", "TEXT DEFAULT ''"),
+        ("store_printers", "printer_ip", "TEXT DEFAULT ''"),
+        ("store_printers", "media_json", "TEXT DEFAULT ''"),
+        ("store_printers", "rev", "INTEGER DEFAULT 0"),
+        ("store_printers", "updated_at", "TEXT DEFAULT ''"),
+        ("store_printers", "updated_by", "TEXT DEFAULT ''"),
     ]
     for table, col, decl in alters:
         if not _has_column(conn, table, col):
@@ -926,6 +960,8 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     for _col in ("store_key", "scan_key"):
         if _has_column(conn, "stores", _col):
             conn.execute(f"ALTER TABLE stores DROP COLUMN {_col}")
+    # 1.2.50 「打印代理」统一改名「打印助手」: 存量实例名幂等迁移(纯显示用途)
+    conn.execute("UPDATE print_agents SET name = '打印助手' || SUBSTR(name, 5) WHERE name LIKE '打印代理-%'")
     # EPC 数字前缀升级：早期 10 位默认（6901234567）统一升级为 8 位默认（门店段扩为 4 位自定义 BCD 码）
     conn.execute("UPDATE biz_config SET epc_num_prefix='69012345' WHERE IFNULL(epc_num_prefix,'') IN ('','6901234567')")
     conn.commit()
@@ -1006,32 +1042,15 @@ def _ensure_builtin_label_templates(conn: sqlite3.Connection) -> None:
             {"field": "spec", "x": 8, "y": 224, "w": 280, "h": 18, "font": {"type": "cn", "w": 14, "h": 14}},
         ]
     }
-    tpl_price = {
-        "_builtin": _BUILTIN_VER,
-        "slots": [
-            {"field": "name", "x": 8, "y": 10, "w": 280, "h": 30, "font": {"type": "cn", "w": 26, "h": 26}},
-            {"field": "price", "x": 8, "y": 48, "w": 280, "h": 40, "font": {"type": "ascii", "w": 36, "h": 36}},
-            {"field": "barcode", "x": 8, "y": 102, "w": 270, "h": 80, "font": {"type": "barcode", "h": 60}},
-            {"field": "store", "x": 8, "y": 224, "w": 280, "h": 18, "font": {"type": "cn", "w": 14, "h": 14}},
-        ]
-    }
-    tpl_epc = {
-        "_builtin": _BUILTIN_VER,
-        "slots": [
-            {"field": "code", "x": 8, "y": 8, "w": 280, "h": 26, "font": {"type": "ascii", "w": 22, "h": 22}},
-            {"field": "name", "x": 8, "y": 42, "w": 280, "h": 26, "font": {"type": "cn", "w": 22, "h": 22}},
-            {"field": "epc_barcode", "x": 8, "y": 82, "w": 270, "h": 74, "font": {"type": "barcode", "h": 54}},
-            {"field": "epc_text", "x": 8, "y": 198, "w": 280, "h": 18, "font": {"type": "ascii", "w": 14, "h": 14}},
-            {"field": "category", "x": 8, "y": 226, "w": 280, "h": 18, "font": {"type": "cn", "w": 14, "h": 14}},
-        ]
-    }
     builtin = [
         ("珠宝RFID标准签（66×25.4）", 66, 25.4, 5, 1, tpl_rfid),
-        ("简约价签（条码66×25.4）", 66, 25.4, 5, 0, tpl_price),
-        ("EPC盘点签（66×25.4）", 66, 25.4, 5, 1, tpl_epc),
     ]
-    # 旧版内置模板（70×35 画布，坐标作废）按旧名清理，避免残留误用
-    for legacy in ("珠宝RFID标准签（横版70×35）", "简约价签（条码70×35）", "EPC盘点签（70×35）"):
+    # 旧版内置模板（70×35 画布，坐标作废）及并行内建的价签/盘点签统一按旧名清理，
+    # 全部品类归一到「珠宝RFID标准签（66×25.4）」；解绑后再删，避免悬空引用
+    for legacy in (
+        "珠宝RFID标准签（横版70×35）", "简约价签（条码70×35）", "EPC盘点签（70×35）", "标准标签",
+        "简约价签（条码66×25.4）", "EPC盘点签（66×25.4）",
+    ):
         old = conn.execute("SELECT id FROM label_templates WHERE name=?", (legacy,)).fetchone()
         if old:
             conn.execute("UPDATE product_types SET label_template_id=0 WHERE label_template_id=?", (old[0],))

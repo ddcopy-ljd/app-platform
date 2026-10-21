@@ -70,8 +70,9 @@ namespace PrintAgent.Services
 
             try
             {
-                // 等待 RFCOMM 链路建立(出向串口打开后蓝牙拨号是异步的)
-                Thread.Sleep(1000);
+                // 等待 RFCOMM 链路建立(出向串口打开后蓝牙拨号是异步的, 1 秒不够、指令会丢;
+                // 与实测跑通的 BtPrintTest.BtChannel 一致等 5 秒)
+                Thread.Sleep(5000);
 
                 var t = new COMMTIMEOUTS
                 {
@@ -86,11 +87,16 @@ namespace PrintAgent.Services
 
                 // GBK 编码: PCLE 中文文本指令必须 GBK(ASCII 会丢中文), 纯 ASCII 指令不受影响
                 byte[] payload = Encoding.GetEncoding("GBK").GetBytes(commands);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 if (!WriteFile(h, payload, (uint)payload.Length, out _, IntPtr.Zero))
                     return (false, $"写入 {port} 失败: {new Win32Exception(Marshal.GetLastWin32Error()).Message} (打印机蓝牙可能未开机/超出范围)", null);
 
                 Thread.Sleep(800);
                 var resp = ReadAvailable(h, respWaitMs);
+                // 发送后保活 ≥6 秒再关口(实测工具打印后保持 6 秒/写EPC 12 秒):
+                // RFCOMM 异步发送+打印机执行需要时间, 关早了会把未发完的数据截断
+                int remain = 6000 - (int)sw.ElapsedMilliseconds;
+                if (remain > 0) Thread.Sleep(remain);
                 string? text = resp.Length > 0 ? Encoding.GetEncoding("GBK").GetString(resp).Trim('\0', ' ', '\r', '\n') : null;
                 string tail = text != null ? $", 回传 {resp.Length} 字节" : ", 无回传";
                 return (true, $"蓝牙 SPP 已发送({payload.Length}字节 -> {port}{tail})", text);
@@ -116,7 +122,7 @@ namespace PrintAgent.Services
                 var buf = new byte[stat.cbInQue];
                 if (!ReadFile(h, buf, (uint)buf.Length, out uint read, IntPtr.Zero) || read == 0) break;
                 all.AddRange(buf);
-                if (read < (uint)buf.Length) break;
+                // 不按 read<buf.Length 提前断开: 响应常分多块到达, 与实测工具一致读到队列空为止
             }
             return all.ToArray();
         }

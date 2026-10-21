@@ -47,6 +47,8 @@ namespace PrintAgent.Forms
 
             I18nService.SetLanguage(_config.Language);
 
+            ConnectionProbeService.Start(60); // 打印机连接巡检：60s/轮，链路级探测不打打印任务
+
             InitializeCustomUI();
             BindEvents();
             ApplyLanguage();

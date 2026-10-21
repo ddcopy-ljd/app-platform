@@ -118,7 +118,7 @@ plugins/{plugin_id}/
 ### 5.1 前置约定
 
 - 所有 Agent 请求带请求头：`X-Agent-Key: <platform/app/config.py 中的 AGENT_API_KEY>`
-- 版本号均为三段式 `x.y.z`，逐段比较（版本号语义见根目录 AGENTS.md §7 Android 章或对应插件约定）
+- 版本号均为四段式 `x.y.z.YYMMDD`（x=重构，y=功能，z=修订，第 4 段=发布日期短日期），逐段比较；发布递增时 z 位 +1 并刷新日期段为当天（版本号语义见根目录 AGENTS.md §7 Android 章或对应插件约定）
 - 平台地址：`http://localhost:8000`（见 start_platform.bat）
 
 ### 5.2 版本基线规则
