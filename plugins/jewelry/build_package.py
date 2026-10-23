@@ -2,7 +2,7 @@
 
 产物输出到 dist/jewelry_v{softwareVersion}.zip，版本号取自 plugin.json。
 打包前自动从 git 提交记录提取本次版本的功能变更，生成 changes.lst（同时打入包内）。
-仅收录运行必需文件（白名单），dev_data/、docs/、demo/、__pycache__/ 等不打入。
+仅收录运行必需文件（白名单），dev_data/、docs/（除功能介绍外）、demo/、__pycache__/ 等不打入。
 """
 
 import json
@@ -21,7 +21,7 @@ OUT_DIR = ROOT / "dist"
 # 打包白名单
 # 顶层 .py 模块：自动扫描 ROOT/*.py，避免新增模块时漏加
 TOP_PY_MODULES = []          # 留空即自动发现（glob 全部顶层 .py）
-OTHER_FILES = ["plugin.json", "requirements.txt"]
+OTHER_FILES = ["plugin.json", "requirements.txt", "docs/软件功能介绍.md"]
 # 注意：agents/（扫描助手 Android 工程 + 打印助手源码）是独立构建线，绝不入插件包，禁止加入本白名单
 # downloads/ 亦不收录：助手产物（APK/EXE）由运维端上传直接写入插件包 downloads/（见 ops_api.pub_dir），包内不再预置
 INCLUDE_DIRS = ["scripts", "frontend", "mobile", "ops", "promo", "logo"]

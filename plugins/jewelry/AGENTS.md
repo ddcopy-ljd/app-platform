@@ -8,15 +8,15 @@
 
 - 平台模式：由平台注入 `TENANT_DB_DIR`，网关以 `X-Resolved-Tenant-ID` 头标识租户，每租户独立库 `db_jewelry_{tenant}_v1.0.0.sqlite`；业务路径带网关前缀 `/app/jewelry/{tenant}`
 - 独立模式（STANDALONE）：本地 `python main.py` 直接跑，默认端口 8002，库在 `dev_data/`，租户头缺失时回退 `tenant_trial`
-- 打印：云端按模板生成 ZPL（`rfid_print.py`）→ 门店打印助手执行（RFID 写芯）；助手侧规范见 [agents/print/AGENTS.md](agents/print/AGENTS.md)
+- 打印：云端按模板排版（`rfid_print.py`）→ 生成 ZMIN 统一指令 `rfid_cmd` → 门店打印助手翻译为 PCLE 经 USB 出纸（RFID 写芯）；**ZPL 已全链路移除**，助手侧规范见 [agents/print/AGENTS.md](agents/print/AGENTS.md)
 
 ## 硬性约束（不要违反）
 
 1. **租户隔离**：任何 SQL/文件操作必须经由 `db.connect(tenant)` 取连接，禁止跨租户读写、禁止在代码里硬编码租户号或内网 IP。手持机激活码/下载地址一律用浏览器当前主机相对地址拼接。
 2. **EPC 与品类绑定**：EPC = 数字前缀(8,配置) + 门店码(4) + 品类码(2) + 序号(6)，共 20 位纯数字；印刷条码同构 12 位（`_gen_type_epc` / `_compute_item_barcode`）。品类必选才能生成 EPC（400）；已生成 EPC 的商品**品类锁定**（400，需重新建档）；EPC 修改仅限「在库」状态且全库唯一（409）。改动这些规则前先与用户确认。
 3. **盘点冻结**：库存写入类接口必须过 `_assert_stock_unfrozen`，冻结期禁止改库存状态/EPC 补发，不要绕过。
-4. **标签模板化**：打印一律按 `label_templates` + 品类绑定（`product_types.label_template_id`）出 ZPL；无绑定才回退默认布局。内建模板种子在 `db.py _ensure_builtin_label_templates`（按名字幂等），改模板结构要考虑老库已有数据。
-5. **前端缓存**：`frontend/` 的 css/js/i18n 引用带 `?v=` 版本串；**改了 app.css / app.js / i18n.js / index.html 内联样式必须同步升版本号**，否则用户浏览器吃旧缓存（症状：改了没生效）。
+4. **标签模板化**：打印一律按 `label_templates` + 品类绑定（`product_types.label_template_id`）排版；无绑定才回退默认布局。画布固定 528×203 点（66×25.4mm @203dpi）。内建模板种子在 `db.py _ensure_builtin_label_templates`（按名字幂等），改内置模板坐标必须同步升 `_BUILTIN_VER`，否则老库不更新。
+5. **前端缓存**：缓存由伺服层统一保证——`main.py` 静态资源路由（`/`、`spa_asset`、`mobile_asset`、`/logo/`）统一走 `_no_cache_file()`：`Cache-Control: no-cache` + 自算 ETag（mtime+size）+ `If-None-Match` 304 协商；`/site` 动态页补 no-cache 头。**改任何前端文件（含图片/字体/manifest）保存后普通刷新即生效，`?v=` 版本串手工升级不再是必需步骤**（历史 `?v=` 字符串保留不清理）。注意：Starlette `FileResponse` 自带 ETag 但不处理 If-None-Match，条件请求由 `_no_cache_file` 自己协商，新加资源路由必须复用该函数。
 6. **助手下载接口**：已在平台 `_MACHINE_PATHS` 白名单，免登录且与租户无关；`downloads/` 不进打包清单，**发布升级包后会被重置为空**，需提醒用户经运维端重新上传扫描助手 APK / 打印助手 EXE。
 7. **运维端访问**：`ops_api.py` 只能经平台「生产运维穿透模式」票据进入，普通业务路径访问返回 403——这是平台行为，不要在插件内"修复"。
 8. **打印相关改动先读权威参考程序**：凡是涉及标签打印 / PCLE 指令 / RFID 写芯的新代码或调试脚本（`rfid_print.py`、`agents/print/`、临时验证脚本一律适用），动笔前必须先读 `C:\Users\俊达\Desktop\RFID打印机\NetProxyTest\` 下真机验收过的程序：
@@ -41,7 +41,7 @@
 | 新增/修改 API | [main.py](main.py)（先搜同类路由照抄鉴权/租户写法） |
 | 表结构变更 | [db.py](db.py) 建表 + `migrate_schema` 补列 |
 | EPC/条码规则 | [main.py](main.py) `_gen_type_epc` / `_compute_item_barcode` |
-| 标签模板/排版 | [rfid_print.py](rfid_print.py) `build_label_zpl` + slots；模板种子见 `db.py` |
+| 标签模板/排版 | [rfid_print.py](rfid_print.py) `build_zmin_content` / `content_to_commands` + slots；模板种子见 `db.py` |
 | 芯片写芯/回读换算 | [rfid_print.py](rfid_print.py) `chip_epc_hex` / `decode_chip_epc`（BCD，E28 前缀） |
 | 前端页面/交互 | [frontend/index.html](frontend/index.html) + [app.js](frontend/app.js) |
 | 界面文案 | [i18n.js](frontend/i18n.js)（`t()` 单字典） |

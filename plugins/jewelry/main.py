@@ -229,10 +229,18 @@ def _require_auth(request: Request) -> dict:
         with _lock:
             _sessions.pop(token, None)
         raise HTTPException(status_code=401, detail="登录已过期（手持机会话当天有效），请重新扫码登录")
-    # 运维端重置密码后的账号：改密完成前仅放行 登出/取会话/改密 三个接口
-    if sess.get("must_change_pwd") and request.url.path not in (
-            "/api/auth/logout", "/api/auth/me", "/api/auth/change-password"):
-        raise HTTPException(status_code=403, detail="密码已被运维端重置，请先修改密码后再继续操作")
+    # 强制改密检查已在 2026-10-22 沙箱测试中暂时关闭——外网所有账号可直接使用，不强制改密
+    # 如需恢复，把下方注释去掉并恢复 must_change_pwd 相关代码
+    # if sess.get("must_change_pwd") and request.url.path not in (
+    #         "/api/auth/logout", "/api/auth/me", "/api/auth/change-password"):
+    #     raise HTTPException(status_code=403, detail="密码已被运维端重置，请先修改密码后再继续操作")
+    # 系统管理员（SYS_ADMIN）只能做用户管理：业务接口一律拒绝
+    if sess.get("role") == "SYS_ADMIN":
+        p = request.url.path
+        allowed = p.startswith("/api/auth/") or p.startswith("/api/admin/") \
+            or (request.method == "GET" and (p in ("/api/stores", "/api/shops") or p.startswith("/api/docs/")))
+        if not allowed:
+            raise HTTPException(status_code=403, detail="系统管理员账号仅可进行用户管理")
     return sess
 
 
@@ -275,7 +283,10 @@ def _ensure_seed_store(conn: sqlite3.Connection, user_id: int, username: str) ->
 
 def _accessible_store_rows(conn: sqlite3.Connection, sess: dict) -> list[sqlite3.Row]:
     """当前会话可访问的门店：店长/高管=全部门店（高管可跨店巡查）；店员=user_stores 授权门店。
-    店长/高管额外返回虚拟行 {id:-1, name:"总部汇总"} 表示跨店汇总视图。"""
+    店长/高管额外返回虚拟行 {id:-1, name:"总部汇总"} 表示跨店汇总视图。
+    系统管理员（SYS_ADMIN）返回全部真实门店（不含汇总行），仅供用户管理界面授权勾选。"""
+    if sess.get("role") == "SYS_ADMIN":
+        return conn.execute("SELECT * FROM stores ORDER BY id").fetchall()
     if sess.get("role") in ("TENANT_ADMIN", "EXECUTIVE"):
         rows = conn.execute("SELECT * FROM stores ORDER BY id").fetchall()
         # 追加虚拟"总部汇总"行（id=-1），仅店长/高管可见
@@ -324,6 +335,15 @@ def _current_store(request: Request, conn: sqlite3.Connection, sess: dict | None
 
 
 _cur_sid_var = contextvars.ContextVar("cur_store_sid", default=0)  # 当前请求的工作门店（由 _current_store 写入）
+
+
+def _is_hq_scope(conn: sqlite3.Connection, sid: int) -> bool:
+    """是否为总部级视图（总部汇总 -1，或总部实体门店 code=HQ/DEFAULT）。
+    总部是管理机构：商品/库存类列表在总部级视图下应汇总所有门店，而非只看挂在自己名下的记录。"""
+    if sid is None or sid <= 0:
+        return True
+    row = conn.execute("SELECT code FROM stores WHERE id=?", (sid,)).fetchone()
+    return bool(row) and (row["code"] or "").upper() in ("HQ", "DEFAULT")
 
 
 def _log(conn: sqlite3.Connection, operator: str, action: str, target: str, result: str = "成功") -> None:
@@ -489,6 +509,8 @@ _PRODUCT_COLS = (
     "products.material,products.product_type,products.product_type_code,"
     "products.weight,products.size,products.cert,products.cost,products.price,products.status,"
     "products.store_id,products.rfid_epc,products.label_status,products.barcode,"
+    "(SELECT s.name FROM stores s WHERE s.id=products.store_id) AS store_name,"
+    "(SELECT s.code FROM stores s WHERE s.id=products.store_id) AS store_code,"
     "products.showcase_public,products.showcase_order,products.showcase_desc,products.showcase_desc_i18n,"
     "products.origin,products.high_value,"
     "products.location_id,products.cert_location_id,"
@@ -542,10 +564,10 @@ def health():
 
 
 @app.get("/")
-def spa_index():
+def spa_index(request: Request):
     f = FRONTEND_DIR / "index.html"
     if f.exists():
-        return FileResponse(str(f), headers={"Cache-Control": "no-cache"})
+        return _no_cache_file(request, f)
     return JSONResponse({"detail": "前端未构建"}, status_code=503)
 
 
@@ -1279,7 +1301,8 @@ function book(e) {{
 }}
 </script>
 </body></html>"""
-    return HTMLResponse(html)
+    # 动态页每次校验更新：配合内容协商避免官网内容更新后浏览器吃旧缓存
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 
 # ---------------------------------------------------------------- 登录
@@ -1299,7 +1322,7 @@ def api_login(body: LoginReq, request: Request):
         info = {"username": user["username"], "display_name": user["display_name"], "role": user["role"],
                 "can_view_cost": bool(user["can_view_cost"]) if "can_view_cost" in user.keys()
                 else user["role"] in _COST_FORCE_VISIBLE_ROLES,
-                "must_change_pwd": bool(user["must_change_pwd"]) if "must_change_pwd" in user.keys() else False}
+                "must_change_pwd": False}  # 沙箱测试期统一关闭强制改密，不再从数据库读取
         store_rows = _accessible_store_rows(conn, info)
         # 新租户/沙箱首次登录：stores 为空 → 自动建「总店」并授权当前用户
         if not store_rows:
@@ -1523,8 +1546,8 @@ def dashboard_overview(request: Request, start: str = Query(default=""), end: st
         re_ = (end or today)[:10]
         if rs > re_:
             rs, re_ = re_, rs
-        # store_id=-1 表示"总部汇总"视图：不加 store_id 过滤，跨所有门店汇总
-        if sid == -1:
+        # 总部级视图（汇总 -1 或总部实体 HQ）：不加 store_id 过滤，跨所有门店汇总
+        if _is_hq_scope(conn, sid):
             scope = " AND status!='已冲红'"
             scope_args = ()
             sid_filter = ""
@@ -1550,13 +1573,13 @@ def dashboard_overview(request: Request, start: str = Query(default=""), end: st
             "FROM inventory_logs l LEFT JOIN products p ON p.id=l.product_id "
             f"WHERE l.type IN ('out','transfer_out') AND substr(l.ts,1,10) BETWEEN ? AND ?{sid_filter_l}",
             (rs, re_) + sid_args).fetchone()
-        # 区间内到期应交付的定金余额
+        # 区间内新下单的定金余额（按下单日统计，覆盖该区间内创建的所有定金单）
         r_dep = conn.execute(
             "SELECT COALESCE(SUM(balance),0) a, COUNT(*) n FROM deposits "
-            f"WHERE status='已定' AND promised_date BETWEEN ? AND ?{sid_filter}",
+            f"WHERE status='已定' AND substr(created,1,10) BETWEEN ? AND ?{sid_filter}",
             (rs, re_) + sid_args).fetchone()
         # 区间内有消费客户的当前应收合计（sales.phone → customers.phone）
-        if sid == -1:
+        if _is_hq_scope(conn, sid):
             r_due = conn.execute(
                 "SELECT COALESCE(SUM(due_amount),0) a FROM customers WHERE phone IN "
                 "(SELECT DISTINCT phone FROM sales WHERE biz_date BETWEEN ? AND ? AND status!='已冲红' "
@@ -1599,8 +1622,8 @@ def dashboard_overview(request: Request, start: str = Query(default=""), end: st
             "depositPending": {"amount": round(r_dep["a"], 2), "count": r_dep["n"]},
             "customerDue": {"amount": round(r_due["a"], 2)},
         }
-        if sid == -1:
-            # 总部汇总：库存跨所有门店
+        if _is_hq_scope(conn, sid):
+            # 总部级视图（汇总/-1、总部实体 HQ）：库存跨所有门店汇总
             stock = conn.execute("SELECT COUNT(*) n, COALESCE(SUM(cost),0) c FROM products WHERE status='在库'").fetchone()
             in_transit = conn.execute("SELECT COUNT(*) n FROM products WHERE status='在途'").fetchone()
             reserved = conn.execute("SELECT COUNT(*) n FROM products WHERE status='已定'").fetchone()
@@ -1862,9 +1885,11 @@ def dashboard_category_sales(request: Request, start: str = Query(default=""), e
                 GROUP BY cat ORDER BY a DESC
             """, (sid,)).fetchall()
         total = sum(r["a"] for r in rows) or 1
+        com_stock_where = ("" if _is_hq_scope(conn, sid) else " AND store_id=?")
+        com_stock_args = ([] if _is_hq_scope(conn, sid) else [sid])
         stock_by = {r["cat"]: r["n"] for r in conn.execute(
             "SELECT COALESCE(NULLIF(product_type,''),'其他') cat, COUNT(*) n "
-            "FROM products WHERE status='在库' AND store_id=? GROUP BY cat", [sid]).fetchall()}
+            "FROM products WHERE status='在库'" + com_stock_where + " GROUP BY cat", com_stock_args).fetchall()}
         return {"total": round(sum(r["a"] for r in rows), 2), "items": [
             {"category": r["cat"], "amount": round(r["a"], 2), "count": r["n"], "pct": round(r["a"] * 100 / total, 1),
              "stock_count": stock_by.get(r["cat"], 0)}
@@ -1908,7 +1933,7 @@ def dashboard_tag_stats(request: Request, start: str = Query(default=""), end: s
         ids = [int(x) for x in tag_ids.replace(" ", "").split(",") if x.isdigit()]
         sel = (" AND t.id IN (" + ",".join("?" * len(ids)) + ")") if ids else ""
         tags = conn.execute(
-            "SELECT t.id,t.name,t.color,t.group_name FROM product_tags t WHERE 1=1" + sel +
+            "SELECT t.id,t.name,t.group_name FROM product_tags t WHERE 1=1" + sel +
             " ORDER BY t.sort_order,t.id", ids).fetchall()
         # 库存口径（与销售口径分开两条查询，禁止同一条 JOIN 交叉翻倍）
         stock_by = {r["tag_id"]: r for r in conn.execute(
@@ -1930,7 +1955,7 @@ def dashboard_tag_stats(request: Request, start: str = Query(default=""), end: s
         for t in tags:
             st, sa = stock_by.get(t["id"]), sale_by.get(t["id"])
             items.append({
-                "tag_id": t["id"], "name": t["name"], "color": t["color"], "group_name": t["group_name"],
+                "tag_id": t["id"], "name": t["name"], "group_name": t["group_name"],
                 "stock_count": st["n"] if st else 0,
                 "stock_cost": round(st["c"], 2) if st and can_cost else (None if st else 0),
                 "stock_price": round(st["s"], 2) if st else 0,
@@ -2013,8 +2038,8 @@ def dashboard_rankings(request: Request, start: str = Query(default=""), end: st
         # ⑥ 滞销品：当前在库、库龄最长（库龄=今天-到货建档日）
         rows = conn.execute(
             "SELECT name, CAST(julianday('now','localtime') - julianday(substr(created,1,10)) AS INTEGER) age, cost "
-            "FROM products WHERE status='在库' AND store_id=? "
-            "ORDER BY age DESC, id LIMIT 5", [sid]).fetchall()
+            "FROM products WHERE status='在库'" + ("" if _is_hq_scope(conn, sid) else " AND store_id=?") + " "
+            "ORDER BY age DESC, id LIMIT 5", ([] if _is_hq_scope(conn, sid) else [sid])).fetchall()
         out["slow"] = [{"name": r["name"], "age": r["age"],
                         "cost": round(r["cost"], 2) if can_cost else None} for r in rows]
 
@@ -2041,8 +2066,13 @@ def dashboard_biz_analysis(request: Request, start: str = Query(default=""), end
         if rs > re_:
             rs, re_ = re_, rs
         cost_visible = _can_view_cost(conn, sess)
-        base = "s.status!='已冲红' AND (s.store_id=? OR s.store_id=0) AND s.biz_date BETWEEN ? AND ?"
-        args = [sid, rs, re_]
+        hq = _is_hq_scope(conn, sid)  # 总部级视图汇总所有门店
+        if hq:
+            base = "s.status!='已冲红' AND s.biz_date BETWEEN ? AND ?"
+            args = [rs, re_]
+        else:
+            base = "s.status!='已冲红' AND (s.store_id=? OR s.store_id=0) AND s.biz_date BETWEEN ? AND ?"
+            args = [sid, rs, re_]
         # 实销总额/单数/件数（件数取 sale_items 行数）
         agg = conn.execute(
             f"SELECT COALESCE(SUM(s.amount),0) amt, COUNT(DISTINCT s.id) bills FROM sales s WHERE {base}", args
@@ -2083,16 +2113,22 @@ def dashboard_biz_analysis(request: Request, start: str = Query(default=""), end
             f"  AND NOT EXISTS (SELECT 1 FROM sales s2 WHERE s2.phone=s.phone AND s2.status!='已冲红' "
             f"    AND s2.biz_date < ?) GROUP BY s.phone)", args + [rs]).fetchone()["n"]
         # 充值总额：区间新增定金合计（近似储值口径）
-        recharge = conn.execute(
-            "SELECT COALESCE(SUM(deposit),0) a FROM deposits "
-            "WHERE substr(created,1,10) BETWEEN ? AND ? AND (store_id=? OR store_id=0)",
-            (rs, re_, sid)).fetchone()["a"]
+        if hq:
+            recharge = conn.execute(
+                "SELECT COALESCE(SUM(deposit),0) a FROM deposits "
+                "WHERE substr(created,1,10) BETWEEN ? AND ?", (rs, re_)).fetchone()["a"]
+        else:
+            recharge = conn.execute(
+                "SELECT COALESCE(SUM(deposit),0) a FROM deposits "
+                "WHERE substr(created,1,10) BETWEEN ? AND ? AND (store_id=? OR store_id=0)",
+                (rs, re_, sid)).fetchone()["a"]
         # 会员卡支付：区间 method='转账' 实付合计
         member_pay = conn.execute(
             f"SELECT COALESCE(SUM(s.paid),0) a FROM sales s WHERE {base} AND s.method='转账'", args).fetchone()["a"]
         # 售罄率：区间售出件数 /（售出件数 + 当前在库件数）
         in_stock = conn.execute(
-            "SELECT COUNT(*) n FROM products WHERE status='在库' AND (store_id=? OR store_id=0)", (sid,)
+            "SELECT COUNT(*) n FROM products WHERE status='在库'" + ("" if hq else " AND (store_id=? OR store_id=0)"),
+            () if hq else (sid,)
         ).fetchone()["n"]
         sell_through = round(items_cnt * 100.0 / (items_cnt + in_stock), 1) if (items_cnt + in_stock) else 0.0
         cat_total = sum(r["amt"] for r in cat_rows) or 1
@@ -2317,8 +2353,8 @@ def dashboard_risk(request: Request):
     sess = _require_auth(request)
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, sess)
-        if sid == -1:
-            # 总部汇总：跨所有门店
+        if _is_hq_scope(conn, sid):
+            # 总部级视图：跨所有门店
             r = conn.execute(
                 "SELECT COUNT(*) n, COALESCE(SUM(cost),0) c FROM products "
                 "WHERE status='在库' AND julianday('now','localtime') - julianday(created) > 180"
@@ -2458,11 +2494,11 @@ def _attach_tags(conn: sqlite3.Connection, items: list[dict]) -> None:
     if pids:
         ph = ",".join("?" * len(pids))
         for tr in conn.execute(
-                f"SELECT l.product_id,t.id,t.name,t.color FROM product_tag_links l "
+                f"SELECT l.product_id,t.id,t.name FROM product_tag_links l "
                 f"JOIN product_tags t ON t.id=l.tag_id WHERE l.product_id IN ({ph}) "
                 "ORDER BY t.sort_order,t.id", pids).fetchall():
             by_pid.setdefault(tr["product_id"], []).append(
-                {"id": tr["id"], "name": tr["name"], "color": tr["color"]})
+                {"id": tr["id"], "name": tr["name"]})
     for it in items:
         it["tags"] = by_pid.get(it["id"], [])
 
@@ -2482,15 +2518,16 @@ def biz_config_get(request: Request):
     _require_auth(request)
     with _db(request) as conn:
         r = conn.execute(
-            "SELECT epc_prefix,seq_bits,IFNULL(gold_price,0) FROM biz_config WHERE id=1"
+            "SELECT epc_prefix,seq_bits,IFNULL(gold_price,0),IFNULL(currency,'CNY') FROM biz_config WHERE id=1"
         ).fetchone()
         if not r:
             conn.execute("INSERT OR IGNORE INTO biz_config(id,epc_prefix,seq_bits) VALUES(1,'E280',8)")
             conn.commit()
-            r = ("E280", 8, 0)
+            r = ("E280", 8, 0, "CNY")
         # 门店编号(4位数字码)只读展示用: EPC 卡显示总店的码, 各门店由系统独立分配
         hq = _hq_store_id(conn)
         return {"epc_prefix": r[0], "seq_bits": r[1], "gold_price": r[2] or 0,
+                "currency": r[3] or "CNY",
                 "store_num": db._store_num_code(conn, hq or 1)}
 
 
@@ -2535,6 +2572,160 @@ def biz_config_update(request: Request, body: BizConfigUpdate):
         )
         conn.commit()
     return {"ok": True, "epc_prefix": prefix}
+
+
+# 总部专属：币种管理
+_VALID_CURRENCIES = {"CNY": "￥", "USD": "$", "EUR": "€"}
+
+
+class CurrencyUpdate(BaseModel):
+    currency: str
+
+
+@app.put("/api/biz-config/currency")
+def currency_update(request: Request, body: CurrencyUpdate):
+    sess = _require_auth(request)
+    # 仅总部可改
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
+        if sid != _hq_store_id(conn):
+            raise HTTPException(403, "仅总部可更改币种")
+    cur = (body.currency or "").strip().upper()
+    if cur not in _VALID_CURRENCIES:
+        raise HTTPException(400, f"币种不支持：{cur}，可选 CNY / USD / EUR")
+    with _db(request) as conn:
+        conn.execute(
+            "INSERT INTO biz_config(id,currency) VALUES(1,?) "
+            "ON CONFLICT(id) DO UPDATE SET currency=excluded.currency",
+            (cur,),
+        )
+        conn.commit()
+    return {"ok": True, "currency": cur, "symbol": _VALID_CURRENCIES[cur]}
+
+
+# 公开接口（登录后就能拿，前端渲染金额/汇率/门店币种全量数据）
+@app.get("/api/currency")
+def currency_get(request: Request):
+    """内部记账币种固定为 CNY；总部币种仅作为总部管理视图的显示币种。"""
+    sess = _require_auth(request)
+    with _db(request) as conn:
+        r = conn.execute("SELECT IFNULL(currency,'CNY') c FROM biz_config WHERE id=1").fetchone()
+        hq_cur = ((r["c"] if r else "CNY") or "CNY").upper()
+        rates = conn.execute("SELECT from_currency, to_currency, rate FROM exchange_rates ORDER BY from_currency, to_currency").fetchall()
+        sid, _ = _current_store(request, conn, sess)
+        hq_scope = _is_hq_scope(conn, sid)
+        store = conn.execute("SELECT IFNULL(display_currency,'') dc FROM stores WHERE id=?", (sid,)).fetchone() if sid and sid > 0 else None
+    store_cur = hq_cur if hq_scope else (((store["dc"] if store else "") or "") or hq_cur)
+    return {
+        "currency": "CNY",  # 内部存储币种（固定人民币）
+        "symbol": _VALID_CURRENCIES.get("CNY", "￥"),
+        "hq_currency": hq_cur,  # 总部管理视图显示币种
+        "hq_symbol": _VALID_CURRENCIES.get(hq_cur, "￥"),
+        "store_currency": store_cur,  # 当前门店显示币种（总部视图=总部币种）
+        "store_symbol": _VALID_CURRENCIES.get(store_cur, "￥"),
+        "rates": [dict(x) for x in rates],
+        "valid": list(_VALID_CURRENCIES.keys()),
+    }
+
+
+# === 汇率管理（仅总部可改） ===
+_VALID_CURRENCIES_SET = {"CNY", "USD", "EUR"}
+
+
+class RateUpdate(BaseModel):
+    rate: float = Field(gt=0)
+
+
+@app.put("/api/biz-config/rates/{from_cur}/{to_cur}")
+def rate_update(request: Request, from_cur: str, to_cur: str, body: RateUpdate):
+    sess = _require_auth(request)
+    from_cur = from_cur.upper()
+    to_cur = to_cur.upper()
+    if from_cur not in _VALID_CURRENCIES_SET or to_cur not in _VALID_CURRENCIES_SET:
+        raise HTTPException(400, f"币种不支持：{from_cur} → {to_cur}")
+    if from_cur == to_cur:
+        raise HTTPException(400, "源币种和目标币种不能相同")
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
+        if sid != _hq_store_id(conn):
+            raise HTTPException(403, "仅总部可更改汇率")
+        conn.execute(
+            "INSERT INTO exchange_rates(from_currency,to_currency,rate,updated_at) VALUES(?,?,?,datetime('now','localtime')) "
+            "ON CONFLICT(from_currency,to_currency) DO UPDATE SET rate=excluded.rate, updated_at=datetime('now','localtime')",
+            (from_cur, to_cur, round(body.rate, 6)),
+        )
+        conn.commit()
+    return {"ok": True, "from": from_cur, "to": to_cur, "rate": round(body.rate, 6)}
+
+
+def _upsert_rate(conn, from_cur: str, to_cur: str, rate: float):
+    conn.execute(
+        "INSERT INTO exchange_rates(from_currency,to_currency,rate,updated_at) VALUES(?,?,?,datetime('now','localtime')) "
+        "ON CONFLICT(from_currency,to_currency) DO UPDATE SET rate=excluded.rate, updated_at=datetime('now','localtime')",
+        (from_cur, to_cur, round(rate, 6)),
+    )
+
+
+def _fetch_market_rate(from_cur: str, to_cur: str) -> float:
+    """从免费公共行情源取 from→to 市场汇率；主源 open.er-api.com，备源 frankfurter.app（ECB）。"""
+    sources = [
+        f"https://open.er-api.com/v6/latest/{from_cur}",
+        f"https://api.frankfurter.app/latest?from={from_cur}&to={to_cur}",
+    ]
+    last_err = ""
+    for url in sources:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "yizhen-jewelry-cloud/1.0"})
+            with urllib.request.urlopen(req, timeout=6) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            rate = (data.get("rates") or {}).get(to_cur)
+            if rate and float(rate) > 0:
+                return float(rate)
+            last_err = f"行情源未返回 {to_cur} 汇率"
+        except Exception as e:  # 网络不可达/超时/解析失败 → 尝试下一源
+            last_err = f"{type(e).__name__}: {str(e)[:80]}"
+    raise HTTPException(502, f"未能获取市场汇率（行情源不可达：{last_err}），请稍后重试或手动填写")
+
+
+@app.post("/api/biz-config/rates/{from_cur}/{to_cur}/sync")
+def rate_sync_market(request: Request, from_cur: str, to_cur: str):
+    """【同步汇率】：拉取指定币种对的当前市场汇率并落库；反向汇率自动按 1/rate 计算。仅总部。"""
+    sess = _require_auth(request)
+    from_cur = from_cur.upper()
+    to_cur = to_cur.upper()
+    if from_cur not in _VALID_CURRENCIES_SET or to_cur not in _VALID_CURRENCIES_SET:
+        raise HTTPException(400, f"币种不支持：{from_cur} → {to_cur}")
+    if from_cur == to_cur:
+        raise HTTPException(400, "源币种和目标币种不能相同")
+    market = _fetch_market_rate(from_cur, to_cur)
+    rev = round(1.0 / market, 6)
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
+        if sid != _hq_store_id(conn):
+            raise HTTPException(403, "仅总部可更改汇率")
+        _upsert_rate(conn, from_cur, to_cur, market)
+        _upsert_rate(conn, to_cur, from_cur, rev)   # 反向汇率自动计算
+        conn.commit()
+    return {"ok": True, "from": from_cur, "to": to_cur, "rate": round(market, 6), "reverse_rate": rev}
+
+
+# === 门店显示币种 ===
+@app.put("/api/stores/{store_id}/display-currency")
+def store_display_currency(request: Request, store_id: int, body: dict = None):
+    sess = _require_auth(request)
+    # FastAPI 自动把 JSON body 解析到 body 参数（无 body 时为 None）
+    dc = str((body or {}).get("display_currency") or "").strip().upper()
+    if dc and dc not in _VALID_CURRENCIES_SET:
+        raise HTTPException(400, f"币种不支持：{dc}")
+    with _db(request) as conn:
+        # 总部可改所有门店；店长只能改自己门店
+        sid, role = _current_store(request, conn, sess)
+        hq = _hq_store_id(conn)
+        if sid != hq and sid != store_id:
+            raise HTTPException(403, "无权修改此门店")
+        conn.execute("UPDATE stores SET display_currency=? WHERE id=?", (dc, store_id))
+        conn.commit()
+    return {"ok": True, "store_id": store_id, "display_currency": dc}
 
 
 @app.get("/api/categories")
@@ -2671,12 +2862,19 @@ def product_type_delete(request: Request, code: str):
     if code == "99":
         raise HTTPException(400, "「其他」为兜底品类，不能删除")
     with _db(request) as conn:
+        # EPC 内含品类码，已生成 EPC 的商品不允许其品类被删除，避免 EPC 与品类错位
+        epc = conn.execute(
+            "SELECT COUNT(*) FROM products WHERE product_type_code=? AND IFNULL(rfid_epc,'')<>''", (code,)
+        ).fetchone()[0]
+        if epc:
+            raise HTTPException(400, f"该品类下有 {epc} 件商品已生成 EPC（EPC 含品类码），请先清除这些商品的 EPC 再删除品类")
         used = conn.execute("SELECT COUNT(*) FROM products WHERE product_type_code=?", (code,)).fetchone()[0]
         if used:
-            raise HTTPException(400, f"该品类下仍有 {used} 件商品，不能删除")
+            # 与前端确认框一致：删除品类的同时清空这些商品的品类字段
+            conn.execute("UPDATE products SET product_type_code='' WHERE product_type_code=?", (code,))
         conn.execute("DELETE FROM product_types WHERE code=?", (code,))
         conn.commit()
-    return {"ok": True}
+    return {"ok": True, "cleared": used}
 
 
 class ProductTypeTemplateIn(BaseModel):
@@ -2713,6 +2911,7 @@ class ProductTagIn(BaseModel):
     color: str = ""
     sort_order: int = 0
     group_name: str = ""
+    names: dict = {}
 
 
 @app.get("/api/product-tags")
@@ -2723,7 +2922,13 @@ def product_tags_list(request: Request):
             "SELECT t.*, (SELECT COUNT(*) FROM product_tag_links l WHERE l.tag_id=t.id) AS used_count "
             "FROM product_tags t ORDER BY t.sort_order, t.id"
         ).fetchall()
-        return {"list": [dict(r) for r in rows], "groups": _tag_group_names(conn)}
+        lst = []
+        for r in rows:
+            d = dict(r)
+            try: d["names"] = json.loads(d.get("names") or "{}")
+            except Exception: d["names"] = {}
+            lst.append(d)
+        return {"list": lst, "groups": _tag_group_names(conn)}
 
 
 @app.post("/api/product-tags")
@@ -2740,8 +2945,8 @@ def product_tag_create(body: ProductTagIn, request: Request):
             raise HTTPException(400, f"分类「{grp}」不存在，请先在分类管理中创建")
         if conn.execute("SELECT 1 FROM product_tags WHERE name=?", (name,)).fetchone():
             raise HTTPException(400, f"标签「{name}」已存在")
-        cur = conn.execute("INSERT INTO product_tags(name,color,sort_order,group_name) VALUES(?,?,?,?)",
-                           (name, (body.color or "").strip(), body.sort_order, grp))
+        cur = conn.execute("INSERT INTO product_tags(name,names,sort_order,group_name) VALUES(?,?,?,?)",
+                           (name, json.dumps(body.names or {}, ensure_ascii=False), body.sort_order, grp))
         conn.commit()
         _log(conn, op["username"], "新建商品标签", name)
         return {"ok": True, "id": cur.lastrowid}
@@ -2763,8 +2968,8 @@ def product_tag_update(tid: int, body: ProductTagIn, request: Request):
             raise HTTPException(404, "标签不存在")
         if conn.execute("SELECT id FROM product_tags WHERE name=? AND id<>?", (name, tid)).fetchone():
             raise HTTPException(400, f"标签「{name}」已存在")
-        conn.execute("UPDATE product_tags SET name=?,color=?,sort_order=?,group_name=? WHERE id=?",
-                     (name, (body.color or "").strip(), body.sort_order, grp, tid))
+        conn.execute("UPDATE product_tags SET name=?,names=?,sort_order=?,group_name=? WHERE id=?",
+                     (name, json.dumps(body.names or {}, ensure_ascii=False), body.sort_order, grp, tid))
         conn.commit()
         _log(conn, op["username"], "更新商品标签", f"#{tid} {name}")
         return {"ok": True}
@@ -2791,6 +2996,7 @@ def product_tag_delete(tid: int, request: Request):
 class TagGroupIn(BaseModel):
     name: str = ""
     sort_order: int = 0
+    names: dict = {}
 
 
 @app.get("/api/tag-groups")
@@ -2801,7 +3007,13 @@ def tag_groups_list(request: Request):
             "SELECT g.*, (SELECT COUNT(*) FROM product_tags t WHERE t.group_name=g.name) AS tag_count "
             "FROM tag_groups g ORDER BY g.sort_order, g.id"
         ).fetchall()
-        return {"list": [dict(r) for r in rows]}
+        lst = []
+        for r in rows:
+            d = dict(r)
+            try: d["names"] = json.loads(d.get("names") or "{}")
+            except Exception: d["names"] = {}
+            lst.append(d)
+        return {"list": lst}
 
 
 @app.post("/api/tag-groups")
@@ -2815,7 +3027,7 @@ def tag_group_create(body: TagGroupIn, request: Request):
     with _db(request) as conn:
         if conn.execute("SELECT 1 FROM tag_groups WHERE name=?", (name,)).fetchone():
             raise HTTPException(400, f"分类「{name}」已存在")
-        cur = conn.execute("INSERT INTO tag_groups(name,sort_order) VALUES(?,?)", (name, body.sort_order))
+        cur = conn.execute("INSERT INTO tag_groups(name,names,sort_order) VALUES(?,?,?)", (name, json.dumps(body.names or {}, ensure_ascii=False), body.sort_order))
         conn.commit()
         _log(conn, op["username"], "新建标签分类", name)
         return {"ok": True, "id": cur.lastrowid}
@@ -2836,7 +3048,7 @@ def tag_group_update(gid: int, body: TagGroupIn, request: Request):
         old = row["name"]
         if conn.execute("SELECT id FROM tag_groups WHERE name=? AND id<>?", (name, gid)).fetchone():
             raise HTTPException(400, f"分类「{name}」已存在")
-        conn.execute("UPDATE tag_groups SET name=?,sort_order=? WHERE id=?", (name, body.sort_order, gid))
+        conn.execute("UPDATE tag_groups SET name=?,names=?,sort_order=? WHERE id=?", (name, json.dumps(body.names or {}, ensure_ascii=False), body.sort_order, gid))
         # 组名即标签的引用键：重命名时同步改写引用该分类的标签，避免出现「有标签但分类丢失」
         if name != old:
             conn.execute("UPDATE product_tags SET group_name=? WHERE group_name=?", (name, old))
@@ -2945,34 +3157,6 @@ def label_template_delete(tid: int, request: Request):
         return {"ok": True}
 
 
-@app.post("/api/label-templates/{tid}/preview")
-def label_template_preview(tid: int, request: Request, product_id: int = 1):
-    _require_auth(request)
-    with _db(request) as conn:
-        tpl = conn.execute("SELECT * FROM label_templates WHERE id=?", (tid,)).fetchone()
-        if not tpl:
-            raise HTTPException(404, "模板不存在")
-        p = conn.execute("SELECT * FROM products WHERE id=?", (product_id,)).fetchone()
-        if not p:
-            raise HTTPException(404, "商品不存在")
-        cur_sid, _ = _current_store(request, conn)
-        if p["store_id"] not in (0, cur_sid):
-            raise HTTPException(403, "该商品不属于当前工作门店")
-        prof = conn.execute("SELECT name FROM tenant_profiles ORDER BY id DESC LIMIT 1").fetchone()
-        store_name = prof["name"] if prof and prof["name"] else ""
-        product = dict(p)
-        product.pop("image", None)
-        product["rfid_epc"] = product.get("rfid_epc") or _gen_type_epc(conn, product.get("product_type_code") or "99", product.get("store_id") or 1)
-        bc = _compute_item_barcode(conn, product)
-        if product.get("barcode") != bc:
-            conn.execute("UPDATE products SET barcode=? WHERE id=?", (bc, product["id"]))
-            conn.commit()
-        product["barcode"] = bc
-        prefix_cfg, _, _npc = _epc_cfg(conn)
-        zpl = rfid_print.build_label_zpl(product, store_name=store_name, template=dict(tpl), rfid_prefix=prefix_cfg)
-        return {"ok": True, "zpl": zpl, "product": product}
-
-
 # ---------------------------------------------------------------- 分类绑定模板
 
 class CategoryTemplateIn(BaseModel):
@@ -3057,9 +3241,10 @@ def product_list(request: Request, q: str = "", status: str = "", page: int = 1,
         where, args = [], []
         join = (" LEFT JOIN locations l1 ON l1.id=products.location_id"
                 " LEFT JOIN locations l2 ON l2.id=products.cert_location_id")
-        # 严格门店隔离：一律以会话当前工作门店为准，忽略前端传入的 store_id
-        where.append("products.store_id=?")
-        args.append(sid)
+        # 门店级隔离：具体门店只看本店；总部级视图（汇总/-1、总部实体 HQ）汇总所有门店商品
+        if not _is_hq_scope(conn, sid):
+            where.append("products.store_id=?")
+            args.append(sid)
         if q:
             where.append("(products.name LIKE ? OR products.code LIKE ? OR products.rfid_epc LIKE ?"
                          " OR products.material LIKE ?"
@@ -3104,9 +3289,15 @@ def product_options(request: Request, status: str = "在库"):
             "WHERE {cond} ORDER BY p.id"
         )
         if status:
-            rows = conn.execute(sql.format(cond="p.status=? AND p.store_id=?"), (status, sid)).fetchall()
+            if _is_hq_scope(conn, sid):
+                rows = conn.execute(sql.format(cond="p.status=?"), (status,)).fetchall()
+            else:
+                rows = conn.execute(sql.format(cond="p.status=? AND p.store_id=?"), (status, sid)).fetchall()
         else:
-            rows = conn.execute(sql.format(cond="p.store_id=?"), (sid,)).fetchall()
+            if _is_hq_scope(conn, sid):
+                rows = conn.execute(sql.format(cond="1=1")).fetchall()
+            else:
+                rows = conn.execute(sql.format(cond="p.store_id=?"), (sid,)).fetchall()
         return {"items": [dict(r) for r in rows]}
 
 
@@ -3259,7 +3450,7 @@ def product_detail(pid: int, request: Request):
         row = conn.execute(f"SELECT {_PRODUCT_COLS} FROM products WHERE id=?", (pid,)).fetchone()
         if not row:
             raise HTTPException(404, "商品不存在")
-        if row["store_id"] != sid:
+        if row["store_id"] != sid and not _is_hq_scope(conn, sid):
             raise HTTPException(403, "该商品不属于当前工作门店")
         d = _hide_cost(dict(row), _can_view_cost(conn, sess))
         _attach_tags(conn, [d])
@@ -3272,6 +3463,14 @@ def product_create(body: ProductIn, request: Request):
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, op)
         _assert_stock_unfrozen(conn)
+        # 总部不存放商品：工作门店为总部实体/汇总视图时，必须显式指定目标具体门店
+        cur_row = conn.execute("SELECT code FROM stores WHERE id=?", (sid,)).fetchone()
+        if sid <= 0 or (cur_row and (cur_row["code"] or "").upper() in ("HQ", "DEFAULT")):
+            tgt = int(body.store_id or 0)
+            trow = conn.execute("SELECT id, code FROM stores WHERE id=?", (tgt,)).fetchone() if tgt > 0 else None
+            if not trow or (trow["code"] or "").upper() in ("HQ", "DEFAULT"):
+                raise HTTPException(400, "总部不存放商品，请选择要添加到的具体门店")
+            sid = tgt
         body.store_id = sid  # 商品建档强制落入当前工作门店（跨店请走调拨）
         type_code, type_name = _resolve_type(conn, body.product_type_code, body.product_type)
         _assert_locations_in_store(conn, body.store_id, body.location_id, body.cert_location_id)
@@ -3308,7 +3507,8 @@ def _assert_product_in_store(conn: sqlite3.Connection, pid: int, sid: int) -> sq
     row = conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
     if not row:
         raise HTTPException(404, "商品不存在")
-    if row["store_id"] != sid:
+    # 总部级视图（汇总/总部实体）是管理视角，可查看与维护所有门店的商品；具体门店仍需严格隔离
+    if row["store_id"] != sid and not _is_hq_scope(conn, sid):
         raise HTTPException(403, "该商品不属于当前工作门店，请到所属门店操作")
     return row
 
@@ -3325,7 +3525,7 @@ def product_update(pid: int, body: ProductIn, request: Request):
         # 列级权限：无成本查看权的账号改商品时，忽略其提交的 cost，保留原值（前端字段 *** 禁用，此处兜底）
         if not _can_view_cost(conn, op):
             body.cost = row["cost"]
-        body.store_id = sid  # 不允许借编辑跨店改归属
+        body.store_id = row["store_id"]  # 不允许借编辑跨店改归属（总部视图编辑时保持原门店）
         type_code, type_name = _resolve_type(conn, body.product_type_code, body.product_type)
         _assert_locations_in_store(conn, body.store_id, body.location_id, body.cert_location_id)
         # 品类锁定：EPC 内嵌品类码，已生成 EPC 的商品不允许再改品类
@@ -3560,10 +3760,12 @@ def inventory_summary(request: Request):
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, sess)
         cost_visible = _can_view_cost(conn, sess)
+        hq = _is_hq_scope(conn, sid)  # 总部级视图：库存指标汇总所有门店
         def cnt(st):
             r = conn.execute(
                 "SELECT COUNT(*) n, COALESCE(SUM(cost),0) c, COALESCE(SUM(price),0) p "
-                "FROM products WHERE status=? AND store_id=?", (st, sid)).fetchone()
+                "FROM products WHERE status=?" + ("" if hq else " AND store_id=?"),
+                (st,) if hq else (st, sid)).fetchone()
             return {"count": r["n"],
                     "cost": round(r["c"], 2) if cost_visible else None,
                     "price": round(r["p"], 2)}
@@ -3584,8 +3786,8 @@ def inventory_summary(request: Request):
         cats = conn.execute(
             "SELECT COALESCE(NULLIF(product_type,''),'未分类') cat, COUNT(*) n, "
             "COALESCE(SUM(cost),0) c, COALESCE(SUM(price),0) p "
-            "FROM products WHERE status IN ('在库','已定') AND store_id=? "
-            "GROUP BY cat ORDER BY n DESC", (sid,)).fetchall()
+            "FROM products WHERE status IN ('在库','已定')" + ("" if hq else " AND store_id=?") + " "
+            "GROUP BY cat ORDER BY n DESC", ([] if hq else [sid])).fetchall()
         categories = [{"cat": r["cat"], "count": r["n"],
                        "cost": round(r["c"], 2) if cost_visible else None,
                        "price": round(r["p"], 2)} for r in cats]
@@ -3615,14 +3817,15 @@ def inventory_locked_items(request: Request):
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, sess)
         cost_visible = _can_view_cost(conn, sess)
+        hq = _is_hq_scope(conn, sid)
         rows = conn.execute(
             """SELECT p.id, p.code, p.name, p.weight, p.price, p.cost, p.product_type,
                       d.id AS deposit_id, d.customer, d.phone, d.deposit, d.balance,
                       d.promised_date, d.created
                FROM products p
                LEFT JOIN deposits d ON d.product_id = p.id AND d.status = '已定'
-               WHERE p.status = '已定' AND p.store_id = ?
-               ORDER BY d.created DESC, p.id""", (sid,)).fetchall()
+               WHERE p.status = '已定'""" + ("" if hq else " AND p.store_id = ?") + """
+               ORDER BY d.created DESC, p.id""", ([] if hq else [sid])).fetchall()
         items = []
         for r in rows:
             reason = ""
@@ -3646,7 +3849,10 @@ def inventory_locked_items(request: Request):
 
 @app.get("/api/inventory/psi")
 def inventory_psi(request: Request, start: str = "", end: str = ""):
-    """进销存查询：时间段内进货（purchases）/销售（sale_items×sales）+ 当前期末库存，按品类分组。"""
+    """进销存查询：时间段内进货（purchases）/销售（sale_items×sales）+ 当前期末库存，按货号分组。
+
+    无货号的历史数据（仅有商品名）按「名称」归一行，code 留空。
+    """
     sess = _require_auth(request)
     if not start or not end:
         today = date.today()
@@ -3655,41 +3861,62 @@ def inventory_psi(request: Request, start: str = "", end: str = ""):
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, sess)
         cost_visible = _can_view_cost(conn, sess)
+        hq = _is_hq_scope(conn, sid)  # 总部级视图汇总所有门店
         agg = {}
-        def bucket(cat):
-            cat = cat or "未分类"
-            return agg.setdefault(cat, {"cat": cat, "inQty": 0, "inAmount": 0.0,
-                                        "outQty": 0, "outAmount": 0.0,
-                                        "endQty": 0, "endCost": 0.0, "endPrice": 0.0})
-        # 进货：采购单按下单日期区间；品类经商品名回联（无关联则未分类）
+        def bucket(code, name, cat):
+            code = (code or "").strip()
+            name = (name or "").strip()
+            key = ("C:" + code) if code else ("N:" + name)
+            b = agg.setdefault(key, {"key": key, "code": code, "name": name,
+                                     "cat": cat or "未分类", "inQty": 0, "inAmount": 0.0,
+                                     "outQty": 0, "outAmount": 0.0,
+                                     "endQty": 0, "endCost": 0.0, "endPrice": 0.0})
+            if b["cat"] == "未分类" and cat:
+                b["cat"] = cat
+            return b
+        # 进货：采购单按下单日期区间；货号/品类经商品名回联（无关联则仅按名称归行）
+        # 若按名称匹配不到商品档案，尝试按品类回退（历史数据未建档时避免全落"未分类"）
         for r in conn.execute(
-            """SELECT COALESCE((SELECT p.product_type FROM products p
-                                WHERE p.name = pu.product LIMIT 1), '未分类') cat,
+            """SELECT pu.product name,
+                      COALESCE((SELECT p.code FROM products p WHERE p.name = pu.product
+                                ORDER BY p.id LIMIT 1), '') code,
+                      COALESCE((SELECT p.product_type FROM products p WHERE p.name = pu.product
+                                ORDER BY p.id LIMIT 1), '') cat,
+                      COALESCE((SELECT p.category FROM products p WHERE p.name = pu.product
+                                ORDER BY p.id LIMIT 1), '') category,
                       SUM(pu.qty) q, SUM(pu.cost) a
                FROM purchases pu
-               WHERE (pu.store_id = ? OR pu.store_id = 0) AND pu.order_date BETWEEN ? AND ?
-               GROUP BY cat""", (sid, start, end)).fetchall():
-            b = bucket(r["cat"])
+               WHERE """ + ("" if hq else "(pu.store_id = ? OR pu.store_id = 0) AND ") + """pu.order_date BETWEEN ? AND ?
+               GROUP BY pu.product""", (start, end) if hq else (sid, start, end)).fetchall():
+            cat = r["cat"] or r["category"] or "未分类"
+            b = bucket(r["code"], r["name"], cat)
             b["inQty"] += r["q"] or 0
             b["inAmount"] += r["a"] or 0
-        # 销售：明细 join 单头，排除冲红
+        # 销售：明细 join 单头，排除冲红；货号优先取商品档案，其次用明细快照
         for r in conn.execute(
-            """SELECT COALESCE(p.product_type, '未分类') cat, COUNT(*) q, SUM(si.subtotal) a
+            """SELECT COALESCE(NULLIF(p.code, ''), NULLIF(si.code, ''), '') code,
+                      COALESCE(NULLIF(p.name, ''), NULLIF(si.name, ''), '') name,
+                      COALESCE(p.product_type, '未分类') cat,
+                      COUNT(*) q, SUM(si.subtotal) a
                FROM sale_items si JOIN sales s ON si.sale_id = s.id
                LEFT JOIN products p ON si.product_id = p.id
-               WHERE s.status != '已冲红' AND (s.store_id = ? OR s.store_id = 0)
-                 AND s.biz_date BETWEEN ? AND ?
-               GROUP BY cat""", (sid, start, end)).fetchall():
-            b = bucket(r["cat"])
+               WHERE s.status != '已冲红' AND """ + ("" if hq else "(s.store_id = ? OR s.store_id = 0) AND ") + """s.biz_date BETWEEN ? AND ?
+               GROUP BY COALESCE(NULLIF(p.code, ''), NULLIF(si.code, '')),
+                        COALESCE(NULLIF(p.name, ''), NULLIF(si.name, '')),
+                        COALESCE(p.product_type, '未分类')""", (start, end) if hq else (sid, start, end)).fetchall():
+            b = bucket(r["code"], r["name"], r["cat"])
             b["outQty"] += r["q"] or 0
             b["outAmount"] += r["a"] or 0
-        # 期末库存（当前值）：在库 + 已定
+        # 期末库存（当前值）：在库 + 已定（总部级视图汇总所有门店）
         for r in conn.execute(
-            """SELECT COALESCE(NULLIF(product_type, ''), '未分类') cat, COUNT(*) q,
+            """SELECT COALESCE(NULLIF(code, ''), '') code, name,
+                      COALESCE(NULLIF(product_type, ''), '未分类') cat, COUNT(*) q,
                       COALESCE(SUM(cost), 0) c, COALESCE(SUM(price), 0) p
-               FROM products WHERE status IN ('在库', '已定') AND store_id = ?
-               GROUP BY cat""", (sid,)).fetchall():
-            b = bucket(r["cat"])
+               FROM products WHERE status IN ('在库', '已定')""" + ("" if hq else " AND store_id = ?") + """
+               GROUP BY COALESCE(NULLIF(code, ''), ''), name,
+                        COALESCE(NULLIF(product_type, ''), '未分类')""",
+            ([] if hq else [sid])).fetchall():
+            b = bucket(r["code"], r["name"], r["cat"])
             b["endQty"] += r["q"]
             b["endCost"] += r["c"]
             b["endPrice"] += r["p"]
@@ -3743,6 +3970,8 @@ def inventory_inbound(body: InboundIn, request: Request):
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, op)
         _assert_stock_unfrozen(conn)
+        if _is_hq_scope(conn, sid):
+            raise HTTPException(status_code=400, detail="总部视图不进行入库，请切换到具体门店操作")
         store_id = sid  # 入库门店强制为当前工作门店
         store = conn.execute("SELECT id,name FROM stores WHERE id=?", (store_id,)).fetchone()
         if not store:
@@ -3775,6 +4004,8 @@ def inventory_copy(pid: int, request: Request):
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, op)
         _assert_stock_unfrozen(conn)
+        if _is_hq_scope(conn, sid):
+            raise HTTPException(status_code=400, detail="总部视图不进行入库，请切换到具体门店操作")
         src = _assert_product_in_store(conn, pid, sid)
         code = _next_code(conn)
         type_code = src["product_type_code"] or "99"
@@ -4091,88 +4322,18 @@ def rfid_scan(body: RfidScanIn, request: Request):
 
 # ---------------------------------------------------------------- 标签排版打印
 
-@app.get("/api/print/printers")
-def print_printers(request: Request):
-    _require_auth(request)
-    names = rfid_print.list_printers()
-    return {"supported": bool(names), "printers": names}
-
-
 class LabelPrintIn(BaseModel):
     product_ids: list[int] = Field(default_factory=list)
-    printer: str = ""
     copies: int = 1
     fields: list[str] = Field(default_factory=lambda: sorted(rfid_print.DEFAULT_FIELDS))
     write_epc: bool = True
-    font: str = rfid_print.DEFAULT_FONT
-    simulate: bool = False  # True 时只生成 ZPL 不实际发送
     template_id: int | None = None  # 指定模板后按模板 slots 排版，忽略 fields
-    route: str = ""  # 'agent'=经本地打印桥下发（店里电脑 print_agent.py 取任务打印）
-    enqueue_zpl: str = Field(default="", max_length=200000)  # 本地直打失败回退：直接入队该 ZPL（EPC/条码已在前次生成，跳过重复分配）
-    enqueue_store_id: int = 0  # 回退入队目标门店桥（不传用总店）
+    route: str = ""  # 'agent'=经本地打印助手下发（唯一支持路径）
 
 
 @app.post("/api/print/labels")
 def print_labels(body: LabelPrintIn, request: Request):
     op = _require_auth(request)
-    if body.enqueue_zpl:
-        # 回退入队：前端本地直打失败后把已生成的 ZPL 送回云端下发（不重复分配 EPC/条码/制卡记录）
-        zpl = body.enqueue_zpl
-        count = zpl.count("^XA") or 1
-        printer_desc = body.printer or ""
-        sent = False
-        if body.route == "agent":
-            sid0 = body.enqueue_store_id or 1
-            srow = None
-            with _db(request) as conn:
-                srow = conn.execute("SELECT name FROM stores WHERE id=?", (sid0,)).fetchone()
-                _lp = _biz_printer_detail(conn, sid0).get("label_product", {})
-            pname = _lp.get("printer", "")
-            piface = _lp.get("iface") or "USB"
-            pip = _lp.get("printer_ip", "")
-            sname = srow["name"] if srow else f"门店{sid0}"
-            with _bridges_lock:
-                offline = sid0 not in _bridges or time.time() - _bridges[sid0].last_seen >= 15
-            if offline:
-                raise HTTPException(400, "打印助手不在线：" + sname)
-            with _bridges_lock:
-                is_csharp = sid0 in _bridges and _bridges[sid0].agent_type == "csharp"
-            items_fb = None
-            if is_csharp:
-                # ZMIN 不识别 ZPL：回退入队也改发结构化任务（EPC/条码前次已落库，直接重建）
-                if not body.product_ids:
-                    raise HTTPException(400, "C# 打印助手需要商品结构化数据，回退请求缺少 product_ids")
-                with _db(request) as conn2:
-                    rows2 = conn2.execute(
-                        f"SELECT * FROM products WHERE id IN ({','.join('?' * len(body.product_ids))})",
-                        body.product_ids).fetchall()
-                    prods = [dict(r) for r in rows2]
-                    for p in prods:
-                        p.pop("image", None)
-                    prof2 = conn2.execute("SELECT name FROM tenant_profiles ORDER BY id DESC LIMIT 1").fetchone()
-                    sname2 = (prof2["name"] if prof2 and prof2["name"] else "") or sname
-                    epc_prefix_cfg2, _, _npc2 = _epc_cfg(conn2)
-                    fields2 = {f for f in body.fields if f in rfid_print.FIELD_OPTIONS}
-                    items_fb = _products_to_zmin_items(
-                        conn2, prods, body=body, store_name=sname2,
-                        explicit_tpl=None, fields=fields2, epc_prefix_cfg=epc_prefix_cfg2)
-            _bridge_enqueue(sid0, zpl, count, biz="label_product", printer=pname, items=items_fb,
-                            iface=piface, printer_ip=pip)
-            sent = True
-            printer_desc = "打印桥（" + sname + "）"
-        else:
-            if not body.printer:
-                raise HTTPException(400, "未选择打印机")
-            try:
-                rfid_print.send_raw(body.printer, zpl, job_title="jewelry-labels-retry")
-                sent = True
-            except Exception as e:
-                raise HTTPException(500, f"发送打印机失败：{e}")
-        with _db(request) as conn:
-            _log(conn, op["username"], "RFID标签打印",
-                 f"本地直打失败回退 {count}张 {printer_desc or '仅生成指令'}")
-        return {"ok": True, "sent": sent, "count": count, "printer": printer_desc,
-                "jobs": [], "zpl": "", "template_id": None}
     if not body.product_ids:
         raise HTTPException(400, "请至少选择一件商品")
     with _db(request) as conn:
@@ -4225,79 +4386,47 @@ def print_labels(body: LabelPrintIn, request: Request):
         fields = {f for f in body.fields if f in rfid_print.FIELD_OPTIONS}
         copies = max(1, body.copies)
         epc_prefix_cfg, _, _npc = _epc_cfg(conn)
-        zpl_parts = []
-        per_store: dict[int, list[str]] = {}   # store_id -> 该门店商品的 ZPL 列表
-        items_per_store: dict[int, list[dict]] = {}  # store_id -> ZMIN 结构化 content 列表
+        items_per_store: dict[int, list[dict]] = {}  # store_id -> ZMIN 统一指令 content 列表
         used_template_ids = set()
         for p in products:
             tpl_i = explicit_tpl or _bound_tpl(p.get("product_type_code") or "")
             if tpl_i:
                 used_template_ids.add(tpl_i["id"])
-                one = rfid_print.build_label_zpl(
-                    p, store_name=store_name, write_epc=body.write_epc, template=tpl_i,
-                    rfid_prefix=epc_prefix_cfg,
-                )
-            else:
-                one = rfid_print.build_label_zpl(
-                    p, fields=fields, store_name=store_name,
-                    font=(body.font or ""), write_epc=body.write_epc,
-                    rfid_prefix=epc_prefix_cfg,
-                )
-            z0 = one.replace("^PQ1", f"^PQ{copies}")
-            zpl_parts.append(z0)
-            sid_k = p.get("store_id") or 1
-            per_store.setdefault(sid_k, []).append(z0)
-        zpl = "".join(zpl_parts)
-        with _bridges_lock:
-            _any_csharp = any(_bridges.get(s) and _bridges[s].agent_type == "csharp" for s in per_store)
-        if _any_csharp:
-            # C# 代理走结构化任务；ZPL 仅用于 simulate/旧桥
-            items_all = _products_to_zmin_items(
-                conn, products, body=body, store_name=store_name,
-                explicit_tpl=explicit_tpl, fields=fields, epc_prefix_cfg=epc_prefix_cfg)
-            for p, it in zip(products, items_all):
-                items_per_store.setdefault(p.get("store_id") or 1, []).append(it)
+        items_all = _products_to_zmin_items(
+            conn, products, body=body, store_name=store_name,
+            explicit_tpl=explicit_tpl, fields=fields, epc_prefix_cfg=epc_prefix_cfg)
+        for p, it in zip(products, items_all):
+            lst = items_per_store.setdefault(p.get("store_id") or 1, [])
+            for _ in range(copies):
+                lst.append(it)
         tpl_desc = f" 模板#{explicit_tpl['id']}" if explicit_tpl else (" 各自品类模板" if used_template_ids else "")
 
-        sent = False
-        printer_desc = body.printer or ""
-        if not body.simulate:
-            if body.route == "agent":
-                # 按商品所属门店分组，路由到各自门店的打印桥；
-                # 任务带「标签业务(label_product)」在该门店的指派（打印机+链路+NET地址）
-                stores_cfg: dict[int, dict] = {}
-                for sid0 in per_store:
-                    srow = conn.execute(
-                        "SELECT name FROM stores WHERE id=?", (sid0,)).fetchone()
-                    _lp = _biz_printer_detail(conn, sid0).get("label_product", {})
-                    stores_cfg[sid0] = {
-                        "name": srow["name"] if srow else f"门店{sid0}",
-                        "printer": _lp.get("printer", "") or "",
-                        "iface": _lp.get("iface") or "USB",
-                        "ip": _lp.get("printer_ip", ""),
-                    }
-                with _bridges_lock:
-                    missing = [c["name"] for sid0, c in stores_cfg.items()
-                               if sid0 not in _bridges
-                               or time.time() - _bridges[sid0].last_seen >= 15]
-                if missing:
-                    raise HTTPException(400, "打印助手不在线：" + "、".join(missing))
-                for sid0, parts in per_store.items():
-                    cfg = stores_cfg[sid0]
-                    _bridge_enqueue(sid0, "".join(parts), len(parts),
-                                    biz="label_product", printer=cfg["printer"],
-                                    items=items_per_store.get(sid0),
-                                    iface=cfg["iface"], printer_ip=cfg["ip"])
-                sent = True
-                printer_desc = "打印桥（" + "、".join(stores_cfg[s]["name"] for s in per_store) + "）"
-            else:
-                if not body.printer:
-                    raise HTTPException(400, "未选择打印机（无打印机时可勾选“仅生成指令”）")
-                try:
-                    rfid_print.send_raw(body.printer, zpl, job_title=f"jewelry-labels-{len(jobs)}")
-                    sent = True
-                except Exception as e:
-                    raise HTTPException(500, f"发送打印机失败：{e}")
+        # 唯一打印路径：按商品所属门店路由到该门店的打印助手
+        # （打印机/链路/NET 地址取自该门店「标签业务」的指派）
+        stores_cfg: dict[int, dict] = {}
+        for sid0 in items_per_store:
+            srow = conn.execute(
+                "SELECT name FROM stores WHERE id=?", (sid0,)).fetchone()
+            _lp = _biz_printer_detail(conn, sid0).get("label_product", {})
+            stores_cfg[sid0] = {
+                "name": srow["name"] if srow else f"门店{sid0}",
+                "printer": _lp.get("printer", "") or "",
+                "iface": _lp.get("iface") or "USB",
+                "ip": _lp.get("printer_ip", ""),
+            }
+        with _bridges_lock:
+            missing = [c["name"] for sid0, c in stores_cfg.items()
+                       if sid0 not in _bridges
+                       or time.time() - _bridges[sid0].last_seen >= 15]
+        if missing:
+            raise HTTPException(400, "打印助手不在线：" + "、".join(missing))
+        for sid0, items in items_per_store.items():
+            cfg = stores_cfg[sid0]
+            _bridge_enqueue(sid0, items,
+                            biz="label_product", printer=cfg["printer"],
+                            iface=cfg["iface"], printer_ip=cfg["ip"])
+        sent = True
+        printer_desc = "打印助手（" + "、".join(stores_cfg[s]["name"] for s in items_per_store) + "）"
         if sent and body.write_epc and jobs:
             # 已实际下发含写芯的打印任务 → 置「已下发」（verified 不降级）
             conn.executemany(
@@ -4305,10 +4434,10 @@ def print_labels(body: LabelPrintIn, request: Request):
                 [(j["id"],) for j in jobs])
         conn.commit()
         _log(conn, op["username"], "RFID标签打印",
-             f"{len(jobs)}件×{body.copies}张 {printer_desc or '仅生成指令'}" + tpl_desc)
+             f"{len(jobs)}件×{body.copies}张 {printer_desc}" + tpl_desc)
         return {
             "ok": True, "sent": sent, "count": len(jobs) * body.copies,
-            "printer": printer_desc, "jobs": jobs, "zpl": zpl,
+            "printer": printer_desc, "jobs": jobs,
             "template_id": explicit_tpl["id"] if explicit_tpl else None,
         }
 
@@ -4403,60 +4532,41 @@ def _bridge_push(sid: int, payload: dict) -> None:
         asyncio.run_coroutine_threadsafe(coro, b.loop).result(timeout=10)
 
 
-def _bridge_enqueue(sid: int, zpl: str, count: int,
+def _bridge_enqueue(sid: int, items: list[dict],
                     biz: str = "label_product", printer: str = "",
-                    items: list[dict] | None = None,
                     iface: str = "USB", printer_ip: str = "") -> str:
-    """向门店代理下发标签任务。
+    """向门店打印助手逐件下发 printerType:"rfid_cmd" 统一指令任务（唯一打印路径）。
 
-    C# PrintAgent：逐件发结构化 printerType:"rfid" 任务（ZMIN 固件不识别 ZPL，
-    raw_passthrough 透传 ^XA 文本会"成功"但零出纸）；items 为 build_zmin_content 产物。
+    items 为 build_zmin_content 产物；助手翻译成 PCLE 后经 USB WriteToPort 出纸。
     iface/printer_ip 来自门店对该业务的指派（USB/NET/BT + NET 地址），缺省 USB 兼容老数据。
-    旧 Python 桥：维持 type:job + ZPL（得实等 ZPL 机型正常）。
     """
-    with _bridges_lock:
-        b = _bridges.get(sid)
-        agent_type = b.agent_type if b else "legacy"
-    if agent_type == "csharp":
-        if not items:
-            raise RuntimeError("C# 打印助手缺少结构化标签数据（items），拒绝下发 ZPL 透传任务")
-        last_jid = ""
-        for content in items:
-            with _bridges_lock:
-                _bridge_seq[0] += 1
-                jid = f"PJ{_bridge_seq[0]:06d}"
-            payload = {
-                "type": "print_task",
-                "taskId": jid,
-                "printerType": "rfid_cmd",
-                "brand": "zmin",
-                "interface": (iface or "USB").upper(),
-                "printerIp": printer_ip or "",
-                "printerName": printer or "Default",
-                "storeId": str(sid),
-                "content": {"commands": rfid_print.content_to_commands(content)},
-            }
-            _bridge_send(sid, payload)
-            last_jid = jid
-        return last_jid
-    # 旧 Python PrintBridge 协议: job 嵌套
-    payload = {"type": "job", "job": {"job_id": f"PJ{_bridge_next()}", "zpl": zpl,
-                                       "title": "jewelry-labels", "count": count,
-                                       "biz": biz, "printer": printer}}
-    _bridge_send(sid, payload)
-    return payload["job"]["job_id"]
-
-
-def _bridge_next() -> str:
-    with _bridges_lock:
-        _bridge_seq[0] += 1
-        return f"{_bridge_seq[0]:06d}"
+    if not items:
+        raise RuntimeError("打印助手缺少标签数据（items），拒绝下发")
+    last_jid = ""
+    for content in items:
+        with _bridges_lock:
+            _bridge_seq[0] += 1
+            jid = f"PJ{_bridge_seq[0]:06d}"
+        payload = {
+            "type": "print_task",
+            "taskId": jid,
+            "printerType": "rfid_cmd",
+            "brand": "zmin",
+            "interface": (iface or "USB").upper(),
+            "printerIp": printer_ip or "",
+            "printerName": printer or "Default",
+            "storeId": str(sid),
+            "content": {"commands": rfid_print.content_to_commands(content)},
+        }
+        _bridge_send(sid, payload)
+        last_jid = jid
+    return last_jid
 
 
 def _products_to_zmin_items(conn, products: list[dict], *, body, store_name: str,
                             explicit_tpl: dict | None, fields: set[str],
                             epc_prefix_cfg: str) -> list[dict]:
-    """逐件商品 → ZMIN 结构化 content（显式模板优先，其次品类绑定模板，回退固定布局）。"""
+    """逐件商品 → 标签内容（显式模板优先，其次品类绑定模板，回退固定布局）。"""
 
     def _bound_tpl(type_code: str):
         if not type_code:
@@ -4482,19 +4592,6 @@ def _products_to_zmin_items(conn, products: list[dict], *, body, store_name: str
                 p, fields=fields, store_name=store_name,
                 write_epc=body.write_epc, rfid_prefix=epc_prefix_cfg))
     return items
-
-
-def _build_test_zpl(store_name: str, printer: str) -> str:
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    sn = str(store_name or "").replace("^", " ").replace("~", " ")
-    pn = str(printer or "").replace("^", " ").replace("~", " ")
-    code = ts.replace("-", "").replace(":", "").replace(" ", "")
-    return ("^XA^CI28^LH30,30"
-            "^A0N,42,42^FDPrintBridge Test^FS"
-            f"^A0N,32,32^FO30,60^FD{sn}^FS"
-            f"^A0N,26,26^FO30,100^FD{pn or '-'}  {ts}^FS"
-            f"^FO30,140^BY2^BCN,70,Y,N,N^FD{code}^FS"
-            "^XZ")
 
 
 @app.get("/api/print-agent/status")
@@ -4824,18 +4921,25 @@ def health_summary(request: Request):
             "last_stocktake_days": st_days, "credit_due": round(due or 0, 2)}
 
 
+def _next_store_code(conn: sqlite3.Connection) -> str:
+    """生成下一个门店编号：4 位数字，从 0001 递增，跳过已占用编号（HQ/DEFAULT 等非数字编码不参与）。"""
+    used = set()
+    for r in conn.execute("SELECT code FROM stores"):
+        c = (r["code"] or "").strip()
+        if len(c) == 4 and c.isdigit():
+            used.add(c)
+    n = 1
+    while f"{n:04d}" in used:
+        n += 1
+    return f"{n:04d}"
+
+
 @app.post("/api/stores")
 def store_create(body: dict, request: Request):
     _require_admin(request)
     name = str(body.get("name") or "").strip()
-    code = str(body.get("code") or "").strip()
     if not name:
         raise HTTPException(400, "门店名称必填")
-    if code:
-        code_u = code.upper()
-        if len(code_u) != 2 or not all(c in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ" for c in code_u):
-            raise HTTPException(400, "门店编码需为 2 位字母或数字（如 HQ、A1、06）；留空则自动生成")
-        code = code_u
     with _db(request) as conn:
         shop_id = int(body.get("shop_id") or 0)
         if shop_id:
@@ -4843,13 +4947,12 @@ def store_create(body: dict, request: Request):
                 raise HTTPException(400, "所属店铺不存在")
         else:
             shop_id = conn.execute("SELECT id FROM shops ORDER BY id LIMIT 1").fetchone()["id"]
+        code = _next_store_code(conn)  # 门店编号自动生成，不接受外部传入
         try:
             cur = conn.execute(
                 "INSERT INTO stores(name,code,owner,shop_id) VALUES(?,?,?,?)",
-                (name, code or None, str(body.get("owner") or ""), shop_id))
+                (name, code, str(body.get("owner") or ""), shop_id))
             sid = cur.lastrowid
-            if not code:
-                code = f"{sid:02X}"
             # 新门店补齐每个打印业务的指派行（空指派）
             conn.executemany(
                 "INSERT INTO store_printers(store_id,biz_code,printer_name) VALUES(?,?, '')",
@@ -5003,7 +5106,7 @@ async def store_print_control(sid: int, body: dict, request: Request):
         # 直接明确拒绝，避免前端空等 12 秒超时
         raise HTTPException(400, "新版打印助手不支持软件进纸/退纸：请在打印机面板按 FEED 键走纸")
     if is_csharp and action == "test":
-        # C# 代理不识别 control 消息；ZMIN 不识别 ZPL → 测试页用结构化 rfid 任务
+        # C# 代理不识别 control 消息 → 测试页走统一指令 rfid_cmd（PCLE）通道
         with _bridges_lock:
             _bridge_seq[0] += 1
             cid = f"C{_bridge_seq[0]:06d}"
@@ -5021,27 +5124,26 @@ async def store_print_control(sid: int, body: dict, request: Request):
                 },
             }
         else:
+            content = {
+                "width": 66.0, "height": 25.4, "gap": 5.0, "dpi": 203,
+                "texts": [
+                    {"text": "PrintAgent Test", "x": 2.0, "y": 2.0, "size": 10.0},
+                    {"text": str(s["name"] or "")[:20], "x": 2.0, "y": 7.0, "size": 8.0},
+                    {"text": ts, "x": 2.0, "y": 12.0, "size": 8.0},
+                    {"text": str(target_printer or "")[:20], "x": 2.0, "y": 17.0, "size": 8.0},
+                ],
+            }
             payload = {
                 "type": "print_task", "taskId": cid,
-                "printerType": "rfid", "brand": "zmin",
+                "printerType": "rfid_cmd", "brand": "zmin",
                 "interface": "USB",
                 "printerIp": "",
                 "printerName": target_printer or "Default", "storeId": str(sid),
-                "content": {
-                    "width": 66.0, "height": 25.4, "gap": 5.0, "dpi": 203,
-                    "texts": [
-                        {"text": "PrintAgent Test", "x": 2.0, "y": 2.0, "size": 10.0},
-                        {"text": str(s["name"] or "")[:20], "x": 2.0, "y": 7.0, "size": 8.0},
-                        {"text": ts, "x": 2.0, "y": 12.0, "size": 8.0},
-                        {"text": str(target_printer or "")[:20], "x": 2.0, "y": 17.0, "size": 8.0},
-                    ],
-                },
+                "content": {"commands": rfid_print.content_to_commands(content)},
             }
     else:
         payload: dict = {"type": "control", "action": action,
                          "biz": biz, "printer": target_printer}
-        if action == "test":
-            payload["zpl"] = _build_test_zpl(s["name"], target_printer)
         if action != "refresh":
             with _bridges_lock:
                 _bridge_seq[0] += 1
@@ -6733,7 +6835,7 @@ def sale_create(body: SaleReq, request: Request):
                     for pm in body.payments if float(pm.amount or 0) > 0]
         if pay_list:
             for m, _amt in pay_list:
-                if m not in ("现金", "微信", "刷卡", "转账"):
+                if m not in ("现金", "微信", "支付宝", "信用卡", "刷卡", "转账"):
                     raise HTTPException(400, f"不支持的支付方式：{m}")
         else:
             pay_list = [(body.method or "现金", round(float(body.paid or 0), 2))] if float(body.paid or 0) > 0 else []
@@ -6757,11 +6859,11 @@ def sale_create(body: SaleReq, request: Request):
         clerk_name = (body.clerk_name or "").strip()[:40]
         cur = conn.execute(
             """INSERT INTO sales(bill_no,customer,phone,product,product_id,amount,paid,method,biz_date,type,status,
-                                 clerk_type,clerk_name,store_id,discount,receivable)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                 clerk_type,clerk_name,store_id,discount,receivable,real_biz_date)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (bill, body.customer, body.phone, names, first["id"], payable, paid,
              main_method, biz, "普通", status, clerk_type, clerk_name, sid,
-             discount, receivable),
+             discount, receivable, date.today().isoformat()),
         )
         sale_id = cur.lastrowid
         for seq, (p, s) in enumerate(resolved):
@@ -6975,6 +7077,7 @@ def store_list(request: Request, all: int = 0, detail: int = 0):
     with _db(request) as conn:
         rows = conn.execute(
             """SELECT s.id,s.name,s.code,s.owner,s.shop_id,
+                      IFNULL(s.display_currency,'') AS display_currency,
                       COALESCE(sp.name,'') AS shop_name,
                       IFNULL(s.bridge_key,'') AS bridge_key,
                       IFNULL(s.printer_name,'') AS printer_name,
@@ -7050,7 +7153,7 @@ def store_update(sid: int, body: dict, request: Request):
         if not row:
             raise HTTPException(404, "门店不存在")
         cur_sid, _ = _current_store(request, conn, sess)
-        if cur_sid != _hq_store_id(conn):
+        if not _is_hq_scope(conn, cur_sid):
             if sid != cur_sid:
                 raise HTTPException(403, "分店仅可修改本店资料，其他门店请切换到总部操作")
             shop_id = row["shop_id"]
@@ -7061,10 +7164,13 @@ def store_update(sid: int, body: dict, request: Request):
                     raise HTTPException(400, "所属店铺不存在")
             else:
                 shop_id = conn.execute("SELECT id FROM shops ORDER BY id LIMIT 1").fetchone()["id"]
+        dc = str(body.get("display_currency") or "").strip().upper()
+        if dc and dc not in {"CNY", "USD", "EUR"}:
+            dc = ""
         try:
             conn.execute(
-                "UPDATE stores SET name=?, owner=?, shop_id=? WHERE id=?",
-                (name, str(body.get("owner") or ""), shop_id, sid))
+                "UPDATE stores SET name=?, owner=?, shop_id=?, display_currency=? WHERE id=?",
+                (name, str(body.get("owner") or ""), shop_id, dc, sid))
             _log(conn, sess.get("username", ""), "编辑门店", f"#{sid} {name}")
             conn.commit()
         except sqlite3.IntegrityError:
@@ -7079,9 +7185,17 @@ def _require_admin(request: Request) -> dict:
     高管仅在当前工作门店为总店(HQ)时可行政——该约束由 executive_write_guard 中间件统一拦截，
     店长在任意门店均可行政（既有行为不变）。"""
     sess = _require_auth(request)
-    if sess.get("role") not in ("TENANT_ADMIN", "EXECUTIVE"):
-        raise HTTPException(403, "仅店长可操作")
+    if sess.get("role") not in ("SYS_ADMIN", "TENANT_ADMIN", "EXECUTIVE"):
+        raise HTTPException(403, "仅管理员/店长/高管可操作")
     return sess
+
+
+# 角色指派矩阵：系统管理员可指定任意角色（含高管）；店长可指定高管/店长/店员；高管只能添加店长、店员
+_ASSIGNABLE_ROLES = {
+    "SYS_ADMIN": ("SYS_ADMIN", "EXECUTIVE", "TENANT_ADMIN", "EMPLOYEE"),
+    "TENANT_ADMIN": ("EXECUTIVE", "TENANT_ADMIN", "EMPLOYEE"),
+    "EXECUTIVE": ("TENANT_ADMIN", "EMPLOYEE"),
+}
 
 
 @app.get("/api/admin/users")
@@ -7093,7 +7207,7 @@ def admin_user_list(request: Request):
         out = []
         for u in users:
             d = dict(u)
-            if d["role"] in ("TENANT_ADMIN", "EXECUTIVE"):
+            if d["role"] in ("SYS_ADMIN", "TENANT_ADMIN", "EXECUTIVE"):
                 d["store_ids"] = [-1]
             else:
                 d["store_ids"] = [r["store_id"] for r in conn.execute(
@@ -7118,14 +7232,16 @@ def admin_user_create(body: AdminUserIn, request: Request):
         raise HTTPException(400, "登录名需 2-32 位字母、数字或 _-")
     if not body.password:
         raise HTTPException(400, "请设置初始密码")
-    role = body.role if body.role in ("TENANT_ADMIN", "EXECUTIVE", "EMPLOYEE") else "EMPLOYEE"
+    if body.role not in _ASSIGNABLE_ROLES.get(op["role"], ("EMPLOYEE",)):
+        raise HTTPException(403, "无权指定该角色：仅系统管理员可指定高管/管理员")
+    role = body.role
     # 成本权限：店长/高管强制开；店员默认关，可由店长显式授予
     cost_perm = 1 if role in _COST_FORCE_VISIBLE_ROLES or body.can_view_cost is True else 0
     with _db(request) as conn:
         if conn.execute("SELECT 1 FROM users WHERE username=?", (uname,)).fetchone():
             raise HTTPException(409, "登录名已存在")
         cur = conn.execute(
-            "INSERT INTO users(username,password,display_name,role,can_view_cost) VALUES(?,?,?,?,?)",
+            "INSERT INTO users(username,password,display_name,role,can_view_cost,must_change_pwd) VALUES(?,?,?,?,?,0)",
             (uname, body.password, body.display_name.strip() or uname, role, cost_perm))
         conn.commit()
         _log(conn, op["username"], "新增账号", uname)
@@ -7139,17 +7255,21 @@ def admin_user_update(uid: int, body: AdminUserIn, request: Request):
         row = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
         if not row:
             raise HTTPException(404, "账号不存在")
+        if row["role"] == "SYS_ADMIN" and op["role"] != "SYS_ADMIN":
+            raise HTTPException(403, "仅系统管理员可修改系统管理员账号")
         if body.display_name.strip():
             conn.execute("UPDATE users SET display_name=? WHERE id=?", (body.display_name.strip(), uid))
         if body.password:
             conn.execute("UPDATE users SET password=?, must_change_pwd=0 WHERE id=?", (body.password, uid))
-        if body.role in ("TENANT_ADMIN", "EXECUTIVE", "EMPLOYEE"):
+        if body.role and body.role != row["role"]:
+            if body.role not in _ASSIGNABLE_ROLES.get(op["role"], ()):
+                raise HTTPException(403, "无权指定该角色：仅系统管理员可指定高管/管理员")
             conn.execute("UPDATE users SET role=? WHERE id=?", (body.role, uid))
-            # 店长/高管自动拥有全部门店，转任这两类角色时清掉残留的逐店授权
-            if body.role in ("TENANT_ADMIN", "EXECUTIVE"):
+            # 店长/高管/系统管理员自动拥有全部门店，转任这几类角色时清掉残留的逐店授权
+            if body.role in ("SYS_ADMIN", "TENANT_ADMIN", "EXECUTIVE"):
                 conn.execute("DELETE FROM user_stores WHERE user_id=?", (uid,))
         # 成本查看权：店长/高管强制 1（忽略传入的 false）；店员且显式传值时按勾选更新
-        new_role = body.role if body.role in ("TENANT_ADMIN", "EXECUTIVE", "EMPLOYEE") else row["role"]
+        new_role = body.role or row["role"]
         if new_role in _COST_FORCE_VISIBLE_ROLES:
             conn.execute("UPDATE users SET can_view_cost=1 WHERE id=? AND IFNULL(can_view_cost,0)=0", (uid,))
         elif body.can_view_cost is not None:
@@ -7168,6 +7288,11 @@ def admin_user_delete(uid: int, request: Request):
             raise HTTPException(404, "账号不存在")
         if row["username"] == op["username"]:
             raise HTTPException(400, "不能删除当前登录账号")
+        if row["role"] == "SYS_ADMIN":
+            if op["role"] != "SYS_ADMIN":
+                raise HTTPException(403, "仅系统管理员可删除系统管理员账号")
+            if conn.execute("SELECT COUNT(*) n FROM users WHERE role='SYS_ADMIN'").fetchone()["n"] <= 1:
+                raise HTTPException(400, "至少保留一个系统管理员账号")
         if row["role"] == "TENANT_ADMIN" and conn.execute(
                 "SELECT COUNT(*) n FROM users WHERE role='TENANT_ADMIN'").fetchone()["n"] <= 1:
             raise HTTPException(400, "至少保留一个店长账号")
@@ -7190,8 +7315,8 @@ def admin_grant_stores(uid: int, body: GrantStoresIn, request: Request):
         row = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
         if not row:
             raise HTTPException(404, "账号不存在")
-        if row["role"] in ("TENANT_ADMIN", "EXECUTIVE"):
-            raise HTTPException(400, "店长/高管自动拥有全部门店，无需单独授权")
+        if row["role"] in ("SYS_ADMIN", "TENANT_ADMIN", "EXECUTIVE"):
+            raise HTTPException(400, "管理员/店长/高管自动拥有全部门店，无需单独授权")
         valid = {r["id"] for r in conn.execute("SELECT id FROM stores").fetchall()}
         ids = [i for i in dict.fromkeys(body.store_ids) if i in valid]
         conn.execute("DELETE FROM user_stores WHERE user_id=?", (uid,))
@@ -7464,7 +7589,7 @@ def deposit_list(request: Request, page: int = 1, size: int = 50):
         rows = conn.execute(
             """SELECT d.*, CASE WHEN p.image IS NOT NULL THEN 1 ELSE 0 END AS has_image, p.image_ts AS image_ts
                FROM deposits d LEFT JOIN products p ON p.id = d.product_id
-               WHERE d.store_id=? OR d.store_id=0 ORDER BY d.id DESC LIMIT ? OFFSET ?""",
+               WHERE d.store_id=? OR d.store_id=0 ORDER BY CASE WHEN d.promised_date='' OR d.promised_date IS NULL THEN 1 ELSE 0 END, d.promised_date ASC, d.id DESC LIMIT ? OFFSET ?""",
             (sid, size, (page - 1) * size)).fetchall()
         return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
 
@@ -7553,10 +7678,10 @@ def deposit_pay(did: int, request: Request):
         bill = _next_bill_no(conn)
         bill_store = d["store_id"] or sid
         conn.execute(
-            """INSERT INTO sales(bill_no,customer,phone,product,product_id,amount,paid,method,biz_date,type,status,store_id)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            """INSERT INTO sales(bill_no,customer,phone,product,product_id,amount,paid,method,biz_date,type,status,store_id,real_biz_date)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (bill, d["customer"], d["phone"], d["product"], d["product_id"], d["total"], d["total"],
-             "尾款转单", date.today().isoformat(), "定金转单", "已完成", bill_store),
+             "尾款转单", date.today().isoformat(), "定金转单", "已完成", bill_store, date.today().isoformat()),
         )
         if d["product_id"]:
             p = conn.execute("SELECT * FROM products WHERE id=?", (d["product_id"],)).fetchone()
@@ -7717,14 +7842,57 @@ def loan_return(lid: int, request: Request):
 
 # ---------------------------------------------------------------- 客户
 
+class CustomerPhoneIn(BaseModel):
+    phone: str = ""
+    label: str = ""  # 标签：微信/座机/家人 等
+
+
 class CustomerIn(BaseModel):
     name: str
     phone: str = ""
+    email: str = ""
     level: str = "普通"
     birthday: str = ""
     anniversary: str = ""  # 结婚纪念日（客情维护提醒用）
     preference: str = ""
     gold_discount: float | None = None  # 金价折扣待遇（0<值<=1）；积分由开单自动累计，不在此手改
+    address: str = ""  # 详细地址（街道及门牌号）
+    city: str = ""
+    zip_code: str = ""
+    country: str = ""
+    source: str = ""   # 获取来源（如 展会/门店/转介绍）
+    note: str = ""     # 备注
+    phones: list[CustomerPhoneIn] = []  # 多手机号（首号为默认号，缺省时自动写回 phone 字段）
+
+
+def _save_customer_phones(conn, cid: int, phones: list) -> str:
+    """写入客户多手机号（整组替换），返回默认号（首号）；号码为空的行跳过。"""
+    conn.execute("DELETE FROM customer_phones WHERE customer_id=?", (cid,))
+    first = ""
+    seq = 0
+    for p in phones or []:
+        ph = (getattr(p, "phone", "") or "").strip()
+        if not ph:
+            continue
+        if not first:
+            first = ph
+        conn.execute(
+            "INSERT INTO customer_phones(customer_id,phone,label,seq) VALUES(?,?,?,?)",
+            (cid, ph, (getattr(p, "label", "") or "").strip(), seq),
+        )
+        seq += 1
+    return first
+
+
+def _customer_phones_map(conn, cids: list) -> dict:
+    """批量取客户多手机号：{customer_id: [{phone,label},...]}（按 seq 升序）。"""
+    cmap: dict[int, list] = {cid: [] for cid in cids}
+    if cids:
+        for pr in conn.execute(
+            f"SELECT customer_id,phone,label FROM customer_phones WHERE customer_id IN "
+            f"({','.join('?' * len(cids))}) ORDER BY customer_id,seq", cids).fetchall():
+            cmap[pr["customer_id"]].append({"phone": pr["phone"], "label": pr["label"]})
+    return cmap
 
 
 @app.get("/api/customers/list")
@@ -7744,8 +7912,9 @@ def customer_list(request: Request, page: int = 1, size: int = 50, keyword: str 
     conds, params = [], []
     if q:
         like = f"%{q}%"
-        conds.append("(c.name LIKE ? OR c.phone LIKE ?)")
-        params += [like, like]
+        conds.append("(c.name LIKE ? OR c.phone LIKE ? OR c.note LIKE ? "
+                     "OR EXISTS (SELECT 1 FROM customer_phones cp WHERE cp.customer_id=c.id AND cp.phone LIKE ?))")
+        params += [like, like, like, like]
     if flt == "today":
         conds.append("date(c.created)=date('now','localtime')")
     elif flt == "month":
@@ -7764,7 +7933,72 @@ def customer_list(request: Request, page: int = 1, size: int = 50, keyword: str 
             base + where + " ORDER BY c.total_amount DESC LIMIT ? OFFSET ?",
             params + [size, (page - 1) * size],
         ).fetchall()
-        return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
+        ids = [r["id"] for r in rows]
+        pmap = _customer_phones_map(conn, ids)
+        items = []
+        for r in rows:
+            d = dict(r)
+            d["phones"] = pmap.get(r["id"], [])
+            items.append(d)
+        return {"total": total, "page": page, "size": size, "items": items}
+
+
+@app.get("/api/customers/export")
+def customer_export(request: Request):
+    """客户资料导出为 CSV（Excel 可直接打开）。支持 keyword/filter 过滤，不分页。"""
+    sess = _require_auth(request)
+    q = (request.query_params.get("keyword") or "").strip()
+    flt = (request.query_params.get("filter") or "").strip().lower()
+    conds, params = [], []
+    if q:
+        like = f"%{q}%"
+        conds.append("(c.name LIKE ? OR c.phone LIKE ? OR c.email LIKE ?)")
+        params += [like, like, like]
+    if flt == "today":
+        conds.append("date(c.created)=date('now','localtime')")
+    elif flt == "month":
+        conds.append("substr(c.created,1,7)=substr(datetime('now','localtime'),1,7)")
+    with _db(request) as conn:
+        sid, _ = _current_store(request, conn, sess)
+        if sid != _hq_store_id(conn):
+            conds.append("c.store_id=?")
+            params.append(sid)
+        where = (" WHERE " + " AND ".join(conds)) if conds else ""
+        rows = conn.execute(
+            "SELECT c.*, "
+            "(SELECT COUNT(*) FROM sales s WHERE s.customer_id=c.id) sales_count "
+            "FROM customers c" + where + " ORDER BY c.total_amount DESC", params
+        ).fetchall()
+        pmap = _customer_phones_map(conn, [r["id"] for r in rows])
+        recs = []
+        for r in rows:
+            d = dict(r)
+            # 其他手机号：默认号之外的号码，带标签格式 微信/座机
+            d["_phones"] = " / ".join(
+                (p["phone"] + ("(" + p["label"] + ")" if p["label"] else ""))
+                for p in pmap.get(r["id"], []) if p["phone"] and p["phone"] != (r["phone"] or "")
+            )
+            recs.append(d)
+        rows = recs
+    headers = ["id", "姓名", "手机号", "其他手机号", "电子邮箱", "等级", "累计消费", "待收欠款", "生日", "纪念日", "偏好",
+               "详细地址", "城市", "邮编", "国家", "获取来源", "备注", "积分", "金价折扣", "购买次数", "建档时间"]
+    keys = ["id", "name", "phone", "_phones", "email", "level", "total_amount", "due_amount",
+            "birthday", "anniversary", "preference",
+            "address", "city", "zip_code", "country", "source", "note", "points", "gold_discount", "sales_count", "created"]
+    lines = [",".join(headers)]
+    for r in rows:
+        vals = []
+        for k in keys:
+            v = r[k]
+            if v is None:
+                vals.append("")
+            else:
+                s = str(v).replace(",", " ").replace("\n", " ")
+                vals.append('"' + s + '"' if "," in s or '"' in s else s)
+        lines.append(",".join(vals))
+    bom = "\ufeff"
+    return PlainTextResponse(bom + "\n".join(lines), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": "attachment; filename=customers.csv"})
 
 
 @app.get("/api/customers/stats")
@@ -7793,20 +8027,26 @@ def customer_lookup(request: Request, phone: str = ""):
     with _db(request) as conn:
         if not q:
             return {"items": []}
+        like = f"%{q}%"
         exact = conn.execute(
-            "SELECT * FROM customers WHERE phone=? ORDER BY total_amount DESC LIMIT 1", (q,)
+            "SELECT * FROM customers WHERE phone=? "
+            "OR EXISTS (SELECT 1 FROM customer_phones cp WHERE cp.customer_id=customers.id AND cp.phone=?) "
+            "ORDER BY total_amount DESC LIMIT 1", (q, q)
         ).fetchall()
         rows = list(exact)
         if not rows:
             rows = conn.execute(
                 "SELECT * FROM customers WHERE phone LIKE ? OR name LIKE ? "
+                "OR EXISTS (SELECT 1 FROM customer_phones cp WHERE cp.customer_id=customers.id AND cp.phone LIKE ?) "
                 "ORDER BY total_amount DESC LIMIT 8",
-                (f"%{q}%", f"%{q}%"),
+                (like, like, like),
             ).fetchall()
         out = []
+        pmap = _customer_phones_map(conn, [r["id"] for r in rows])
         for r in rows:
             d = dict(r)
             d["gold_discount"] = r["gold_discount"] if r["gold_discount"] else 1.0
+            d["phones"] = pmap.get(r["id"], [])
             out.append(d)
         return {"items": out}
 
@@ -7820,14 +8060,21 @@ def customer_create(body: CustomerIn, request: Request):
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, op)
         cur = conn.execute(
-            "INSERT INTO customers(name,phone,level,birthday,anniversary,preference,gold_discount,created,store_id) "
-            "VALUES(?,?,?,?,?,?,?,datetime('now','localtime'),?)",
-            (body.name, body.phone, body.level, body.birthday, body.anniversary, body.preference,
-             gd if gd is not None else 1.0, sid),
+            "INSERT INTO customers(name,phone,email,level,birthday,anniversary,preference,gold_discount,"
+            "address,city,zip_code,country,source,note,created,store_id) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'),?)",
+            (body.name, body.phone, body.email, body.level, body.birthday, body.anniversary, body.preference,
+             gd if gd is not None else 1.0, body.address, body.city, body.zip_code, body.country,
+             body.source, body.note, sid),
         )
+        cid = cur.lastrowid
+        # 多手机号：首号为默认号；未单独填 phone 时自动取首号
+        first = _save_customer_phones(conn, cid, body.phones)
+        if first and not (body.phone or "").strip():
+            conn.execute("UPDATE customers SET phone=? WHERE id=?", (first, cid))
         conn.commit()
         _log(conn, op["username"], "新增客户", body.name)
-        return {"id": cur.lastrowid}
+        return {"id": cid}
 
 
 @app.put("/api/customers/{cid}")
@@ -7839,14 +8086,22 @@ def customer_update(cid: int, body: CustomerIn, request: Request):
     with _db(request) as conn:
         if gd is not None:
             conn.execute(
-                "UPDATE customers SET name=?,phone=?,level=?,birthday=?,anniversary=?,preference=?,gold_discount=? WHERE id=?",
-                (body.name, body.phone, body.level, body.birthday, body.anniversary, body.preference, gd, cid),
+                "UPDATE customers SET name=?,phone=?,email=?,level=?,birthday=?,anniversary=?,preference=?,gold_discount=?,"
+                "address=?,city=?,zip_code=?,country=?,source=?,note=? WHERE id=?",
+                (body.name, body.phone, body.email, body.level, body.birthday, body.anniversary, body.preference, gd,
+                 body.address, body.city, body.zip_code, body.country, body.source, body.note, cid),
             )
         else:
             conn.execute(
-                "UPDATE customers SET name=?,phone=?,level=?,birthday=?,anniversary=?,preference=? WHERE id=?",
-                (body.name, body.phone, body.level, body.birthday, body.anniversary, body.preference, cid),
+                "UPDATE customers SET name=?,phone=?,email=?,level=?,birthday=?,anniversary=?,preference=?,"
+                "address=?,city=?,zip_code=?,country=?,source=?,note=? WHERE id=?",
+                (body.name, body.phone, body.email, body.level, body.birthday, body.anniversary, body.preference,
+                 body.address, body.city, body.zip_code, body.country, body.source, body.note, cid),
             )
+        # 多手机号整组替换；未单独填 phone 时默认号取首号
+        first = _save_customer_phones(conn, cid, body.phones)
+        if first and not (body.phone or "").strip():
+            conn.execute("UPDATE customers SET phone=? WHERE id=?", (first, cid))
         conn.commit()
         _log(conn, op["username"], "修改客户", body.name)
         return {"ok": True}
@@ -7861,24 +8116,29 @@ def customer_detail(cid: int, request: Request):
         if not cust:
             raise HTTPException(404, "会员不存在")
         d = dict(cust)
-        # 历史销售（倒序，最近在最上）——匹配 customer_id 或 phone 或 name
+        # 多手机号：历史销售/定金按默认号 + 全部备用号匹配
+        pmap = _customer_phones_map(conn, [cid])
+        d["phones"] = pmap.get(cid, [])
+        all_phones = list({*( [cust["phone"] or ""] ), *[p["phone"] for p in d["phones"]]} - {""})
+        ph_cond = " OR ".join(["phone=?" for _ in all_phones]) if all_phones else "0"
+        # 历史销售（倒序，最近在最上）——匹配 customer_id 或任一手机号或姓名
         sales = conn.execute(
-            """SELECT id,bill_no,product,amount,paid,biz_date,status,created,type,method
-               FROM sales WHERE customer_id=? OR phone=? OR customer=?
+            f"""SELECT id,bill_no,product,amount,paid,biz_date,status,created,type,method
+               FROM sales WHERE customer_id=? OR customer=? OR ({ph_cond})
                ORDER BY COALESCE(biz_date,created) DESC, id DESC LIMIT 50""",
-            (cid, cust["phone"] or "", cust["name"] or ""),
+            (cid, cust["name"] or "", *all_phones),
         ).fetchall()
         # 历史定金预定（倒序）
         deposits = conn.execute(
-            """SELECT id,product,total,deposit,balance,promised_date,status,created
-               FROM deposits WHERE phone=? OR customer=?
+            f"""SELECT id,product,total,deposit,balance,promised_date,status,created
+               FROM deposits WHERE customer=? OR ({ph_cond})
                ORDER BY COALESCE(promised_date,created) DESC, id DESC LIMIT 20""",
-            (cust["phone"] or "", cust["name"] or ""),
+            (cust["name"] or "", *all_phones),
         ).fetchall()
         # 最后一次消费时间
         last_sale = conn.execute(
-            "SELECT MAX(COALESCE(biz_date,date(created))) ld FROM sales WHERE customer_id=? OR phone=? OR customer=?",
-            (cid, cust["phone"] or "", cust["name"] or ""),
+            f"SELECT MAX(COALESCE(biz_date,date(created))) ld FROM sales WHERE customer_id=? OR customer=? OR ({ph_cond})",
+            (cid, cust["name"] or "", *all_phones),
         ).fetchone()["ld"]
         d["salesCount"] = len(sales)
         d["depositCount"] = len(deposits)
@@ -8247,6 +8507,18 @@ def _default_desc(row: dict) -> str:
     if row.get("size"): parts.append(f"尺寸：{row['size']}")
     if row.get("price"): parts.append(f"参考价：¥{float(row['price']):,.0f}")
     return "｜".join(parts)
+
+
+@app.get("/api/docs/features")
+def docs_features(request: Request):
+    """功能介绍：返回 docs/软件功能介绍.md 原文，前端渲染预览。所有登录角色可读（含系统管理员）。"""
+    _require_auth(request)
+    doc = ROOT / "docs" / "软件功能介绍.md"
+    try:
+        md = doc.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise HTTPException(404, "功能介绍文档不存在")
+    return {"ok": True, "md": md}
 
 
 @app.get("/api/showcase/list")
@@ -8869,7 +9141,7 @@ def _ops_reset_password(uid: int, request: Request,
         row = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
         if not row:
             raise HTTPException(404, "账号不存在")
-        conn.execute("UPDATE users SET password=?, must_change_pwd=1 WHERE id=?", (new_pwd, uid))
+        conn.execute("UPDATE users SET password=?, must_change_pwd=0 WHERE id=?", (new_pwd, uid))
         conn.commit()
         _log(conn, op.operator, "运维端·重置密码",
              f"{row['username']}（{row['display_name'] or row['username']}）密码已重置，登录后须修改"
@@ -8893,41 +9165,55 @@ _MOBILE_ASSET_SUFFIXES = (".js", ".css", ".map", ".png", ".svg", ".ico", ".jpg",
                           ".webp", ".json", ".webmanifest", ".woff2")
 
 
+def _etag_of(f: Path) -> str:
+    """文件指纹：mtime + size，内容变了必然变化。"""
+    st = f.stat()
+    return f'"v1-{st.st_mtime_ns:x}-{st.st_size:x}"'
+
+
+def _no_cache_file(request: Request, f: Path):
+    """no-cache + ETag 条件请求：未变 304（不传正文），变了 200 带最新内容。
+    Starlette FileResponse 自带 ETag 但不处理 If-None-Match，这里自己协商。"""
+    et = _etag_of(f)
+    inm = request.headers.get("if-none-match")
+    if inm and et in [v.strip() for v in inm.split(",")]:
+        return Response(status_code=304, headers={"Cache-Control": "no-cache", "ETag": et})
+    return FileResponse(str(f), headers={"Cache-Control": "no-cache", "ETag": et})
+
+
 @app.get("/mobile")
 @app.get("/mobile/{asset_path:path}")
-def mobile_asset(asset_path: str = ""):
+def mobile_asset(request: Request, asset_path: str = ""):
     """网页版手机应用：伺服 mobile/ 目录（免安装 H5/PWA）。"""
     idx = MOBILE_DIR / "index.html"
     if not asset_path:
         if idx.is_file():
-            return FileResponse(str(idx), headers={"Cache-Control": "no-cache"})
+            return _no_cache_file(request, idx)
     f = (MOBILE_DIR / asset_path).resolve()
     if f.is_file() and _safe_relative(f, MOBILE_DIR.resolve()) and f.suffix.lower() in _MOBILE_ASSET_SUFFIXES:
-        nocache = {"Cache-Control": "no-cache"} if f.suffix.lower() in (".js", ".css", ".html") else None
-        return FileResponse(str(f), headers=nocache)
+        return _no_cache_file(request, f)
     if idx.is_file() and "." not in Path(asset_path).name:
-        return FileResponse(str(idx), headers={"Cache-Control": "no-cache"})
+        return _no_cache_file(request, idx)
     return JSONResponse({"detail": "Not Found"}, status_code=404)
 
 
 @app.get("/{asset_path:path}")
-def spa_asset(asset_path: str):
+def spa_asset(request: Request, asset_path: str):
     if asset_path.startswith("api/"):
         return JSONResponse({"detail": "Not Found"}, status_code=404)
     if asset_path.startswith("logo/"):
         f = (LOGO_DIR / Path(asset_path).name).resolve()
         if f.is_file() and _safe_relative(f, LOGO_DIR.resolve()):
-            return FileResponse(str(f))
+            return _no_cache_file(request, f)
     f = (FRONTEND_DIR / asset_path).resolve()
     if f.is_file() and _safe_relative(f, FRONTEND_DIR.resolve()) and f.suffix.lower() in (
         ".js", ".css", ".map", ".png", ".svg", ".woff2", ".ico", ".jpg", ".webp", ".html",
     ):
-        # 业务页面脚本/样式每次校验更新，避免发布后浏览器缓存旧版（内网工具，开销可忽略）
-        nocache = {"Cache-Control": "no-cache"} if f.suffix.lower() in (".js", ".css", ".html") else None
-        return FileResponse(str(f), headers=nocache)
+        # 全资源 no-cache（含图片/字体等）：避免改图/改 manifest 后浏览器吃启发式缓存旧版（内网工具，开销可忽略）
+        return _no_cache_file(request, f)
     index = FRONTEND_DIR / "index.html"
     if index.exists() and "." not in Path(asset_path).name:
-        return FileResponse(str(index), headers={"Cache-Control": "no-cache"})
+        return _no_cache_file(request, index)
     return JSONResponse({"detail": "Not Found"}, status_code=404)
 
 

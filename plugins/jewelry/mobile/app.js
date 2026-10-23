@@ -22,10 +22,54 @@
     return (neg ? "-" : "") + s;
   }
 
+  var _MCUR = { CNY: '￥', USD: '$', EUR: '€' };
+  function _mFindRate(from, to) {
+    if (!from || !to || from === to) return 1.0;
+    var rates = (ST.bizConfig && ST.bizConfig.rates) || [];
+    for (var i = 0; i < rates.length; i++) {
+      if (rates[i].from_currency === from && rates[i].to_currency === to) return Number(rates[i].rate) || 1.0;
+    }
+    for (var j = 0; j < rates.length; j++) {
+      if (rates[j].from_currency === to && rates[j].to_currency === from) {
+        var r = Number(rates[j].rate); return r > 0 ? 1 / r : 1.0;
+      }
+    }
+    return 1.0;
+  }
   function money(n) {
     if (n === null) return "***";
     if (n === undefined || n === "") return "—";
-    return "¥" + fmtNum(n);
+    var base = "CNY";  // 内部记账币种固定人民币
+    var target = (ST.bizConfig && (ST.bizConfig.store_currency || ST.bizConfig.currency)) || base;
+    var rate = _mFindRate(base.toUpperCase(), target.toUpperCase());
+    var val = Number(n) * rate;
+    var sym = _MCUR[(target || base).toUpperCase()] || "￥";
+    return sym + fmtNum(val);
+  }
+
+  function _mEntryCur(sid) {
+    var fallback = (ST.bizConfig && ST.bizConfig.currency) || "CNY";
+    if (Number(sid) && Number(sid) === Number(ST.storeId)) {
+      return ((ST.bizConfig && ST.bizConfig.store_currency) || fallback).toUpperCase();
+    }
+    var s = null;
+    for (var i = 0; i < (ST.stores || []).length; i++) {
+      if (ST.stores[i].id === Number(sid)) { s = ST.stores[i]; break; }
+    }
+    var dc = (s && s.display_currency) || "";
+    return (dc || fallback).toUpperCase();
+  }
+  function _mEntryRate(sid) { return _mFindRate("CNY", _mEntryCur(sid)) || 1; }
+  // DB 人民币 → 门店录入币种（打开表单显示用）
+  function mCnyToEntry(v, sid) {
+    if (v === "" || v == null) return "";
+    return Math.round(Number(v) * _mEntryRate(sid) * 100) / 100;
+  }
+  // 门店录入币种 → DB 人民币（保存前用）
+  function mEntryToCny(v, sid) {
+    if (v === "" || v == null) return v;
+    var r = _mEntryRate(sid);
+    return r > 0 ? Math.round(Number(v) / r * 100) / 100 : Number(v);
   }
 
   var STATUS_KEY = {
@@ -65,6 +109,7 @@
     goldData: null, riskData: null, catSales: null, tagStats: null, rankData: null, bizAnalysis: null,
     saleStatsDim: "category", tagSel: [], tagList: [], tagGroupList: [], productTypes: [],
     dashRange: "6m", trendCmp: "yoy",   // 看板全局时间段（today/week/month/3m/6m/year）+ 趋势对比口径（yoy 同比 / mom 环比）
+    bizConfig: { currency: "CNY", symbol: "￥" },
     products: { items: [], total: 0, page: 1, size: 30, q: "", status: "" },
     productForm: null, productEdit: false, productView: null,
     inventory: null, lockedItems: [],
@@ -77,6 +122,7 @@
     loans: { items: [] }, repairs: { items: [] }, purchases: { items: [] }, outsourcings: { items: [] },
     appointments: [], logs: { items: [], total: 0, page: 1, size: 30 },
     profile: null,
+    docs: "",
     // 门店调拨
     transfers: { out: [], in: [], tab: "out" },
     trPick: { items: [], q: "", sel: {}, store: 0 },
@@ -104,6 +150,7 @@
     // 用户与门店授权（仅店长）
     adminUsers: [], adminUserOpen: false,
     adminUserForm: { id: 0, username: "", display_name: "", password: "", role: "EMPLOYEE", can_view_cost: false },
+    changePwdForm: { old: "", new: "", confirm: "" },
     // 经办人类别
     clerkTypes: [],
     clerkEdit: { id: 0, name: "", sort_order: 1 }, clerkEditMode: "new",
@@ -168,8 +215,23 @@
       ST.stores = r.stores || [];
       ST.storeId = r.store_id || (ST.user && ST.user.store_id) || 0;
       persistToken();
+      // 加载币种+汇率+门店币种
+      api("GET", "/api/currency").then(function (c) {
+        ST.bizConfig.currency = c.hq_currency || "CNY";  // 总部管理视图显示币种
+        ST.bizConfig.symbol = c.hq_symbol || c.symbol;
+        ST.bizConfig.store_currency = c.store_currency;
+        ST.bizConfig.store_symbol = c.store_symbol;
+        ST.bizConfig.rates = c.rates || [];
+      }).catch(function () {});
       toast(t("msg.loginOk") + (ST.user && ST.user.display_name ? "，" + ST.user.display_name : ""));
-      go("dashboard");
+      if (ST.user && ST.user.must_change_pwd) {
+        ST.changePwdForm = { old: "", new: "", confirm: "" };
+        ST.sheet = "pwd";
+      } else if (ST.user && ST.user.role === "SYS_ADMIN") {
+        go("mine"); // 系统管理员只能做用户管理
+      } else {
+        go("dashboard");
+      }
     }).catch(function (e) {
       ST.logging = false;
       toast(e.message || t("login.err"), "error");
@@ -180,6 +242,19 @@
     api("POST", "/api/auth/logout", {}).catch(function () {});
     forceLogout();
     ST.tab = "dashboard"; ST.sub = "";
+  }
+
+  function submitChangePwd() {
+    var f = ST.changePwdForm;
+    if (!f.old || !f.new) { toast(t("msg.required"), "error"); return; }
+    if (f.new !== f.confirm) { toast(t("pf.pwdMismatch"), "error"); return; }
+    if (f.new.length < 6) { toast(t("pf.pwdTooShort"), "error"); return; }
+    api("POST", "/api/auth/change-password", { old: f.old, new: f.new }).then(function () {
+      toast(t("pf.pwdChanged"));
+      ST.changePwdForm = { old: "", new: "", confirm: "" };
+      ST.sheet = "";
+      if (ST.user) ST.user.must_change_pwd = false;
+    }).catch(function (e) { toast(e.message, "error"); });
   }
 
   function switchStore(sid) {
@@ -198,6 +273,18 @@
       if (ST.stores[i].id === ST.storeId) return ST.stores[i].name;
     }
     return (ST.user && ST.user.display_name) || ST.tenant || "";
+  }
+
+  // 总部级视图（总部汇总 -1，或总部实体 code=HQ/DEFAULT）：总部不存放商品，不进行入库
+  function isHqView() {
+    if (ST.storeId === -1) return true;
+    for (var i = 0; i < ST.stores.length; i++) {
+      if (ST.stores[i].id === ST.storeId) {
+        var c = String(ST.stores[i].code || "").toUpperCase();
+        return c === "HQ" || c === "DEFAULT";
+      }
+    }
+    return false;
   }
 
   // ---------------- navigation ----------------
@@ -230,6 +317,7 @@
     else if (name === "store-profile") loadProfile();
     else if (name === "hq") { ST.hqTab = "info"; loadHqTab(); }
     else if (name === "devices") loadDevicePage();
+    else if (name === "docs") loadDocs();
     var el = document.querySelector(".page");
     if (el) el.scrollTop = 0;
   }
@@ -350,22 +438,22 @@
   function rankBlocks() {
     var d = ST.rankData;
     if (!d) return [];
-    var m = function (v) { return (v == null) ? "***" : ("￥" + fmtNum(v)); };
+    var m = function (v) { return (v == null) ? "***" : (money(v)); };
     return [
       { key: "turnover", title: t("rank.turnover"), rows: (d.turnover || []).map(function (r) {
           return { name: r.name, v: r.days + " " + t("rank.days"), sub: r.sold }; }) },
       { key: "profit", title: t("rank.profit"), rows: (d.profit || []).map(function (r) {
           return { name: r.name, v: r.rate == null ? "***" : (r.rate + "%"), sub: m(r.profit) }; }) },
       { key: "qty", title: t("rank.qty"), rows: (d.qty || []).map(function (r) {
-          return { name: r.name, v: r.qty + " " + t("tag.pieceUnit"), sub: "￥" + fmtNum(r.amount) }; }) },
+          return { name: r.name, v: r.qty + " " + t("tag.pieceUnit"), sub: money(r.amount) }; }) },
       { key: "customer", title: t("rank.customer"), rows: (d.customer || []).map(function (r) {
-          return { name: r.name, v: "￥" + fmtNum(r.amount), sub: r.bills + " " + t("rank.bills") }; }) },
+          return { name: r.name, v: money(r.amount), sub: r.bills + " " + t("rank.bills") }; }) },
       { key: "clerk", title: t("rank.clerk"), rows: (d.clerk || []).map(function (r) {
-          return { name: r.name, v: "￥" + fmtNum(r.amount), sub: r.bills + " " + t("rank.bills") }; }) },
+          return { name: r.name, v: money(r.amount), sub: r.bills + " " + t("rank.bills") }; }) },
       { key: "slow", title: t("rank.slow"), hint: t("rank.slowHint"), rows: (d.slow || []).map(function (r) {
-          return { name: r.name, v: r.age + " " + t("rank.days"), sub: r.cost == null ? "" : (t("kpi.stockCost") + " ￥" + fmtNum(r.cost)) }; }) },
+          return { name: r.name, v: r.age + " " + t("rank.days"), sub: r.cost == null ? "" : (t("kpi.stockCost") + " " + money(r.cost)) }; }) },
       { key: "category", title: t("rank.category"), rows: (d.category || []).map(function (r) {
-          return { name: r.name, v: "￥" + fmtNum(r.amount), sub: r.qty + " " + t("tag.pieceUnit") }; }) }
+          return { name: r.name, v: money(r.amount), sub: r.qty + " " + t("tag.pieceUnit") }; }) }
     ];
   }
 
@@ -403,14 +491,18 @@
     };
   }
 
-  function newProduct() { ST.productForm = blankProduct(); ST.productEdit = false; openSub("product-edit"); }
+  function newProduct() {
+    if (isHqView()) { toast("总部不直接录入商品，请切换到具体门店后新增商品", "error"); return; }
+    ST.productForm = blankProduct(); ST.productEdit = false; openSub("product-edit");
+  }
 
   function editProduct() {
     var p = ST.productView; if (!p) return;
     ST.productForm = {
       id: p.id, code: p.code || "", name: p.name || "", category: p.category || "",
       material: p.material || "", weight: p.weight || "", size: p.size || "", cert: p.cert || "",
-      cost: p.cost == null ? "" : p.cost, price: p.price == null ? "" : p.price,
+      cost: p.cost == null ? "" : mCnyToEntry(p.cost, p.store_id),
+      price: p.price == null ? "" : mCnyToEntry(p.price, p.store_id),
       status: p.status || "在库", rfid_epc: p.rfid_epc || "", location_id: p.location_id || 0,
       high_value: p.high_value || 0, showcase_public: p.showcase_public || 0,
       product_type: p.product_type || "", product_type_code: p.product_type_code || "", category_code: p.category_code || "", image_ts: p.image_ts || ""
@@ -424,7 +516,8 @@
     ST.productForm.name = p.name || ""; ST.productForm.category = p.category || "";
     ST.productForm.material = p.material || ""; ST.productForm.weight = p.weight || "";
     ST.productForm.size = p.size || ""; ST.productForm.cert = p.cert || "";
-    ST.productForm.cost = p.cost == null ? "" : p.cost; ST.productForm.price = p.price == null ? "" : p.price;
+    ST.productForm.cost = p.cost == null ? "" : mCnyToEntry(p.cost, p.store_id);
+    ST.productForm.price = p.price == null ? "" : mCnyToEntry(p.price, p.store_id);
     ST.productForm.product_type = p.product_type || ""; ST.productForm.product_type_code = p.product_type_code || "";
     ST.productForm.category_code = p.category_code || "";
     ST.productEdit = false; openSub("product-edit");
@@ -434,7 +527,7 @@
     var body = {
       code: f.code, name: f.name, category: f.category, material: f.material,
       weight: f.weight === "" ? "" : f.weight, size: f.size, cert: f.cert,
-      cost: f.cost === "" ? null : f.cost, price: f.price === "" ? null : f.price,
+      cost: f.cost === "" ? null : mEntryToCny(f.cost, ST.storeId), price: f.price === "" ? null : mEntryToCny(f.price, ST.storeId),
       status: f.status, rfid_epc: f.rfid_epc, location_id: f.location_id || null,
       high_value: f.high_value ? 1 : 0, showcase_public: f.showcase_public ? 1 : 0,
       product_type: f.product_type, product_type_code: f.product_type_code, category_code: f.category_code
@@ -519,8 +612,8 @@
     var patch = {};
     if (b.category !== "") patch.category = b.category;
     if (b.material !== "") patch.material = b.material;
-    if (b.cost !== "") { var c = parseFloat(b.cost); if (!isNaN(c)) patch.cost = c; }
-    if (b.price !== "") { var pr = parseFloat(b.price); if (!isNaN(pr)) patch.price = pr; }
+    if (b.cost !== "") { var c = parseFloat(b.cost); if (!isNaN(c)) patch.cost = mEntryToCny(c, ST.storeId); }
+    if (b.price !== "") { var pr = parseFloat(b.price); if (!isNaN(pr)) patch.price = mEntryToCny(pr, ST.storeId); }
     if (!Object.keys(patch).length) { toast(t("prod.batchNoChange"), "error"); return; }
     var items = selectedProducts();
     b.busy = true;
@@ -563,7 +656,7 @@
       loadProducts(true);
     }).catch(function (e) { ST.loading = false; toast(e.message, "error"); });
   }
-  // ---------------- 标签打印（云端出 ZPL → 门店打印助手） ----------------
+  // ---------------- 标签打印（云端排版 → 门店打印助手 → PCLE 出纸） ----------------
   function _labelItemOf(p) {
     return { id: p.id, code: p.code || "", name: p.name || "", price: p.price, material: p.material || "" };
   }
@@ -644,10 +737,9 @@
     ST.labelBusy = true; ST.labelResult = null;
     var body = {
       product_ids: ST.labelItems.map(function (x) { return x.id; }),
-      printer: "", copies: ST.labelCopies || 1,
-      write_epc: !!ST.writeEpc, font: "E:SIMSUN.FNT",
+      copies: ST.labelCopies || 1, write_epc: !!ST.writeEpc,
       fields: ["store", "name", "spec", "price", "barcode"],
-      simulate: false, route: "agent"
+      route: "agent"
     };
     api("POST", "/api/print/labels", body).then(function (r) {
       ST.labelBusy = false;
@@ -660,7 +752,7 @@
     });
   }
   // ---------------- 商品图片（选择 / 裁切 / 上传） ----------------
-  var IMG_LONG_EDGE = 700, IMG_QUALITY = 0.75;
+  var IMG_LONG_EDGE = 800, IMG_QUALITY = 0.75;
 
   function productImageUrl(p) {
     if (!p || !p.id) return "";
@@ -887,7 +979,10 @@
     return { code: "", name: "", category: "", material: "", weight: "", size: "", cert: "", cost: "", price: "", rfid_epc: "" };
   }
 
-  function inboundForm() { ST.productForm = blankInbound(); ST.productEdit = false; openSub("inbound"); }
+  function inboundForm() {
+    if (isHqView()) { toast("总部视图不进行入库，请切换到具体门店操作", "error"); return; }
+    ST.productForm = blankInbound(); ST.productEdit = false; openSub("inbound");
+  }
 
   function submitInbound() {
     var f = ST.productForm;
@@ -1032,16 +1127,35 @@
     }).catch(function (e) { toast(e.message, "error"); });
   }
 
-  function blankCustomer() { return { id: 0, name: "", phone: "", level: "普通", birthday: "", preference: "" }; }
+  function blankCustomer() {
+    return { id: 0, name: "", phone: "", email: "", level: "普通", birthday: "", anniversary: "", preference: "",
+      address: "", city: "", zip_code: "", country: "", source: "", note: "",
+      phones: [{ phone: "", label: "" }] };  // 多手机号：首行为默认号
+  }
   function newCustomer() { ST.custForm = blankCustomer(); openSub("cust-edit"); }
   function editCustomer() {
     var c = ST.custDetail; if (!c) return;
-    ST.custForm = { id: c.id, name: c.name || "", phone: c.phone || "", level: c.level || "普通", birthday: c.birthday || "", preference: c.preference || "" };
+    var phones = (c.phones && c.phones.length)
+      ? c.phones.map(function (p) { return { phone: p.phone || "", label: p.label || "" }; })
+      : [{ phone: c.phone || "", label: "" }];
+    ST.custForm = { id: c.id, name: c.name || "", phone: c.phone || "", email: c.email || "", level: c.level || "普通",
+      birthday: c.birthday || "", anniversary: c.anniversary || "", preference: c.preference || "",
+      address: c.address || "", city: c.city || "", zip_code: c.zip_code || "", country: c.country || "",
+      source: c.source || "", note: c.note || "", phones: phones };
     openSub("cust-edit");
+  }
+  function addCustPhone() { var f = ST.custForm; if (!f.phones) f.phones = []; f.phones.push({ phone: "", label: "" }); }
+  function delCustPhone(i) {
+    var f = ST.custForm;
+    if (f.phones && f.phones.length > 1) f.phones.splice(i, 1);
+    else if (f.phones) f.phones[0] = { phone: "", label: "" };
   }
   function saveCustomer() {
     var f = ST.custForm;
     if (!f.name) { toast(t("msg.required"), "error"); return; }
+    f.phones = (f.phones || []).filter(function (p) { return (p.phone || "").trim(); })
+      .map(function (p) { return { phone: (p.phone || "").trim(), label: (p.label || "").trim() }; });
+    f.phone = (f.phone || "").trim() || (f.phones[0] ? f.phones[0].phone : "");
     ST.loading = true;
     var req = f.id ? api("PUT", "/api/customers/" + f.id, f) : api("POST", "/api/customers", f);
     req.then(function () {
@@ -1136,6 +1250,56 @@
   function loadProfile() {
     api("GET", "/api/profile").then(function (d) { ST.profile = d; }).catch(function (e) { toast(e.message, "error"); });
   }
+  // ---------------- 功能介绍（渲染 docs/软件功能介绍.md） ----------------
+  function loadDocs() {
+    api("GET", "/api/docs/features").then(function (r) {
+      ST.docs = renderMd((r && r.content) || "");
+    }).catch(function (e) { toast(e.message, "error"); });
+  }
+  function renderMd(text) {
+    var lines = (text || "").split("\n");
+    var html = [];
+    var inUl = false, inOl = false, inTable = false;
+    function closeLists() { if (inUl) { html.push("</ul>"); inUl = false; } if (inOl) { html.push("</ol>"); inOl = false; } }
+    function closeTable() { if (inTable) { html.push("</tbody></table>"); inTable = false; } }
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i], t = line.replace(/\s+$/, "");
+      if (!t.trim()) { closeLists(); closeTable(); continue; }
+      var m;
+      if ((m = t.match(/^#{1,6}\s+(.*)$/))) {
+        closeLists(); closeTable();
+        var lv = (t.match(/^#+/)[0]).length;
+        html.push("<h" + lv + ">" + escInl(m[1]) + "</h" + lv + ">");
+      } else if ((m = t.match(/^>\s?(.*)$/))) {
+        closeLists(); closeTable();
+        html.push("<blockquote>" + escInl(m[1]) + "</blockquote>");
+      } else if (/^\|.*\|$/.test(t)) {
+        closeLists();
+        if (!inTable) { html.push("<table><tbody>"); inTable = true; }
+        var cells = t.replace(/^\||\|$/g, "").split("|").map(function (c) { return c.trim(); });
+        var isSep = cells.every(function (c) { return /^:?-+:?$/.test(c); });
+        if (isSep) continue;
+        html.push("<tr>" + cells.map(function (c) { return "<td>" + escInl(c) + "</td>"; }).join("") + "</tr>");
+      } else if ((m = t.match(/^[-*]\s+(.*)$/))) {
+        closeTable();
+        if (!inUl) { html.push("<ul>"); inUl = true; }
+        html.push("<li>" + escInl(m[1]) + "</li>");
+      } else if ((m = t.match(/^\d+\.\s+(.*)$/))) {
+        closeTable();
+        if (!inOl) { html.push("<ol>"); inOl = true; }
+        html.push("<li>" + escInl(m[1]) + "</li>");
+      } else {
+        closeLists(); closeTable();
+        html.push("<p>" + escInl(t) + "</p>");
+      }
+    }
+    closeLists(); closeTable();
+    return html.join("");
+  }
+  function escInl(s) {
+    var d = document.createElement("div"); d.textContent = s;
+    return d.innerHTML.replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  }
   function saveProfile() {
     var p = ST.profile; if (!p) return;
     api("PUT", "/api/profile", {
@@ -1225,10 +1389,8 @@
   function saveStore() {
     var d = ST.storeEdit;
     if (!d.name || !d.name.trim()) { toast(t("shop.storeNameReq"), "error"); return; }
-    var code = (d.code || "").trim().toUpperCase();
-    if (!d.id && code && !/^[A-Z0-9]{2}$/.test(code)) { toast(t("store.codeRule"), "error"); return; }
-    d.code = code;
-    var payload = { name: d.name.trim(), code: code, owner: (d.owner || "").trim(), shop_id: d.shop_id || 0 };
+    // 门店编号由后端自动生成（0001 起）且不可修改，前端不提交 code
+    var payload = { name: d.name.trim(), owner: (d.owner || "").trim(), shop_id: d.shop_id || 0 };
     var req = d.id ? api("PUT", "/api/stores/" + d.id, payload) : api("POST", "/api/stores", payload);
     req.then(function () { toast(t("store.saveOk")); resetStoreEdit(); loadShops(); loadHqStores(); }).catch(function (e) { toast(e.message, "error"); });
   }
@@ -1358,12 +1520,26 @@
       .catch(function (err) { toast(err.message, "error"); });
   }
 
-  // ---------------- 用户与门店授权（仅店长） ----------------
-  function isAdminRole() { return !!(ST.user && ST.user.role === "TENANT_ADMIN"); }
+  // ---------------- 用户与门店授权（管理员/高管/系统管理员） ----------------
+  function isSysAdmin() { return !!(ST.user && ST.user.role === "SYS_ADMIN"); }
+  function canManageUsers() {
+    var r = ST.user && ST.user.role;
+    return r === "SYS_ADMIN" || r === "TENANT_ADMIN" || r === "EXECUTIVE";
+  }
+  function isAdminRole() { return canManageUsers(); } // 兼容旧调用
   function roleText(role) {
+    if (role === "SYS_ADMIN") return t("pf.roleSysAdmin");
     if (role === "TENANT_ADMIN") return t("pf.roleAdmin");
     if (role === "EXECUTIVE") return t("pf.roleExec");
     return t("pf.roleClerk");
+  }
+  // 当前账号可指派的角色矩阵（与电脑端一致）
+  function assignableRoles() {
+    var r = ST.user && ST.user.role;
+    if (r === "SYS_ADMIN") return ["SYS_ADMIN", "EXECUTIVE", "TENANT_ADMIN", "EMPLOYEE"];
+    if (r === "TENANT_ADMIN") return ["EXECUTIVE", "TENANT_ADMIN", "EMPLOYEE"];
+    if (r === "EXECUTIVE") return ["TENANT_ADMIN", "EMPLOYEE"];
+    return [];
   }
   function loadAdminUsers() {
     api("GET", "/api/admin/users").then(function (r) { ST.adminUsers = r.items || []; })
@@ -1877,9 +2053,10 @@
   }
   function roleName() {
     var r = ST.user && ST.user.role;
+    if (r === "SYS_ADMIN") return t("pf.roleSysAdmin");
     if (r === "EXECUTIVE") return t("pf.roleExec");
     if (r === "TENANT_ADMIN" || r === "admin") return t("pf.roleAdmin");
-    return r || t("pf.roleClerk");
+    return t("pf.roleClerk");
   }
 
 
@@ -1897,7 +2074,8 @@
   }
 
   var methods = {
-    login: login, logout: logout, switchStore: switchStore, setLang: setLang, curStoreName: curStoreName,
+    login: login, logout: logout, submitChangePwd: submitChangePwd,
+    switchStore: switchStore, setLang: setLang, curStoreName: curStoreName, isHqView: isHqView,
     go: go, openSub: openSub, closeSub: closeSub, onScroll: onScroll,
     loadDash: loadDash,
     loadGold: loadGold, localeCurrency: localeCurrency, pctCls: pctCls, pctLabel: pctLabel,
@@ -1927,7 +2105,7 @@
     loadDeposits: loadDeposits, prepareDeposit: prepareDeposit, depBalance: depBalance, createDeposit: createDeposit,
     payDeposit: payDeposit, voidDeposit: voidDeposit,
     loadCustomers: loadCustomers, loadMoreCustomers: loadMoreCustomers, viewCustomer: viewCustomer,
-    newCustomer: newCustomer, editCustomer: editCustomer, saveCustomer: saveCustomer,
+    newCustomer: newCustomer, editCustomer: editCustomer, saveCustomer: saveCustomer, addCustPhone: addCustPhone, delCustPhone: delCustPhone,
     loadLoans: loadLoans, newLoan: newLoan, createLoan: createLoan, returnLoan: returnLoan,
     loadRepairs: loadRepairs, newRepair: newRepair, createRepair: createRepair, repairEdit: repairEdit, saveRepair: saveRepair,
     loadPurchases: loadPurchases, newPurchase: newPurchase, createPurchase: createPurchase, receivePurchase: receivePurchase,
@@ -1943,7 +2121,7 @@
     copyCoUrl: copyCoUrl, copyH5Url: copyH5Url, coStatusText: coStatusText,
     loadBatches: loadBatches, viewBatch: viewBatch, viewBatchProduct: viewBatchProduct,
     sbResultText: sbResultText, sbResultClass: sbResultClass,
-    loadProfile: loadProfile, saveProfile: saveProfile, quickGo: quickGo, reminderCount: reminderCount,
+    loadProfile: loadProfile, saveProfile: saveProfile, loadDocs: loadDocs, quickGo: quickGo, reminderCount: reminderCount,
     switchHqTab: switchHqTab, loadHqTab: loadHqTab, siteHref: siteHref, saveHqProfile: saveHqProfile,
     hqLangName: hqLangName, hqLangFilled: hqLangFilled, openProfLang: openProfLang,
     loadShops: loadShops, loadHqStores: loadHqStores, storesByShop: storesByShop, createStore: createStore,
@@ -1957,7 +2135,8 @@
     loadLocations: loadLocations, locsOfStore: locsOfStore, onLocStoreChange: onLocStoreChange,
     resetLocEdit: resetLocEdit, addLocForCur: addLocForCur, editLoc: editLoc, saveLoc: saveLoc,
     delLoc: delLoc, toggleLoc: toggleLoc,
-    isAdminRole: isAdminRole, roleText: roleText, loadAdminUsers: loadAdminUsers,
+    isAdminRole: isAdminRole, isSysAdmin: isSysAdmin, canManageUsers: canManageUsers,
+    assignableRoles: assignableRoles, roleText: roleText, loadAdminUsers: loadAdminUsers,
     toggleUserStore: toggleUserStore, openUserCreate: openUserCreate, openUserEdit: openUserEdit,
     closeUserForm: closeUserForm, saveAdminUser: saveAdminUser, delAdminUser: delAdminUser,
     loadClerkTypes: loadClerkTypes, resetClerkEdit: resetClerkEdit, editClerk: editClerk,
@@ -1986,3 +2165,4 @@
     mounted: function () { boot(); }
   }).mount("#app");
 })();
+

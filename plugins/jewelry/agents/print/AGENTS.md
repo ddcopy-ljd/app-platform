@@ -78,7 +78,7 @@ dotnet publish -c Release -r win-x64 --self-contained true
 - 能力矩阵：后端 `SupportedOps` 声明细粒度支持（含 `IP.static` 等）；不在清单内的指令执行前明确报错，不静默忽略。ZMIN 限制：PCLE 无退纸指令（BACKFEED 不支持）、无静态IP设置指令（IP static/dhcp 不支持，仅 IP query/feedback）、纸校准仅 USB 通道（ZM_MediaDetect）。
 - 设备档案：`AppConfig.DeviceProfiles`（key=`brand|ip或SN`）持久化每台机器的 L/S/PWR 默认值；指令流缺这些命令时自动套用档案（不同类型打印机独立校准/配置）。
 - 通道：USB=ZMPCLx64 免驱（回读 ZM_GetData_USB，可开箱配网校准）；NET=SDK 透传排版 + TCP 9100 socket 回读（RD{r},2,0,0 / RQ2,n）。
-- tspl/zpl 后端规划中，仅在注册表预留；新增品牌 = 实现 `IRfidBackend` 并注册进 `RfidCommandExecutor.Backends`。
+- 业务侧唯一打印通路：云端 `POST /api/print/labels` → 任务 `printerType:"rfid_cmd"` → `RfidCommandExecutor` 翻译 PCLE → USB 出纸。**ZPL 通道已废弃并从云端全链路删除**，不要再用 `raw_passthrough`/`^XA` 之类猜测固件；新增品牌 = 实现 `IRfidBackend` 并注册进 `RfidCommandExecutor.Backends`。
 - ZMIN 通道: USB(免驱 DLL, 若被 Windows 打印驱动占用则写入无效且无回传——设备枚举出现 USBPRINT 驱动即为此状态) / NET(TCP 9100) / BT(经典蓝牙 SPP 虚拟串口, 复用 `BtSppPrintService`, PCLE 反馈口=0 同链路回读, GBK 编码)。
 - X19D 实测铁律（2026-10-17/18 真机验证, 勿再踩坑）:
   - **任务缓冲内禁放 RD**：RD 与 RF 同任务会卡死固件（灯闪、不出纸、U 也无响应），只能断电恢复。天线位/射频场回读均**不可用于校验本次写入**（详见下文「天线区读数」条），校验唯一可靠手段 = 手持机 UHF 扫 / 标签错误标记块判据。

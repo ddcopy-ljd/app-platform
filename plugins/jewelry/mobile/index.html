@@ -12,7 +12,7 @@
 <link rel="icon" href="../logo/logo.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
 <link rel="manifest" href="./manifest.webmanifest">
-<link rel="stylesheet" href="./app.css?v=20261020a02">
+<link rel="stylesheet" href="./app.css?v=20261022m08">
 </head>
 <body>
 <div id="app">
@@ -111,27 +111,29 @@
             <div class="stat" v-if="ST.riskData && ST.riskData.aging && ST.riskData.aging.count > 0">
               <div class="stat-label">⏳ {{ t('dash.aging') }}</div>
               <div class="stat-value">{{ ST.riskData.aging.count }}<small>{{ t('dash.pieceUnit') }}</small></div>
-              <div class="stat-foot">{{ ST.riskData.aging.cost == null ? '***' : '￥' + fmtNum(ST.riskData.aging.cost) }}</div>
+              <div class="stat-foot">{{ ST.riskData.aging.cost == null ? '***' : money(ST.riskData.aging.cost) }}</div>
             </div>
             <div class="stat">
               <div class="stat-label">{{ t('dash.rangeSales') }}</div>
-              <div class="stat-value serif">￥{{ fmtNum(ST.dash.rangeData.sales.amount) }}</div>
-              <div class="stat-foot">{{ ST.dash.rangeData.sales.count }} {{ t('dash.bills') }} · {{ t('dash.avg') }} ￥{{ fmtNum(ST.dash.rangeData.sales.avg) }}<span v-if="ST.dash.rangeData.sales.momPct != null" :class="pctCls(ST.dash.rangeData.sales.momPct)"> · {{ t('dash.mom') }} {{ pctLabel(ST.dash.rangeData.sales.momPct) }}</span><span v-if="ST.dash.rangeData.sales.yoyPct != null" :class="pctCls(ST.dash.rangeData.sales.yoyPct)"> · {{ t('dash.yoy') }} {{ pctLabel(ST.dash.rangeData.sales.yoyPct) }}</span></div>
+              <div class="stat-value serif">{{ money(ST.dash.rangeData.sales.amount) }}</div>
+              <div class="stat-foot">{{ ST.dash.rangeData.sales.count }} {{ t('dash.bills') }} · {{ t('dash.avg') }} {{ money(ST.dash.rangeData.sales.avg) }}<span v-if="ST.dash.rangeData.sales.momPct != null" :class="pctCls(ST.dash.rangeData.sales.momPct)"> · {{ t('dash.mom') }} {{ pctLabel(ST.dash.rangeData.sales.momPct) }}</span><span v-if="ST.dash.rangeData.sales.yoyPct != null" :class="pctCls(ST.dash.rangeData.sales.yoyPct)"> · {{ t('dash.yoy') }} {{ pctLabel(ST.dash.rangeData.sales.yoyPct) }}</span></div>
             </div>
             <div class="stat">
               <div class="stat-label">{{ t('dash.rangeMove') }}</div>
               <div class="stat-value"><span class="mv-in">+{{ ST.dash.rangeData.stockIn.qty }}</span><span class="mv-sep">/</span><span class="mv-out">-{{ ST.dash.rangeData.stockOut.qty }}</span></div>
-              <div class="stat-foot">{{ t('dash.onhand') }} {{ ST.dash.stock.count }} · {{ t('dash.cost') }} {{ ST.dash.stock.cost == null ? '***' : '￥' + fmtNum(ST.dash.stock.cost) }}</div>
+              <div class="stat-foot">{{ t('dash.onhand') }} {{ ST.dash.stock.count }} · {{ t('dash.cost') }} {{ ST.dash.stock.cost == null ? '***' : money(ST.dash.stock.cost) }}</div>
             </div>
             <div class="stat">
               <div class="stat-label">{{ t('dash.rangeDue') }}</div>
-              <div class="stat-value serif">￥{{ fmtNum(ST.dash.rangeData.depositPending.amount) }}</div>
+              <div class="stat-value serif">{{ money(ST.dash.rangeData.depositPending.amount) }}</div>
               <div class="stat-foot">{{ ST.dash.rangeData.depositPending.count }} {{ t('dash.depBills') }}</div>
             </div>
+            <!-- 区间会员应收 暂时隐藏，日后恢复取消注释即可
             <div class="stat">
               <div class="stat-label">{{ t('dash.rangeCustDue') }}</div>
-              <div class="stat-value serif">￥{{ fmtNum(ST.dash.rangeData.customerDue.amount) }}</div>
+              <div class="stat-value serif">{{ money(ST.dash.rangeData.customerDue.amount) }}</div>
             </div>
+            -->
           </div>
           <div class="risk-bar" v-if="ST.riskData && ST.riskData.lastStocktake && (ST.riskData.lastStocktake.surplus_count > 0 || ST.riskData.lastStocktake.shortage_count > 0)">
             <div class="risk-card">
@@ -147,7 +149,7 @@
             <div class="quick-grid">
               <div class="quick-item" @click="openSub('sale-new')"><div class="quick-ico">🧾</div><div class="quick-label">{{ t('q.sale') }}</div></div>
               <div class="quick-item" @click="openSub('dep-new')"><div class="quick-ico">💰</div><div class="quick-label">{{ t('q.deposit') }}</div></div>
-              <div class="quick-item" @click="inboundForm()"><div class="quick-ico">📥</div><div class="quick-label">{{ t('q.inbound') }}</div></div>
+              <div class="quick-item" v-if="!isHqView()" @click="inboundForm()"><div class="quick-ico">📥</div><div class="quick-label">{{ t('q.inbound') }}</div></div>
               <div class="quick-item" @click="openSub('inventory')"><div class="quick-ico">📦</div><div class="quick-label">{{ t('inv.title') }}</div></div>
               <div class="quick-item" @click="openSub('transfers')"><div class="quick-ico">🚚</div><div class="quick-label">{{ t('tr.title') }}</div></div>
               <div class="quick-item" @click="openSub('count')"><div class="quick-ico">🧭</div><div class="quick-label">{{ t('co.title') }}</div></div>
@@ -250,8 +252,8 @@
                   <span class="tag-stats-name"><span class="dl-dot" :style="{background: g.color || donutColor(i % 6)}"></span>{{ g.name }}</span>
                   <div class="tag-stats-bar-wrap"><div class="tag-stats-bar" :style="tagBarStyle(g, i)"></div></div>
                 </div>
-                <div class="tag-stats-val" v-if="ST.saleStatsDim === 'category'">{{ t('tag.salesAmt') }} ￥{{ fmtNum(g.sale_amount) }} · {{ g.sale_count }} {{ t('tag.pieceUnit') }} · {{ g.sale_pct }}% · {{ t('tag.inStock') }} {{ g.stock_count || 0 }} {{ t('tag.pieceUnit') }}</div>
-                <div class="tag-stats-val" v-else>{{ t('tag.salesAmt') }} ￥{{ fmtNum(g.sale_amount) }} · {{ g.sale_count }} {{ t('tag.pieceUnit') }} · {{ g.sale_pct }}% · {{ t('tag.inStock') }} {{ g.stock_count }} {{ t('tag.pieceUnit') }}<span v-if="g.stock_cost != null"> · {{ t('kpi.stockCost') }} ￥{{ fmtNum(g.stock_cost) }}</span></div>
+                <div class="tag-stats-val" v-if="ST.saleStatsDim === 'category'">{{ t('tag.salesAmt') }} {{ money(g.sale_amount) }} · {{ g.sale_count }} {{ t('tag.pieceUnit') }} · {{ g.sale_pct }}% · {{ t('tag.inStock') }} {{ g.stock_count || 0 }} {{ t('tag.pieceUnit') }}</div>
+                <div class="tag-stats-val" v-else>{{ t('tag.salesAmt') }} {{ money(g.sale_amount) }} · {{ g.sale_count }} {{ t('tag.pieceUnit') }} · {{ g.sale_pct }}% · {{ t('tag.inStock') }} {{ g.stock_count }} {{ t('tag.pieceUnit') }}<span v-if="g.stock_cost != null"> · {{ t('kpi.stockCost') }} {{ money(g.stock_cost) }}</span></div>
               </div>
             </div>
             <div class="tag-stats-empty" v-if="!ST.tagStats.items || !ST.tagStats.items.length">{{ t('rank.empty') }}</div>
@@ -269,13 +271,13 @@
                         :stroke-dasharray="s.pct + ' ' + (100 - s.pct)" :stroke-dashoffset="s.offset"
                         transform="rotate(-90 21 21)"></circle>
                 <text x="21" y="20" class="donut-c1">{{ t('dash.donutTotal') }}</text>
-                <text x="21" y="24.5" class="donut-c2">￥{{ fmtNum(ST.catSales.total) }}</text>
+                <text x="21" y="24.5" class="donut-c2">{{ money(ST.catSales.total) }}</text>
               </svg>
               <div class="donut-legend">
                 <div class="dl-row" v-for="(c, i) in ST.catSales.items" :key="c.category">
                   <span class="dl-dot" :style="{background: donutColor(i % 6)}"></span>
                   <span class="dl-name">{{ catText(c.category) }}</span>
-                  <span class="dl-val">￥{{ fmtNum(c.amount) }} · {{ c.pct }}% · {{ t('tag.inStock') }} {{ c.stock_count || 0 }} {{ t('tag.pieceUnit') }}</span>
+                  <span class="dl-val">{{ money(c.amount) }} · {{ c.pct }}% · {{ t('tag.inStock') }} {{ c.stock_count || 0 }} {{ t('tag.pieceUnit') }}</span>
                 </div>
               </div>
             </div>
@@ -305,8 +307,8 @@
             <div class="ba-group">
               <div class="ba-group-title">💹 {{ t('ba.profitGrp') }}</div>
               <div class="ba-cards">
-                <div class="ba-card"><div class="ba-val">￥{{ ST.bizAnalysis.profit.cost == null ? '***' : fmtNum(ST.bizAnalysis.profit.cost) }}</div><div class="ba-label">{{ t('ba.realCost') }}</div></div>
-                <div class="ba-card"><div class="ba-val">￥{{ ST.bizAnalysis.profit.profit == null ? '***' : fmtNum(ST.bizAnalysis.profit.profit) }}</div><div class="ba-label">{{ t('ba.profit') }}</div></div>
+                <div class="ba-card"><div class="ba-val">{{ ST.bizAnalysis.profit.cost == null ? '***' : money(ST.bizAnalysis.profit.cost) }}</div><div class="ba-label">{{ t('ba.realCost') }}</div></div>
+                <div class="ba-card"><div class="ba-val">{{ ST.bizAnalysis.profit.profit == null ? '***' : money(ST.bizAnalysis.profit.profit) }}</div><div class="ba-label">{{ t('ba.profit') }}</div></div>
                 <div class="ba-card"><div class="ba-val">{{ ST.bizAnalysis.profit.rate == null ? '***' : ST.bizAnalysis.profit.rate + '%' }}</div><div class="ba-label">{{ t('ba.profitRate') }}</div></div>
               </div>
             </div>
@@ -314,16 +316,16 @@
               <div class="ba-group-title">👥 {{ t('ba.member') }}</div>
               <div class="ba-cards">
                 <div class="ba-card"><div class="ba-val">{{ ST.bizAnalysis.member.newMembers }}</div><div class="ba-label">{{ t('ba.newMembers') }}</div></div>
-                <div class="ba-card"><div class="ba-val">￥{{ fmtNum(ST.bizAnalysis.member.recharge) }}</div><div class="ba-label">{{ t('ba.recharge') }}</div></div>
-                <div class="ba-card"><div class="ba-val">￥{{ fmtNum(ST.bizAnalysis.member.memberPay) }}</div><div class="ba-label">{{ t('ba.memberPay') }}</div></div>
+                <div class="ba-card"><div class="ba-val">{{ money(ST.bizAnalysis.member.recharge) }}</div><div class="ba-label">{{ t('ba.recharge') }}</div></div>
+                <div class="ba-card"><div class="ba-val">{{ money(ST.bizAnalysis.member.memberPay) }}</div><div class="ba-label">{{ t('ba.memberPay') }}</div></div>
               </div>
             </div>
             <div class="ba-group">
               <div class="ba-group-title">🧾 {{ t('ba.salesEff') }}</div>
               <div class="ba-cards">
-                <div class="ba-card"><div class="ba-val">￥{{ fmtNum(ST.bizAnalysis.sales.avgPerBill) }}</div><div class="ba-label">{{ t('ba.avgPerBill') }}</div></div>
+                <div class="ba-card"><div class="ba-val">{{ money(ST.bizAnalysis.sales.avgPerBill) }}</div><div class="ba-label">{{ t('ba.avgPerBill') }}</div></div>
                 <div class="ba-card"><div class="ba-val">{{ ST.bizAnalysis.sales.attachment }}</div><div class="ba-label">{{ t('ba.attachment') }}</div></div>
-                <div class="ba-card"><div class="ba-val">￥{{ fmtNum(ST.bizAnalysis.sales.avgPerItem) }}</div><div class="ba-label">{{ t('ba.avgPerItem') }}</div></div>
+                <div class="ba-card"><div class="ba-val">{{ money(ST.bizAnalysis.sales.avgPerItem) }}</div><div class="ba-label">{{ t('ba.avgPerItem') }}</div></div>
                 <div class="ba-card"><div class="ba-val">{{ ST.bizAnalysis.sales.sellThrough }}%</div><div class="ba-label">{{ t('ba.sellThrough') }}</div></div>
               </div>
             </div>
@@ -356,7 +358,7 @@
             <div class="prod-head-ops">
               <button class="btn btn-ghost btn-sm" @click="openImportDlg()">📥</button>
               <button class="btn btn-sm" :class="ST.prodSelMode ? 'btn-wine' : 'btn-ghost'" @click="toggleProdSelMode()">☑ {{ t('prod.selMode') }}</button>
-              <button class="btn btn-gold btn-sm" @click="newProduct()">＋ {{ t('prod.new') }}</button>
+              <button class="btn btn-gold btn-sm" v-if="!isHqView()" @click="newProduct()">＋ {{ t('prod.new') }}</button>
             </div>
           </div>
           <div class="search-bar">
@@ -434,7 +436,7 @@
             </div>
           </div>
 
-          <div class="menu-group">
+          <div class="menu-group" v-if="!isSysAdmin()">
             <div class="menu-group-title">{{ t('pf.business') }}</div>
             <div class="menu-item" @click="openSub('sales')"><div class="menu-ico">🧾</div><div class="menu-label">{{ t('sale.title') }}</div><div class="chev">›</div></div>
             <div class="menu-item" @click="openSub('deposits')"><div class="menu-ico">💰</div><div class="menu-label">{{ t('dep.title') }}</div><div class="chev">›</div></div>
@@ -445,7 +447,7 @@
             <div class="menu-item" @click="openSub('loans')"><div class="menu-ico">🔁</div><div class="menu-label">{{ t('loan.title') }}</div><div class="chev">›</div></div>
           </div>
 
-          <div class="menu-group">
+          <div class="menu-group" v-if="!isSysAdmin()">
             <div class="menu-group-title">{{ t('pf.supply') }}</div>
             <div class="menu-item" @click="openSub('repairs')"><div class="menu-ico">🛠</div><div class="menu-label">{{ t('rep.title') }}</div><div class="chev">›</div></div>
             <div class="menu-item" @click="openSub('purchases')"><div class="menu-ico">📥</div><div class="menu-label">{{ t('pur.title') }}</div><div class="chev">›</div></div>
@@ -459,6 +461,8 @@
             <div class="menu-item" @click="openSub('appointments')"><div class="menu-ico">📅</div><div class="menu-label">{{ t('appt.title') }}</div><div class="chev">›</div></div>
             <div class="menu-item" @click="openSub('store-profile')"><div class="menu-ico">🏪</div><div class="menu-label">{{ t('store.title') }}</div><div class="chev">›</div></div>
             <div class="menu-item" @click="openSub('logs')"><div class="menu-ico">📋</div><div class="menu-label">{{ t('log.title') }}</div><div class="chev">›</div></div>
+            <div class="menu-item" @click="ST.changePwdForm={old:'',new:'',confirm:''};ST.sheet='pwd'"><div class="menu-ico">🔑</div><div class="menu-label">{{ t('pf.changePwd') }}</div><div class="chev">›</div></div>
+            <div class="menu-item" @click="openSub('docs')"><div class="menu-ico">📖</div><div class="menu-label">{{ t('pf.features') }}</div><div class="chev">›</div></div>
             <div class="menu-item" @click="ST.sheet = 'lang'"><div class="menu-ico">🌐</div><div class="menu-label">{{ t('pf.language') }}</div><div class="menu-value">{{ LANG_LABELS[ST.lang] }}</div><div class="chev">›</div></div>
             <div class="menu-item" @click="ST.sheet = 'store'"><div class="menu-ico">📍</div><div class="menu-label">{{ t('pf.storeSwitch') }}</div><div class="menu-value">{{ curStoreName() }}</div><div class="chev">›</div></div>
           </div>
@@ -492,7 +496,7 @@
             </div>
             <div class="btn-row">
               <button class="btn btn-ghost" @click="printLabel(ST.productView)">🖨 {{ t('prod.printLabel') }}</button>
-              <button class="btn btn-ghost" @click="copyProduct()">{{ t('prod.copy') }}</button>
+              <button v-if="!isHqView()" class="btn btn-ghost" @click="copyProduct()">{{ t('prod.copy') }}</button>
               <button class="btn btn-wine" @click="editProduct()">{{ t('common.edit') }}</button>
             </div>
           </div>
@@ -564,7 +568,7 @@
           <div class="back-head">
             <div class="back-btn" @click="closeSub()">‹</div>
             <div class="back-title">{{ t('inv.title') }}</div>
-            <button class="btn btn-gold btn-sm" @click="inboundForm()">＋ {{ t('inv.inbound') }}</button>
+            <button v-if="!isHqView()" class="btn btn-gold btn-sm" @click="inboundForm()">＋ {{ t('inv.inbound') }}</button>
           </div>
           <div class="stats-grid" v-if="ST.inventory">
             <div class="stat"><div class="stat-label">{{ t('inv.inStock') }}</div><div class="stat-value">{{ iStock().count || 0 }}<small>{{ t('dash.items') }}</small></div><div class="stat-foot">{{ money(iStock().cost) }}</div></div>
@@ -711,11 +715,15 @@
             <div class="card-accent"></div>
             <div class="card-head"><div class="card-title">{{ ST.custDetail.name }} <span class="tag tag-gold">{{ ST.custDetail.level || '普通' }}</span></div></div>
             <div class="kv"><span class="kv-k">{{ t('common.phone') }}</span><span class="kv-v">{{ ST.custDetail.phone || '—' }}</span></div>
+            <div class="kv" v-for="(p,pi) in (ST.custDetail.phones || []).filter(function(p){return p.phone && p.phone !== ST.custDetail.phone;})" :key="'ep'+pi"><span class="kv-k">{{ p.label || t('common.phone') }}</span><span class="kv-v">{{ p.phone }}</span></div>
             <div class="kv"><span class="kv-k">{{ t('cust.total') }}</span><span class="kv-v serif">{{ money(ST.custDetail.total_amount) }}</span></div>
             <div class="kv"><span class="kv-k">{{ t('cust.due') }}</span><span class="kv-v" style="color:var(--red)">{{ money(ST.custDetail.due_amount) }}</span></div>
             <div class="kv"><span class="kv-k">{{ t('cust.salesCount') }}</span><span class="kv-v">{{ ST.custDetail.salesCount || 0 }}</span></div>
             <div class="kv"><span class="kv-k">{{ t('cust.birthday') }}</span><span class="kv-v">{{ ST.custDetail.birthday || '—' }}</span></div>
             <div class="kv"><span class="kv-k">{{ t('cust.preference') }}</span><span class="kv-v">{{ ST.custDetail.preference || '—' }}</span></div>
+            <div class="kv" v-if="ST.custDetail.address || ST.custDetail.city || ST.custDetail.zip_code || ST.custDetail.country"><span class="kv-k">{{ t('cust.address') }}</span><span class="kv-v">{{ [ST.custDetail.address, ST.custDetail.city, ST.custDetail.zip_code, ST.custDetail.country].join(' ') }}</span></div>
+            <div class="kv" v-if="ST.custDetail.source"><span class="kv-k">{{ t('cust.source') }}</span><span class="kv-v">{{ ST.custDetail.source }}</span></div>
+            <div class="kv" v-if="ST.custDetail.note"><span class="kv-k">{{ t('cust.note') }}</span><span class="kv-v">{{ ST.custDetail.note }}</span></div>
           </div>
           <div class="card">
             <div class="card-head"><div class="card-title">{{ t('cust.sales') }}</div></div>
@@ -733,12 +741,27 @@
           <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('cust.new') }}</div></div>
           <div class="card">
             <div class="form-group"><label>{{ t('common.name') }}<span class="req">*</span></label><input v-model="ST.custForm.name"></div>
-            <div class="form-group"><label>{{ t('common.phone') }}</label><input v-model="ST.custForm.phone" type="tel"></div>
+            <div class="form-group" v-for="(ph,pi) in (ST.custForm.phones || [])" :key="'mph'+pi">
+              <label>{{ t('common.phone') }}<span v-if="pi===0" style="font-weight:400">（{{ t('cust.defaultPhone') }}）</span></label>
+              <div style="display:flex;gap:6px">
+                <input v-model.trim="ph.phone" type="tel" style="flex:1">
+                <input v-model.trim="ph.label" :placeholder="t('cust.phoneLabelPh')" style="flex:0 0 84px">
+                <button type="button" class="btn btn-wine btn-sm" @click="delCustPhone(pi)">✕</button>
+              </div>
+            </div>
+            <button type="button" class="btn btn-outline btn-sm" @click="addCustPhone()">＋ {{ t('cust.addPhone') }}</button>
+            <div class="form-group" style="margin-top:10px"><label>{{ t('common.email') }}</label><input v-model="ST.custForm.email" type="email"></div>
             <div class="form-group"><label>{{ t('cust.level') }}</label>
               <select v-model="ST.custForm.level"><option>普通</option><option>银卡</option><option>金卡</option></select>
             </div>
             <div class="form-group"><label>{{ t('cust.birthday') }}</label><input v-model="ST.custForm.birthday" type="date"></div>
             <div class="form-group"><label>{{ t('cust.preference') }}</label><input v-model="ST.custForm.preference"></div>
+            <div class="form-group"><label>{{ t('cust.address') }}</label><input v-model="ST.custForm.address" :placeholder="t('cust.addressPh')"></div>
+            <div class="form-group"><label>{{ t('cust.city') }}</label><input v-model="ST.custForm.city"></div>
+            <div class="form-group"><label>{{ t('cust.zipCode') }}</label><input v-model="ST.custForm.zip_code"></div>
+            <div class="form-group"><label>{{ t('cust.country') }}</label><input v-model="ST.custForm.country" :placeholder="t('cust.countryPh')"></div>
+            <div class="form-group"><label>{{ t('cust.source') }}</label><input v-model="ST.custForm.source" :placeholder="t('cust.sourcePh')"></div>
+            <div class="form-group"><label>{{ t('cust.note') }}</label><textarea v-model="ST.custForm.note" rows="3" :placeholder="t('cust.notePh')"></textarea></div>
           </div>
           <button class="btn btn-gold btn-block" @click="saveCustomer()">{{ t('common.save') }}</button>
         </template>
@@ -1035,7 +1058,7 @@
               <div class="card-title">{{ ST.storeEditMode==='edit' ? t('cat.saveEdit') : t('store.add') }}</div>
               <div class="form-group"><label>{{ t('store.name') }}</label><input v-model="ST.storeEdit.name" :placeholder="t('store.namePh')"></div>
               <div class="form-grid-2">
-                <div class="form-group"><label>{{ t('store.code') }}</label><input v-model="ST.storeEdit.code" maxlength="2" :disabled="ST.storeEditMode==='edit'" :placeholder="t('store.codePh')"></div>
+                <div class="form-group"><label>{{ t('store.code') }}</label><input v-model="ST.storeEdit.code" maxlength="4" disabled :placeholder="t('store.codePh')"></div>
                 <div class="form-group"><label>{{ t('store.owner') }}</label><input v-model="ST.storeEdit.owner"></div>
               </div>
               <div class="form-group"><label>{{ t('store.belongShop') }}</label>
@@ -1275,9 +1298,7 @@
               <div class="form-group"><label>{{ t('adminUser.password') }}</label><input v-model="ST.adminUserForm.password" type="text" autocomplete="new-password" :placeholder="ST.adminUserForm.id ? t('adminUser.pwdKeep') : ''"></div>
               <div class="form-group"><label>{{ t('pf.role') }}</label>
                 <select v-model="ST.adminUserForm.role">
-                  <option value="EMPLOYEE">{{ t('adminUser.roleStaff') }}</option>
-                  <option value="EXECUTIVE">{{ t('adminUser.roleExec') }}</option>
-                  <option value="TENANT_ADMIN">{{ t('adminUser.roleAdmin') }}</option>
+                  <option v-for="rr in assignableRoles()" :key="rr" :value="rr">{{ roleText(rr) }}</option>
                 </select>
               </div>
               <div class="switch-row">
@@ -1711,22 +1732,28 @@
           </div>
         </template>
 
+        <!-- ========== 二级：功能介绍 ========== -->
+        <template v-else-if="ST.sub === 'docs'">
+          <div class="back-head"><div class="back-btn" @click="closeSub()">‹</div><div class="back-title">{{ t('pf.features') }}</div></div>
+          <div class="docs-body" v-html="ST.docs"></div>
+        </template>
+
       </div>
 
       <!-- 底部 Tab -->
       <div class="tab-bar">
-        <div class="tab" :class="{active: ST.tab === 'dashboard' && ST.sub === ''}" @click="go('dashboard')">
+        <div class="tab" v-if="!isSysAdmin()" :class="{active: ST.tab === 'dashboard' && ST.sub === ''}" @click="go('dashboard')">
           <div class="tab-ico">📊</div><div class="tab-txt">{{ t('tab.dashboard') }}</div>
           <span v-if="reminderCount() > 0" class="tab-dot"></span>
         </div>
-        <div class="tab" :class="{active: ST.tab === 'products' && ST.sub === ''}" @click="go('products')">
+        <div class="tab" v-if="!isSysAdmin()" :class="{active: ST.tab === 'products' && ST.sub === ''}" @click="go('products')">
           <div class="tab-ico">💎</div><div class="tab-txt">{{ t('tab.products') }}</div>
         </div>
-        <div class="tab-center" @click="ST.sheet = 'quick'">
+        <div class="tab-center" v-if="!isSysAdmin()" @click="ST.sheet = 'quick'">
           <div class="tab-center-btn">＋</div>
           <div class="tab-center-label">{{ t('tab.center') }}</div>
         </div>
-        <div class="tab" :class="{active: ST.tab === 'customers' && ST.sub === ''}" @click="go('customers')">
+        <div class="tab" v-if="!isSysAdmin()" :class="{active: ST.tab === 'customers' && ST.sub === ''}" @click="go('customers')">
           <div class="tab-ico">👥</div><div class="tab-txt">{{ t('tab.customers') }}</div>
         </div>
         <div class="tab" :class="{active: ST.tab === 'mine' && ST.sub === ''}" @click="go('mine')">
@@ -1742,7 +1769,7 @@
             <div class="quick-grid">
               <div class="quick-item" @click="quickGo('sale')"><div class="quick-ico">🧾</div><div class="quick-label">{{ t('q.sale') }}</div></div>
               <div class="quick-item" @click="quickGo('deposit')"><div class="quick-ico">💰</div><div class="quick-label">{{ t('q.deposit') }}</div></div>
-              <div class="quick-item" @click="quickGo('inbound')"><div class="quick-ico">📥</div><div class="quick-label">{{ t('q.inbound') }}</div></div>
+              <div class="quick-item" v-if="!isHqView()" @click="quickGo('inbound')"><div class="quick-ico">📥</div><div class="quick-label">{{ t('q.inbound') }}</div></div>
               <div class="quick-item" @click="quickGo('product')"><div class="quick-ico">💎</div><div class="quick-label">{{ t('q.products') }}</div></div>
               <div class="quick-item" @click="quickGo('repair')"><div class="quick-ico">🛠</div><div class="quick-label">{{ t('q.repair') }}</div></div>
               <div class="quick-item" @click="quickGo('purchase')"><div class="quick-ico">📦</div><div class="quick-label">{{ t('q.purchase') }}</div></div>
@@ -1895,6 +1922,20 @@
           </div>
         </div>
       </div>
+
+      <!-- 修改密码 -->
+      <div v-if="ST.sheet === 'pwd'" class="sheet-mask" @click.self="ST.sheet=''">
+        <div class="sheet">
+          <div class="sheet-head"><h3>{{ t('pf.changePwd') }}</h3><div class="sheet-close" @click="ST.sheet=''">✕</div></div>
+          <div class="sheet-body">
+            <div class="form-hint" v-if="ST.user && ST.user.must_change_pwd">{{ t('pf.mustChangePwd') }}</div>
+            <div class="form-group"><label>{{ t('pf.oldPwd') }}</label><input v-model="ST.changePwdForm.old" type="password"></div>
+            <div class="form-group"><label>{{ t('pf.newPwd') }}</label><input v-model="ST.changePwdForm.new" type="password"></div>
+            <div class="form-group"><label>{{ t('pf.confirmPwd') }}</label><input v-model="ST.changePwdForm.confirm" type="password"></div>
+            <button class="btn btn-gold btn-block" @click="submitChangePwd()">{{ t('common.confirm') }}</button>
+          </div>
+        </div>
+      </div>
     </template>
 
     <!-- Toast -->
@@ -1903,7 +1944,7 @@
 </div>
 
 <script src="./vendor/vue.global.prod.js"></script>
-<script src="./i18n.js?v=20261020a02"></script>
+<script src="./i18n.js?v=20261023m12"></script>
 <script>
 (function () {
   if (!window.__APP_BASE__) {
@@ -1915,7 +1956,7 @@
   }
 })();
 </script>
-<script src="./app.js?v=20261020a02"></script>
+<script src="./app.js?v=20261023m11"></script>
 <script>
 // 依据可视高度动态设定容器高度：解决手机浏览器底部工具栏遮挡 tab 栏的问题
 (function () {
@@ -1947,3 +1988,8 @@
 </script>
 </body>
 </html>
+
+
+
+
+

@@ -1,14 +1,9 @@
-"""RFID 珠宝标签 ZPL 排版引擎（得实 DL-735RE 等 ZPL 指令打印机）。
+"""RFID 珠宝标签排版引擎（ZMIN X19D，PCLE 原生指令通道）。
 
-标签规格（固定）：宽 66mm × 高 25.4mm 横版，203 DPI → 528 × 203 dots，
-间隙 5mm；可打印区域为标签左侧 25×25mm（对折珠宝签）。
-- ASCII 内容（货号/价格/条码/EPC）用内置字体 ^A0N
-- 中文使用机内字体 ^A@N（默认宋体 E:SIMSUN.FNT，可按打印机实际字体调整）
-- RFID 芯片写入：^RFW,H,<EPC十六进制>
-
-模板驱动模式：
-- template.definition.slots 定义字段位置与样式
-- 无模板时回退到内建固定版式（FALLBACK_DEFINITION，66×25.4 左侧 25×25mm 可打印区）
+标签规格（固定）：宽 66mm × 高 25.4mm 横版，203 DPI → 528 × 203 dots，间隙 40 dots。
+唯一打印路径：模板 slots → ZMIN 统一指令（content_to_commands）→ 助手翻译为 PCLE
+（`N / q528 / Q203,40 / T / B / RF / W1`）→ UsbPcleService.WriteToPort。
+不再生成 ZPL：ZMIN 固件不识别 ZPL，SDK 结构化通道又不渲染条码。
 """
 
 from __future__ import annotations
@@ -141,10 +136,9 @@ FIELD_OPTIONS = {
 }
 
 DEFAULT_FIELDS = {"store", "name", "spec", "price", "barcode"}
-DEFAULT_FONT = "E:SIMSUN.FNT"  # 打印机内中文字体（无中文字体的机器可改为空）
 
 # 无模板时的回退布局：与 db.py 内建「珠宝RFID标准签（66×25.4）」同版式，
-# 可打印区域为标签左侧 25×25mm（≈200×200 点），坐标单位 203dpi 点
+# 画布 528×203 点，坐标单位 203dpi 点
 FALLBACK_DEFINITION = {
     "slots": [
         {"field": "name", "x": 5, "y": 5, "w": 189, "h": 19, "font": {"type": "cn", "w": 18, "h": 18}},
@@ -157,7 +151,7 @@ FALLBACK_DEFINITION = {
 
 
 def _ascii_safe(s: str) -> str:
-    """ZPL ^FD 内容转义；非 ASCII 不进 ASCII 字体行。"""
+    """打印内容转义：去掉会打断指令的 ^ ~ 字符。"""
     return str(s or "").replace("^", " ").replace("~", " ")
 
 
@@ -231,123 +225,10 @@ def _field_value(field: str, product: dict, store_name: str, rfid_prefix: str = 
     return ""
 
 
-def _render_slot(slot: dict, product: dict, store_name: str, rfid_prefix: str = "E280") -> list[str]:
-    """根据 slot 定义生成 ZPL 片段。"""
-    field = slot.get("field", "")
-    value = _field_value(field, product, store_name, rfid_prefix)
-    # EPC 字段以条码输出时，去掉「EPC 」前缀与企业前缀，保证可扫描
-    if field in ("epc_text", "epc_barcode") and (slot.get("font") or {}).get("type", "ascii") == "barcode":
-        value = _strip_epc_prefix(_ascii_safe((product or {}).get("rfid_epc", "")), rfid_prefix)
-    if not value:
-        return []
-
-    x = int(slot.get("x", 0))
-    y = int(slot.get("y", 0))
-    w = int(slot.get("w", 200))
-    h = int(slot.get("h", 30))
-    font = slot.get("font") or {}
-    font_type = font.get("type", "ascii")
-    font_name = font.get("name", DEFAULT_FONT)
-    font_w = int(font.get("w", 24))
-    font_h = int(font.get("h", 24))
-    rotate = int(font.get("rotate", 0) or 0)
-    # ZPL 字段方向：N=0°, R=90°, I=180°, B=270°
-    fw_dir = {90: "R", 180: "I", 270: "B"}.get(rotate, "N")
-
-    lines = [f"^FO{x},{y}"]
-    if font_type == "empty":
-        # 不可打印区：仅占位，不输出任何打印指令
-        return []
-    if fw_dir != "N":
-        lines.append(f"^FW{fw_dir}")
-
-    if font_type == "cn":
-        # 中文使用机内字体（^A@N,高度,宽度,字体名）
-        lines.append(f"^A@N,{font_h},{font_w},{font_name}^FD{value}^FS")
-    elif font_type == "qrcode":
-        # QR Code：^BQN,2,放大倍数(1-10)，^FD 纠错级别+模式,数据
-        mag = max(1, min(10, int(font.get("h", 8) or 8)))
-        lines.append(f"^BQN,2,{mag}^FDQB,{value}^FS")
-    elif font_type == "barcode":
-        # Code128 条码，h 控制条码高度
-        bh = int(font.get("h", 64))
-        lines.append(f"^BY2^BCN,{bh},Y,N,N^FD{value}^FS")
-    else:
-        # ASCII 内置字体（^A0N,高度,宽度）
-        lines.append(f"^A0N,{font_h},{font_w}^FD{value}^FS")
-
-    if fw_dir != "N":
-        lines.append("^FWN")
-
-    return lines
-
-
-def build_label_zpl(product: dict, *, fields: set[str] | None = None,
-                    store_name: str = "", font: str = DEFAULT_FONT,
-                    write_epc: bool = True, template: dict | None = None,
-                    rfid_prefix: str = "E280") -> str:
-    """生成单件商品的 ZPL（^XA ... ^XZ）。
-
-    优先使用 template 的 slots 布局；无 template 时回退到 fields 集合的固定布局。
-    """
-    code = _ascii_safe(product.get("code", ""))
-    name = _cn(product.get("name", ""))
-    material = _cn(product.get("material", ""))
-    weight = product.get("weight") or 0
-    size = _cn(product.get("size", ""))
-    cert = _ascii_safe(product.get("cert", ""))
-    price = product.get("price") or 0
-    epc = _ascii_safe(product.get("rfid_epc", ""))
-    store = _cn(store_name)
-
-    spec_parts = []
-    if material:
-        spec_parts.append(material)
-    if weight:
-        spec_parts.append(f"{float(weight):.2f}g")
-    if size:
-        spec_parts.append(size)
-    spec = " ".join(spec_parts)
-
-    L: list[str] = ["^XA", "^CI27", f"^PW{LABEL_WIDTH_DOTS}", f"^LL{LABEL_HEIGHT_DOTS}"]
-
-    # ---- 写 RFID 芯片（EPC 区，十六进制；拼音前缀自动转 ASCII 十六进制）----
-    if write_epc and epc:
-        L.append(f"^RFW,H^FD{chip_epc_hex(epc, rfid_prefix)}^FS")
-
-    # ---- 模板驱动：遍历 slots（无模板时回退到固定 66×25.4 版式）----
-    tpl_def = None
-    if template and template.get("definition"):
-        try:
-            tpl_def = json.loads(template["definition"]) if isinstance(template["definition"], str) else template["definition"]
-        except (json.JSONDecodeError, TypeError):
-            tpl_def = {}
-    slots = (tpl_def or FALLBACK_DEFINITION).get("slots", [])
-    for slot in slots:
-        L.extend(_render_slot(slot, product, store_name, rfid_prefix))
-
-    L += ["^PQ1", "^XZ"]
-    return "\r\n".join(L) + "\r\n"
-
-
-def build_batch_zpl(products: list[dict], *, fields: set[str] | None = None,
-                    store_name: str = "", font: str = DEFAULT_FONT,
-                    write_epc: bool = True, copies: int = 1,
-                    template: dict | None = None, rfid_prefix: str = "E280") -> str:
-    """批量：每件 copies 张，拼成一个打印作业。"""
-    blocks = []
-    for p in products:
-        one = build_label_zpl(p, fields=fields, store_name=store_name,
-                              font=font, write_epc=write_epc, template=template,
-                              rfid_prefix=rfid_prefix)
-        blocks.append(one.replace("^PQ1", f"^PQ{max(1, copies)}"))
-    return "".join(blocks)
-
-
-# ---------------------------------------------------------------- ZMIN 结构化任务
-# ZMIN X19D 固件不识别 ZPL：^XA 文本经 SDK 透传"成功"但零出纸（假成功）。
-# 唯一可靠路径 = PrintAgent 的 printerType:"rfid" 结构化任务（SDK 原生 ZMLabel 排版）。
-# 坐标换算：模板 slots 为 203DPI 点阵（7.992 dots = 1mm）→ 结构化 content 用 mm。
+# ---------------------------------------------------------------- ZMIN 统一指令任务
+# 唯一可靠路径 = printerType:"rfid_cmd" 统一指令 → 助手翻译成 PCLE → USB WriteToPort。
+# SDK 结构化通道（PrintUtility.PrintLabel）会把整张标签栅格化，条码不出（假成功）。
+# 坐标换算：模板 slots 为 203DPI 点阵（7.992 dots = 1mm）→ content 用 mm。
 DOTS_PER_MM = 203 / 25.4            # ≈7.992（X19D 实测为 203DPI）
 
 
@@ -422,7 +303,7 @@ def build_zmin_content(product: dict, *, fields: set[str] | None = None,
                        gap: float = 5.0, dpi: int = 203) -> dict:
     """单件商品 → PrintAgent 结构化 rfid 任务 content。
 
-    优先模板 slots 布局；无模板回退到 FALLBACK_DEFINITION（与 ZPL 回退同版式）。
+    优先模板 slots 布局；无模板回退到 FALLBACK_DEFINITION。
     """
     p = product or {}
     content: dict = {"width": width, "height": height, "gap": gap, "dpi": dpi,
@@ -485,41 +366,4 @@ def content_to_commands(content: dict) -> str:
     return "\r\n".join(lines) + "\r\n"
 
 
-def list_printers() -> list[str]:
-    """列出本机打印机（仅 Windows + pywin32）。"""
-    try:
-        import win32print  # type: ignore
-    except Exception:
-        return []
-    names = set()
-    for flag in (2, 6):  # PRINTER_ENUM_LOCAL / CONNECTIONS
-        try:
-            for p in win32print.EnumPrinters(flag):
-                if p and len(p) >= 3:
-                    names.add(p[2])
-        except Exception:
-            pass
-    return sorted(names)
 
-
-def send_raw(printer_name: str, data: bytes | str, job_title: str = "jewelry-label",
-             encoding: str = "gb18030") -> None:
-    """通过 Windows 打印后台 RAW 通道发送 ZPL。
-
-    ^CI27 + 机内中文字体要求按 GB18030（兼容 GBK）编码字节流；
-    ASCII 指令部分是 GB18030 的子集，整体按 GB18030 编码即可。
-    """
-    import win32print  # type: ignore
-    if isinstance(data, str):
-        data = data.encode(encoding, errors="replace")
-    h = win32print.OpenPrinter(printer_name)
-    try:
-        job = win32print.StartDocPrinter(h, 1, (job_title, None, "RAW"))
-        try:
-            win32print.StartPagePrinter(h)
-            win32print.WritePrinter(h, data)
-            win32print.EndPagePrinter(h)
-        finally:
-            win32print.EndDocPrinter(h)
-    finally:
-        win32print.ClosePrinter(h)

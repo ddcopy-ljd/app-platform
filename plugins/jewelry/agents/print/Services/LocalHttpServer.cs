@@ -108,18 +108,27 @@ namespace PrintAgent.Services
                 if (string.IsNullOrWhiteSpace(serverUrl) || string.IsNullOrWhiteSpace(storeKey))
                     return Results.Json(new { code = 400, msg = "serverUrl 与 storeKey 不能为空" }, statusCode: 400);
 
-                if (_config.IsConfigured
+                bool sameEndpoint = _config.IsConfigured
                     && string.Equals(_config.StoreKey, storeKey, StringComparison.Ordinal)
-                    && string.Equals(_config.ServerUrl, serverUrl, StringComparison.Ordinal))
+                    && string.Equals(_config.ServerUrl, serverUrl, StringComparison.Ordinal);
+
+                // 地址与密钥没变、仅门店号变化：必须写进内存里的 _config 并重连,
+                // 否则 register 仍带旧门店号, 云端任务会因门店不匹配被静默拒收。
+                if (!string.IsNullOrWhiteSpace(storeId)
+                    && !string.Equals(_config.StoreId, storeId, StringComparison.Ordinal))
+                {
+                    _config.StoreId = storeId;
+                    _config.Save();
+                    _cloudSync.Restart();
+                    return Results.Json(new { code = 0, msg = "门店绑定已更新", configured = true, updated = true });
+                }
+
+                if (sameEndpoint)
                     return Results.Json(new { code = 0, msg = "已配置", configured = true });
 
+                // 先写入共享配置对象, OnConfigReceived 的 Save() 才会带上 storeId
+                if (!string.IsNullOrWhiteSpace(storeId)) _config.StoreId = storeId;
                 OnConfigReceived?.Invoke(serverUrl, storeKey);
-                if (!string.IsNullOrWhiteSpace(storeId))
-                {
-                    var cfg = AppConfig.Load();
-                    cfg.StoreId = storeId;
-                    cfg.Save();
-                }
                 return Results.Json(new { code = 0, msg = "配置已更新, 正在连接云端", configured = false, updated = true });
             });
 

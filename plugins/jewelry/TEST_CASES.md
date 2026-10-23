@@ -366,7 +366,9 @@
 - **修复**：路由判定改为**代理在线优先**——`ST.agent && ST.agent.online` 时第一跳即 `route=agent` 经云端 WS 下发到门店代理，且跳过本地直打步骤；代理离线时才尝试本地直打，失败回退 `route=agent` 由后端明确报 400「打印代理不在线」。静态戳 `20261018a20`。
 - **验证方法**：①USB 直连基本盘：`usb_raw_test.ps1` OpenPort/WriteToPort 均 rc=0，证明硬件链路正常，问题纯在软件路由层；②代理在线实打 1 张走 route=agent 到 ZMIN（浏览器走查，仅选 1 商品仅点 1 次）；③代理离线守卫：沙箱票证 `POST /api/print/labels {route:'agent'}` 返回 400「打印代理不在线：总部」，不静默吞任务；④后端 route=agent 且代理离线时严禁降级直发服务器打印机（防再次"假成功"）。
 
-## TC-48 ZMIN X19D 走代理"软件全成功但零出纸"：raw_passthrough 发 ZPL 固件不识别（待发布）
+## TC-48 ZMIN X19D 走代理"软件全成功但零出纸"：raw_passthrough 发 ZPL 固件不识别（历史用例）
+
+> **已过时（2026-10-21）**：ZPL 已从云端全链路删除；文中的 `printerType:"rfid"` 结构化通道也已停用（SDK 只输出栅格图、不渲染条码）。当前唯一通路：`/api/print/labels` → `rfid_cmd` → 助手翻译 PCLE → USB，见 AGENTS.md 硬性约束第4条与 agents/print/AGENTS.md。
 
 - **问题现象**：TC-47 修复后 route=agent 任务正常送达助手（task_ack 成功、助手 /api/tasks 显示"指令透传成功"），但打印机始终不出纸；助手读 EPC/校准等 USB 功能全部正常，唯独打印无输出。
 - **根因**：插件 `_bridge_enqueue` 的 C# 协议分支发 `printerType:"raw_passthrough"` + **ZPL 文本**（^XA/^FO/^FD）；ZMIN X19D 固件不识别 ZPL，LabelPrinter.dll `SetPrinterParams` 收到不报错 → 假成功。能真出纸的路径只有：①结构化 `printerType:"rfid"` 任务（SDK 原生 ZMLabel/LabelObject 排版，坐标单位 mm）；②统一指令 PCLE（ZMPCLx64 免驱）。决定性证据：旧目录助手收结构化四角测试任务两次均出纸（用户确认），同机 ZPL 透传零出纸。
@@ -436,3 +438,24 @@
 - **根因（两处脚本期望值教训，非代码 bug）**：①异或校验字节随数字内容变化，不能复用旧样本的校验值；②门店映射生效后期望值须同步（7777 替代 0001）。另：`POST /api/products` 创建响应**本来就不含 barcode**（条码在打印预览/批量补全时才分配，main.py `_compute_item_barcode` 调用点），真链路断言勿在创建响应上验条码。
 - **验证方法**：C:\Temp 临时脚本（已删）函数级 18 项：新结构编码（`69012345000104000001`→`69012345000104000001010A`）/解码往返、校验损坏不猜、旧格式兼容、短码截 8 位得 12 位数字、迁移升级 10 位默认、映射优先/缺省补零/回退、assign 旧保留+新保留+空 EPC 补新格式+幂等、`_gen_type_epc`/`_compute_item_barcode` 真函数；真链路：创建商品得 `69012345000104000001`→模拟扫描账实相符→`label_status=verified`→删除，接口+直查库确认零残留。
 - **回归守卫**：①`_strip_epc_prefix` 对 20 位纯数字截**前 8 位**（前缀长度），勿回退为 10；②`assign_rule_epcs` 新格式存量必须进 `used_new` 序号池，否则补全撞号；③EPC 与条码序号空间独立（各自 LIKE 前缀计数）；④旧条码存量（HQ 开头）不受影响，LIKE 前缀不同互不干扰。
+
+## TC-57 快速开单：客户名称联想静默失效 + 录入币种换算覆盖（2026-10-23）
+- **问题现象**：①开单弹层输入已有客户名称无联想下拉（手机号联想正常）；②当日金价/商品行金价/工费/单价/组合支付金额输入框均为裸 CNY 数字，与小计/应收的 $ 显示混排。
+- **根因**：①`onNameInput` 模板已绑定 `@input` 但**漏注册进 Vue methods**，输入时调用 undefined 静默失败（无控制台报错）；②这些输入框 `v-model.number` 直接绑 CNY 内部值，未像整单优惠 `sDiscountInput` 一样做显示币种 getter/setter。
+- **修复**：①补注册 `onNameInput`；②新增 `saleEntryRate()/toEntryV()/fromEntryV()`，金价行走 `sGoldInput` computed，商品行金价/工费/单价与组合支付金额走 `:value/@input` 换算（内部仍存 CNY，提交与 biz-config 保存口径不变）。
+- **验证方法**：临时脚本（已删）——开单弹层输入已有客户名/备用号 → 下拉出现可选中回填；金价 520 CNY 显示 $72.8、改输 100 → 内部 714.29 CNY、小计 $1,028.01；支付输 1000 → 内部 7142.86 CNY、实收合计 $1,000.00。
+- **回归守卫**：①模板 `@input/@click` 引用的函数必须注册进 methods（联想类失败静默无报错，尤须自查）；②开单弹层所有金额输入一律走 `toEntryV/fromEntryV`（或 computed），禁止 `v-model.number` 直接绑 CNY 字段。
+
+## TC-58 品类记录删除后被"复活"：种子补插写在每连接路径上（2026-10-23，界面复现→修复→复测全过）
+- **问题现象**：商品品类管理删除任意品类（如 COUNTER_RING）→ 接口返回 200、确认框正常，但刷新列表/直查库该记录仍在，表现为"无法删除"。
+- **根因**：`db.py ensure_new_seeds()`（main.py 每次 `_db` 连接都会调用）里有一段**无条件执行的「老库补插古董款/专柜款分组」`INSERT OR IGNORE`**，COUNTER_RING/COUNTER_NECK/SET 等都在名单；删除后任意下一次请求（如刷新列表的 GET）把同 code 行原样插回。注释"已存在的 code 跳过"只防重复插入，防不了"删除后重插"。
+- **修复**：把该补插块并入上方「product_types 表为空」分支——新空库仍灌完整分组；有数据的库不再自动补插。历史上需要补插的老库在既往版本已补齐。
+- **验证方法**：界面新增一次性品类 TESTT1 → 列表点删除（接受原生 confirm）→ 连续 3 次 loadProductTypes → 直查库无该行（修复前同路径必复活）。
+- **回归守卫**：①`ensure_new_seeds` 内禁止新增"无表空守卫"的 INSERT OR IGNORE（每次连接都会跑，删除型操作都会被复活）；②"老库一次性升级补数据"应走 upgrade.py 数据任务，勿落在每连接种子路径。
+
+## TC-59 静态资源缓存协商 + 总部管理三个表单塌陷上移（2026-10-23）
+- **问题现象**：①`spa_asset`/`mobile_asset`/`/logo/` 对图片/字体/manifest 等资源不返回缓存头，`/site` 动态页无缓存头，浏览器吃启发式缓存旧资源；`?v=` 版本串漏升即陈旧。②总部管理→品类管理/分类管理（一级、二级）三个表单挤在卡片底部，`.form-row` 内 5 个字段组（含嵌套 flex 的「语言+名称」）布局塌陷：品类名称/标签名称输入框被压成细缝无法录入，标签颜色色块被拉成细条。
+- **根因**：①Starlette `FileResponse` 自带 ETag 但**不处理 If-None-Match**（只有 StaticFiles 有 304 协商），且伺服代码只对 js/css/html 加 no-cache。②`.form-row{display:flex}` 子项全部 `flex:1` + 嵌套 flex 容器，长表格之下字段组宽度分配塌陷。
+- **修复**：①`main.py` 新增 `_no_cache_file(request, f)`：`Cache-Control: no-cache` + 自算 ETag（mtime_ns+size）+ If-None-Match 命中返回 304（不传正文）；`/`、`spa_asset`、`mobile_asset`、`/logo/` 全部改走该函数，`/site` 补 no-cache 头。②三个表单整体移到卡片标题/提示行之后、表格之前，字段分行重排（语言固定宽 + 名称 `flex:1` 独立占位；二级分类颜色/排序/分组独立一行）；`resetTagEdit()` 分组预填当前筛选 `ST.tagFilter`（仅新增路径，编辑按原值回填）。
+- **验证方法**：`python` 脚本 GET 5 条代表路径断言 `Cache-Control: no-cache`，再带 `If-None-Match` 复请求断言 304；浏览器普通 reload（非 Ctrl+F5）断言新追加的 CSS 规则生效、还原后消失；`elementFromPoint` 逐控件断言命中自身；界面实际新增品类/一级分类/二级分类（含 chip 筛选→新增标签分组默认=筛选值）走查。
+- **回归守卫**：①新加静态资源路由必须复用 `_no_cache_file`，禁止裸 `FileResponse`（会退回启发式缓存）；②表单字段禁止在 `.form-row` 里嵌套 flex 容器拼「下拉+输入」，语言选择用 `flex:0 0 Npx` 固定占位独立 form-group。

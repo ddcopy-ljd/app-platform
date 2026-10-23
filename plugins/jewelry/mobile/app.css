@@ -594,3 +594,19 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 .imp-line.ok{color:var(--green)}
 .imp-line.err{color:var(--red)}
 .imp-fail-row{font-size:11px;color:var(--text2);padding:3px 0 3px 14px;border-bottom:1px dashed var(--border)}
+
+/* 功能介绍 Markdown 渲染 */
+.docs-body{padding:14px;color:var(--text);font-size:14px;line-height:1.75;word-break:break-word}
+.docs-body h1{font-size:20px;color:var(--wine);border-left:4px solid var(--gold);padding-left:10px;margin:18px 0 12px}
+.docs-body h2{font-size:17px;color:var(--wine-dark);border-left:3px solid var(--gold-light);padding-left:10px;margin:16px 0 10px}
+.docs-body h3{font-size:15px;color:var(--wine);margin:14px 0 8px}
+.docs-body h4,.docs-body h5,.docs-body h6{font-size:14px;color:var(--text);margin:12px 0 6px}
+.docs-body p{margin:8px 0}
+.docs-body ul,.docs-body ol{padding-left:22px;margin:8px 0}
+.docs-body li{margin:4px 0}
+.docs-body blockquote{margin:10px 0;padding:8px 12px;background:var(--gold-pale);border-left:3px solid var(--gold);color:var(--text2);border-radius:0 6px 6px 0}
+.docs-body table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+.docs-body td{border:1px solid var(--border);padding:6px 8px;vertical-align:top}
+.docs-body tr:nth-child(odd) td{background:var(--cream)}
+.docs-body code{background:var(--gold-pale);padding:1px 5px;border-radius:3px;font-size:12px}
+.docs-body strong{color:var(--wine-dark)}

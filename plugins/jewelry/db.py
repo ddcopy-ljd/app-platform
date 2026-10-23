@@ -5,10 +5,13 @@
 """
 
 import json
+import logging
 import os
 import re
 import sqlite3
 from pathlib import Path
+
+logger = logging.getLogger("jewelry.db")
 
 PLUGIN_ID = os.environ.get("PLUGIN_ID", "jewelry")
 VERSION = os.environ.get("PLUGIN_VERSION", "1.0.0")
@@ -17,7 +20,7 @@ DB_DIR = Path(os.environ.get("TENANT_DB_DIR", ""))
 TENANT_RE = re.compile(r"^[A-Za-z0-9_]{1,64}$")
 
 # 打印业务固定枚举（code, 分组）：每家门店按业务指派打印机，多个业务可指向同一台打印机。
-# 分组：label=标签（ZPL标签机）/ receipt=票据（热敏小票机）/ doc=单据报表（A4办公机或PDF）。
+# 分组：label=标签（ZMIN PCLE 标签机）/ receipt=票据（热敏小票机）/ doc=单据报表（A4办公机或PDF）。
 # 业务名称走前端 i18n（pbiz.<code>）；新增业务在此加一行并由 seed_store_printers 幂等补行。
 PRINT_BIZ = [
     ("label_product", "label"),        # 商品RFID标签（价签/吊牌，现有打印输出）
@@ -45,7 +48,9 @@ CREATE TABLE IF NOT EXISTS stores (
   owner TEXT,
   bridge_key TEXT DEFAULT '',
   printer_name TEXT DEFAULT '',
-  shop_id INTEGER DEFAULT 0
+  shop_id INTEGER DEFAULT 0,
+  -- 门店显示币种（NULL 或空 = 跟随总部内部币种）；汇率从 exchange_rates 取
+  display_currency TEXT DEFAULT ''
 );
 
 -- 店铺（上层组织）：一个店铺含多个门店；sale_item_limit=快速开单单件数上限
@@ -120,7 +125,20 @@ CREATE TABLE IF NOT EXISTS biz_config (
   store_num_map TEXT DEFAULT '',
   seq_bits INTEGER DEFAULT 8,
   bridge_key TEXT DEFAULT '',
-  gold_price REAL DEFAULT 0
+  gold_price REAL DEFAULT 0,
+  -- 内部记账币种：CNY(¥) / USD($) / EUR(€)；总部可在【系统设置→币种管理】切换
+  currency TEXT DEFAULT 'CNY'
+);
+
+-- 汇率表：from_currency → to_currency 的汇率。1 from = rate to。
+-- 换算：display_amount = db_amount * rate；from_currency 通常 = biz_config.currency（内部记账币种）
+CREATE TABLE IF NOT EXISTS exchange_rates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_currency TEXT NOT NULL,
+  to_currency TEXT NOT NULL,
+  rate REAL NOT NULL DEFAULT 1.0,
+  updated_at TEXT DEFAULT '',
+  UNIQUE(from_currency, to_currency)
 );
 
 CREATE TABLE IF NOT EXISTS categories (
@@ -185,6 +203,7 @@ CREATE TABLE IF NOT EXISTS products (
 CREATE TABLE IF NOT EXISTS product_tags (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
+  names TEXT DEFAULT '{}',
   color TEXT DEFAULT '',
   sort_order INTEGER DEFAULT 0,
   group_name TEXT DEFAULT '',
@@ -202,6 +221,7 @@ CREATE INDEX IF NOT EXISTS idx_tag_links_tag ON product_tag_links(tag_id);
 CREATE TABLE IF NOT EXISTS tag_groups (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
+  names TEXT DEFAULT '{}',
   sort_order INTEGER DEFAULT 0,
   created TEXT DEFAULT (datetime('now','localtime'))
 );
@@ -210,6 +230,7 @@ CREATE TABLE IF NOT EXISTS customers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   phone TEXT DEFAULT '',
+  email TEXT DEFAULT '',
   level TEXT DEFAULT '普通',
   total_amount REAL DEFAULT 0,
   due_amount REAL DEFAULT 0,
@@ -218,8 +239,25 @@ CREATE TABLE IF NOT EXISTS customers (
   preference TEXT DEFAULT '',
   points REAL DEFAULT 0,          -- 会员积分（开单按实付 1 元 = 1 分自动累计）
   gold_discount REAL DEFAULT 1.0, -- 金价折扣待遇：0.98=金价打98折，1=无折扣
+  address TEXT DEFAULT '',        -- 详细地址（街道及门牌号）
+  city TEXT DEFAULT '',           -- 城市
+  zip_code TEXT DEFAULT '',       -- 邮政编码
+  country TEXT DEFAULT '',        -- 国家
+  source TEXT DEFAULT '',         -- 获取来源（如 展会/门店/转介绍）
+  note TEXT DEFAULT '',           -- 备注
   created TEXT DEFAULT ''  -- 建档时间（后端 INSERT 显式写 datetime；旧库迁移列默认空，历史会员不计新增统计）
 );
+
+-- 客户多手机号（不限量，可带标签；首号同步写回 customers.phone 作为默认号）
+CREATE TABLE IF NOT EXISTS customer_phones (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id INTEGER NOT NULL,
+  phone TEXT DEFAULT '',
+  label TEXT DEFAULT '',          -- 标签：微信/座机/家人 等
+  seq INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_customer_phones_cust ON customer_phones(customer_id);
+CREATE INDEX IF NOT EXISTS idx_customer_phones_phone ON customer_phones(phone);
 
 CREATE TABLE IF NOT EXISTS sales (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -238,6 +276,7 @@ CREATE TABLE IF NOT EXISTS sales (
   clerk_name TEXT DEFAULT '',
   discount REAL DEFAULT 0,       -- 整单优惠金额：应付 = 应收 - 优惠
   receivable REAL DEFAULT 0,     -- 应收金额（各件小计汇总的快照）
+  real_biz_date TEXT DEFAULT '', -- 实际开单日期（系统落库日期，备查，与可修改的开单日期 biz_date 区分，不展示）
   customer_id INTEGER DEFAULT 0, -- 关联会员（手机号匹配老会员时回填）
   created TEXT DEFAULT (datetime('now','localtime'))
 );
@@ -908,6 +947,10 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         # 1.0.9 快速开单增强：品类计价方式 / 当日金价
         ("product_types", "pricing_mode", "TEXT DEFAULT 'piece'"),
         ("biz_config", "gold_price", "REAL DEFAULT 0"),
+        ("biz_config", "currency", "TEXT DEFAULT 'CNY'"),
+        ("stores", "display_currency", "TEXT DEFAULT ''"),
+        ("tag_groups", "names", "TEXT DEFAULT '{}'"),
+        ("product_tags", "names", "TEXT DEFAULT '{}'"),
         # 1.0.9 会员：积分 + 金价折扣待遇
         ("customers", "points", "REAL DEFAULT 0"),
         ("customers", "gold_discount", "REAL DEFAULT 1.0"),
@@ -952,10 +995,27 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("store_printers", "rev", "INTEGER DEFAULT 0"),
         ("store_printers", "updated_at", "TEXT DEFAULT ''"),
         ("store_printers", "updated_by", "TEXT DEFAULT ''"),
+        # 客户信息：电子邮箱
+        ("customers", "email", "TEXT DEFAULT ''"),
+        # 客户信息完善：地址一组 + 获取来源 + 备注
+        ("customers", "address", "TEXT DEFAULT ''"),
+        ("customers", "city", "TEXT DEFAULT ''"),
+        ("customers", "zip_code", "TEXT DEFAULT ''"),
+        ("customers", "country", "TEXT DEFAULT ''"),
+        ("customers", "source", "TEXT DEFAULT ''"),
+        ("customers", "note", "TEXT DEFAULT ''"),
+        # 销售：实际开单日期（系统落库日期，备查，与可修改的 biz_date 区分）
+        ("sales", "real_biz_date", "TEXT DEFAULT ''"),
     ]
     for table, col, decl in alters:
         if not _has_column(conn, table, col):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    # 实际开单日期回填：历史单据取落库时间（created）的日期部分，幂等
+    if _has_column(conn, "sales", "real_biz_date"):
+        conn.execute(
+            "UPDATE sales SET real_biz_date=substr(created,1,10) "
+            "WHERE (real_biz_date IS NULL OR real_biz_date='') AND created IS NOT NULL AND created!=''"
+        )
     # 1.2.41 门店 Key 改为实例级: 移除 stores.store_key / stores.scan_key(打印助手改 print_agents 表)
     for _col in ("store_key", "scan_key"):
         if _has_column(conn, "stores", _col):
@@ -995,6 +1055,18 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     _seed_clerk_types(conn)
     _backfill_category_code(conn)
     _migrate_material_and_type(conn)
+    # 默认汇率种子（内部币种=CNY 时的常用汇率，可在【系统设置→币种管理】修改）
+    conn.executemany(
+        "INSERT OR IGNORE INTO exchange_rates(from_currency,to_currency,rate,updated_at) VALUES(?,?,?,datetime('now','localtime'))",
+        [
+            ("CNY", "USD", 0.140),   # 1 CNY ≈ 0.140 USD
+            ("CNY", "EUR", 0.128),   # 1 CNY ≈ 0.128 EUR
+            ("USD", "CNY", 7.15),    # 1 USD ≈ 7.15 CNY（反向）
+            ("EUR", "CNY", 7.80),    # 1 EUR ≈ 7.80 CNY（反向）
+            ("USD", "EUR", 0.91),    # 1 USD ≈ 0.91 EUR
+            ("EUR", "USD", 1.10),    # 1 EUR ≈ 1.10 USD
+        ],
+    )
     conn.commit()
     _migrate_clean_dirty_epc(conn)
     conn.commit()
@@ -1007,7 +1079,29 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     _migrate_legacy_zero_store(conn)
     _ensure_builtin_label_templates(conn)
     _reconcile_customers_due(conn)
+    _ensure_sysadmin(conn)
     conn.commit()
+
+
+def _ensure_sysadmin(conn: sqlite3.Connection) -> None:
+    """幂等保证全库存在系统管理员（SYS_ADMIN）。
+
+    规则：第一个注册/申请试用的人就是管理员 —— 全库无 SYS_ADMIN 时，优先把最早创建的用户
+    （id 最小）提升为 SYS_ADMIN；users 表为空时才创建兜底账号 sysadmin/123456（强制首登改密）。
+    系统管理员只能做用户管理（指定高管/店长/店员），不能做业务。"""
+    n = conn.execute("SELECT COUNT(*) c FROM users WHERE role='SYS_ADMIN'").fetchone()["c"]
+    if n > 0:
+        return
+    first = conn.execute("SELECT id,username FROM users ORDER BY id LIMIT 1").fetchone()
+    if first:
+        conn.execute("UPDATE users SET role='SYS_ADMIN' WHERE id=?", (first["id"],))
+        conn.execute("DELETE FROM user_stores WHERE user_id=?", (first["id"],))  # 系统管理员无需逐店授权
+        logger.warning("auto_seed: 已将首个用户 %s(id=%s) 提升为系统管理员(SYS_ADMIN)", first["username"], first["id"])
+        return
+    conn.execute(
+        "INSERT INTO users(username,password,display_name,role,can_view_cost,must_change_pwd) "
+        "VALUES('sysadmin','123456','系统管理员','SYS_ADMIN',0,1)")
+    logger.warning("auto_seed: 已创建系统管理员账号 sysadmin（初始密码 123456，首次登录强制改密）")
 
 
 def _reconcile_customers_due(conn: sqlite3.Connection) -> None:
@@ -1661,18 +1755,26 @@ def ensure_new_seeds(conn: sqlite3.Connection) -> None:
             ("SET", '{"zh":"套装","en":"Set","it":"Set"}', 4, "piece", "专柜款"),
         ]
         conn.executemany("INSERT INTO product_types(code,names,sort_order,pricing_mode,group_name) VALUES(?,?,?,?,?)", pts)
-    # 老库补插古董款 / 专柜款 分组（已存在的 code 跳过）
-    conn.executemany("INSERT OR IGNORE INTO product_types(code,names,sort_order,pricing_mode,group_name) VALUES(?,?,?,?,?)", [
-        ("ANTIQUE_RING", '{"zh":"古董戒指","en":"Antique Ring"}', 1, "piece", "古董款"),
-        ("ANTIQUE_NECK", '{"zh":"古董项链","en":"Antique Necklace"}', 2, "piece", "古董款"),
-        ("BROOCH", '{"zh":"胸针","en":"Brooch"}', 3, "piece", "古董款"),
-        ("CUFFLINK", '{"zh":"袖扣","en":"Cufflink"}', 4, "piece", "古董款"),
-        ("CLASP", '{"zh":"搭扣","en":"Clasp"}', 5, "piece", "古董款"),
-        ("COUNTER_RING", '{"zh":"专柜戒指","en":"Counter Ring"}', 1, "piece", "专柜款"),
-        ("COUNTER_NECK", '{"zh":"专柜项链","en":"Counter Necklace"}', 2, "piece", "专柜款"),
-        ("COUNTER_BRACE", '{"zh":"专柜手链","en":"Counter Bracelet"}', 3, "piece", "专柜款"),
-        ("SET", '{"zh":"套装","en":"Set"}', 4, "piece", "专柜款"),
-    ])
+        # 老库升级补插名单（古董款/专柜款分组）并入空表分支：不能无条件每连接补插，
+        # 否则用户删除的品类会在下一次请求时被 INSERT OR IGNORE 原样复活（TC-58）。
+        # 历史上需要补插的老库在既往版本已补齐，此处仅保证全新空库有完整分组。
+        conn.executemany("INSERT INTO product_types(code,names,sort_order,pricing_mode,group_name) VALUES(?,?,?,?,?)", [
+            ("ANTIQUE_RING", '{"zh":"古董戒指","en":"Antique Ring"}', 1, "piece", "古董款"),
+            ("ANTIQUE_NECK", '{"zh":"古董项链","en":"Antique Necklace"}', 2, "piece", "古董款"),
+            ("CUFFLINK", '{"zh":"袖扣","en":"Cufflink"}', 4, "piece", "古董款"),
+            ("CLASP", '{"zh":"搭扣","en":"Clasp"}', 5, "piece", "古董款"),
+            ("COUNTER_RING", '{"zh":"专柜戒指","en":"Counter Ring"}', 1, "piece", "专柜款"),
+            ("COUNTER_NECK", '{"zh":"专柜项链","en":"Counter Necklace"}', 2, "piece", "专柜款"),
+            ("COUNTER_BRACE", '{"zh":"专柜手链","en":"Counter Bracelet"}', 3, "piece", "专柜款"),
+            ("SET", '{"zh":"套装","en":"Set"}', 4, "piece", "专柜款"),
+        ])
+    # 清理重复品类：早期演示种子用英文码插入过与数字品类同名（戒指/项链/手镯/耳饰/吊坠/胸针）的记录，
+    # 造成品类选择出现双份。统一保留数字品类（EPC 品类码取 code 前 2 位，必须为数字），无商品引用时才删。
+    _dup_type_codes = ("RING", "NECKLACE", "BRACELET", "EARRING", "PENDANT", "BROOCH")
+    conn.execute(
+        "DELETE FROM product_types WHERE code IN (%s) AND NOT EXISTS ("
+        "SELECT 1 FROM products p WHERE p.product_type_code=product_types.code)"
+        % ",".join("?" * len(_dup_type_codes)), _dup_type_codes)
     # —— locations（库位）——
     if conn.execute("SELECT COUNT(*) FROM locations").fetchone()[0] == 0:
         locs = [
@@ -1833,9 +1935,9 @@ def ensure_new_seeds(conn: sqlite3.Connection) -> None:
                VALUES('tenant_trial','懿臻珠宝总店','懿臻','懿德 · 臻品 · 云智',
                       '面向中高端珠宝门店的数智化经营。','张店长','13800000000','上海市黄浦区南京东路 88 号','10:00-21:00','黄金,钻石,翡翠,铂金,彩宝',1)"""
         )
-    # —— users（管理员 + 店员）——
+    # —— users（系统管理员 + 店员）：首个账号即管理员，仅可做用户管理；首登强制改密 ——
     if conn.execute("SELECT 1 FROM users WHERE username='admin'").fetchone() is None:
-        conn.execute("INSERT INTO users(username,password,display_name,role) VALUES('admin','admin123456','店长','TENANT_ADMIN')")
+        conn.execute("INSERT INTO users(username,password,display_name,role,must_change_pwd) VALUES('admin','admin123456','系统管理员','SYS_ADMIN',1)")
     if conn.execute("SELECT 1 FROM users WHERE username='staff'").fetchone() is None:
         conn.execute("INSERT INTO users(username,password,display_name,role) VALUES('staff','123456','店员','EMPLOYEE')")
     # —— user_stores 授权（init.py 也依赖这个，是"暂无可访问门店"的核心修复）——
@@ -2245,19 +2347,13 @@ def seed_demo(conn: sqlite3.Connection) -> None:
     ]
     conn.executemany("INSERT INTO categories(code,names) VALUES(?,?)", cats)
     # —— product_types（按 group_name 分大组，种子覆盖 3 个默认组）——
+    # 基础品类（戒指/项链/手镯/耳饰/吊坠/胸针）已由内置数字品类 01~08 提供，此处不再重复插入
     pts = [
-        # 主播希川（默认组）
-        ("RING", '{"zh":"戒指","en":"Ring","it":"Anello"}', 1, "piece", "主播希川"),
-        ("NECKLACE", '{"zh":"项链","en":"Necklace","it":"Collana"}', 2, "piece", "主播希川"),
-        ("BRACELET", '{"zh":"手镯","en":"Bracelet","it":"Bracciale"}', 3, "piece", "主播希川"),
-        ("EARRING", '{"zh":"耳饰","en":"Earring","it":"Orecchino"}', 4, "piece", "主播希川"),
-        ("PENDANT", '{"zh":"吊坠","en":"Pendant","it":"Ciondolo"}', 5, "piece", "主播希川"),
         ("CHAIN", '{"zh":"链","en":"Chain","it":"Catena"}', 6, "piece", "主播希川"),
         ("BEAD", '{"zh":"串珠","en":"Bead","it":"Perla"}', 7, "piece", "主播希川"),
         # 古董款
         ("ANTIQUE_RING", '{"zh":"古董戒指","en":"Antique Ring","it":"Anello Antico"}', 1, "piece", "古董款"),
         ("ANTIQUE_NECK", '{"zh":"古董项链","en":"Antique Necklace","it":"Collana Antica"}', 2, "piece", "古董款"),
-        ("BROOCH", '{"zh":"胸针","en":"Brooch","it":"Spilla"}', 3, "piece", "古董款"),
         ("CUFFLINK", '{"zh":"袖扣","en":"Cufflink","it":"Gemelli"}', 4, "piece", "古董款"),
         ("CLASP", '{"zh":"搭扣","en":"Clasp","it":"Fermaglio"}', 5, "piece", "古董款"),
         # 专柜款
