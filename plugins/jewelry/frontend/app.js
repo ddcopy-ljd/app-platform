@@ -17,9 +17,15 @@ function isPcLayout() {
   return true;
 }
 
-// ---- 手机版引导：移动设备访问时顶部横幅提示前往 mobile/ 手机网页版（可关闭，localStorage 记住）----
-var MTIP_OFF = false;
-try { MTIP_OFF = localStorage.getItem('yz_m_tip_off') === '1'; } catch (e) {}
+// ---- 设备直达：手机访问 PC 站一律立即跳转 /mobile/ 手机版（登录页与登录后统一）----
+// 登录环节即完成模式切换：手机用户打开站点直接落在手机版登录页。
+// 逃生口：URL 带 ?pc=1（查询串或锚点）可强留电脑版，防止需要桌面界面的场景无路可走。
+(function () {
+  try {
+    var q = (location.search || '') + ' ' + (location.hash || '');
+    if (!isPcLayout() && q.indexOf('pc=1') < 0) location.replace('mobile/');
+  } catch (e) {}
+})();
 
 // ---- 主题（wine酒红默认 / emerald墨绿鎏金 / navy藏蓝香槟 / plum黛紫银灰）----
 // html[data-theme] 驱动 app.css 变量覆盖；localStorage 记忆，启动即应用（登录页同样生效）
@@ -32,11 +38,6 @@ function applyTheme(t) {
 }
 var currentTheme = 'wine';
 try { currentTheme = applyTheme(localStorage.getItem('yz_theme') || 'wine'); } catch (e) {}
-function mtipUrl() { return API + '/mobile/'; }
-function mtipClose() {
-  ST.mobileTip = false;
-  try { localStorage.setItem('yz_m_tip_off', '1'); } catch (e) {}
-}
 
 // ---- 响应式状态 ----
 var ST = Vue.reactive({
@@ -45,8 +46,8 @@ var ST = Vue.reactive({
   tab: 'dashboard', subView: '', adminSub: 'epc',
   reportBeautify: true,   // 问题上报「美观输出」：勾选=上报页跟随本应用主题配色，不勾选=BugTracker 默认样式
   custDetail: null,   // 客户档案详情（必须放 ST 内才响应式；曾是模块级 var 导致 PC 详情空白）
+  custMemoDraft: '',  // 客户事件备忘录录入草稿（详情页添加用）
   isPc: isPcLayout(),
-  mobileTip: !isPcLayout() && !MTIP_OFF,   // 手机访问引导横幅（关闭后不再显示）
   // 列表排序状态：{ 表key: { key: 排序列, dir: 1升/-1降 } }
   tblSort: { products: { key: '', dir: 1 }, stock: { key: '', dir: 1 } },
   lang: currentLang, langKeys: LANG_KEYS, langLabels: LANG_LABELS,
@@ -67,7 +68,8 @@ var ST = Vue.reactive({
   dashRange: { mode: '3m', start: '', end: '', curStart: '', curEnd: '' },
   saleRange: { mode: 'today', start: '', end: '' },   // 销售列表时间过滤（同看板工具栏）
   products: [], prodTotal: 0, prodCat: '', prodQ: '', prodHasCert: false, prodLoc: 0, prodStatusFilter: '',
-  cats: [], bizConfig: { epc_prefix: 'E280', seq_bits: 8, currency: 'CNY', symbol: '￥' }, languages: [],
+  cats: [], bizConfig: { epc_prefix: 'E280', seq_bits: 8, currency: 'CNY', symbol: '￥' },
+  pointsRule: { earn: 1, redeem: 100, minOrder: 0 }, languages: [],
   catEdit: { code: '', names: { zh: '', en: '' }, sort_order: 0 }, catEditMode: 'new',
   // 商品品类（戒指/项链…）
   productTypes: [],
@@ -90,9 +92,9 @@ var ST = Vue.reactive({
   devicePanelOpen: {},         // 分店管理：门店卡片设备清单展开态 { storeId: true }
   // 商品图片裁切弹窗
   imgCrop: { show: false, pid: 0, src: '', orient: 'landscape', busy: false,
-             iw: 0, ih: 0, zoom: 1, tx: 0, ty: 0 },
+             iw: 0, ih: 0, zoom: 1, tx: 0, ty: 0, rot: 0, mirrorX: false, mirrorY: false },
   pendingImg: '',               // 新建商品时先选好的图片（保存商品后一并提交）
-  imgViewer: { show: false, src: '' },   // 点击缩略图查看大图
+  imgViewer: { show: false, src: '', meta: '' },   // 点击缩略图查看大图（meta=宽高/字节数信息条）
   sheetNameLang: currentLang,   // 商品表单当前编辑名称的语言（随全局语言初始化）
   deposits: [], depTotal: 0,
   sales: [], saleTotal: 0,
@@ -144,6 +146,8 @@ var ST = Vue.reactive({
   coTask: null, coTaskHost: '', coBusy: false, coTimer: null,
   invSub: 'stock',              // 库存页子页签：stock=在库商品，count=库存盘点
   saleSub: 'analysis',          // 销售页子页签：analysis=销售分析，list=销售流水
+  saleSumCount: 0,              // 销售流水检索结果总件数（后端 SUM）
+  saleSumAmount: 0,             // 销售流水检索结果总金额（后端 SUM）
   saleDetailId: null,           // 销售流水展开明细的单据 id（同时只展开一张）
   saleAna: { range: '3m', start: '', end: '', curStart: '', curEnd: '', data: null },   // 销售分析区间与结果
   // 各业务列表日期范围（today/yesterday/7d/month/3m/custom；''=不按时间过滤）
@@ -255,7 +259,13 @@ function _findRate(from, to) {
 }
 
 // 当前门店/总部的显示币种（内部金额一律人民币，展示与录入按此币种）
+// 优先取门店列表中当前工作门店的 display_currency（与服务器会话解耦：
+// 外网 /gw/ 网管调试通道是合成身份，服务端无法跟踪前端切店，/api/currency
+// 的 store_currency 会恒为总部币种），门店列表未加载时回退会话字段。
 function displayCurrency() {
+  var sid = Number(ST.curStoreId) || 0;
+  var cs = (ST.stores || []).find(function (x) { return x.id === sid; });
+  if (cs && cs.display_currency) return String(cs.display_currency).toUpperCase();
   return (((ST.bizConfig && (ST.bizConfig.store_currency || ST.bizConfig.currency)) || 'CNY') + '').toUpperCase();
 }
 
@@ -276,6 +286,8 @@ function entryCurrencyOf(storeId) {
   var fallback = (ST.bizConfig && ST.bizConfig.currency) || 'CNY';
   // 当前工作门店直接用后端下发的门店显示币种，避免 ST.stores 未加载时取错
   if (sid && sid === Number(ST.curStoreId)) {
+    var cs = (ST.stores || []).find(function (x) { return x.id === sid; });
+    if (cs && cs.display_currency) return String(cs.display_currency).toUpperCase();
     return ((ST.bizConfig && ST.bizConfig.store_currency) || fallback).toUpperCase();
   }
   var s = (ST.stores || []).find(function (x) { return x.id === sid; });
@@ -688,6 +700,11 @@ function productImageUrl(p) {
   if (!p || !p.id) return '';
   return API + '/api/products/' + p.id + '/image' + (p.image_ts ? '?v=' + encodeURIComponent(p.image_ts) : '');
 }
+// 列表缩略图：/thumb 端点（服务端临时文件缓存，WebP 240px，10 天超时自动重建）
+function productThumbUrl(p) {
+  if (!p || !p.id) return '';
+  return API + '/api/products/' + p.id + '/thumb' + (p.image_ts ? '?v=' + encodeURIComponent(p.image_ts) : '');
+}
 // 登录页下载链接：相对路径拼 API 前缀，网关模式下同样有效
 function dlUrl(path) { return API + path; }
 
@@ -978,7 +995,7 @@ function directionText(d) { return d === 'out' ? t('lbl.out') : (d === 'in' ? t(
 function reminderHint(item, cat) {
   var today = new Date(); today.setHours(0,0,0,0);
   if (cat === 'deposit') {
-    // 客户定金预定：到期该交尾款取货
+    // 客户定金预定：到期尾款待收、未取货
     if ((item.balance || 0) > 0) return t('rem.payBalance');   // "交尾款取货"
     return t('rem.pickupReady');  // "已付清可取"
   }
@@ -2096,7 +2113,12 @@ function pubShowcaseUrl() {
 }
 
 function loadBizConfig() {
-  api('GET', '/api/biz-config').then(function (r) { ST.bizConfig = r; }).catch(function () {});
+  api('GET', '/api/biz-config').then(function (r) {
+    var keep = ST.bizConfig || {};   // 币种展示字段由 loadCurrency 维护，覆盖时保留
+    r.store_currency = keep.store_currency; r.store_symbol = keep.store_symbol;
+    r.rates = keep.rates; r.valid = keep.valid; r.symbol = keep.symbol;
+    ST.bizConfig = r; syncPointsRule();
+  }).catch(function () {});
 }
 
 // 币种管理（加载内部币种 + 汇率表 + 门店显示币种）
@@ -2110,6 +2132,7 @@ function loadCurrency() {
     ST.bizConfig.internal_currency = r.currency || 'CNY';  // 内部记账币种（固定 CNY）
     ST.bizConfig.rates = r.rates || [];
     ST.bizConfig.valid = r.valid || ['CNY', 'USD', 'EUR'];
+    syncPointsRule();   // 汇率/门店币种就绪后，积分规则卡按新币种重算显示值
   }).catch(function () {});
 }
 
@@ -2504,6 +2527,7 @@ function memCanCreate() {
 }
 function pickMember(c) {
   var d = ST.sheetData;
+  d.points_redeem = 0;
   d.member = {
     id: c.id, name: c.name || '', phone: c.phone || '',
     level: c.level || '普通', points: Number(c.points) || 0,
@@ -2527,6 +2551,71 @@ function quickCreateMember() {
     toast(t('sale.memCreated'));
     if (c) pickMember(c);
   }).catch(function (e) { toast(e.message, 'error'); });
+}
+
+// ---- 积分规则（biz_config，门店管理页配置）+ 开单积分抵扣 ----
+function ptsRules() {
+  var c = ST.bizConfig || {};
+  return {
+    earn: Number(c.points_earn_per) > 0 ? Number(c.points_earn_per) : 1,
+    redeem: Number(c.points_redeem_per) > 0 ? Number(c.points_redeem_per) : 100,
+    minOrder: Math.max(0, Number(c.points_min_order) || 0),
+  };
+}
+function syncPointsRule() {
+  var c = ST.bizConfig || {};
+  var sid = Number(ST.curStoreId) || 0;
+  var earnB = c.points_earn_per != null ? Number(c.points_earn_per) : 1;
+  var redB = c.points_redeem_per != null ? Number(c.points_redeem_per) : 100;
+  var minB = c.points_min_order != null ? Number(c.points_min_order) : 0;
+  var rate = entryRateOf(sid) || 1;      // CNY → 显示币种 汇率
+  var unit = 1 / rate;                   // 1 个显示币种 = ? 人民币（不取整，防保存-回读漂移）
+  // 界面一律按门店显示币种录入/展示：earn/起步价 = 换算值；redeem = 每 Y 分抵 1(显示币种)
+  ST.pointsRule = {
+    earn: Math.round(earnB * rate * 1e4) / 1e4,
+    redeem: Math.round(redB * unit * 1e4) / 1e4,
+    minOrder: round2(cnyToEntry(minB, sid)),
+  };
+}
+function savePointsRules() {
+  var p = ST.pointsRule;
+  var sid = Number(ST.curStoreId) || 0;
+  var rate = entryRateOf(sid) || 1;
+  var unit = 1 / rate;   // 1 个显示币种 = ? 人民币（与 syncPointsRule 同口径，不中途取整）
+  // 底线保护按显示币种口径：earn>0、redeem≥1（每1分抵1显示币种）、起步价≥0；
+  // 基准值保留 6 位小数，避免 EUR 等小汇率下的往返漂移
+  var rd = Math.max(1, Number(p.redeem) || 1);
+  api('PUT', '/api/biz-config/points', {
+    points_earn_per: Math.max(0.0001, entryToCny(Number(p.earn) || 1, sid)),
+    points_redeem_per: Math.round(rd / unit * 1e6) / 1e6,
+    points_min_order: Math.max(0, entryToCny(Number(p.minOrder) || 0, sid)),
+  }).then(function () {
+    toast(t('toast.saveOk'));
+    loadBizConfig();   // 统一加载（保留汇率/门店币种字段）并按门店币种重算显示值
+  })
+    .catch(function (e) { toast(e.message, 'error'); });
+}
+// 本单能否用积分：选中会员 + 应收达起步价（0=不限）
+function ptsRedeemable() {
+  var d = ST.sheetData, r = ptsRules();
+  if (!d || !d.member) return false;
+  if (r.minOrder > 0 && saleReceivable() < r.minOrder) return false;
+  return true;
+}
+// 积分抵扣金额（不超过优惠后应付）
+function ptsDeductAmt() {
+  var d = ST.sheetData;
+  if (!d || !ptsRedeemable()) return 0;
+  var use = Math.max(0, Number(d.points_redeem) || 0);
+  if (!use) return 0;
+  return Math.min(round2(use / ptsRules().redeem), salePayable());
+}
+// 可用积分上限：min(会员积分余额, 抵完应付所需积分)
+function ptsMaxUse() {
+  var d = ST.sheetData, r = ptsRules();
+  if (!d || !d.member) return 0;
+  var byPayable = Math.floor(salePayable() * r.redeem + 1e-9);
+  return Math.max(0, Math.min(Math.floor(Number(d.member.points) || 0), byPayable));
 }
 
 // ---- 当日金价（店长可保存并应用到本单计重件）----
@@ -2711,6 +2800,7 @@ function closeSheet() {
   ST.anchor.pop = ''; ST.anchor.tip = '';
   ST.pendingImg = ''; ST.imgViewer.show = false;
   ST.sheetMode = ''; ST.sheetData = {};
+  ST._retDetail = 0;
   exitCoopScan();
 }
 
@@ -3453,6 +3543,7 @@ function loadSales() {
   if (ST.saleClerkType) q += '&clerk_type=' + encodeURIComponent(ST.saleClerkType);
   return api('GET', '/api/sales?page=1&size=100' + q).then(function (r) {
     ST.sales = r.items; ST.saleTotal = r.total;
+    ST.saleSumCount = r.sum_count || 0; ST.saleSumAmount = r.sum_amount || 0;
   }).catch(function () {});
 }
 function clerkText(s) {
@@ -3525,9 +3616,9 @@ payRows +
   setTimeout(function () { try { w.print(); } catch (e) {} }, 250);
 }
 
-// ---------------- 商品图片：4:3 裁切（可横/竖，长边 700px，商品居中可人工调整，JPG q75） ----------------
+// ---------------- 商品图片：4:3 裁切（可横/竖，长边 800px，商品居中可人工调整，WebP q80） ----------------
 var IMG_LONG_EDGE = 800;
-var IMG_QUALITY = 0.75;
+var IMG_QUALITY = 0.8;
 var _imgFileInput = null;
 var _cropImg = null;      // 已加载的原图 Image
 var _cropDrag = null;     // 拖拽状态
@@ -3566,6 +3657,7 @@ function openImgCrop(pid, src) {
   var ic = ST.imgCrop;
   ic.pid = pid; ic.src = src; ic.orient = ic.orient || 'landscape';
   ic.zoom = 1; ic.tx = 0; ic.ty = 0; ic.busy = false;
+  ic.rot = 0; ic.mirrorX = false; ic.mirrorY = false;
   ic.iw = 0; ic.ih = 0;
   ic.show = true;
   _cropImg = new Image();
@@ -3576,39 +3668,78 @@ function openImgCrop(pid, src) {
   };
   _cropImg.src = src;
 }
+// 旋转后的有效包围盒（cover/平移约束按它计算）
+function cropEffDims() {
+  var ic = ST.imgCrop;
+  var a = (ic.rot || 0) * Math.PI / 180;
+  var c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a));
+  return { bw: ic.iw * c + ic.ih * s, bh: ic.iw * s + ic.ih * c };
+}
 function closeImgCrop() { ST.imgCrop.show = false; ST.imgCrop.src = ''; ST.imgCrop.busy = false; _cropImg = null; }
 function imgFrameSize() {
   var el = document.getElementById('img-crop-frame');
   return { w: el ? el.clientWidth : 480, h: el ? el.clientHeight : 360 };
 }
-// 按 cover 方式铺满裁切框并居中
+// 按 cover 方式铺满裁切框并居中（base 按旋转包围盒算；tx/ty 是未旋转图片左上角平移，居中必须围绕图片中心）
 function resetImgCrop() {
   var ic = ST.imgCrop;
   if (!ic.iw) return;
+  var eff = cropEffDims();
   var f = imgFrameSize();
-  ic.base = Math.max(f.w / ic.iw, f.h / ic.ih);
+  ic.base = Math.max(f.w / eff.bw, f.h / eff.bh);
   ic.zoom = 1;
-  var dw = ic.iw * ic.base, dh = ic.ih * ic.base;
-  ic.tx = (f.w - dw) / 2;
-  ic.ty = (f.h - dh) / 2;
+  var s = ic.base;
+  ic.tx = (f.w - ic.iw * s) / 2;
+  ic.ty = (f.h - ic.ih * s) / 2;
+  _clampPan();
 }
 function setImgOrient(o) {
   ST.imgCrop.orient = o;
   Vue.nextTick(resetImgCrop);
 }
+// 旋转滑块（步进 30°，棘轮顿挫）；镜像切换；变更后按新包围盒重新 cover 居中
+function setImgRot(v) {
+  ST.imgCrop.rot = Number(v) || 0;
+  Vue.nextTick(resetImgCrop);
+}
+// 松手吸附特殊角度（0/90/180/270/360）：±3° 内自动吸附，其余保持任意角度
+function snapImgRot(v) {
+  var rot = Number(v) || 0;
+  var targets = [0, 90, 180, 270, 360];
+  for (var i = 0; i < targets.length; i++) {
+    if (Math.abs(rot - targets[i]) <= 3) { rot = targets[i] % 360; break; }
+  }
+  ST.imgCrop.rot = rot;
+  Vue.nextTick(resetImgCrop);
+}
+function toggleMirrorX() {
+  ST.imgCrop.mirrorX = !ST.imgCrop.mirrorX;
+  Vue.nextTick(resetImgCrop);
+}
+function toggleMirrorY() {
+  ST.imgCrop.mirrorY = !ST.imgCrop.mirrorY;
+  Vue.nextTick(resetImgCrop);
+}
 function cropImgStyle() {
   var ic = ST.imgCrop;
   if (!ic.base) return {};
-  var dw = ic.iw * ic.base * ic.zoom;
-  var dh = ic.ih * ic.base * ic.zoom;
-  return { width: dw + 'px', height: dh + 'px', transform: 'translate(' + ic.tx + 'px,' + ic.ty + 'px)' };
+  var s = ic.base * ic.zoom;
+  var sx = (ic.mirrorX ? -1 : 1) * s, sy = (ic.mirrorY ? -1 : 1) * s;
+  var dw = ic.iw * s, dh = ic.ih * s;
+  return { width: dw + 'px', height: dh + 'px',
+           transform: 'translate(' + ic.tx + 'px,' + ic.ty + 'px) scale(' + sx + ',' + sy + ') rotate(' + (ic.rot || 0) + 'deg)' };
 }
 function _clampPan() {
   var ic = ST.imgCrop, f = imgFrameSize();
-  var dw = ic.iw * ic.base * ic.zoom, dh = ic.ih * ic.base * ic.zoom;
-  // 图片必须始终覆盖裁切框：可拖动范围 [框-图, 0]
-  ic.tx = Math.min(0, Math.max(f.w - dw, ic.tx));
-  ic.ty = Math.min(0, Math.max(f.h - dh, ic.ty));
+  var eff = cropEffDims();
+  var s = ic.base * ic.zoom;
+  // 图片中心可动范围：旋转包围盒（中心=图片中心）必须始终覆盖裁切框
+  var rx = Math.max(0, (eff.bw * s - f.w) / 2);
+  var ry = Math.max(0, (eff.bh * s - f.h) / 2);
+  var cx = Math.min(f.w / 2 + rx, Math.max(f.w / 2 - rx, ic.tx + ic.iw * s / 2));
+  var cy = Math.min(f.h / 2 + ry, Math.max(f.h / 2 - ry, ic.ty + ic.ih * s / 2));
+  ic.tx = cx - ic.iw * s / 2;
+  ic.ty = cy - ic.ih * s / 2;
 }
 function cropPointerDown(e) {
   if (!_cropImg) return;
@@ -3647,19 +3778,30 @@ function cropWheel(e) {
 function confirmImgCrop() {
   var ic = ST.imgCrop;
   if (!_cropImg || ic.busy) return;
-  var landscape = ic.orient === 'landscape';
-  var outW = landscape ? IMG_LONG_EDGE : Math.round(IMG_LONG_EDGE * 3 / 4);
-  var outH = landscape ? Math.round(IMG_LONG_EDGE * 3 / 4) : IMG_LONG_EDGE;
-  var scale = ic.base * ic.zoom;
-  var sx = -ic.tx / scale, sy = -ic.ty / scale;
-  var sw = imgFrameSize().w / scale, sh = imgFrameSize().h / scale;
+  var outW, outH;
+  if (ic.orient === 'square') { outW = IMG_LONG_EDGE; outH = IMG_LONG_EDGE; }
+  else if (ic.orient === 'landscape') { outW = IMG_LONG_EDGE; outH = Math.round(IMG_LONG_EDGE * 3 / 4); }
+  else { outW = Math.round(IMG_LONG_EDGE * 3 / 4); outH = IMG_LONG_EDGE; }
+  var f = imgFrameSize();
+  var s = ic.base * ic.zoom;
+  var mx = ic.mirrorX ? -1 : 1, my = ic.mirrorY ? -1 : 1;
+  // 图片中心相对裁切框中心的偏移（frame 坐标）
+  var dx = (ic.tx + ic.iw * s / 2) - f.w / 2;
+  var dy = (ic.ty + ic.ih * s / 2) - f.h / 2;
+  var k = outW / f.w;  // frame 像素 → 输出像素
   var canvas = document.createElement('canvas');
   canvas.width = outW; canvas.height = outH;
   var ctx = canvas.getContext('2d');
   ctx.imageSmoothingQuality = 'high';
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, outW, outH);
-  ctx.drawImage(_cropImg, sx, sy, sw, sh, 0, 0, outW, outH);
+  // 逆变换采样：输出中心 → 缩放 → 平移 → 镜像 → 旋转 → 源图
+  ctx.translate(outW / 2, outH / 2);
+  ctx.scale(k, k);
+  ctx.translate(dx, dy);
+  ctx.scale(mx, my);
+  ctx.rotate((ic.rot || 0) * Math.PI / 180);
+  ctx.drawImage(_cropImg, -ic.iw / 2, -ic.ih / 2);
   ic.busy = true;
   var done = function (dataUrl) {
     if (!ic.pid) {
@@ -3683,9 +3825,9 @@ function confirmImgCrop() {
       var fr = new FileReader();
       fr.onload = function () { done(fr.result); };
       fr.readAsDataURL(blob);
-    }, 'image/jpeg', IMG_QUALITY);
+    }, 'image/webp', IMG_QUALITY);
   } else {
-    done(canvas.toDataURL('image/jpeg', IMG_QUALITY));
+    done(canvas.toDataURL('image/webp', IMG_QUALITY));
   }
 }
 function removeProductImage(pid) {
@@ -3710,7 +3852,18 @@ function viewProductImage(p) {
   var src = p && p.image_ts ? productImageUrl(p) : sheetImgSrc();
   if (!src) return;
   ST.imgViewer.src = src;
+  ST.imgViewer.meta = '';
   ST.imgViewer.show = true;
+  // 信息条：宽高像素 + 字节数（图片接口公开可读，直接 fetch blob）
+  var probe = new Image();
+  probe.onload = function () {
+    var dims = probe.naturalWidth + '×' + probe.naturalHeight + ' px';
+    fetch(src).then(function (r) { return r.blob(); }).then(function (b) {
+      var kb = b.size / 1024;
+      ST.imgViewer.meta = dims + ' · ' + (kb >= 1024 ? (kb / 1024).toFixed(2) + ' MB' : kb.toFixed(1) + ' KB');
+    }).catch(function () { ST.imgViewer.meta = dims; });
+  };
+  probe.src = src;
 }
 
 // 商品详情面板：只读展示，编辑入口在面板内（在途商品也可查看，编辑时仍拦截）
@@ -3720,10 +3873,12 @@ function openProdDetail(p) {
   openSheet('product-detail', t('prod.detailTitle'), Object.assign({}, p));
 }
 // 详情面板 → 编辑：先取快照关面板，再走原编辑动线（币种换算/在途拦截都在 editProduct）
+// 标记来源：保存成功后回到详情面板（而不是返回列表）
 function editFromDetail() {
   var p = Object.assign({}, ST.sheetData || {});
   closeSheet();
   editProduct(p);
+  if (ST.sheetMode === 'product' && p.id) ST._retDetail = p.id;
 }
 
 // ---------------- 门店调拨 ----------------
@@ -4010,19 +4165,20 @@ function saveBizConfig() {
   var cfg = ST.bizConfig;
   api('PUT', '/api/biz-config', { epc_prefix: (cfg.epc_prefix || '').trim().toUpperCase(), seq_bits: Math.min(6, Math.max(4, Number(cfg.seq_bits) || 6)) }).then(function () {
     toast(t('toast.saveOk'));
-    api('GET', '/api/biz-config').then(function (r) { ST.bizConfig = r; });
+    loadBizConfig();   // 走统一加载，避免裸覆盖清掉汇率/门店币种展示字段
   }).catch(function (e) { toast(e.message, 'error'); });
 }
 
 function quickSale() {
   if (checkFrozen()) return;
   if (!(ST.bizConfig && ST.bizConfig.gold_price != null)) {
-    api('GET', '/api/biz-config').then(function (r) { ST.bizConfig = r; if (ST.sheetData) ST.sheetData.goldPrice = Number(r.gold_price) || 0; }).catch(function () {});
+    loadBizConfig();   // 统一加载，避免裸覆盖清掉汇率/门店币种展示字段
   }
   openSheet('sale', t('sheet.sale'), {
     customer: '', phone: '', items: [],
     discount: 0, payments: [{ method: '现金', amount: 0 }],
     member: null, goldPrice: (ST.bizConfig && Number(ST.bizConfig.gold_price)) || 0,
+    points_redeem: 0,
     _kw: '', _suggest: [], _suggestOpen: false,
     _memList: [], _memOpen: false,
     biz_date: localToday(),
@@ -4241,9 +4397,34 @@ function subBack() {
 function viewCustomer(d) {
   ST.subView = 'customer_detail';
   ST.custDetail = null;
+  ST.custMemoDraft = '';
   api('GET', '/api/customers/' + d.id + '/detail').then(function (r) {
     ST.custDetail = r;
   }).catch(function (e) { toast(e.message, 'error'); });
+}
+
+// 事件备忘录（多条）：详情页逐条添加/删除，记录时间由服务端生成
+function addCustMemo() {
+  var d = ST.custDetail;
+  if (!d || !d.id) return;
+  var c = (ST.custMemoDraft || '').trim();
+  if (!c) { toast(t('cust.memoNeed'), 'error'); return; }
+  api('POST', '/api/customers/' + d.id + '/memos', { content: c }).then(function () {
+    ST.custMemoDraft = '';
+    return api('GET', '/api/customers/' + d.id + '/detail').then(function (r) { ST.custDetail = r; });
+  }).then(function () { toast(t('toast.saveOk')); }).catch(function (e) { toast(e.message, 'error'); });
+}
+function delCustMemo(mid) {
+  var d = ST.custDetail;
+  if (!d || !d.id) return;
+  confirmBox({
+    title: t('act.remove'), danger: true, okText: t('act.remove'),
+    lines: [{ k: 'cust.eventMemo', v: ((d.memos || []).find(function (m) { return m.id === mid; }) || {}).content || ('#' + mid) }]
+  , fn: function () {
+    api('DELETE', '/api/customers/memos/' + mid).then(function () {
+      return api('GET', '/api/customers/' + d.id + '/detail').then(function (r) { ST.custDetail = r; });
+    }).catch(function (e) { toast(e.message, 'error'); });
+  } });
 }
 
 // 客户表单数据规范化：多手机号至少一行（编辑时首行预填默认号），新字段兜底空串
@@ -4335,7 +4516,15 @@ function saveProductForm(d, opts) {
     var afterSave = function () {
       toast(t('toast.saveOk') + (isNew && r.rfid_epc ? ' EPC: ' + r.rfid_epc : ''));
       refreshAll();
+      // 来自详情面板的编辑：保存后回到详情面板（取最新数据），不直接返回列表
+      var rid = ST._retDetail || 0;
       if (opts.closeAfter) closeSheet();
+      if (opts.closeAfter && rid === r.id) {
+        return reloadProducts().then(function () {
+          var fresh = (ST.products || []).find(function (x) { return x.id === r.id; });
+          if (fresh) openProdDetail(fresh);
+        });
+      }
       // 录一件打一张：新建保存成功后提示立即打印 RFID 标签
       if (opts.askPrint && isNew && r.rfid_epc) {
         setTimeout(function () {
@@ -4372,6 +4561,11 @@ function submitSheet() {
     }
     var disc = round2(Number(d.discount) || 0);
     if (disc > saleReceivable()) { toast(t('sale.discountTooBig'), 'error'); return; }
+    var redeem = Math.max(0, Math.floor(Number(d.points_redeem) || 0));
+    if (redeem > 0) {
+      if (!d.member) { toast(t('sale.ptsNeedMember'), 'error'); return; }
+      if (redeem > ptsMaxUse()) { toast(t('sale.ptsTooMuch', { n: ptsMaxUse() }), 'error'); return; }
+    }
     var pays = (d.payments || [])
       .filter(function (p) { return Number(p.amount) > 0; })
       .map(function (p) { return { method: p.method || '现金', amount: round2(Number(p.amount) || 0) }; });
@@ -4387,12 +4581,13 @@ function submitSheet() {
     });
     api('POST', '/api/sales', {
       customer: d.customer || '', phone: d.phone || '',
-      discount: disc, payments: pays,
+      discount: disc, payments: pays, points_redeem: redeem,
       biz_date: d.biz_date || '', clerk_type: d.clerk_type || '', clerk_name: d.clerk_name || '',
       items: saleItems,
     }).then(function (r) {
       var msg = t('toast.saveOk') + ' ' + r.bill_no + ' · ' + (r.count || saleItems.length) + t('sale.itemsUnit')
         + ' ' + t('sale.payable') + ' ' + fmtY(r.amount);
+      if (r.points_deduct > 0) msg += ' · ' + t('sale.ptsDeductToast', { p: r.points_redeemed, m: fmtY(r.points_deduct) });
       if (r.points) msg += ' · +' + r.points + t('sale.pointsUnit');
       toast(msg);
       closeSheet(); refreshAll();
@@ -6019,7 +6214,6 @@ var app = Vue.createApp({
     sheetImgSrc: function () { return sheetImgSrc(); },
     pendingImg: function () { return ST.pendingImg; },
     imgViewer: function () { return ST.imgViewer; },
-    closeImgViewer: function () { ST.imgViewer.show = false; },
     subTitle: subTitle,
     exportHref: exportHref,
     nav: function () {
@@ -6091,7 +6285,16 @@ var app = Vue.createApp({
     sItemLimit: function () { return saleItemLimit(); },
     sTotal: function () { return saleTotal(); },
     sReceivable: function () { return saleReceivable(); },
-    sPayable: function () { return salePayable(); },
+    // 积分抵扣：金额 / 可用上限 / 规则参数（应付 = 优惠后应付 - 积分抵扣）
+    sPtsDeduct: function () { return ptsDeductAmt(); },
+    sPtsMax: function () { return ptsMaxUse(); },
+    sPtsRedeemable: function () { return ptsRedeemable(); },
+    sPtsRedeemPer: function () { return ptsRules().redeem; },
+    sPtsMinOrder: function () { return ptsRules().minOrder; },
+    sPtsDeductMax: function () { var r = ptsRules(); return r.redeem > 0 ? round2(ptsMaxUse() / r.redeem) : 0; },
+    // 积分规则卡币种符号：与换算同源（当前门店显示币种），避免外网会话币种≠门店币种时符号错挂
+    sPtsCurSym: function () { return curSymbol(entryCurrencyOf(Number(ST.curStoreId) || 0)); },
+    sPayable: function () { return Math.max(0, round2(salePayable() - ptsDeductAmt())); },
     // 整单优惠：界面按门店显示币种录入，回写 CNY（与应收/应付同币种）
     sCurSym: function () { return curSymbol(displayCurrency()); },
     // 当日金价：界面按门店显示币种（元/克→显示币种/克），存储仍为 CNY
@@ -6107,7 +6310,7 @@ var app = Vue.createApp({
       }
     },
     sPaid: function () { return salePaid(); },
-    sDue: function () { return round2(salePayable() - salePaid()); },
+    sDue: function () { return round2(round2(salePayable() - ptsDeductAmt()) - salePaid()); },
     // 系统自检铃铛：检查项列表 / 是否有启用项异常
     healthItems: healthItems,
     healthBad: healthBad,
@@ -6120,7 +6323,7 @@ var app = Vue.createApp({
     detailRows: detailRows,
   },
   methods: {
-    go: go, isNavActive: isNavActive, mtipUrl: mtipUrl, mtipClose: mtipClose, switchAdminSub: switchAdminSub, goInvStatus: goInvStatus, clearInvStatusFilter: clearInvStatusFilter,
+    go: go, isNavActive: isNavActive, switchAdminSub: switchAdminSub, goInvStatus: goInvStatus, clearInvStatusFilter: clearInvStatusFilter,
     openLockedItems: openLockedItems, closeLockedItems: closeLockedItems,
     invCatDonut: invCatDonut, invCatPct: invCatPct,
     invPtypeDonut: invPtypeDonut, invPtypePct: invPtypePct,
@@ -6171,6 +6374,7 @@ var app = Vue.createApp({
     sortTbl: sortTbl, sortCls: sortCls,
     openColsMenu: function (ev) { mtToggleCols('products', ev && ev.currentTarget); },
     openSheet: openSheet, closeSheet: closeSheet, submitSheet: submitSheet,
+    closeImgViewer: function () { ST.imgViewer.show = false; },
     onPickProduct: onPickProduct,
     addProduct: addProduct, editProduct: editProduct, delProduct: delProduct, printLabel: printLabel, printTypeProducts: printTypeProducts,
     printSheetLabel: printSheetLabel, epcDirty: epcDirty,
@@ -6179,7 +6383,7 @@ var app = Vue.createApp({
     catNameByCode: catNameByCode, catCodeByName: catCodeByName,
     catNameOf: catNameOf, productCatName: productCatName, catText: catText,
     typeNameByCode: typeNameByCode, productTypeName: productTypeName,
-    materialText: materialText, productImageUrl: productImageUrl, dlUrl: dlUrl,
+    materialText: materialText, productImageUrl: productImageUrl, productThumbUrl: productThumbUrl, dlUrl: dlUrl,
     normLang: normLang,
     sheetNameGet: sheetNameGet, sheetNameSet: sheetNameSet, langNameFilled: langNameFilled,
     resetCatEdit: resetCatEdit, editCat: editCat, saveCat: saveCat, delCat: delCat,
@@ -6202,7 +6406,9 @@ var app = Vue.createApp({
     openProfLang: openProfLang, profLangFilled: profLangFilled, profLangName: profLangName,
     // 商品图片裁切上传 + 商品详情面板
     chooseProductImage: chooseProductImage, closeImgCrop: closeImgCrop,
+    setImgRot: setImgRot, toggleMirrorX: toggleMirrorX, toggleMirrorY: toggleMirrorY,
     viewProductImage: viewProductImage, openProdDetail: openProdDetail, editFromDetail: editFromDetail,
+    addCustMemo: addCustMemo, delCustMemo: delCustMemo,
     setImgOrient: setImgOrient, cropImgStyle: cropImgStyle,
     cropPointerDown: cropPointerDown, cropWheel: cropWheel,
     confirmImgCrop: confirmImgCrop, removeProductImage: removeProductImage,
@@ -6278,6 +6484,7 @@ var app = Vue.createApp({
     toEntryV: toEntryV, fromEntryV: fromEntryV,
     pickMember: pickMember, quickCreateMember: quickCreateMember,
     memberGoldPrice: memberGoldPrice, saveGoldPrice: saveGoldPrice,
+    savePointsRules: savePointsRules, ptsRedeemable: ptsRedeemable, ptsMaxUse: ptsMaxUse,
     addPayment: addPayment, removePayment: removePayment,
     matchStockProduct: matchStockProduct,
     setScanMode: setScanMode,
@@ -6323,6 +6530,11 @@ document.addEventListener('click', function () {
   if (ST.storePopOpen) ST.storePopOpen = false;
   if (ST.langPopOpen) ST.langPopOpen = false;
   if (ST.themePopOpen) ST.themePopOpen = false;
+});
+
+// 大图查看器：ESC 关闭
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && ST.imgViewer && ST.imgViewer.show) ST.imgViewer.show = false;
 });
 
 app.mount('#app');

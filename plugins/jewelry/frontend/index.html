@@ -5,17 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>懿臻珠宝云</title>
 <link rel="icon" href="/logo/logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./app.css?v=20261023a120">
+<link rel="stylesheet" href="./app.css?v=20261024a128">
 </head>
 <body>
 <div id="app">
   <div v-if="mode==='PRODUCTION_SUPPORT'" class="support-banner">{{ t('support.banner') }}</div>
   <div v-if="mode==='SANDBOX'" class="sandbox-banner">🧪 {{ t('mode.sandbox') }}<template v-if="version"> · v{{ version }}</template> · {{ t('mode.sandboxTip') }}</div>
-  <div v-if="mobileTip" class="mtip-banner">
-    <span class="mtip-text">📱 {{ t('mtip.text') }}</span>
-    <a class="mtip-go" :href="mtipUrl()">{{ t('mtip.go') }}</a>
-    <button class="mtip-x" @click="mtipClose" :title="t('mtip.go')">✕</button>
-  </div>
 
   <div v-if="!token" class="login-page">
     <div class="login-logo"><img src="/logo/logo_notext.png" alt=""></div>
@@ -341,6 +336,18 @@
               </div>
             </div>
             </div><!-- /ba-metrics -->
+            <div class="ba-group" v-if="bizAnalysis.byStore && bizAnalysis.byStore.length" style="margin-top:12px">
+              <div class="ba-group-title">🏬 {{ t('ba.byStore') }}<span style="font-weight:400;font-size:12px;color:var(--muted)">（总部汇总视图 · 切换工作门店可看单店详情）</span></div>
+              <div style="display:flex;flex-direction:column;gap:7px">
+                <div v-for="s in bizAnalysis.byStore" :key="s.id" style="display:flex;align-items:center;gap:10px">
+                  <span style="flex:0 0 90px;font-size:13px;font-weight:600">{{ s.name }}</span>
+                  <div style="flex:1;height:16px;background:rgba(0,0,0,.06);border-radius:8px;overflow:hidden">
+                    <div :style="{width:(s.amt*100/(bizAnalysis.byStore[0].amt||1))+'%',height:'100%',background:'linear-gradient(90deg,var(--gold),#a8842c)'}"></div>
+                  </div>
+                  <span style="flex:0 0 auto;font-size:12px;font-weight:700;color:var(--gold-dark,#8a6a1f)">{{ fmtY(s.amt) }} · {{ s.bills }} 单</span>
+                </div>
+              </div>
+            </div>
           </div>
           </div><!-- /dash-row 品类销售占比（环形图） + 经营分析 + 排行榜 -->
           <div class="dash-pair" v-if="remindData || (dashData && dashData.recentSales && dashData.recentSales.length)">
@@ -441,7 +448,7 @@
                   <td class="cell-check">
                     <input type="checkbox" :checked="!!printSel[p.id]" @click.stop @change="togglePrintSel(p.id)">
                   </td>
-                  <td class="cell-img" :class="{clickable:p.image_ts}" @click.stop="p.image_ts && viewProductImage(p)"><img v-if="p.image_ts" :src="productImageUrl(p)" class="prod-thumb-img" alt=""><span v-else class="prod-thumb-ph">💎</span></td>
+                  <td class="cell-img" :class="{clickable:p.image_ts}" @click.stop="p.image_ts && viewProductImage(p)"><img v-if="p.image_ts" :src="productThumbUrl(p)" class="prod-thumb-img" alt=""><span v-else class="prod-thumb-ph">💎</span></td>
                   <td class="cell-code mono">{{ p.code }}</td>
                   <td class="cell-barcode mono">{{ p.barcode || '—' }}</td>
                   <td class="cell-name">{{ p.name }}<div class="cell-sub" v-if="p.location_name" :title="t('loc.where')">{{ p.location_name }}</div></td>
@@ -464,7 +471,7 @@
             <div class="card-item" v-for="p in filteredProducts" :key="p.id">
               <div class="product-card" @click="openProdDetail(p)">
                 <input type="checkbox" class="card-print-check" :checked="!!printSel[p.id]" @click.stop @change="togglePrintSel(p.id)" :title="t('act.printSel')">
-                <div class="prod-thumb" :class="{clickable:p.image_ts}" @click.stop="p.image_ts && viewProductImage(p)"><img v-if="p.image_ts" :src="productImageUrl(p)" class="prod-thumb-img" alt=""><template v-else>💎</template></div>
+                <div class="prod-thumb" :class="{clickable:p.image_ts}" @click.stop="p.image_ts && viewProductImage(p)"><img v-if="p.image_ts" :src="productThumbUrl(p)" class="prod-thumb-img" alt=""><template v-else>💎</template></div>
                 <div class="prod-info">
                   <div class="prod-name">{{ p.name }}<span class="tag tag-lbl-verified" v-if="p.label_status==='verified'">✔ {{ t('lbl.lblVerified') }}</span><span class="tag tag-lbl-issued" v-else-if="p.label_status==='issued'">🖨 {{ t('lbl.lblIssued') }}</span><span class="tag tag-printed" v-if="p.label_print_count" :title="printedTip(p)">🖨{{ p.label_print_count }}</span><span class="tag tag-hv" v-if="p.high_value">⭐{{ t('lbl.highValue') }}</span><span class="tag" :class="statusClass(p.status)">{{ statusText(p.status) }}</span></div>
                   <div class="ptag-row" v-if="tagsExpanded && p.tags && p.tags.length"><span class="ptag" v-for="tg in p.tags" :key="'mt'+p.id+'-'+tg.id">{{ tg.name }}</span></div><div class="prod-meta" v-else-if="tagsExpanded">{{ t('tag.field') }}：—</div>
@@ -1014,9 +1021,6 @@
               <summary>📖 {{ t('biz.title') }}</summary>
               <div class="biz-body">{{ t('biz.sales') }}</div>
             </details>
-            <div class="biz-actions">
-              <button class="btn btn-primary btn-sm" :disabled="frozen" @click="quickSale">+ {{ t('nav.sale') }}</button>
-            </div>
           </div>
           <!-- 子页签：销售分析 / 销售流水 -->
           <div class="inv-tabs">
@@ -1194,7 +1198,7 @@
               <div class="hot-list">
                 <div class="hot-item" v-for="(h,i) in saleAna.data.hotProducts" :key="h.pid+'-'+h.code">
                   <span class="hot-rank" :class="'hr-'+(i<3?(i+1):'n')">{{ i+1 }}</span>
-                  <img class="hot-thumb" v-if="h.pid" :src="productImageUrl({id:h.pid, image_ts:h.image_ts})" :alt="h.name" loading="lazy" @error="$event.target.style.visibility='hidden'">
+                  <img class="hot-thumb" v-if="h.pid" :src="productThumbUrl({id:h.pid, image_ts:h.image_ts})" :alt="h.name" loading="lazy" @error="$event.target.style.visibility='hidden'">
                   <span class="hot-thumb hot-thumb-ph" v-else>💎</span>
                   <div class="hot-info">
                     <div class="hot-name">{{ h.name }}</div>
@@ -1287,6 +1291,10 @@
             </div>
             <div class="empty" v-if="!sales.length">{{ t('empty.sale') }}</div>
           </div>
+          <div class="sale-sum-bar" v-if="sales.length">
+            <span>{{ t('sale.sumCount') }}<b>{{ saleSumCount }}</b>{{ t('sale.itemsUnit') }}</span>
+            <span class="sale-sum-amount">{{ t('sale.sumAmount') }}<b>{{ fmtY(saleSumAmount) }}</b></span>
+          </div>
           </div>
         </section>
 
@@ -1318,7 +1326,7 @@
             <div class="card-item deposit-card clickable" v-for="d in deposits" :key="d.id" @click="openRecordDetail('deposits', d)">
               <div class="dep-row"><div class="dep-customer">{{ d.customer }}<span class="dep-phone" v-if="d.phone">· {{ d.phone }}</span></div><div class="dep-amounts"><div class="dep-total">{{ fmtY(d.total) }}</div><div class="dep-detail">{{ t('dep.paid') }} {{ fmtY(d.deposit) }} / {{ t('lbl.balance') }} {{ fmtY(d.balance) }}</div></div></div>
               <div class="dep-prod-row">
-                <img v-if="d.has_image && d.product_id" class="dep-thumb" :src="productImageUrl({id:d.product_id, image_ts:d.image_ts})" :alt="d.product" loading="lazy" @error="$event.target.style.display='none'">
+                <img v-if="d.has_image && d.product_id" class="dep-thumb" :src="productThumbUrl({id:d.product_id, image_ts:d.image_ts})" :alt="d.product" loading="lazy" @error="$event.target.style.display='none'">
                 <div class="dep-product">{{ d.product }}<span class="dep-pdate" v-if="d.promised_date"> · {{ t('lbl.promisedDate') }} {{ d.promised_date }}</span></div>
               </div>
               <div class="dep-req" v-if="d.delivery_time || d.deliver_requirements">
@@ -1516,14 +1524,14 @@
                 <div class="cust-avatar">{{ (d.name||'?')[0] }}</div>
                 <div class="cc-id">
                   <div class="cust-name">{{ d.name }}</div>
-                  <div class="cust-phone">{{ d.phone || '-' }}<span v-if="d.email" class="cust-email"> · {{ d.email }}</span></div>
+                  <div class="cust-phone">{{ d.phone || '-' }}<template v-if="d.email"><span class="cust-email-sep"> · </span><a class="cust-email" :href="'mailto:' + d.email" @click.stop :title="t('cust.sendEmail')">{{ d.email }}</a></template></div>
                 </div>
                 <span class="tag" :class="d.level==='金卡'?'tag-gold':(d.level==='银卡'?'tag-blue':'')">{{ levelText(d.level) }}</span>
               </div>
               <div class="cc-meta">
                 <span v-if="d.birthday" class="tag tag-gold">🎂 {{ t('dash.birthday') }} {{ d.birthday }}</span>
                 <span v-if="d.anniversary" class="tag tag-gold">💍 {{ t('dash.anniversary') }} {{ d.anniversary }}</span>
-                <span v-if="d.preference" class="tag">💡 {{ d.preference }}</span>
+                <span v-if="d.preference" class="tag">💡 {{ d.preference }}</span><span v-if="d.last_memo" class="tag" :title="(d.last_memo_at ? t('cust.eventMemoAt') + ' ' + d.last_memo_at + ' · ' : '') + d.last_memo">📝 {{ d.last_memo }}</span>
                 <span v-if="d.points" class="tag">⭐ {{ fmt(d.points) }}</span>
               </div>
               <div class="cc-buy" v-if="d.last_date">
@@ -1551,7 +1559,7 @@
               <div class="cust-avatar big">{{ (custDetail.name||'?')[0] }}</div>
               <div class="cust-profile-info">
                 <div class="cust-profile-name">{{ custDetail.name }} · {{ levelText(custDetail.level) }}</div>
-                <div class="cust-profile-phone">{{ custDetail.phone }}<span v-if="custDetail.email"> · {{ custDetail.email }}</span></div>
+                <div class="cust-profile-phone">{{ custDetail.phone }}<template v-if="custDetail.email"><span class="cust-email-sep"> · </span><a class="cust-email" :href="'mailto:' + custDetail.email" :title="t('cust.sendEmail')">{{ custDetail.email }}</a></template></div>
               <div class="cust-profile-phone" v-if="extraPhones(custDetail).length">☎ {{ extraPhones(custDetail).join(' / ') }}</div>
               </div>
             </div>
@@ -1569,6 +1577,19 @@
               <span v-if="custAddrLine(custDetail)" class="tag">📍 {{ custAddrLine(custDetail) }}</span>
               <span v-if="custDetail.source" class="tag tag-blue">{{ t('cust.source') }}：{{ custDetail.source }}</span>
               <span v-if="custDetail.note" class="tag">📝 {{ custDetail.note }}</span>
+            </div>
+            <div class="cust-memo-sec">
+              <div class="cust-memo-head">📝 {{ t('cust.eventMemo') }}</div>
+              <div class="cust-memo-add">
+                <input v-model="custMemoDraft" maxlength="200" :placeholder="t('cust.eventMemoPh')" @keyup.enter="addCustMemo">
+                <button class="btn btn-sm btn-gold" @click="addCustMemo">＋ {{ t('cust.memoAdd') }}</button>
+              </div>
+              <div class="cust-memo-item" v-for="m in custDetail.memos" :key="'cm'+m.id">
+                <span class="cust-memo-txt">{{ m.content }}</span>
+                <span class="cust-memo-time">{{ t('cust.eventMemoAt') }} {{ m.created }}</span>
+                <span class="cust-memo-del" @click="delCustMemo(m.id)" :title="t('act.remove')">✕</span>
+              </div>
+              <div class="prod-meta" v-if="!(custDetail.memos && custDetail.memos.length)">{{ t('cust.memoEmpty') }}</div>
             </div>
           </div>
 
@@ -2031,8 +2052,6 @@
                       <option v-for="p in shops" :key="p.id" :value="p.id">{{ p.name }}</option>
                     </select>
                   </div>
-                </div>
-                <div class="form-row">
                   <div class="form-group">
                     <label>💱 {{ t('store.displayCurrency') || '显示币种' }}</label>
                     <select v-model="storeEdit.display_currency">
@@ -2052,8 +2071,6 @@
                   <div class="form-group"><label>{{ t('store.code') }}</label><input :value="curStore.code||''" disabled></div>
                   <div class="form-group"><label>{{ t('store.owner') }}</label><input :value="curStore.owner||''" disabled></div>
                   <div class="form-group"><label>{{ t('store.belongShop') }}</label><input :value="curShop ? curShop.name : ''" disabled></div>
-                </div>
-                <div class="form-row">
                   <div class="form-group">
                     <label>💱 {{ t('store.displayCurrency') || '显示币种' }}</label>
                     <input :value="(curStore.display_currency ? (curSym(curStore.display_currency) + ' ' + curStore.display_currency) : (t('store.followHQ') || '跟随总部') + ' ' + curSym(bizConfig.currency) + ' ' + bizConfig.currency)" disabled>
@@ -2061,6 +2078,29 @@
                 </div>
                 <button class="btn btn-outline" v-if="isHqStore() || (curStore && curStore.id===curStoreId)" @click="editStore(curStore)">{{ t('store.editInfo') }}</button>
               </template>
+            </div>
+
+            <!-- 积分规则（租户级统一）：消费得积分 / 积分抵扣 / 使用起步价；管理层可编辑 -->
+            <div class="card-item">
+              <div class="card-title">⭐ {{ t('pts.title') }}</div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>{{ t('pts.earn', { u: sPtsCurSym }) }}</label>
+                  <input v-model.number="pointsRule.earn" type="number" min="0.01" step="0.01" :disabled="!canManageUsers()">
+                </div>
+                <div class="form-group">
+                  <label>{{ t('pts.redeem', { u: sPtsCurSym }) }}</label>
+                  <input v-model.number="pointsRule.redeem" type="number" min="1" step="1" :disabled="!canManageUsers()">
+                </div>
+                <div class="form-group">
+                  <label>{{ t('pts.minOrder', { u: sPtsCurSym }) }}</label>
+                  <input v-model.number="pointsRule.minOrder" type="number" min="0" step="0.01" :disabled="!canManageUsers()">
+                </div>
+              </div>
+              <div class="prod-meta" style="margin-bottom:8px">
+                {{ t('pts.example', { e: pointsRule.earn, r: pointsRule.redeem, u: sPtsCurSym, m: (Number(pointsRule.minOrder) > 0 ? sPtsCurSym + pointsRule.minOrder : t('pts.noLimit')) }) }}
+              </div>
+              <button class="btn btn-gold" v-if="canManageUsers()" @click="savePointsRules">{{ t('cat.saveEdit') }}</button>
             </div>
 
             <!-- 安防设备 -->
@@ -2687,7 +2727,7 @@ Content-Type: application/json
             <div class="sc-grid">
               <div class="sc-card" v-for="(p,i) in showcase.in_showcase" :key="p.id">
                 <div class="sc-rank">{{ i + 1 }}</div>
-                <div class="sc-thumb"><img v-if="p.image_ts" :src="productImageUrl(p)" alt=""><template v-else>💎</template></div>
+                <div class="sc-thumb"><img v-if="p.image_ts" :src="productThumbUrl(p)" alt=""><template v-else>💎</template></div>
                 <div class="sc-name">{{ p.name }}</div>
                 <div class="sc-meta mono">{{ p.code }} · {{ materialText(p.material) || '—' }}<span v-if="p.weight"> · {{ p.weight }}g</span></div>
                 <div class="sc-price" v-if="p.price">{{ fmtY(p.price) }}</div>
@@ -2707,7 +2747,7 @@ Content-Type: application/json
               </div>
               <div class="sc-pool-list">
                 <div class="sc-pool-row" v-for="p in showcasePool" :key="p.id">
-                  <div class="sc-pool-thumb"><img v-if="p.image_ts" :src="productImageUrl(p)" alt=""><template v-else>💎</template></div>
+                  <div class="sc-pool-thumb"><img v-if="p.image_ts" :src="productThumbUrl(p)" alt=""><template v-else>💎</template></div>
                   <div class="sc-pool-info"><div class="sc-pool-name">{{ p.name }}</div><div class="sc-meta mono">{{ p.code }} · {{ materialText(p.material) || '—' }}</div></div>
                   <div class="sc-price" v-if="p.price">{{ fmtY(p.price) }}</div>
                   <button class="btn btn-sm btn-gold" :disabled="showcase.in_showcase.length >= showcase.max" @click="addShowcase(p)">{{ t('sc.add') }}</button>
@@ -2920,7 +2960,7 @@ Content-Type: application/json
             </div>
             <div class="cc-meta">
               <span v-if="d.birthday" class="tag tag-gold">🎂 {{ t('dash.birthday') }} {{ d.birthday }}</span>
-              <span v-if="d.preference" class="tag">💡 {{ d.preference }}</span>
+              <span v-if="d.preference" class="tag">💡 {{ d.preference }}</span><span v-if="d.last_memo" class="tag" :title="(d.last_memo_at ? t('cust.eventMemoAt') + ' ' + d.last_memo_at + ' · ' : '') + d.last_memo">📝 {{ d.last_memo }}</span>
               <span v-if="d.points" class="tag">⭐ {{ fmt(d.points) }}</span>
             </div>
             <div class="cc-buy" v-if="d.last_date">
@@ -2940,7 +2980,7 @@ Content-Type: application/json
               <div class="cust-avatar big">{{ (custDetail.name||'?')[0] }}</div>
               <div class="cust-profile-info">
                 <div class="cust-profile-name">{{ custDetail.name }} · {{ levelText(custDetail.level) }}</div>
-                <div class="cust-profile-phone">{{ custDetail.phone }}<span v-if="custDetail.email"> · {{ custDetail.email }}</span></div>
+                <div class="cust-profile-phone">{{ custDetail.phone }}<template v-if="custDetail.email"><span class="cust-email-sep"> · </span><a class="cust-email" :href="'mailto:' + custDetail.email" :title="t('cust.sendEmail')">{{ custDetail.email }}</a></template></div>
               <div class="cust-profile-phone" v-if="extraPhones(custDetail).length">☎ {{ extraPhones(custDetail).join(' / ') }}</div>
               </div>
             </div>
@@ -2952,7 +2992,7 @@ Content-Type: application/json
             <div class="cust-profile-meta" v-if="custDetail.birthday || custDetail.anniversary || custDetail.preference || custAddrLine(custDetail) || custDetail.source || custDetail.note">
               <span v-if="custDetail.birthday" class="tag tag-gold">{{ t('dash.birthday') }} {{ custDetail.birthday }}</span>
               <span v-if="custDetail.anniversary" class="tag tag-gold">{{ t('dash.anniversary') }} {{ custDetail.anniversary }}</span>
-              <span v-if="custDetail.preference" class="tag">{{ custDetail.preference }}</span>
+              <span v-if="custDetail.preference" class="tag">{{ custDetail.preference }}</span><span v-if="custDetail.event_memo" class="tag">📝 {{ custDetail.event_memo }}<template v-if="custDetail.event_memo_at">（{{ t('cust.eventMemoAt') }} {{ custDetail.event_memo_at }}）</template></span>
               <span v-if="custAddrLine(custDetail)" class="tag">📍 {{ custAddrLine(custDetail) }}</span>
               <span v-if="custDetail.source" class="tag tag-blue">{{ t('cust.source') }}：{{ custDetail.source }}</span>
               <span v-if="custDetail.note" class="tag">📝 {{ custDetail.note }}</span>
@@ -3011,7 +3051,7 @@ Content-Type: application/json
   </div>
 
   <div class="sheet-mask" :class="{show:sheetMode, pc:isPc}" @click.self="closeSheet">
-    <div class="sheet" :class="{'sheet-wide':sheetMode==='sale'||sheetMode==='deposit'||sheetMode==='product'||sheetMode==='inbound'||sheetMode==='product-detail', 'sheet-prod':sheetMode==='product'||sheetMode==='inbound'}" @click.stop>
+    <div class="sheet" :class="{'sheet-wide':sheetMode==='sale'||sheetMode==='deposit'||sheetMode==='product'||sheetMode==='inbound'||sheetMode==='product-detail', 'sheet-prod':sheetMode==='product'||sheetMode==='inbound', 'sheet-detail':sheetMode==='product-detail'}" @click.stop>
       <div class="sheet-head"><div><span class="sheet-title">{{ sheetTitle }}</span><div class="sheet-sub" v-if="sheetMode==='product'||sheetMode==='inbound'">{{ t('prod.subtitle') }}</div></div><button class="sheet-close" @click="closeSheet">×</button></div>
       <div class="sheet-body">
         <template v-if="sheetMode==='product-detail'">
@@ -3092,6 +3132,16 @@ Content-Type: application/json
             <span>{{ t('sale.memPoints') }}：<b>{{ sheetData.member.points }}</b></span>
             <span>{{ t('sale.memRate') }}：<b>{{ round2(sheetData.member.gold_discount) }}</b></span>
           </div>
+          <!-- 积分抵扣（会员单 + 达起步价时可用） -->
+          <div class="member-card" v-if="sheetData.member && sPtsRedeemable">
+            <span>⭐ {{ t('sale.ptsUse') }}</span>
+            <input v-model.number="sheetData.points_redeem" type="number" min="0" :max="sPtsMax" step="1" style="width:100px">
+            <span class="prod-meta">{{ t('sale.ptsMax', { n: sPtsMax }) }} · {{ t('sale.ptsDeductMax', { m: fmtY(sPtsDeductMax) }) }}</span>
+            <b v-if="sPtsDeduct > 0" style="color:#1a7f37">-{{ fmtY(sPtsDeduct) }}</b>
+          </div>
+          <div class="member-card" v-else-if="sheetData.member && !sPtsRedeemable && sPtsMinOrder > 0 && sReceivable < sPtsMinOrder">
+            <span class="prod-meta">{{ t('sale.ptsMinNotMet', { m: fmtY(sPtsMinOrder) }) }}</span>
+          </div>
 
           <!-- 当日金价（计重类计价依据；店长可保存，会员单自动套折扣价）-->
           <div class="gold-row">
@@ -3159,6 +3209,7 @@ Content-Type: application/json
             <span>{{ t('sale.itemCount') }}：<b>{{ (sheetData.items||[]).length }}</b><span v-if="sItemLimit"> / {{ sItemLimit }}</span></span>
             <span>{{ t('sale.receivable') }}：<b>{{ fmtY(sReceivable) }}</b></span>
             <span class="sale-discount">{{ t('sale.discount') }}：{{ sCurSym }}<input v-model.number="sDiscountInput" type="number" min="0" step="0.01"></span>
+            <span class="pay-warn" v-if="sPtsDeduct > 0">{{ t('sale.ptsDeduct') }}：-{{ fmtY(sPtsDeduct) }}</span>
             <span class="sale-total">{{ t('sale.payable') }}：<b>{{ fmtY(sPayable) }}</b></span>
           </div>
 
@@ -3256,11 +3307,11 @@ Content-Type: application/json
             </div>
             <div class="form-group" style="flex:0 0 32%"><label>{{ t('lbl.date') }}</label><input v-model="sheetData.biz_date" type="date"></div>
           </div>
-          <div class="form-row" v-if="sheetMode==='product'"><div class="form-group" style="flex:0 0 140px"><label>{{ t('lbl.status') }}</label><select v-model="sheetData.status"><option value="在库">{{ t('st.inStock') }}</option><option value="已定">{{ t('st.reserved') }}</option><option value="已售">{{ t('st.sold') }}</option><option value="借出">{{ t('st.loaned') }}</option></select></div>
-            <div class="form-group" v-if="!sheetData.id"><label>{{ t('lbl.targetStore') }}</label><select v-model="sheetData.store_id"><option v-for="s in branchStoreOptions" :key="s.id" :value="s.id">{{ s.name }}</option></select></div>
-          </div>
           <div class="form-row" v-if="sheetMode==='product'">
-            <div class="form-group"><label>RFID EPC</label>
+            <div class="form-group" style="flex:0 0 140px"><label>{{ t('lbl.status') }}</label><select v-model="sheetData.status"><option value="在库">{{ t('st.inStock') }}</option><option value="已定">{{ t('st.reserved') }}</option><option value="已售">{{ t('st.sold') }}</option><option value="借出">{{ t('st.loaned') }}</option></select></div>
+            <div class="form-group" v-if="!sheetData.id" style="flex:0 0 170px"><label>{{ t('lbl.targetStore') }}</label><select v-model="sheetData.store_id"><option v-for="s in branchStoreOptions" :key="s.id" :value="s.id">{{ s.name }}</option></select></div>
+            <div class="form-group" style="flex:1">
+              <label>RFID EPC</label>
               <div class="epc-line">
                 <div class="scan-anchor" style="flex:1">
                   <input v-model="sheetData.rfid_epc" :placeholder="sheetData.id ? '' : t('tip.epcAutoGen')">
@@ -3457,8 +3508,10 @@ Content-Type: application/json
             </div>
           </div>
           <button type="button" class="btn btn-sm btn-outline" @click="addCustPhone">+ {{ t('cust.addPhone') }}</button>
-          <div class="form-group" style="margin-top:10px"><label>{{ t('lbl.email') }}</label><input v-model="sheetData.email" type="email"></div>
-          <div class="form-group"><label>{{ t('lbl.level') }}</label><select v-model="sheetData.level"><option value="普通">{{ t('cust.normal') }}</option><option value="银卡">{{ t('cust.silver') }}</option><option value="金卡">{{ t('cust.gold') }}</option></select></div>
+          <div class="form-row" style="margin-top:10px">
+            <div class="form-group" style="flex:2"><label>{{ t('lbl.email') }}</label><input v-model="sheetData.email" type="email"></div>
+            <div class="form-group" style="flex:1"><label>{{ t('lbl.level') }}</label><select v-model="sheetData.level"><option value="普通">{{ t('cust.normal') }}</option><option value="银卡">{{ t('cust.silver') }}</option><option value="金卡">{{ t('cust.gold') }}</option></select></div>
+          </div>
           <div class="form-row">
             <div class="form-group"><label>{{ t('cust.goldDiscount') }}</label>
               <input v-model.number="sheetData.gold_discount" type="number" min="0.01" max="1" step="0.01" placeholder="0.98">
@@ -3667,8 +3720,10 @@ Content-Type: application/json
     </div>
   </div>
 
-  <div class="img-viewer-mask" v-if="imgViewer.show" @click="closeImgViewer">
-    <img class="img-viewer-img" :src="imgViewer.src" alt="">
+  <div class="img-viewer-mask" v-if="imgViewer.show" @click.self="closeImgViewer">
+    <span class="img-viewer-close" @click="closeImgViewer" :title="t('act.close')">✕</span>
+    <img class="img-viewer-img" :src="imgViewer.src" alt="" @click.stop>
+    <div class="img-viewer-meta"><span v-if="imgViewer.meta">{{ imgViewer.meta }} · </span>{{ t('img.closeHint') }}</div>
   </div>
 
   <div class="modal-mask" v-if="imgCrop.show" @click.self="closeImgCrop">
@@ -3680,6 +3735,15 @@ Content-Type: application/json
       <div class="img-crop-tools">
         <button type="button" class="btn-small" :class="{active: imgCrop.orient==='landscape'}" @click="setImgOrient('landscape')">{{ t('img.landscape') }}</button>
         <button type="button" class="btn-small" :class="{active: imgCrop.orient==='portrait'}" @click="setImgOrient('portrait')">{{ t('img.portrait') }}</button>
+        <button type="button" class="btn-small" :class="{active: imgCrop.orient==='square'}" @click="setImgOrient('square')">{{ t('img.square') }}</button>
+        <span style="flex:1"></span>
+        <button type="button" class="btn-small" :class="{active: imgCrop.mirrorX}" @click="toggleMirrorX" :title="t('img.mirrorH')">⇋ {{ t('img.mirrorH') }}</button>
+        <button type="button" class="btn-small" :class="{active: imgCrop.mirrorY}" @click="toggleMirrorY" :title="t('img.mirrorV')">⇅ {{ t('img.mirrorV') }}</button>
+      </div>
+      <div class="img-crop-rotrow">
+        <span class="icr-label">⟳ {{ t('img.rotate') }}</span>
+        <input type="range" min="0" max="359" step="1" :value="imgCrop.rot" @input="setImgRot($event.target.value)" @change="snapImgRot($event.target.value)">
+        <b class="icr-deg">{{ imgCrop.rot }}°</b>
       </div>
       <div class="img-crop-frame-wrap">
         <div id="img-crop-frame" class="img-crop-frame" :class="imgCrop.orient"
@@ -4235,15 +4299,15 @@ Content-Type: application/json
 <script src="./vendor/vue.global.prod.js"></script>
 <script src="./vendor/qrcode.min.js"></script>
 <script src="./vendor/zxing.min.js"></script>
-<script src="./i18n.js?v=20261023a120"></script>
+<script src="./i18n.js?v=20261024a128"></script>
 <script>
 // 非中文时同步加载对应语言字典（i18n.<dict>.js），确保 app.js 挂载前字典就绪
 (function () {
   var _dict = (typeof i18nDictFile === 'function') ? i18nDictFile() : '';
-  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261023a120"><\/script>');
+  if (_dict) document.write('<script src="./i18n.' + _dict + '.js?v=20261024a128"><\/script>');
 })();
 </script>
-<script src="./app.js?v=20261023a120"></script>
+<script src="./app.js?v=20261024a128"></script>
 </body>
 </html>
 

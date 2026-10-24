@@ -356,6 +356,7 @@
           <div class="back-head" style="margin-bottom:10px">
             <div class="back-title">{{ t('prod.title') }}</div>
             <div class="prod-head-ops">
+              <button class="btn btn-ghost btn-sm" @click="openColPicker('products')">⚙</button>
               <button class="btn btn-ghost btn-sm" @click="openImportDlg()">📥</button>
               <button class="btn btn-sm" :class="ST.prodSelMode ? 'btn-wine' : 'btn-ghost'" @click="toggleProdSelMode()">☑ {{ t('prod.selMode') }}</button>
               <button class="btn btn-gold btn-sm" v-if="!isHqView()" @click="newProduct()">＋ {{ t('prod.new') }}</button>
@@ -373,13 +374,16 @@
           <div class="list-card">
             <div class="list-item tap" v-for="p in ST.products.items" :key="p.id" @click="prodRowTap(p)">
               <div class="row-check" v-if="ST.prodSelMode" :class="{on: ST.printSel[p.id]}">✓</div>
-              <div class="list-item-ico">💎</div>
+              <div class="list-item-ico">
+                <img v-if="p.image_ts" :src="productThumbUrl(p)" loading="lazy" style="width:42px;height:42px;object-fit:cover;border-radius:8px">
+                <template v-else>💎</template>
+              </div>
               <div class="list-item-body">
                 <div class="list-item-title">
                   <span class="name">{{ p.name }}</span>
                   <span class="state" :class="statusClass(p.status)">{{ t(statusKey(p.status)) }}</span>
                 </div>
-                <div class="list-item-sub">{{ p.code }} · {{ p.material || '—' }}<template v-if="p.weight"> · {{ p.weight }}g</template></div>
+                <div class="list-item-sub" v-if="prodSub(p).length">{{ prodSub(p).join(' · ') }}</div>
               </div>
               <div class="list-item-tail">
                 <div class="list-item-amount">{{ money(p.price) }}</div>
@@ -405,7 +409,10 @@
         <template v-else-if="ST.sub === '' && ST.tab === 'customers'">
           <div class="back-head" style="margin-bottom:10px">
             <div class="back-title">{{ t('cust.title') }}</div>
-            <button class="btn btn-gold btn-sm" @click="newCustomer()">＋ {{ t('cust.new') }}</button>
+            <div class="prod-head-ops">
+              <button class="btn btn-ghost btn-sm" @click="openColPicker('customers')">⚙</button>
+              <button class="btn btn-gold btn-sm" @click="newCustomer()">＋ {{ t('cust.new') }}</button>
+            </div>
           </div>
           <div class="search-bar"><input v-model="ST.customers.q" :placeholder="t('cust.searchPh')" @keyup.enter="loadCustomers(true)"></div>
           <div class="list-card">
@@ -413,7 +420,7 @@
               <div class="list-item-ico">👤</div>
               <div class="list-item-body">
                 <div class="list-item-title"><span class="name">{{ c.name }}</span><span class="tag tag-gold">{{ c.level || '普通' }}</span></div>
-                <div class="list-item-sub">{{ c.phone || '—' }}</div>
+                <div class="list-item-sub" v-if="custSub(c).length">{{ custSub(c).join(' · ') }}</div>
               </div>
               <div class="list-item-tail">
                 <div class="list-item-amount">{{ money(c.total_amount) }}</div>
@@ -1812,6 +1819,23 @@
         </div>
       </div>
 
+      <!-- 列表显示字段 -->
+      <div v-if="ST.sheet === 'cols'" class="sheet-mask" @click.self="ST.sheet = ''">
+        <div class="sheet">
+          <div class="sheet-head"><h3>{{ t('col.title') }}</h3><div class="sheet-close" @click="ST.sheet = ''">✕</div></div>
+          <div class="sheet-body">
+            <div class="list-card" style="box-shadow:none">
+              <div class="list-item tap" v-for="d in colDefs()" :key="d.key" @click="toggleCol(ST.colPickList, d.key)">
+                <div class="list-item-ico">{{ colOn(ST.colPickList, d.key) ? '☑' : '☐' }}</div>
+                <div class="list-item-body"><div class="list-item-title"><span class="name">{{ d.label() }}</span></div></div>
+                <div class="list-item-tail"><span v-if="colOn(ST.colPickList, d.key)" class="state state-ok">显示</span></div>
+              </div>
+            </div>
+            <div style="padding:8px 2px;font-size:12px;color:var(--muted)">{{ t('col.tip') }}</div>
+          </div>
+        </div>
+      </div>
+
       <!-- 商品选择 -->
       <div v-if="ST.sheet === 'pick'" class="sheet-mask" @click.self="ST.sheet = ''">
         <div class="sheet">
@@ -1944,7 +1968,7 @@
 </div>
 
 <script src="./vendor/vue.global.prod.js"></script>
-<script src="./i18n.js?v=20261023m12"></script>
+<script src="./i18n.js?v=20261024m13"></script>
 <script>
 (function () {
   if (!window.__APP_BASE__) {
@@ -1956,7 +1980,7 @@
   }
 })();
 </script>
-<script src="./app.js?v=20261023m11"></script>
+<script src="./app.js?v=20261024m13"></script>
 <script>
 // 依据可视高度动态设定容器高度：解决手机浏览器底部工具栏遮挡 tab 栏的问题
 (function () {

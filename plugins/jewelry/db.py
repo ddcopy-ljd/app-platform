@@ -127,7 +127,12 @@ CREATE TABLE IF NOT EXISTS biz_config (
   bridge_key TEXT DEFAULT '',
   gold_price REAL DEFAULT 0,
   -- 内部记账币种：CNY(¥) / USD($) / EUR(€)；总部可在【系统设置→币种管理】切换
-  currency TEXT DEFAULT 'CNY'
+  currency TEXT DEFAULT 'CNY',
+  -- 积分规则（门店管理页配置，租户级统一）：
+  -- 每消费 earn_per 元得 1 积分；每 redeem_per 积分抵 1 元；单笔应收 ≥ min_order 元才可用积分（0=不限）
+  points_earn_per REAL DEFAULT 1,
+  points_redeem_per REAL DEFAULT 100,
+  points_min_order REAL DEFAULT 0
 );
 
 -- 汇率表：from_currency → to_currency 的汇率。1 from = rate to。
@@ -259,6 +264,15 @@ CREATE TABLE IF NOT EXISTS customer_phones (
 CREATE INDEX IF NOT EXISTS idx_customer_phones_cust ON customer_phones(customer_id);
 CREATE INDEX IF NOT EXISTS idx_customer_phones_phone ON customer_phones(phone);
 
+-- 客户事件备忘录（多条；内容=事件的内容/地点/时间自由文本，created=记录时间）
+CREATE TABLE IF NOT EXISTS customer_memos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id INTEGER NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  created TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_customer_memos_cust ON customer_memos(customer_id);
+
 CREATE TABLE IF NOT EXISTS sales (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   bill_no TEXT UNIQUE,
@@ -278,6 +292,8 @@ CREATE TABLE IF NOT EXISTS sales (
   receivable REAL DEFAULT 0,     -- 应收金额（各件小计汇总的快照）
   real_biz_date TEXT DEFAULT '', -- 实际开单日期（系统落库日期，备查，与可修改的开单日期 biz_date 区分，不展示）
   customer_id INTEGER DEFAULT 0, -- 关联会员（手机号匹配老会员时回填）
+  points_earned REAL,            -- 本单累计积分快照（按积分规则算；NULL=历史单，冲红回滚按 paid 兜底）
+  points_redeemed REAL,          -- 本单使用的抵扣积分数（快照，冲红返还；NULL=历史单按 0 处理）
   created TEXT DEFAULT (datetime('now','localtime'))
 );
 
@@ -1006,6 +1022,17 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("customers", "note", "TEXT DEFAULT ''"),
         # 销售：实际开单日期（系统落库日期，备查，与可修改的 biz_date 区分）
         ("sales", "real_biz_date", "TEXT DEFAULT ''"),
+        # 客户事件备忘录（内容+地点+时间自由文本）与记录时间（内容变化时后端自动刷新）
+        ("customers", "event_memo", "TEXT DEFAULT ''"),
+        ("customers", "event_memo_at", "TEXT DEFAULT ''"),
+        # 1.2.5x 积分规则（门店管理页配置）：每消费 X 元得 1 分 / 每 Y 分抵 1 元 / 起步价 Z 元
+        ("biz_config", "points_earn_per", "REAL DEFAULT 1"),
+        ("biz_config", "points_redeem_per", "REAL DEFAULT 100"),
+        ("biz_config", "points_min_order", "REAL DEFAULT 0"),
+        # 销售单积分快照：本单累计积分 / 本单抵扣积分。列不带 DEFAULT——存量行为 NULL，
+        # 冲红回滚时 NULL 按「历史规则 1元=1分」用 paid 兜底，新单始终显式写值
+        ("sales", "points_earned", "REAL"),
+        ("sales", "points_redeemed", "REAL"),
     ]
     for table, col, decl in alters:
         if not _has_column(conn, table, col):
@@ -1016,6 +1043,19 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
             "UPDATE sales SET real_biz_date=substr(created,1,10) "
             "WHERE (real_biz_date IS NULL OR real_biz_date='') AND created IS NOT NULL AND created!=''"
         )
+    # 事件备忘录升级为多条（customer_memos）：老库单字段内容迁移为首条记录，迁移后清空源列防复活（TC-58 教训）
+    if _has_column(conn, "customers", "event_memo"):
+        moved = conn.execute(
+            "INSERT INTO customer_memos(customer_id, content, created) "
+            "SELECT c.id, c.event_memo, c.event_memo_at FROM customers c "
+            "WHERE TRIM(IFNULL(c.event_memo,''))<>'' "
+            "AND NOT EXISTS (SELECT 1 FROM customer_memos m WHERE m.customer_id=c.id)"
+        ).rowcount
+        if moved:
+            conn.execute(
+                "UPDATE customers SET event_memo='', event_memo_at='' "
+                "WHERE TRIM(IFNULL(event_memo,''))<>''"
+            )
     # 1.2.41 门店 Key 改为实例级: 移除 stores.store_key / stores.scan_key(打印助手改 print_agents 表)
     for _col in ("store_key", "scan_key"):
         if _has_column(conn, "stores", _col):
@@ -1808,6 +1848,14 @@ def ensure_new_seeds(conn: sqlite3.Connection) -> None:
         conn.executemany("INSERT OR IGNORE INTO product_tags(name,group_name,sort_order) VALUES(?,?,?)", _SEED_PRODUCT_TAGS)
     # —— product_tag_links：演示商品打标（内部三重守卫，真实租户不触发；外网沙箱已有库 links=0 也会补齐）——
     _ensure_product_tag_links(conn)
+    # —— product_images：演示商品按货号回填随包图片（image 为空才补，幂等）——
+    _ensure_product_images(conn)
+    # —— extra_products：分批新增演示商品（J024~J035，按货号幂等，新库老库都补齐）——
+    _ensure_extra_products(conn)
+    # —— historical_sales：演示历史销售（2025-01~今，含去年同期，门店归属；sales≥30 跳过）——
+    _ensure_historical_sales(conn)
+    # —— extra_business：会员/委外/定金/借货/维修/采购/预约/库存流水 演示数据补全（各自幂等）——
+    _ensure_extra_business(conn)
     # —— transfers + transfer_items ——
     if conn.execute("SELECT COUNT(*) FROM transfers").fetchone()[0] == 0:
         cur = conn.execute(
@@ -2232,6 +2280,370 @@ def _ensure_sale_inventory_logs(conn: sqlite3.Connection) -> None:
             "INSERT INTO inventory_logs(product_id, type, qty, operator) VALUES(?,'out',1,?)",
             (r["product_id"], f"sale#{r['sale_id']}"),
         )
+
+
+# 演示商品图片：随包携带 assets/products/{code}.webp，按货号回填（真实租户自传图不受影响）
+_DEMO_IMAGE_CODES = ("J001", "J002", "J003", "J004", "J005", "J006", "J007", "J008",
+                     "J009", "J0095", "J010", "J011", "J012", "J013", "J014", "J015",
+                     "J016", "J017", "J018", "J019", "J020", "J021", "J022", "J023",
+                     "J024", "J025", "J026", "J027", "J028", "J029", "J030", "J031",
+                     "J032", "J033", "J034", "J035")
+_ASSETS_IMG_DIR = Path(__file__).resolve().parent / "assets" / "products"
+
+
+def _ensure_product_images(conn: sqlite3.Connection) -> None:
+    """演示商品补图：货号命中演示清单且 image 为空时，读包内图片回填 products.image。
+
+    幂等且低开销：每连接先 COUNT 缺图演示商品，为 0 直接返回；真实租户已传图的
+    商品（image 非空）永不覆盖；图片文件随插件包分发，无文件时静默跳过。
+    """
+    try:
+        lacks = [r["code"] for r in conn.execute(
+            "SELECT code FROM products WHERE image IS NULL AND code IN ({})".format(
+                ",".join("?" * len(_DEMO_IMAGE_CODES))), _DEMO_IMAGE_CODES).fetchall()]
+    except sqlite3.OperationalError:
+        return  # 老库尚无 image/image_ts 列（迁移前），migrate_schema 补列后自然生效
+    if not lacks:
+        return
+    from datetime import datetime
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for code in lacks:
+        data = None
+        for ext in (".webp", ".jpg"):   # 统一 WebP；旧包 jpg 兜底
+            cand = _ASSETS_IMG_DIR / (code + ext)
+            try:
+                if cand.exists():
+                    data = cand.read_bytes()
+                    break
+            except OSError:
+                pass
+        if data is None:
+            continue  # 包内无该图（外部裁剪包等），静默跳过
+        conn.execute("UPDATE products SET image=?, image_ts=? WHERE code=? AND image IS NULL",
+                     (data, ts, code))
+    conn.commit()
+
+
+_EXTRA_PRODUCTS = [
+    # (code,name,category,material,weight,size,cert,cost,price,origin) —— store_id 运行时按门店A/B交替分配
+    ("J024", "足金貔貅吊坠", "黄金", "足金999", 15.2, "单只", "", 9800, 11800, "深圳·水贝"),
+    ("J025", "钻石手链", "钻石", "18K金+钻石", 5.2, "18cm", "GIA-22088", 15800, 19800, "比利时·安特卫普"),
+    ("J026", "翡翠福瓜吊坠", "翡翠", "冰种翡翠", 12.8, "单只", "", 8800, 12800, "缅甸·帕敢"),
+    ("J027", "铂金男戒", "铂金", "PT950", 8.2, "21号", "", 4200, 5800, "深圳·水贝"),
+    ("J028", "坦桑石彩宝吊坠", "彩宝", "18K金+坦桑石", 3.6, "单只", "TZ-4512", 6800, 9800, "坦桑尼亚"),
+    ("J029", "古法黄金莲花吊坠", "黄金", "足金999", 12.8, "单只", "", 8500, 10200, "深圳·水贝"),
+    ("J030", "珍珠胸针", "珍珠", "淡水珍珠+925银", 0, "单只", "", 1200, 1880, "浙江·诸暨"),
+    ("J031", "18K金O字链", "黄金", "18K金", 6.8, "50cm", "", 3600, 4800, "深圳·水贝"),
+    ("J032", "宝宝银手镯", "银饰", "足银999", 12.0, "圈口", "", 320, 480, "深圳·水贝"),
+    ("J033", "红碧玺耳坠", "彩宝", "18K金+红碧玺", 2.8, "单对", "TR-7781", 3400, 4680, "巴西"),
+    ("J034", "翡翠指环", "翡翠", "冰种翡翠", 4.5, "17号", "", 5200, 7600, "缅甸·帕敢"),
+    ("J035", "足金龙凤呈祥手镯", "黄金", "足金999", 46.0, "58号", "", 29800, 35600, "深圳·水贝"),
+]
+_EXTRA_ARRIVAL = {
+    "J024": "2026-07-15", "J025": "2026-08-20", "J026": "2026-05-30", "J027": "2026-09-15",
+    "J028": "2026-08-05", "J029": "2026-10-01", "J030": "2026-09-25", "J031": "2026-06-10",
+    "J032": "2026-10-10", "J033": "2026-07-28", "J034": "2026-08-15", "J035": "2026-05-12",
+}
+
+
+def _ensure_extra_products(conn: sqlite3.Connection) -> None:
+    """补充分批新增的演示商品（J024~J035）：按货号幂等，新库老库都补齐。
+
+    门店分配：在 门店A/门店B 间交替；仓库/总部等单门店场景归第一家门店。
+    """
+    codes = [t[0] for t in _EXTRA_PRODUCTS]
+    have = {r[0] for r in conn.execute(
+        "SELECT code FROM products WHERE code IN ({})".format(",".join("?" * len(codes))), codes).fetchall()}
+    stores = [r[0] for r in conn.execute("SELECT id FROM stores WHERE id>1 ORDER BY id").fetchall()]
+    if not stores:
+        first = conn.execute("SELECT id FROM stores ORDER BY id LIMIT 1").fetchone()
+        stores = [first[0]] if first else [1]
+    for i, t in enumerate(_EXTRA_PRODUCTS):
+        code = t[0]
+        if code in have:
+            continue
+        sid = stores[i % len(stores)]
+        conn.execute(
+            """INSERT INTO products
+                (code,name,category,material,weight,size,cert,cost,price,status,store_id,rfid_epc,
+                 showcase_public,showcase_order,showcase_desc,origin)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0,0,'',?)""",
+            (code, t[1], t[2], t[3], t[4], t[5], t[6], t[7], t[8], "在库", sid, "", t[9]))
+    newcodes = [c for c in codes if c not in have]
+    if newcodes:
+        conn.executemany(
+            "UPDATE products SET created=?||' 10:00:00' WHERE code=?",
+            [(_EXTRA_ARRIVAL[c], c) for c in newcodes if c in _EXTRA_ARRIVAL])
+        _backfill_category_code(conn)
+        assign_rule_epcs(conn)
+    conn.commit()
+
+
+def _ensure_historical_sales(conn: sqlite3.Connection) -> None:
+    """演示历史销售（2025-01 ~ 今，逐月逐门店，含去年同期）：支撑同比/环比/各门店对比。
+
+    幂等：sales ≥ 30 条即跳过；仅演示商品在库且存在多门店时触发，真实租户不受影响。
+    只写 sales（不写 inventory_logs、不改商品当前状态）——历史流水仅服务销售类报表。
+    """
+    try:
+        if conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0] >= 30:
+            return
+        if not conn.execute("SELECT 1 FROM products WHERE code='J001'").fetchone():
+            return
+        stores = [r[0] for r in conn.execute("SELECT id FROM stores WHERE id>1 ORDER BY id").fetchall()]
+        if len(stores) < 2:
+            return
+        pool = {}
+        for sid in stores:
+            pool[sid] = [{"id": r[0], "name": r[1], "price": r[2]} for r in conn.execute(
+                "SELECT id,name,price FROM products WHERE store_id=? AND status='在库' AND price>0", (sid,)).fetchall()]
+        # 客户池：不足 8 人补演示客户（字段带默认值，只填名字/手机/等级）
+        if conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0] < 8:
+            for nm, ph in [("王芳", "13812340001"), ("李娜", "13812340002"), ("张敏", "13812340003"), ("刘洋", "13812340004"),
+                           ("陈静", "13812340005"), ("杨帆", "13812340006"), ("赵蕾", "13812340007"), ("孙倩", "13812340008")]:
+                if not conn.execute("SELECT 1 FROM customers WHERE phone=?", (ph,)).fetchone():
+                    conn.execute("INSERT INTO customers(name,phone,level,points) VALUES(?,?,?,0)", (nm, ph, "普通"))
+            conn.commit()
+        custs = [(r[0], r[1]) for r in conn.execute("SELECT name,phone FROM customers ORDER BY id").fetchall()]
+        import random
+        from datetime import date
+        rnd = random.Random(20261024)
+        today = date.today()
+        clerks = {sid: ("林雅" if i == 0 else "周芸") for i, sid in enumerate(stores)}
+        methods = ["微信", "支付宝", "刷卡", "现金"]
+        seasonal = {1: 1.3, 2: 1.5, 3: 1.0, 4: 0.9, 5: 1.3, 6: 0.8, 7: 0.8, 8: 0.9, 9: 1.1, 10: 1.4, 11: 1.2, 12: 1.2}
+        seq = 1
+        y, m = 2025, 1
+        while (y, m) <= (today.year, today.month):
+            for sid in stores:
+                cpool = pool.get(sid) or []
+                if not cpool:
+                    continue
+                n = max(4, min(14, int(8 * seasonal[m]) + rnd.randint(-2, 2) - (2 if y == 2025 else 0)))
+                for _ in range(n):
+                    day = rnd.randint(1, 28)
+                    if (y, m) == (today.year, today.month):
+                        day = min(day, today.day)
+                    d = f"{y:04d}-{m:02d}-{day:02d}"
+                    nm, ph = custs[rnd.randrange(len(custs))]
+                    clerk = clerks.get(sid, "林雅")
+                    for it in rnd.sample(cpool, min(2 if rnd.random() < 0.28 else 1, len(cpool))):
+                        amt = round(it["price"], 2)
+                        conn.execute(
+                            "INSERT INTO sales(bill_no,customer,phone,product,product_id,amount,paid,method,biz_date,"
+                            "type,status,clerk_type,clerk_name,store_id,discount,receivable,real_biz_date,"
+                            "points_earned,points_redeemed)"
+                            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0)",
+                            (f"XS{y:04d}{m:02d}{day:02d}{seq:03d}", nm, ph, it["name"], it["id"], amt, amt,
+                             methods[rnd.randrange(len(methods))], d, "普通", "已完成", "店员", clerk,
+                             sid, 0, amt, d))
+                        seq += 1
+            m += 1
+        if m > 12:
+            m, y = 1, y + 1
+        conn.commit()
+    except Exception:
+        pass  # 演示数据生成失败不阻塞连接
+
+
+def _ensure_extra_business(conn: sqlite3.Connection) -> None:
+    """演示经营数据补全：会员/委外加工/定金/借货/维修/采购/预约/库存流水。
+
+    每类独立幂等（按现有行数门槛跳过），真实租户有数据则完全不触发。
+    只服务演示报表与待办提醒，不改商品状态、不写真实对外动作。
+    """
+    try:
+        import random
+        rnd = random.Random(881024)
+        stores = [r[0] for r in conn.execute("SELECT id FROM stores WHERE id>1 ORDER BY id").fetchall()]
+        if not stores:
+            return
+        prods = [(r[0], r[1], r[2], r[3]) for r in conn.execute(
+            "SELECT id,name,price,store_id FROM products WHERE status='在库' ORDER BY id").fetchall()]
+        custs = [(r[0], r[1]) for r in conn.execute("SELECT name,phone FROM customers ORDER BY id").fetchall()]
+        if not custs or not prods:
+            return
+
+        def alt(i):
+            return stores[i % len(stores)]
+
+        # ---- 1) 会员：补到 30 人（含生日/周年，撑生日关怀与会员报表）----
+        n_cust = conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0]
+        if n_cust < 25:
+            names = [("吴刚", "13911020001"), ("郑爽", "13911020002"), ("冯丽", "13911020003"), ("许强", "13911020004"),
+                     ("何梅", "13911020005"), ("吕超", "13911020006"), ("施燕", "13911020007"), ("张伟", "13911020008"),
+                     ("韩雪", "13911020009"), ("曹颖", "13911020010"), ("谢东", "13911020011"), ("罗兰", "13911020012"),
+                     ("贾静", "13911020013"), ("范涛", "13911020014"), ("唐悦", "13911020015"), ("薛峰", "13911020016"),
+                     ("秦岚", "13911020017"), ("侯丽", "13911020018")]
+            lv_cycle = ["金卡", "普通", "银卡", "普通", "银卡", "金卡", "普通", "银卡"]
+            for i, (nm, ph) in enumerate(names):
+                if conn.execute("SELECT 1 FROM customers WHERE phone=?", (ph,)).fetchone():
+                    continue
+                lv = lv_cycle[i % len(lv_cycle)]
+                bday = f"19{70 + rnd.randint(0, 25):02d}-{rnd.randint(1, 12):02d}-{rnd.randint(1, 28):02d}"
+                conn.execute(
+                    "INSERT INTO customers(name,phone,level,points,gold_discount,birthday,created,store_id)"
+                    " VALUES(?,?,?,?,?,?,?,?)",
+                    (nm, ph, lv, rnd.choice([0, 120, 260, 480, 800]),
+                     0.95 if lv == "金卡" else (0.98 if lv == "银卡" else 1.0),
+                     bday, f"2025-{rnd.randint(1, 12):02d}-{rnd.randint(1, 28):02d} 10:00:00", alt(i)))
+            conn.commit()
+
+        # ---- 2) 委外加工：补 13 单（已收货 9 / 加工中 3 / 待发货 1）----
+        n_out = conn.execute("SELECT COUNT(*) FROM outsourcings").fetchone()[0]
+        if n_out < 3:
+            factories = ["深圳水贝金匠工坊", "粤豪珠宝加工厂", "瑞金福银饰加工厂"]
+            items = ["足金手镯改圈", "古法金锁定制", "18K金镶钻托加工", "翡翠包金边", "银饰批量抛光", "足金吊坠翻新",
+                     "铂金戒圈缩改", "古法金珠串制", "18K金链焊接", "翡翠戒面镶嵌", "金料回炉提纯", "足金佛牌定制",
+                     "银手镯刻字加工"]
+            for i, (prod, mat, w, fee) in enumerate([
+                    ("足金手镯", "足金999", 28.6, 680), ("古法金锁", "足金999", 12.5, 520), ("18K金镶钻托", "18K金", 3.2, 880),
+                    ("翡翠手镯", "翡翠包金", 2.1, 460), ("银手镯", "足银999", 24.0, 300), ("足金吊坠", "足金999", 8.8, 350),
+                    ("铂金戒圈", "PT950", 7.6, 420), ("古法金珠", "足金999", 18.2, 610), ("18K金链", "18K金", 5.5, 380),
+                    ("翡翠戒面", "18K金包边", 1.8, 720), ("金料提纯", "足金999", 52.0, 980), ("足金佛牌", "足金999", 16.6, 540),
+                    ("银手镯刻字", "足银999", 22.0, 260)]):
+                st = ["已收货", "已收货", "加工中", "已收货", "已收货", "已收货", "已收货", "已收货", "已收货",
+                      "加工中", "待发货", "加工中", "已收货"][i % 13]
+                sd = f"202{5 + (i % 2)}-{rnd.randint(1, 10):02d}-{rnd.randint(1, 28):02d}"
+                ed = f"202{6}-11-{rnd.randint(1, 28):02d}" if st == "加工中" else ""
+                rd = f"202{5 + (i % 2)}-{rnd.randint(10, 12):02d}-{rnd.randint(1, 28):02d}" if st == "已收货" else ""
+                if st == "已收货" and rd < sd:
+                    rd = sd
+                conn.execute(
+                    "INSERT INTO outsourcings(factory,product,material,weight,gold_price,labor_fee,send_date,"
+                    "expected_date,received_date,status,store_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (factories[i % len(factories)], prod, mat, w, 647.0, fee, sd, ed, rd, st, alt(i)))
+            conn.commit()
+
+        # ---- 3) 定金：补 8 单（已定 3 / 已付尾款 2 / 已完成 3）----
+        n_dep = conn.execute("SELECT COUNT(*) FROM deposits").fetchone()[0]
+        if n_dep < 8:
+            for i in range(8):
+                nm, ph = custs[rnd.randrange(len(custs))]
+                pid, pname, price, psid = prods[rnd.randrange(len(prods))]
+                total = round(price * rnd.choice([1, 1, 1.6]), 2)
+                dep = round(total * 0.3, 2)
+                st = ["已定", "已定", "已定", "已付尾款", "已付尾款", "已完成", "已完成", "已完成"][i]
+                promised = (f"2026-{rnd.randint(11, 12):02d}-{rnd.randint(1, 28):02d}" if st == "已定"
+                            else f"202{5 + (i % 2)}-{rnd.randint(1, 10):02d}-{rnd.randint(1, 28):02d}")
+                created = (f"2026-10-{rnd.randint(1, 24):02d} 14:{rnd.randint(10, 59):02d}:00" if st == "已定"
+                           else f"202{5 + (i % 2)}-{rnd.randint(1, 10):02d}-{rnd.randint(1, 28):02d} 11:00:00")
+                conn.execute(
+                    "INSERT INTO deposits(customer,phone,product_id,product,total,deposit,balance,promised_date,"
+                    "delivery_time,deliver_requirements,status,created,store_id)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (nm, ph, pid, pname, total, dep, round(total - dep, 2), promised,
+                     f"{rnd.randint(10, 18)}:00", "当面验收", st, created, psid))
+            conn.commit()
+
+        # ---- 4) 借货：补 8 条（借入 5 / 借出 3，含逾期在借与已归还）----
+        n_loan = conn.execute("SELECT COUNT(*) FROM loans").fetchone()[0]
+        if n_loan < 6:
+            parties_in = ["供应商A", "供应商B", "同行鑫福珠宝"]
+            parties_out = ["同行鑫福珠宝", "老客户寄存"]
+            items = [("钻石项链", "J018"), ("翡翠手镯", "J016"), ("蓝宝石戒指", "J0095"),
+                     ("足金手镯", "J001"), ("红宝石戒指", "J020"), ("珍珠项链", "J011"),
+                     ("钻石手链", "J025"), ("古法黄金传承手串", "J008")]
+            for i, (pname, pcode) in enumerate(items):
+                direction = "in" if i < 5 else "out"
+                party = (parties_in[i % len(parties_in)]) if direction == "in" else (parties_out[i % len(parties_out)])
+                status = "已归还" if i % 4 == 3 else ("借入中" if direction == "in" else "借出中")
+                ld = f"202{5 + (i % 2)}-{rnd.randint(1, 11):02d}-{rnd.randint(1, 28):02d}"
+                due = f"2026-{rnd.randint(9, 12):02d}-{rnd.randint(1, 28):02d}" if status != "已归还" else "2025-12-20"
+                conn.execute(
+                    "INSERT INTO loans(direction,product,code,party,qty,loan_date,due_date,status,store_id)"
+                    " VALUES(?,?,?,?,?,?,?,?,?)",
+                    (direction, pname, pcode, party, 1, ld, due, status, alt(i)))
+            conn.commit()
+
+        # ---- 5) 维修：补 8 单（待维修 1 / 维修中 2 / 待取货 1 / 已完成 4）----
+        n_rep = conn.execute("SELECT COUNT(*) FROM repairs").fetchone()[0]
+        if n_rep < 6:
+            issues = [("手链断链焊接", 120), ("戒指抛光翻新", 80), ("吊坠掉钻补镶", 260), ("戒指改圈口", 100),
+                      ("项链搭扣更换", 90), ("手镯变形修复", 300), ("耳钉Lost石补镶", 220), ("全单清洗保养", 60)]
+            techs = ["老周", "阿明"]
+            for i, (issue, fee) in enumerate(issues):
+                nm, ph = custs[rnd.randrange(len(custs))]
+                st = ["待维修", "维修中", "维修中", "待取货", "已完成", "已完成", "已完成", "已完成"][i]
+                recv = f"202{5 + (i % 2)}-{rnd.randint(1, 11):02d}-{rnd.randint(1, 28):02d}" if st != "待维修" else \
+                    f"2026-10-{rnd.randint(15, 24):02d}"
+                prom = recv if False else None
+                prom = (f"2026-11-{rnd.randint(1, 20):02d}" if st in ("待维修", "维修中")
+                        else recv)
+                done = (f"2026-10-{rnd.randint(20, 24):02d}" if st in ("待取货", "已完成") else "")
+                if st == "已完成" and done < recv:
+                    done = recv
+                conn.execute(
+                    "INSERT INTO repairs(customer,phone,item,issue,est_fee,actual_fee,receive_date,promised_date,"
+                    "done_date,status,technician,remark,store_id)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (nm, ph, rnd.choice(["足金手镯", "钻石戒指", "翡翠吊坠", "珍珠项链", "18K金链"]),
+                     issue, fee, fee if st in ("待取货", "已完成") else 0, recv, prom, done, st,
+                     techs[i % len(techs)], "", alt(i)))
+            conn.commit()
+
+        # ---- 6) 采购：补 9 单（已入库 6 / 运输中 1 / 待发货 2）----
+        n_pur = conn.execute("SELECT COUNT(*) FROM purchases").fetchone()[0]
+        if n_pur < 5:
+            suppliers = ["深圳水贝金料行", "粤豪钻石批发", "广州华林珍珠市场", "缅甸翡翠原石行"]
+            goods = [("足金金料 100g", 64700, 1), ("50分裸钻 F/VS", 8800, 3), ("淡水珍珠 8mm", 260, 20),
+                     ("翡翠原石", 15000, 1), ("18K金料 200g", 72000, 1), ("足银料 1kg", 5800, 1),
+                     ("红宝石裸石 2ct", 4200, 2), ("蓝宝石裸石 1.5ct", 3600, 2), ("坦桑石裸石 3ct", 5200, 1)]
+            for i, (gname, cost, qty) in enumerate(goods):
+                st = ["已入库", "已入库", "已入库", "待发货", "已入库", "已入库", "运输中", "已入库", "待发货"][i]
+                od = f"202{5 + (i % 2)}-{rnd.randint(1, 10):02d}-{rnd.randint(1, 28):02d}"
+                ed = f"202{5 + (i % 2)}-{rnd.randint(10, 12):02d}-{rnd.randint(1, 28):02d}"
+                rd = ed if st == "已入库" else ""
+                conn.execute(
+                    "INSERT INTO purchases(supplier,product,qty,cost,order_date,expected_date,received_date,"
+                    "status,paid,store_id) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (suppliers[i % len(suppliers)], gname, qty, cost, od, ed, rd, st,
+                     round(cost * qty, 2) if st == "已入库" else 0, alt(i)))
+            conn.commit()
+
+        # ---- 7) 预约：补 7 条（pending 2 / contacted 2 / arrived 1 / done 2）----
+        n_appt = conn.execute("SELECT COUNT(*) FROM appointments").fetchone()[0]
+        if n_appt < 6:
+            cats = ["改圈口", "以旧换新", "定制咨询", "保养清洗", "选购咨询", "定制咨询", "以旧换新"]
+            sts = ["pending", "pending", "contacted", "contacted", "arrived", "done", "done"]
+            for i, (cat, st) in enumerate(zip(cats, sts)):
+                nm, ph = custs[rnd.randrange(len(custs))]
+                wd = (f"2026-10-{rnd.randint(25, 28):02d}" if st == "pending"
+                      else f"2026-10-{rnd.randint(18, 24):02d}" if st in ("contacted", "arrived")
+                      else f"2026-09-{rnd.randint(1, 28):02d}")
+                conn.execute(
+                    "INSERT INTO appointments(tenant_id,name,contact,contact_type,category,product_id,want_date,"
+                    "want_slot,remark,status,store_id) VALUES('tenant_trial',?,?,?,?,?,?,?,?,?,?)",
+                    (nm, ph, "phone", cat, 0, wd, rnd.choice(["上午", "下午"]), "", st, alt(i)))
+            conn.commit()
+
+        # ---- 8) 库存流水：商品入库 in + 历史销售 out + 少量调拨对（无 2025 流水时生成）----
+        has_hist = conn.execute(
+            "SELECT 1 FROM inventory_logs WHERE ts LIKE '2025-%' LIMIT 1").fetchone()
+        if not has_hist:
+            for pid, pname, price, psid in prods:
+                cr = conn.execute("SELECT created FROM products WHERE id=?", (pid,)).fetchone()[0] or "2026-01-01"
+                conn.execute(
+                    "INSERT INTO inventory_logs(product_id,epc,type,qty,ts,operator,store_id)"
+                    " VALUES(?,?,?,?,?,?,?)",
+                    (pid, "", "in", 1, (cr[:10] or "2026-01-01") + " 10:30:00", "admin", psid))
+            for sid_sale, pid, d in conn.execute(
+                    "SELECT store_id,product_id,biz_date FROM sales WHERE status='已完成'").fetchall():
+                conn.execute(
+                    "INSERT INTO inventory_logs(product_id,epc,type,qty,ts,operator,store_id)"
+                    " VALUES(?,?,?,?,?,?,?)",
+                    (pid, "", "out", 1, d + " 16:00:00", "admin", sid_sale))
+            tf = prods[:6]
+            for i, (pid, pname, price, psid) in enumerate(tf):
+                src, dst2 = (stores[0], stores[1]) if i % 2 == 0 else (stores[1], stores[0])
+                d = f"2026-{rnd.randint(2, 9):02d}-15 11:00:00"
+                conn.execute("INSERT INTO inventory_logs(product_id,epc,type,qty,ts,operator,store_id)"
+                             " VALUES(?,?,?,?,?,?,?)", (pid, "", "transfer_out", 1, d, "admin", src))
+                conn.execute("INSERT INTO inventory_logs(product_id,epc,type,qty,ts,operator,store_id)"
+                             " VALUES(?,?,?,?,?,?,?)", (pid, "", "transfer_in", 1, d, "admin", dst2))
+            conn.commit()
+    except Exception:
+        pass  # 演示数据失败不阻塞连接
 
 
 def _ensure_products_seed(conn: sqlite3.Connection) -> None:

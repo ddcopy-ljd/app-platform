@@ -2138,6 +2138,15 @@ def dashboard_biz_analysis(request: Request, start: str = Query(default=""), end
                    "amount": round(r["amt"], 2), "pct": round(r["amt"] * 100 / cat_total, 1)}
             row["cost"] = round(r["cost"], 2) if cost_visible else None
             categories.append(row)
+        # 总部视图：各门店销售对比（门店账号不返回）
+        by_store = []
+        if hq:
+            for r in conn.execute(
+                f"SELECT s.store_id sid, COALESCE(st.name,'—') name, COALESCE(SUM(s.amount),0) amt, "
+                f"COUNT(DISTINCT s.id) bills FROM sales s LEFT JOIN stores st ON st.id=s.store_id "
+                f"WHERE {base} GROUP BY s.store_id ORDER BY amt DESC", args):
+                by_store.append({"id": r["sid"], "name": r["name"],
+                                 "amt": round(r["amt"], 2), "bills": r["bills"]})
         return {
             "range": {"start": rs, "end": re_},
             "profit": {"revenue": amt, "cost": cost_amt if cost_visible else None,
@@ -2150,6 +2159,7 @@ def dashboard_biz_analysis(request: Request, start: str = Query(default=""), end
                       "avgPerItem": round(amt / items_cnt, 2) if items_cnt else 0.0,
                       "sellThrough": sell_through, "bills": bills, "items": items_cnt},
             "categories": categories,
+            "byStore": by_store,
         }
 
 
@@ -2528,7 +2538,47 @@ def biz_config_get(request: Request):
         hq = _hq_store_id(conn)
         return {"epc_prefix": r[0], "seq_bits": r[1], "gold_price": r[2] or 0,
                 "currency": r[3] or "CNY",
-                "store_num": db._store_num_code(conn, hq or 1)}
+                "store_num": db._store_num_code(conn, hq or 1),
+                **_points_rules(conn)}
+
+
+def _points_rules(conn: sqlite3.Connection) -> dict:
+    """积分规则（租户级统一，biz_config）：带缺省与合法性兜底。
+    earn_per=每消费X元得1积分；redeem_per=每Y积分抵1元；min_order=单笔应收≥Z元才可用积分(0=不限)。"""
+    r = conn.execute(
+        "SELECT IFNULL(points_earn_per,1), IFNULL(points_redeem_per,100), IFNULL(points_min_order,0) "
+        "FROM biz_config WHERE id=1"
+    ).fetchone()
+    earn, redeem, min_order = (r[0], r[1], r[2]) if r else (1, 100, 0)
+    return {"points_earn_per": float(earn) if float(earn) > 0 else 1.0,
+            "points_redeem_per": float(redeem) if float(redeem) > 0 else 100.0,
+            "points_min_order": max(0.0, float(min_order or 0))}
+
+
+class PointsRuleUpdate(BaseModel):
+    points_earn_per: float = Field(gt=0)      # 每消费 X 元得 1 积分
+    points_redeem_per: float = Field(gt=0)    # 每 Y 积分抵 1 元
+    points_min_order: float = Field(default=0, ge=0)  # 积分使用起步价（应收口径），0=不限
+
+
+@app.put("/api/biz-config/points")
+def points_rule_update(request: Request, body: PointsRuleUpdate):
+    """保存积分规则（门店管理页）。仅管理层（店长/高管/系统管理员）可改。"""
+    op = _require_auth(request)
+    if op["role"] not in ("SYS_ADMIN", "TENANT_ADMIN", "EXECUTIVE"):
+        raise HTTPException(403, "仅管理层可修改积分规则")
+    with _db(request) as conn:
+        conn.execute(
+            "INSERT INTO biz_config(id,points_earn_per,points_redeem_per,points_min_order) VALUES(1,?,?,?) "
+            "ON CONFLICT(id) DO UPDATE SET points_earn_per=excluded.points_earn_per, "
+            "points_redeem_per=excluded.points_redeem_per, points_min_order=excluded.points_min_order",
+            (round(body.points_earn_per, 2), round(body.points_redeem_per, 2), round(body.points_min_order, 2)),
+        )
+        conn.commit()
+        _log(conn, op["username"], "积分规则",
+             f"每消费￥{body.points_earn_per:g}得1分 · 每{body.points_redeem_per:g}分抵￥1 · "
+             f"起步价{'不限' if body.points_min_order <= 0 else '￥' + format(body.points_min_order, ',g')}")
+    return {"ok": True}
 
 
 class BizConfigUpdate(BaseModel):
@@ -3570,7 +3620,7 @@ def product_update(pid: int, body: ProductIn, request: Request):
         _log(conn, op["username"], "修改商品", f"#{pid} {body.code}")
         if epc_changed:
             _log(conn, op["username"], "修改EPC", f"#{pid} {body.code}: {old_epc} -> {epc}")
-        return {"ok": True, "rfid_epc": epc}
+        return {"ok": True, "id": pid, "rfid_epc": epc}
 
 
 @app.delete("/api/products/{pid}")
@@ -3683,15 +3733,45 @@ def _decode_image_data(data: str) -> bytes:
         raise HTTPException(400, "图片数据无效")
     if len(raw) < 64 or len(raw) > 3 * 1024 * 1024:
         raise HTTPException(400, "图片大小需在 3MB 以内")
-    if raw[:2] != b"\xff\xd8":
-        raise HTTPException(400, "仅支持 JPEG 图片")
-    return raw
+    # 支持 JPEG / PNG / WebP（入库前统一转 WebP q80）
+    if raw[:2] == b"\xff\xd8":
+        return raw
+    if raw[:8] == b"\x89PNG\r\n\x1a\n":
+        return raw
+    if len(raw) > 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return raw
+    raise HTTPException(400, "仅支持 JPEG / PNG / WebP 图片")
+
+
+def _img_mime(b: bytes) -> str:
+    """按魔数识别图片类型（历史存量 JPEG / PNG 与新 WebP 并存）。"""
+    if b[:2] == b"\xff\xd8":
+        return "image/jpeg"
+    if b[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if len(b) > 12 and b[:4] == b"RIFF" and b[8:12] == b"WEBP":
+        return "image/webp"
+    return "application/octet-stream"
+
+
+def _to_webp(raw: bytes) -> bytes:
+    """任意支持的图片 → WebP q80（入库统一格式）。"""
+    try:
+        from PIL import Image
+        im = Image.open(io.BytesIO(raw))
+        if im.mode not in ("RGB", "L"):
+            im = im.convert("RGB")
+        buf = io.BytesIO()
+        im.save(buf, "WEBP", quality=80, method=6)
+        return buf.getvalue()
+    except Exception:
+        raise HTTPException(400, "图片解析失败")
 
 
 @app.put("/api/products/{pid}/image")
 def product_image_update(pid: int, body: ProductImageIn, request: Request):
     op = _require_auth(request)
-    raw = _decode_image_data(body.data)
+    raw = _to_webp(_decode_image_data(body.data))   # 入库统一 WebP q80
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, op)
         _assert_product_in_store(conn, pid, sid)
@@ -3721,9 +3801,89 @@ def product_image_get(pid: int, request: Request):
         row = conn.execute("SELECT image,image_ts FROM products WHERE id=?", (pid,)).fetchone()
         if not row or not row["image"]:
             raise HTTPException(404, "暂无图片")
+        data = bytes(row["image"])
         return Response(
-            content=bytes(row["image"]),
-            media_type="image/jpeg",
+            content=data,
+            media_type=_img_mime(data),
+            headers={"Cache-Control": "no-cache", "ETag": f'"{row["image_ts"]}"'},
+        )
+
+
+_THUMB_TTL_DAYS = 10   # 缩略图临时文件保留天数，超期删除（缺失时按需再生成）
+_THUMB_SIZE = 240
+
+
+def _thumb_dir(conn) -> Path | None:
+    """缩略图临时目录：与租户库同目录的 <库名>_thumbs/（内存库返回 None）。"""
+    dbfile = None
+    for r in conn.execute("PRAGMA database_list"):
+        if r[2]:
+            dbfile = Path(r[2])
+            break
+    if not dbfile:
+        return None
+    d = dbfile.parent / (dbfile.stem + "_thumbs")
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    return d
+
+
+def _cleanup_thumbs(d: Path) -> None:
+    """清理超期（>TTL）缩略图；换图后的旧文件也会因文件名变化自然过期。"""
+    cutoff = time.time() - _THUMB_TTL_DAYS * 86400
+    try:
+        for f in d.glob("*.webp"):
+            try:
+                if f.stat().st_mtime < cutoff:
+                    f.unlink()
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
+@app.get("/api/products/{pid}/thumb")
+def product_thumb_get(pid: int, request: Request):
+    """列表缩略图（公开读取）：临时文件缓存，10 天超时删除，缺失自动再生成。
+
+    文件名含 image_ts（换图即换名），库中不存缩略图字节。
+    """
+    with _db(request) as conn:
+        row = conn.execute("SELECT image,image_ts FROM products WHERE id=?", (pid,)).fetchone()
+        if not row or not row["image"]:
+            raise HTTPException(404, "暂无图片")
+        data = bytes(row["image"])
+        ts = (row["image_ts"] or "").replace("-", "").replace(":", "").replace(" ", "")
+        d = _thumb_dir(conn)
+        fp = (d / f"p{pid}_{ts or 'x'}.webp") if d else None
+        if fp and fp.exists():
+            return Response(
+                content=fp.read_bytes(),
+                media_type="image/webp",
+                headers={"Cache-Control": "no-cache", "ETag": f'"{row["image_ts"]}"'},
+            )
+        try:
+            from PIL import Image
+            im = Image.open(io.BytesIO(data))
+            if im.mode not in ("RGB", "L"):
+                im = im.convert("RGB")
+            im.thumbnail((_THUMB_SIZE, _THUMB_SIZE), Image.LANCZOS)
+            buf = io.BytesIO()
+            im.save(buf, "WEBP", quality=80, method=6)
+            thumb = buf.getvalue()
+        except Exception:
+            raise HTTPException(500, "缩略图生成失败")
+        if fp:
+            try:
+                fp.write_bytes(thumb)
+                _cleanup_thumbs(d)
+            except OSError:
+                pass
+        return Response(
+            content=thumb,
+            media_type="image/webp",
             headers={"Cache-Control": "no-cache", "ETag": f'"{row["image_ts"]}"'},
         )
 
@@ -3874,22 +4034,17 @@ def inventory_psi(request: Request, start: str = "", end: str = ""):
             if b["cat"] == "未分类" and cat:
                 b["cat"] = cat
             return b
-        # 进货：采购单按下单日期区间；货号/品类经商品名回联（无关联则仅按名称归行）
-        # 若按名称匹配不到商品档案，尝试按品类回退（历史数据未建档时避免全落"未分类"）
+        # 进货：按「商品入库」统计——区间内入库建档的商品（含采购单收货入库生成的商品），
+        # 入库日期=建档时间 created，金额=入库成本。采购单（purchases）仅作订货流程/应付管理，不重复计入。
         for r in conn.execute(
-            """SELECT pu.product name,
-                      COALESCE((SELECT p.code FROM products p WHERE p.name = pu.product
-                                ORDER BY p.id LIMIT 1), '') code,
-                      COALESCE((SELECT p.product_type FROM products p WHERE p.name = pu.product
-                                ORDER BY p.id LIMIT 1), '') cat,
-                      COALESCE((SELECT p.category FROM products p WHERE p.name = pu.product
-                                ORDER BY p.id LIMIT 1), '') category,
-                      SUM(pu.qty) q, SUM(pu.cost) a
-               FROM purchases pu
-               WHERE """ + ("" if hq else "(pu.store_id = ? OR pu.store_id = 0) AND ") + """pu.order_date BETWEEN ? AND ?
-               GROUP BY pu.product""", (start, end) if hq else (sid, start, end)).fetchall():
-            cat = r["cat"] or r["category"] or "未分类"
-            b = bucket(r["code"], r["name"], cat)
+            """SELECT COALESCE(NULLIF(code, ''), '') code, name,
+                      COALESCE(NULLIF(product_type, ''), '未分类') cat, COUNT(*) q, COALESCE(SUM(cost), 0) a
+               FROM products
+               WHERE substr(created, 1, 10) BETWEEN ? AND ? AND """ + ("" if hq else "store_id = ? AND ") + """1=1
+               GROUP BY COALESCE(NULLIF(code, ''), ''), name,
+                        COALESCE(NULLIF(product_type, ''), '未分类')""",
+            (start, end) if hq else (start, end, sid)).fetchall():
+            b = bucket(r["code"], r["name"], r["cat"])
             b["inQty"] += r["q"] or 0
             b["inAmount"] += r["a"] or 0
         # 销售：明细 join 单头，排除冲红；货号优先取商品档案，其次用明细快照
@@ -6707,6 +6862,7 @@ class SaleReq(BaseModel):
     clerk_type: str = ""   # 经办人类别（存名称快照，缺省取默认类别）
     clerk_name: str = ""   # 经办人具体人名（可空）
     items: list[SaleItemIn] = []  # 一单多件；为空时回退旧单件字段（兼容）
+    points_redeem: float = Field(default=0, ge=0)  # 使用积分抵扣（积分数；会员单，按积分规则校验）
 
 
 def _resolve_product(conn: sqlite3.Connection, raw_scan, store_id: int | None = None) -> sqlite3.Row | None:
@@ -6823,12 +6979,34 @@ def sale_create(body: SaleReq, request: Request):
         if limit and len(resolved) > limit:
             raise HTTPException(400, f"本店铺单张开单最多 {limit} 件，当前 {len(resolved)} 件")
 
-        # 应收（各件小计汇总）→ 优惠 → 应付
+        # 应收（各件小计汇总）→ 优惠 → 积分抵扣 → 应付
         receivable = round(sum(s["subtotal"] for _p, s in resolved), 2)
         discount = round(max(0.0, float(body.discount or 0)), 2)
         if discount > receivable:
             raise HTTPException(400, f"优惠金额 ￥{discount} 不能大于应收 ￥{receivable}")
         payable = round(receivable - discount, 2)
+
+        # 积分抵扣（会员单）：按积分规则校验起步价 / 余额 / 上限，抵减应付
+        pts_rules = _points_rules(conn)
+        redeem = round(float(body.points_redeem or 0), 2)
+        points_deduct = 0.0
+        if redeem > 0:
+            cust_row = conn.execute(
+                "SELECT id, IFNULL(points,0) AS points FROM customers WHERE phone=?",
+                ((body.phone or "").strip(),),
+            ).fetchone() if (body.phone or "").strip() else None
+            if not cust_row:
+                raise HTTPException(400, "使用积分抵扣需先匹配到会员（请填写会员手机号）")
+            if pts_rules["points_min_order"] > 0 and receivable < pts_rules["points_min_order"]:
+                raise HTTPException(400, f"应收 ￥{receivable:,.2f} 未达积分使用起步价 ￥{pts_rules['points_min_order']:,.2f}")
+            if redeem > cust_row["points"] + 1e-9:
+                raise HTTPException(400, f"积分不足：当前 {cust_row['points']:g} 分，本单使用 {redeem:g} 分")
+            points_deduct = round(redeem / pts_rules["points_redeem_per"], 2)
+            if points_deduct > payable:
+                # 积分只抵到应付为止，用不掉的部分不计扣
+                points_deduct = payable
+                redeem = round(points_deduct * pts_rules["points_redeem_per"], 2)
+            payable = round(payable - points_deduct, 2)
 
         # 组合支付：优先 payments；为空回退旧的单支付 paid/method
         pay_list = [(pm.method.strip() or "现金", round(float(pm.amount or 0), 2))
@@ -6842,6 +7020,8 @@ def sale_create(body: SaleReq, request: Request):
         paid = round(sum(a for _m, a in pay_list), 2)
         if paid > payable + 0.01:
             raise HTTPException(400, f"实收 ￥{paid} 超过应付 ￥{payable}，请核对")
+        # 本单累计积分：按「每消费 earn_per 元得 1 分」对实付取整（快照落库，冲红按此返还）
+        points_earned = int(paid / pts_rules["points_earn_per"])
         main_method = pay_list[0][0] if len(pay_list) == 1 else ("组合" if pay_list else (body.method or "现金"))
 
         bill = _next_bill_no(conn)
@@ -6859,11 +7039,13 @@ def sale_create(body: SaleReq, request: Request):
         clerk_name = (body.clerk_name or "").strip()[:40]
         cur = conn.execute(
             """INSERT INTO sales(bill_no,customer,phone,product,product_id,amount,paid,method,biz_date,type,status,
-                                 clerk_type,clerk_name,store_id,discount,receivable,real_biz_date)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                 clerk_type,clerk_name,store_id,discount,receivable,real_biz_date,
+                                 points_earned,points_redeemed)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (bill, body.customer, body.phone, names, first["id"], payable, paid,
              main_method, biz, "普通", status, clerk_type, clerk_name, sid,
-             discount, receivable, date.today().isoformat()),
+             discount, receivable, date.today().isoformat(),
+             points_earned, redeem),
         )
         sale_id = cur.lastrowid
         for seq, (p, s) in enumerate(resolved):
@@ -6879,19 +7061,22 @@ def sale_create(body: SaleReq, request: Request):
             conn.execute(
                 "INSERT INTO sale_payments(sale_id,method,amount,seq) VALUES(?,?,?,?)",
                 (sale_id, m, amt, pseq))
-        # 客户回写 + 关联会员；积分按实付 1 元 = 1 分累计
+        # 客户回写 + 关联会员；积分按规则「每消费 earn_per 元得 1 分」对实付累计，同时扣减本单使用的抵扣积分
         customer_id = _touch_customer(conn, body.customer, body.phone, payable, max(0.0, payable - paid), sid)
         if customer_id:
             conn.execute("UPDATE sales SET customer_id=? WHERE id=?", (customer_id, sale_id))
-            conn.execute("UPDATE customers SET points=IFNULL(points,0)+? WHERE id=?", (paid, customer_id))
+            conn.execute("UPDATE customers SET points=MAX(IFNULL(points,0)-?,0)+? WHERE id=?",
+                         (redeem, points_earned, customer_id))
         conn.commit()
         _snames = [p["name"] for p, _s in resolved]
         _log(conn, op["username"], "销售开单",
              f"{bill} 客户{body.customer or '散客'} 应收￥{receivable:,.2f} 优惠￥{discount:,.2f} "
-             f"实收￥{paid:,.2f}（{main_method}）{len(resolved)}件："
+             + (f"积分抵扣￥{points_deduct:,.2f}（{redeem:g}分）" if redeem > 0 else "")
+             + f"实收￥{paid:,.2f}（{main_method}）{len(resolved)}件："
              f"{'、'.join(_snames[:10])}{'…' if len(_snames) > 10 else ''}")
         return {"bill_no": bill, "id": sale_id, "amount": payable, "receivable": receivable,
-                "discount": discount, "paid": paid, "points": paid, "count": len(resolved)}
+                "discount": discount, "paid": paid, "points": points_earned, "count": len(resolved),
+                "points_deduct": points_deduct, "points_redeemed": redeem}
 
 
 @app.get("/api/sales/analysis")
@@ -7007,6 +7192,11 @@ def sale_list(request: Request, q: str = "", clerk_type: str = "", clerk_name: s
             args.append(f"%{clerk_name}%")
         cond = ("WHERE " + " AND ".join(where)) if where else ""
         total = conn.execute(f"SELECT COUNT(*) n FROM sales s {cond}", args).fetchone()["n"]
+        # 检索结果合计：总件数=明细行数之和，总金额=单据金额之和（含已冲红单，与列表口径一致）
+        sums = conn.execute(
+            f"SELECT COALESCE(SUM((SELECT COUNT(*) FROM sale_items si WHERE si.sale_id=s.id)),0) cnt, "
+            f"COALESCE(SUM(s.amount),0) amt FROM sales s {cond}", args).fetchone()
+        sum_count, sum_amount = int(sums["cnt"] or 0), round(float(sums["amt"] or 0), 2)
         rows = conn.execute(
             f"SELECT s.* FROM sales s {cond} ORDER BY s.id DESC LIMIT ? OFFSET ?",
             args + [size, (page - 1) * size],
@@ -7026,7 +7216,8 @@ def sale_list(request: Request, q: str = "", clerk_type: str = "", clerk_name: s
             d["item_count"] = len(d["items"])
             d["payments"] = pays_map.get(r["id"], [])
             out.append(d)
-        return {"total": total, "page": page, "size": size, "items": out}
+        return {"total": total, "page": page, "size": size,
+                "sum_count": sum_count, "sum_amount": sum_amount, "items": out}
 
 
 @app.post("/api/sales/{sid}/void")
@@ -7053,11 +7244,14 @@ def sale_void(sid: int, request: Request):
             conn.execute("UPDATE products SET status='在库' WHERE id=? AND status='已售'", (pid,))
             _inv(conn, pid, "", "in", op["username"], store_id=row["store_id"] or cur_sid)
         if row["phone"]:
-            # 冲红回滚：累计消费、欠款、已累计积分（实付部分）
+            # 冲红回滚：累计消费、欠款、积分（新单按快照 earned/redeemed 双向回滚；
+            # 历史单 points_earned 为 NULL，按旧规则「1元=1分」用 paid 兜底，抵扣按 0 处理）
+            _pts_earned = row["points_earned"] if row["points_earned"] is not None else row["paid"]
+            _pts_redeemed = row["points_redeemed"] or 0
             conn.execute(
                 "UPDATE customers SET total_amount=MAX(total_amount-?,0), due_amount=MAX(due_amount-?,0), "
-                "points=MAX(IFNULL(points,0)-?,0) WHERE phone=?",
-                (row["amount"], max(0.0, row["amount"] - row["paid"]), row["paid"], row["phone"]),
+                "points=MAX(IFNULL(points,0)-?,0)+? WHERE phone=?",
+                (row["amount"], max(0.0, row["amount"] - row["paid"]), _pts_earned, _pts_redeemed, row["phone"]),
             )
         conn.commit()
         _log(conn, op["username"], "销售冲红",
@@ -7862,6 +8056,7 @@ class CustomerIn(BaseModel):
     country: str = ""
     source: str = ""   # 获取来源（如 展会/门店/转介绍）
     note: str = ""     # 备注
+    event_memo: str = ""  # 事件备忘录（内容/地点/时间自由文本；记录时间后端自动维护）
     phones: list[CustomerPhoneIn] = []  # 多手机号（首号为默认号，缺省时自动写回 phone 字段）
 
 
@@ -7907,14 +8102,22 @@ def customer_list(request: Request, page: int = 1, size: int = 50, keyword: str 
           (SELECT s.product FROM sales s WHERE s.customer_id=c.id ORDER BY s.biz_date DESC, s.id DESC LIMIT 1) last_product,
           (SELECT s.biz_date  FROM sales s WHERE s.customer_id=c.id ORDER BY s.biz_date DESC, s.id DESC LIMIT 1) last_date,
           (SELECT s.amount    FROM sales s WHERE s.customer_id=c.id ORDER BY s.biz_date DESC, s.id DESC LIMIT 1) last_amount,
-          (SELECT COUNT(*)    FROM sales s WHERE s.customer_id=c.id) sales_count
+          (SELECT COUNT(*)    FROM sales s WHERE s.customer_id=c.id) sales_count,
+          (SELECT content FROM customer_memos m WHERE m.customer_id=c.id ORDER BY m.id DESC LIMIT 1) last_memo,
+          (SELECT created FROM customer_memos m WHERE m.customer_id=c.id ORDER BY m.id DESC LIMIT 1) last_memo_at
         FROM customers c"""
     conds, params = [], []
     if q:
         like = f"%{q}%"
-        conds.append("(c.name LIKE ? OR c.phone LIKE ? OR c.note LIKE ? "
-                     "OR EXISTS (SELECT 1 FROM customer_phones cp WHERE cp.customer_id=c.id AND cp.phone LIKE ?))")
-        params += [like, like, like, like]
+        # 全字段检索：凡是会员档案上的文本信息都可搜到（姓名/电话/邮箱/等级/生日/纪念日/偏好/
+        # 地址组/来源/事件备忘录（子表）/建档时间），另含其他手机号
+        conds.append("(c.name LIKE ? OR c.phone LIKE ? OR c.note LIKE ? OR c.email LIKE ? OR c.level LIKE ? "
+                     "OR c.birthday LIKE ? OR c.anniversary LIKE ? OR c.preference LIKE ? "
+                     "OR c.address LIKE ? OR c.city LIKE ? OR c.zip_code LIKE ? OR c.country LIKE ? "
+                     "OR c.source LIKE ? OR c.created LIKE ? "
+                     "OR EXISTS (SELECT 1 FROM customer_phones cp WHERE cp.customer_id=c.id AND cp.phone LIKE ?) "
+                     "OR EXISTS (SELECT 1 FROM customer_memos m WHERE m.customer_id=c.id AND m.content LIKE ?))")
+        params += [like] * 14 + [like, like]
     if flt == "today":
         conds.append("date(c.created)=date('now','localtime')")
     elif flt == "month":
@@ -7952,8 +8155,14 @@ def customer_export(request: Request):
     conds, params = [], []
     if q:
         like = f"%{q}%"
-        conds.append("(c.name LIKE ? OR c.phone LIKE ? OR c.email LIKE ?)")
-        params += [like, like, like]
+        # 与 customer_list 同口径：全字段检索
+        conds.append("(c.name LIKE ? OR c.phone LIKE ? OR c.note LIKE ? OR c.email LIKE ? OR c.level LIKE ? "
+                     "OR c.birthday LIKE ? OR c.anniversary LIKE ? OR c.preference LIKE ? "
+                     "OR c.address LIKE ? OR c.city LIKE ? OR c.zip_code LIKE ? OR c.country LIKE ? "
+                     "OR c.source LIKE ? OR c.created LIKE ? "
+                     "OR EXISTS (SELECT 1 FROM customer_phones cp WHERE cp.customer_id=c.id AND cp.phone LIKE ?) "
+                     "OR EXISTS (SELECT 1 FROM customer_memos m WHERE m.customer_id=c.id AND m.content LIKE ?))")
+        params += [like] * 14 + [like, like]
     if flt == "today":
         conds.append("date(c.created)=date('now','localtime')")
     elif flt == "month":
@@ -7970,6 +8179,10 @@ def customer_export(request: Request):
             "FROM customers c" + where + " ORDER BY c.total_amount DESC", params
         ).fetchall()
         pmap = _customer_phones_map(conn, [r["id"] for r in rows])
+        memo_map: dict[int, list] = {}
+        for mr in conn.execute(
+                "SELECT customer_id, content, created FROM customer_memos ORDER BY customer_id, id DESC").fetchall():
+            memo_map.setdefault(mr["customer_id"], []).append(mr)
         recs = []
         for r in rows:
             d = dict(r)
@@ -7978,13 +8191,19 @@ def customer_export(request: Request):
                 (p["phone"] + ("(" + p["label"] + ")" if p["label"] else ""))
                 for p in pmap.get(r["id"], []) if p["phone"] and p["phone"] != (r["phone"] or "")
             )
+            # 事件备忘录多条拼接：内容（记录于 时间）
+            d["_memos"] = " / ".join(
+                m["content"] + ("（记录于 " + m["created"] + "）" if m["created"] else "")
+                for m in memo_map.get(r["id"], [])
+            )
             recs.append(d)
         rows = recs
     headers = ["id", "姓名", "手机号", "其他手机号", "电子邮箱", "等级", "累计消费", "待收欠款", "生日", "纪念日", "偏好",
-               "详细地址", "城市", "邮编", "国家", "获取来源", "备注", "积分", "金价折扣", "购买次数", "建档时间"]
+               "详细地址", "城市", "邮编", "国家", "获取来源", "备注", "事件备忘录（多条）", "积分", "金价折扣", "购买次数", "建档时间"]
     keys = ["id", "name", "phone", "_phones", "email", "level", "total_amount", "due_amount",
             "birthday", "anniversary", "preference",
-            "address", "city", "zip_code", "country", "source", "note", "points", "gold_discount", "sales_count", "created"]
+            "address", "city", "zip_code", "country", "source", "note", "_memos",
+            "points", "gold_discount", "sales_count", "created"]
     lines = [",".join(headers)]
     for r in rows:
         vals = []
@@ -8061,11 +8280,12 @@ def customer_create(body: CustomerIn, request: Request):
         sid, _ = _current_store(request, conn, op)
         cur = conn.execute(
             "INSERT INTO customers(name,phone,email,level,birthday,anniversary,preference,gold_discount,"
-            "address,city,zip_code,country,source,note,created,store_id) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'),?)",
+            "address,city,zip_code,country,source,note,event_memo,event_memo_at,created,store_id) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CASE WHEN ?<>'' THEN datetime('now','localtime') ELSE '' END,"
+            "datetime('now','localtime'),?)",
             (body.name, body.phone, body.email, body.level, body.birthday, body.anniversary, body.preference,
              gd if gd is not None else 1.0, body.address, body.city, body.zip_code, body.country,
-             body.source, body.note, sid),
+             body.source, body.note, body.event_memo, body.event_memo, sid),
         )
         cid = cur.lastrowid
         # 多手机号：首号为默认号；未单独填 phone 时自动取首号
@@ -8087,16 +8307,22 @@ def customer_update(cid: int, body: CustomerIn, request: Request):
         if gd is not None:
             conn.execute(
                 "UPDATE customers SET name=?,phone=?,email=?,level=?,birthday=?,anniversary=?,preference=?,gold_discount=?,"
-                "address=?,city=?,zip_code=?,country=?,source=?,note=? WHERE id=?",
+                "address=?,city=?,zip_code=?,country=?,source=?,note=?,"
+                "event_memo=?, event_memo_at=CASE WHEN ?='' THEN '' WHEN ?=event_memo THEN event_memo_at "
+                "ELSE datetime('now','localtime') END WHERE id=?",
                 (body.name, body.phone, body.email, body.level, body.birthday, body.anniversary, body.preference, gd,
-                 body.address, body.city, body.zip_code, body.country, body.source, body.note, cid),
+                 body.address, body.city, body.zip_code, body.country, body.source, body.note,
+                 body.event_memo, body.event_memo, body.event_memo, cid),
             )
         else:
             conn.execute(
                 "UPDATE customers SET name=?,phone=?,email=?,level=?,birthday=?,anniversary=?,preference=?,"
-                "address=?,city=?,zip_code=?,country=?,source=?,note=? WHERE id=?",
+                "address=?,city=?,zip_code=?,country=?,source=?,note=?,"
+                "event_memo=?, event_memo_at=CASE WHEN ?='' THEN '' WHEN ?=event_memo THEN event_memo_at "
+                "ELSE datetime('now','localtime') END WHERE id=?",
                 (body.name, body.phone, body.email, body.level, body.birthday, body.anniversary, body.preference,
-                 body.address, body.city, body.zip_code, body.country, body.source, body.note, cid),
+                 body.address, body.city, body.zip_code, body.country, body.source, body.note,
+                 body.event_memo, body.event_memo, body.event_memo, cid),
             )
         # 多手机号整组替换；未单独填 phone 时默认号取首号
         first = _save_customer_phones(conn, cid, body.phones)
@@ -8104,6 +8330,41 @@ def customer_update(cid: int, body: CustomerIn, request: Request):
             conn.execute("UPDATE customers SET phone=? WHERE id=?", (first, cid))
         conn.commit()
         _log(conn, op["username"], "修改客户", body.name)
+        return {"ok": True}
+
+
+class MemoIn(BaseModel):
+    content: str = ""
+
+
+@app.post("/api/customers/{cid}/memos")
+def memo_add(cid: int, body: MemoIn, request: Request):
+    """追加一条事件备忘录；记录时间服务端生成。"""
+    op = _require_auth(request)
+    content = (body.content or "").strip()
+    if not content:
+        raise HTTPException(400, "备忘录内容不能为空")
+    with _db(request) as conn:
+        if not conn.execute("SELECT 1 FROM customers WHERE id=?", (cid,)).fetchone():
+            raise HTTPException(404, "会员不存在")
+        cur = conn.execute(
+            "INSERT INTO customer_memos(customer_id, content, created) "
+            "VALUES(?,?,datetime('now','localtime'))", (cid, content))
+        conn.commit()
+        _log(conn, op["username"], "添加会员备忘录", content[:30])
+        return {"ok": True, "id": cur.lastrowid,
+                "created": conn.execute("SELECT created FROM customer_memos WHERE id=?", (cur.lastrowid,)).fetchone()["created"]}
+
+
+@app.delete("/api/customers/memos/{mid}")
+def memo_del(mid: int, request: Request):
+    op = _require_auth(request)
+    with _db(request) as conn:
+        cur = conn.execute("DELETE FROM customer_memos WHERE id=?", (mid,))
+        conn.commit()
+        if not cur.rowcount:
+            raise HTTPException(404, "备忘录不存在")
+        _log(conn, op["username"], "删除会员备忘录", f"#{mid}")
         return {"ok": True}
 
 
@@ -8145,6 +8406,10 @@ def customer_detail(cid: int, request: Request):
         d["lastSaleDate"] = last_sale
         d["sales"] = [dict(r) for r in sales]
         d["deposits"] = [dict(r) for r in deposits]
+        # 事件备忘录（多条，最新在上）
+        d["memos"] = [dict(r) for r in conn.execute(
+            "SELECT id, content, created FROM customer_memos WHERE customer_id=? ORDER BY id DESC", (cid,)
+        ).fetchall()]
         return d
 
 

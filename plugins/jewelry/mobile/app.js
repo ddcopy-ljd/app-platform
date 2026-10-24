@@ -40,16 +40,30 @@
     if (n === null) return "***";
     if (n === undefined || n === "") return "—";
     var base = "CNY";  // 内部记账币种固定人民币
-    var target = (ST.bizConfig && (ST.bizConfig.store_currency || ST.bizConfig.currency)) || base;
-    var rate = _mFindRate(base.toUpperCase(), target.toUpperCase());
+    // 显示币种优先取门店列表中当前门店的 display_currency（与服务器会话解耦，
+    // 外网 /gw/ 网管调试通道下 /api/currency 的 store_currency 恒为总部币种）
+    var target = base;
+    var cs = null;
+    for (var i = 0; i < (ST.stores || []).length; i++) {
+      if (Number(ST.stores[i].id) === Number(ST.storeId)) { cs = ST.stores[i]; break; }
+    }
+    if (cs && cs.display_currency) target = cs.display_currency;
+    else target = (ST.bizConfig && (ST.bizConfig.store_currency || ST.bizConfig.currency)) || base;
+    var rate = _mFindRate(base.toUpperCase(), String(target).toUpperCase());
     var val = Number(n) * rate;
-    var sym = _MCUR[(target || base).toUpperCase()] || "￥";
+    var sym = _MCUR[String(target).toUpperCase()] || "￥";
     return sym + fmtNum(val);
   }
 
   function _mEntryCur(sid) {
     var fallback = (ST.bizConfig && ST.bizConfig.currency) || "CNY";
     if (Number(sid) && Number(sid) === Number(ST.storeId)) {
+      // 与 PC 端同口径：优先门店列表的 display_currency（网管调试通道下会话币种不可靠）
+      var cur = null;
+      for (var j = 0; j < (ST.stores || []).length; j++) {
+        if (Number(ST.stores[j].id) === Number(sid)) { cur = ST.stores[j]; break; }
+      }
+      if (cur && cur.display_currency) return String(cur.display_currency).toUpperCase();
       return ((ST.bizConfig && ST.bizConfig.store_currency) || fallback).toUpperCase();
     }
     var s = null;
@@ -119,6 +133,17 @@
     depForm: { customer: "", phone: "", product_id: 0, product: "", total: "", deposit: "", promised_date: todayStr(), reminder_days: 7 },
     customers: { items: [], total: 0, page: 1, size: 30, q: "" },
     custDetail: null, custForm: null,
+    // 列表显示字段：默认只显示最主要信息，用户在「⚙ 字段」里自选（localStorage 记忆，不用每次选）
+    listCols: (function () {
+      var def = { products: { code: false, material: false, weight: false, category: false },
+                  customers: { phone: true, points: false } };
+      try {
+        var saved = JSON.parse(localStorage.getItem("yz_m_listcols") || "{}");
+        for (var k in saved) if (def[k]) def[k] = saved[k];
+      } catch (e) {}
+      return def;
+    })(),
+    colPickList: "",
     loans: { items: [] }, repairs: { items: [] }, purchases: { items: [] }, outsourcings: { items: [] },
     appointments: [], logs: { items: [], total: 0, page: 1, size: 30 },
     profile: null,
@@ -757,6 +782,11 @@
   function productImageUrl(p) {
     if (!p || !p.id) return "";
     return API + "/api/products/" + p.id + "/image" + (p.image_ts ? "?ts=" + p.image_ts : "");
+  }
+  // 列表缩略图：/thumb 端点（服务端临时文件缓存，WebP 240px，10 天超时自动重建）
+  function productThumbUrl(p) {
+    if (!p || !p.id) return "";
+    return API + "/api/products/" + p.id + "/thumb" + (p.image_ts ? "?ts=" + p.image_ts : "");
   }
 
   function _syncImageTs(pid, ts) {
@@ -2073,10 +2103,47 @@
     if (ST.tab === "customers" && ST.sub === "" && el.scrollTop + el.clientHeight >= el.scrollHeight - 80) loadMoreCustomers();
   }
 
+  // ---- 列表显示字段：默认只显主要信息，⚙ 里自选并记忆（点开条目看全部） ----
+  var LIST_COL_DEFS = {
+    products: [
+      { key: "code", label: function () { return t("prod.code"); } },
+      { key: "material", label: function () { return t("prod.material"); } },
+      { key: "weight", label: function () { return t("prod.weight"); } },
+      { key: "category", label: function () { return t("prod.category"); } },
+    ],
+    customers: [
+      { key: "phone", label: function () { return t("col.phone"); } },
+      { key: "points", label: function () { return t("col.points"); } },
+    ],
+  };
+  function colDefs() { return LIST_COL_DEFS[ST.colPickList] || []; }
+  function colOn(list, key) { return !!(ST.listCols[list] && ST.listCols[list][key]); }
+  function toggleCol(list, key) {
+    if (!ST.listCols[list]) return;
+    ST.listCols[list][key] = !ST.listCols[list][key];
+    try { localStorage.setItem("yz_m_listcols", JSON.stringify(ST.listCols)); } catch (e) {}
+  }
+  function openColPicker(list) { ST.colPickList = list; ST.sheet = "cols"; }
+  function prodSub(p) {
+    var segs = [];
+    if (colOn("products", "code") && p.code) segs.push(p.code);
+    if (colOn("products", "material") && p.material) segs.push(p.material);
+    if (colOn("products", "weight") && p.weight) segs.push(p.weight + "g");
+    if (colOn("products", "category") && p.category) segs.push(p.category);
+    return segs;
+  }
+  function custSub(c) {
+    var segs = [];
+    if (colOn("customers", "phone") && c.phone) segs.push(c.phone);
+    if (colOn("customers", "points")) segs.push(t("col.points") + " " + (c.points || 0));
+    return segs;
+  }
+
   var methods = {
     login: login, logout: logout, submitChangePwd: submitChangePwd,
     switchStore: switchStore, setLang: setLang, curStoreName: curStoreName, isHqView: isHqView,
     go: go, openSub: openSub, closeSub: closeSub, onScroll: onScroll,
+    colDefs: colDefs, colOn: colOn, toggleCol: toggleCol, openColPicker: openColPicker, prodSub: prodSub, custSub: custSub,
     loadDash: loadDash,
     loadGold: loadGold, localeCurrency: localeCurrency, pctCls: pctCls, pctLabel: pctLabel,
     donutColor: donutColor, catText: catText, catDonutSegments: catDonutSegments,
@@ -2093,7 +2160,7 @@
     openPrintSelected: openPrintSelected, printTypeProducts: printTypeProducts,
     openLabelPrint: openLabelPrint, removeLabelItem: removeLabelItem, closeLabel: closeLabel,
     loadLabelAgent: loadLabelAgent, submitLabelPrint: submitLabelPrint,
-    productImageUrl: productImageUrl, chooseProductImage: chooseProductImage, onProductImageChosen: onProductImageChosen,
+    productImageUrl: productImageUrl, productThumbUrl: productThumbUrl, chooseProductImage: chooseProductImage, onProductImageChosen: onProductImageChosen,
     openImgCrop: openImgCrop, closeImgCrop: closeImgCrop, setImgOrient: setImgOrient, cropImgStyle: cropImgStyle,
     resetImgCrop: resetImgCrop, cropPointerDown: cropPointerDown, cropPointerMove: cropPointerMove,
     cropPointerUp: cropPointerUp, cropZoomInput: cropZoomInput, confirmImgCrop: confirmImgCrop, removeProductImage: removeProductImage,

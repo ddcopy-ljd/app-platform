@@ -560,6 +560,20 @@ a { text-decoration: none; color: inherit; }
 .cust-info { flex: 1; min-width: 0; }
 .cust-name { font-size: 14px; font-weight: 600; }
 .cust-phone { font-size: 14px; color: var(--text2); }
+.cust-email { color: var(--gold-deep); text-decoration: none; border-bottom: 1px dashed rgba(var(--gold-rgb),.5); }
+.cust-email:hover { color: var(--gold); border-bottom-color: var(--gold); }
+.cust-email-sep { color: var(--text3); }
+
+/* 会员详情：事件备忘录（多条） */
+.cust-memo-sec { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--cream); }
+.cust-memo-head { font-size: 14px; font-weight: 600; color: var(--text2); margin-bottom: 8px; }
+.cust-memo-add { display: flex; gap: 8px; margin-bottom: 8px; }
+.cust-memo-add input { flex: 1; }
+.cust-memo-item { display: flex; align-items: baseline; gap: 8px; padding: 6px 2px; border-top: 1px dashed var(--border); font-size: 14px; }
+.cust-memo-txt { flex: 1; color: var(--text); word-break: break-all; }
+.cust-memo-time { flex: 0 0 auto; font-size: 12px; color: var(--text3); }
+.cust-memo-del { flex: 0 0 auto; cursor: pointer; color: var(--text3); padding: 0 4px; }
+.cust-memo-del:hover { color: var(--wine); }
 .cust-stats { text-align: right; }
 .cust-total { font-size: 14px; font-weight: 600; color: var(--wine-dark); }
 .cust-due { font-size: 14px; color: var(--text2); }
@@ -1052,11 +1066,16 @@ body.mt-dragging { cursor: col-resize !important; user-select: none !important; 
 .biz-guide[open] > summary::after { transform: rotate(180deg); }
 .biz-guide .biz-body { padding: 10px 14px 12px; border-top: 1px dashed var(--border); font-size: 14px; line-height: 1.8; color: var(--text2); white-space: pre-line; }
 
+/* 销售流水检索合计条 */
+.sale-sum-bar { display: flex; justify-content: flex-end; gap: 18px; padding: 8px 12px; margin-top: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--cream); font-size: 14px; color: var(--text2); }
+.sale-sum-bar b { color: var(--gold-deep); font-size: 15px; margin: 0 2px; }
+.sale-sum-amount b { font-size: 17px; }
+
 /* ---------- 商品详情只读面板 ---------- */
 .pd-wrap { display: flex; gap: 14px; align-items: flex-start; }
-.pd-photo { position: relative; flex: 0 0 240px; max-width: 240px; border-radius: 10px; overflow: hidden; background: var(--cream); border: 1px solid var(--border); cursor: default; }
+.pd-photo { position: relative; flex: 0 0 300px; max-width: 300px; border-radius: 10px; overflow: hidden; background: var(--cream); border: 1px solid var(--border); cursor: default; }
 .pd-photo:not(.empty) { cursor: zoom-in; }
-.pd-photo img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.pd-photo img { display: block; width: 100%; height: auto; max-height: 420px; object-fit: contain; }
 .pd-photo.empty { aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center; }
 .pd-photo .pd-ph { font-size: 44px; opacity: .5; }
 .pd-photo .pd-zoom { position: absolute; left: 8px; bottom: 8px; padding: 2px 8px; border-radius: 10px; background: rgba(var(--wine-rgb),.65); color: #fff; font-size: 12px; pointer-events: none; }
@@ -1225,16 +1244,21 @@ select.lang-code {
 .btn-danger-solid { background: #c0392b; color: #fff; border: 1.5px solid #c0392b; }
 .btn-danger-solid:hover { background: #a93226; border-color: #a93226; }
 .modal-foot { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); }
-.img-crop-card { max-width: 600px; }
-.img-crop-tools { display: flex; gap: 8px; padding: 12px 18px 0; }
+.img-crop-card { max-width: 760px; }
+.img-crop-tools { display: flex; gap: 8px; padding: 12px 18px 0; flex-wrap: wrap; }
+.img-crop-rotrow { display: flex; align-items: center; gap: 10px; padding: 10px 18px 0; }
+.img-crop-rotrow .icr-label { font-size: 14px; color: var(--text2); flex: 0 0 auto; }
+.img-crop-rotrow input[type=range] { flex: 1; accent-color: var(--gold); }
+.img-crop-rotrow .icr-deg { flex: 0 0 44px; text-align: right; color: var(--gold-deep); font-size: 14px; }
 .img-crop-frame-wrap { padding: 12px 18px 0; display: flex; justify-content: center; }
 .img-crop-frame {
-  position: relative; width: 100%; max-width: 520px;
+  position: relative; width: 100%; max-width: 660px;
   aspect-ratio: 4 / 3; overflow: hidden;
   background: #1d1218; border-radius: 10px;
   touch-action: none; cursor: grab; user-select: none;
 }
-.img-crop-frame.portrait { aspect-ratio: 3 / 4; max-width: 390px; }
+.img-crop-frame.portrait { aspect-ratio: 3 / 4; max-width: 500px; }
+.img-crop-frame.square { aspect-ratio: 1 / 1; max-width: 600px; }
 .img-crop-frame:active { cursor: grabbing; }
 .img-crop-frame img { position: absolute; left: 0; top: 0; max-width: none; will-change: transform; pointer-events: none; }
 .img-crop-frame::after {
@@ -1786,6 +1810,7 @@ tr.tr-row-hit { animation: tr-hit-flash 1.2s ease; }
 
 /* 1.0.9 开单弹窗加宽 + 双计价明细表紧凑排版 */
 .sheet-mask.pc .sheet.sheet-wide { width: 780px; }
+.sheet-mask.pc .sheet.sheet-detail { width: 960px; }
 /* 商品/入库表单略窄，避免字段过宽、右侧大片留白 */
 .sheet-mask.pc .sheet.sheet-prod { width: 720px; }
 /* 商品表单整体紧凑：缩小内边距、控件高度、行间距与图片区（仅 PC） */
@@ -1824,7 +1849,12 @@ tr.tr-row-hit { animation: tr-hit-flash 1.2s ease; }
 .prod-img-note { font-size: 11px; color: #1a7f37; margin: -2px 0 6px; }
 .img-viewer-mask { position: fixed; inset: 0; z-index: 5000; background: rgba(0,0,0,.82);
   display: flex; align-items: center; justify-content: center; padding: 24px; cursor: zoom-out; }
-.img-viewer-img { max-width: 92vw; max-height: 88vh; border-radius: 8px; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
+.img-viewer-img { max-width: 92vw; max-height: 88vh; border-radius: 8px; box-shadow: 0 8px 40px rgba(0,0,0,.5); cursor: default; }
+.img-viewer-close { position: absolute; top: 14px; right: 18px; width: 40px; height: 40px; border-radius: 50%;
+  background: rgba(255,255,255,.12); color: #fff; font-size: 20px; line-height: 38px; text-align: center; cursor: pointer; user-select: none; }
+.img-viewer-close:hover { background: rgba(255,255,255,.28); }
+.img-viewer-hint { display: none; }
+.img-viewer-meta { position: absolute; left: 0; right: 0; bottom: 18px; text-align: center; color: rgba(255,255,255,.92); font-size: 13px; letter-spacing: .3px; pointer-events: none; }
 .sale-items-scroll { overflow-x: auto; }
 .sale-items-109 { font-size: 14px; }
 .sale-items-109 th, .sale-items-109 td { padding: 4px 3px; white-space: nowrap; }

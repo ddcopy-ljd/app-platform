@@ -459,3 +459,9 @@
 - **修复**：①`main.py` 新增 `_no_cache_file(request, f)`：`Cache-Control: no-cache` + 自算 ETag（mtime_ns+size）+ If-None-Match 命中返回 304（不传正文）；`/`、`spa_asset`、`mobile_asset`、`/logo/` 全部改走该函数，`/site` 补 no-cache 头。②三个表单整体移到卡片标题/提示行之后、表格之前，字段分行重排（语言固定宽 + 名称 `flex:1` 独立占位；二级分类颜色/排序/分组独立一行）；`resetTagEdit()` 分组预填当前筛选 `ST.tagFilter`（仅新增路径，编辑按原值回填）。
 - **验证方法**：`python` 脚本 GET 5 条代表路径断言 `Cache-Control: no-cache`，再带 `If-None-Match` 复请求断言 304；浏览器普通 reload（非 Ctrl+F5）断言新追加的 CSS 规则生效、还原后消失；`elementFromPoint` 逐控件断言命中自身；界面实际新增品类/一级分类/二级分类（含 chip 筛选→新增标签分组默认=筛选值）走查。
 - **回归守卫**：①新加静态资源路由必须复用 `_no_cache_file`，禁止裸 `FileResponse`（会退回启发式缓存）；②表单字段禁止在 `.form-row` 里嵌套 flex 容器拼「下拉+输入」，语言选择用 `flex:0 0 Npx` 固定占位独立 form-group。
+
+## TC-60 僵尸版本（uploaded 无包）阻塞结构迁移链（2026-10-23）
+- **问题现象**：上传 v1.2.57.261023 后阶段A报"插件包内找不到脚本：scripts/upgrade.py"，但该包内文件齐全；流水线停在 failed 不自动重试。
+- **根因**：版本链里残留僵尸版本 v1.0.6（状态 uploaded、包目录早已清理、从未试运行/发布）。结构迁移按"数据版本变化"逐跳执行（v1.0.5→…→目标），跳到 v1.0.6 时 package_dir 不存在，_script_path 报"找不到脚本"——报错文案有误导性，并非新包缺文件。
+- **验证方法**：查 platform.db plugin_versions（software_version,data_version,status）确认链上有包目录缺失的中间版本 → 平台登录后 DELETE /api/plugins/{id}/versions/{vid} 删除僵尸版本 → 重新发起试运行，逐跳迁移全部成功（本次 v1.0.3→v1.2.26 共 7 跳）。
+- **回归守卫**：①每次升级发版前检查版本链完整性：链上每个 data_version 跳点的包目录必须存在且含 scripts/upgrade.py；②上传后流水线 failed 且报"找不到脚本"时，先查中间跳版本而非新包本身；③考虑平台侧增强：阶段A报错时注明是哪个 hop 版本缺包。

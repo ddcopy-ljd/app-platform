@@ -35,6 +35,12 @@
   联动灌入——外网沙箱基线库可得演示标签，真实租户删光标签后升级不复活（TC-40）；
   dataVersion 1.2.25 标签画布对齐 X19D 203dpi：内建标签模板 _builtin 升到 4，
   slots 全部重排为 528×203 点（migrate_schema 幂等覆盖，老库无需手工改模板）；
+  dataVersion 1.2.26 积分规则管理 + 客户多条备忘录：biz_config.points_earn_per/
+  points_redeem_per/points_min_order 三列（消费积分/积分抵扣/使用起步价，金额为
+  记账本位币口径，界面按门店显示币种换算）、sales.points_earned/points_redeemed
+  积分快照两列（开单计分/抵扣入账，冲红按快照双向回滚）、customer_memos 多条
+  备忘录表（老库 event_memo 单字段内容迁移为首条记录并清空源列防复活，TC-58）
+  （均 migrate_schema 幂等补列/建表，老库自动补默认值 1/100/0）；
 - 幂等执行 EPC 现行规则化（前缀+门店段+品类码+序号）与材质英文长码收敛为简写。
 参数/环境变量与平台约定一致：
   OLD_DB_PATH / NEW_DB_PATH / OLD_STORAGE / NEW_STORAGE /
