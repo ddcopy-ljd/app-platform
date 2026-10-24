@@ -43,7 +43,7 @@ try { currentTheme = applyTheme(localStorage.getItem('yz_theme') || 'wine'); } c
 var ST = Vue.reactive({
   token: '', user: null, mode: 'NORMAL', tenant: '', version: '',
   softName: '懿臻珠宝云',   // 软件名：启动时从 /api/health 拉取（源自 plugin.json），此处仅为兜底
-  tab: 'dashboard', subView: '', adminSub: 'epc',
+  tab: 'dashboard', subView: '', adminSub: 'epc', storeSub: 'info',
   reportBeautify: true,   // 问题上报「美观输出」：勾选=上报页跟随本应用主题配色，不勾选=BugTracker 默认样式
   custDetail: null,   // 客户档案详情（必须放 ST 内才响应式；曾是模块级 var 导致 PC 详情空白）
   custMemoDraft: '',  // 客户事件备忘录录入草稿（详情页添加用）
@@ -58,6 +58,7 @@ var ST = Vue.reactive({
   // 强制改密弹窗（运维端重置密码后 must_change_pwd=1，登录/恢复会话即弹出，改完才可进入系统）
   mustPwdOpen: false, mustPwdOld: '', mustPwdNew: '', mustPwdNew2: '',
   // data
+  dashTab: 'analysis',   // 经营看板页签：analysis=经营分析 / salestats=销售额统计 / rank=销售排名 / todo=待办提醒 / recent=最近销售
   dashData: null, trendData: null, bizAnalysis: null, remindData: null, showRemind: true, catSales: null,
   trendShift: 0, trendDragX: 0, trendDragOn: false,  // 趋势图平移时间单位数(天/月) / 拖动中位移(px) / 拖动中
   trendCmp: 'yoy',   // 趋势对比口径：yoy=同比（去年同期）/ mom=环比（紧邻上一等长区间）
@@ -68,7 +69,7 @@ var ST = Vue.reactive({
   dashRange: { mode: '3m', start: '', end: '', curStart: '', curEnd: '' },
   saleRange: { mode: 'today', start: '', end: '' },   // 销售列表时间过滤（同看板工具栏）
   products: [], prodTotal: 0, prodCat: '', prodQ: '', prodHasCert: false, prodLoc: 0, prodStatusFilter: '',
-  cats: [], bizConfig: { epc_prefix: 'E280', seq_bits: 8, currency: 'CNY', symbol: '￥' },
+  cats: [], bizConfig: { epc_prefix: 'E280', seq_bits: 8, currency: 'CNY', symbol: '￥', sale_item_limit: 20 },
   pointsRule: { earn: 1, redeem: 100, minOrder: 0 }, languages: [],
   catEdit: { code: '', names: { zh: '', en: '' }, sort_order: 0 }, catEditMode: 'new',
   // 商品品类（戒指/项链…）
@@ -99,7 +100,7 @@ var ST = Vue.reactive({
   deposits: [], depTotal: 0,
   sales: [], saleTotal: 0,
   subList: [], subTotal: 0, subPage: 1,
-  custQ: '', custStats: null,   // 会员管理：搜索关键字 + 统计（总数/今日/本月新增）
+  custQ: '', custPurchased: false, custStats: null,   // 会员管理：搜索关键字 + 是否搜已购商品 + 统计（总数/今日/本月新增）
   custFilter: '',               // 统计卡片过滤：''=全部 / today / month
   appointments: [], profile: null,
   invSum: null,
@@ -206,9 +207,8 @@ var ST = Vue.reactive({
   // 门店精简列表 / 库位主数据 / 经办人类别（基础数据，商品表单与设置页共用）
   stores: [],
   curStoreId: 0,      // 当前工作门店（由后端会话决定，只能在本人授权门店间切换）
-  // 店铺（上层组织）/ 门店管理编辑态
-  shops: [],
-  storeEdit: { id: 0, name: '', code: '', owner: '', shop_id: 0 }, storeEditMode: '',
+  // 门店管理编辑态
+  storeEdit: { id: 0, name: '', code: '', owner: '' }, storeEditMode: '',
   inboundStore: null,   // 门店内入库时锁定的门店对象
   locations: [], locStore: 0,
   locEdit: { id: 0, store_id: 0, code: '', name: '', sort_order: 0, active: 1 }, locEditMode: 'new',
@@ -513,7 +513,7 @@ if (typeof window.t !== 'function') { window.t = function (key) { return key; };
 
 // 高管(EXECUTIVE)：可跨所有门店巡查切换，但业务只读。
 // 行政/系统类写路径（与后端 executive_write_guard 白名单一致）：仅总店视图下放行
-var EXEC_ADMIN_PREFIXES = ['/api/admin/', '/api/shops', '/api/stores', '/api/profile', '/api/biz-config',
+var EXEC_ADMIN_PREFIXES = ['/api/admin/', '/api/stores', '/api/profile', '/api/biz-config',
   '/api/categories', '/api/product-types', '/api/label-templates', '/api/clerk-types',
   '/api/locations', '/api/sensors', '/api/label-papers'];
 
@@ -594,6 +594,22 @@ var STORE_ADMIN_SUBS = [
 ];
 // 旧入口兼容：ADMIN_SUBS 仍保留（isAdminSubAllowed 等引用），但页面渲染按 tab 分开
 var ADMIN_SUBS = HQ_ADMIN_SUBS.concat(STORE_ADMIN_SUBS);
+// 门店管理子 Tab（PC）：基本信息/积分规则/门店设备/库位管理 面板页签化；操作日志跳独立页
+var STORE_TABS = [
+  { key: 'info', icon: '📋', labelKey: 'store.baseInfo' },
+  { key: 'points', icon: '⭐', labelKey: 'pts.title' },
+  { key: 'devices', icon: '🛡️', labelKey: 'store.tabDevices' },
+  { key: 'locations', icon: '📍', labelKey: 'loc.title' },
+  { key: 'logs', icon: '📝', labelKey: 'nav.logs', page: 'logs' },
+];
+// 经营看板页签（tab==='dashboard' 下的 dashTab）：金价栏与时段筛选全局，其余按页签分区
+var DASH_TABS = [
+  { key: 'analysis', icon: '📊', labelKey: 'dash.tabAnalysis' },
+  { key: 'salestats', icon: '💰', labelKey: 'dash.tabSaleStats' },
+  { key: 'rank', icon: '🏆', labelKey: 'dash.tabRank' },
+  { key: 'todo', icon: '🕐', labelKey: 'dash.tabTodo' },
+  { key: 'recent', icon: '🧾', labelKey: 'dash.tabRecent' },
+];
 // 总部管理子视图（tab==='shops' 下的 shopsTab）：总部信息/企业推广/分店管理/品类管理/分类管理
 var SHOPS_TABS = [
   { key: 'info', icon: '🏢', labelKey: 'shops.tab.info' },
@@ -1165,6 +1181,14 @@ function setTheme(t) {
 }
 
 // ---- navigation ----
+// 门店管理子 Tab：面板页签切换；操作日志为独立页（go 跳转，数据加载沿用 logs 页）。
+// 从操作日志页点其他页签时需切回 stores 页（tab 仍停在 logs 上时仅改 storeSub 不会渲染）
+function switchStoreSub(key) {
+  var t = STORE_TABS.filter(function (x) { return x.key === key; })[0];
+  if (t && t.page) { go(t.page); return; }
+  ST.storeSub = key;
+  if (ST.tab !== 'stores') go('stores');
+}
 function go(tab) {
   // 系统管理员只做用户管理：除「功能介绍」外一律落到 总部系统管理-用户管理
   if (isSysAdmin() && tab !== 'docs') { ST.tab = 'hq-system'; ST.adminSub = 'users'; ST.subView = ''; loadAdminUsers(); loadStores(true); return; }
@@ -1187,12 +1211,12 @@ function go(tab) {
   if (ST.tab === 'appointments') loadAppt();
   if (ST.tab === 'showcase') loadShowcase();
   if (ST.tab === 'docs') loadDocs();
-  if (ST.tab === 'shops') { syncManageStore(); loadShops(); loadProfile(); }  // 总部管理按子页加载：只拉当前 tab 需要的数据，减少无谓请求
+  if (ST.tab === 'shops') { syncManageStore(); loadProfile(); }  // 总部管理按子页加载：只拉当前 tab 需要的数据，减少无谓请求
   if (ST.tab === 'shops' && ST.shopsTab === 'branches') { loadStores(true, true); loadBridgeList(); loadAllDevices(); loadSecSensors(); }
   if (ST.tab === 'shops' && ST.shopsTab === 'types') { loadProductTypes(); loadTemplates(); }
   if (ST.tab === 'shops' && ST.shopsTab === 'categories') { loadTags(); }
   if (ST.tab === 'shops' && ST.shopsTab === 'currency') { loadCurrency(); loadBizConfig(); }
-  if (ST.tab === 'stores') { syncManageStore(); loadShops(); loadStores(true); loadBridgeList(); loadLocations(); loadAllDevices(); }
+  if (ST.tab === 'stores') { syncManageStore(); loadStores(true); loadBridgeList(); loadLocations(); loadAllDevices(); }
   if (ST.tab === 'hq-system') {
     normalizeAdminSub();
     loadProfile(); loadBizConfig(); loadCurrency(); loadClerkTypes(); loadProductTypes(); loadLocations();
@@ -1422,6 +1446,17 @@ function saleClerkDonut() {
     return seg;
   });
 }
+// 支付方式占比（销售分析）：组合支付单已由后端按 sale_payments 拆分到各方式
+function saleMethodSum() { return ((ST.saleAna.data && ST.saleAna.data.methods) || []).reduce(function (s, c) { return s + (c.amount || 0); }, 0); }
+function saleMethodDonut() {
+  var items = (ST.saleAna.data && ST.saleAna.data.methods) || [], sum = saleMethodSum() || 1, acc = 0;
+  return items.map(function (c, i) {
+    var pct = Math.round((c.amount || 0) * 1000 / sum) / 10;
+    var seg = { pct: pct, offset: -acc, color: i % 6, key: c.method };
+    acc += pct;
+    return seg;
+  });
+}
 function loadDash() {
   var rg = dateRangeCompute(ST.dashRange.mode, ST.dashRange.start, ST.dashRange.end);
   ST.dashRange.curStart = rg.start; ST.dashRange.curEnd = rg.end;   // 首屏也要显示当前区间文本
@@ -1611,7 +1646,7 @@ function refreshAll() {
   // 停在总部/门店管理页时按原口径带 detail 重取，避免无统计版本覆盖卡片数据
   var storesUrl = ST.tab === 'shops' ? '/api/stores?all=1&detail=1'
     : (ST.tab === 'stores' ? '/api/stores?all=1' : '/api/stores');
-  api('GET', storesUrl).then(function (r) { ST.stores = r || []; loadShops(); return loadLocations(); }).catch(function () {});
+  api('GET', storesUrl).then(function (r) { ST.stores = r || []; return loadLocations(); }).catch(function () {});
   loadClerkTypes();
   loadTemplates();
   loadHealth();
@@ -1637,6 +1672,7 @@ function loadSubList() {
   var extra = '';
   if (ST.subView === 'customers') {
     if (ST.custQ) extra += '&keyword=' + encodeURIComponent(ST.custQ.trim());
+    if (ST.custQ && ST.custPurchased) extra += '&purchased=1';
     if (ST.custFilter) extra += '&filter=' + ST.custFilter;
   }
   // 日期范围过滤（对应 ST 里各 Range 对象，start/end 非空时拼入 query）
@@ -1834,8 +1870,9 @@ function recordLines(kind, d) {
   var L = [];
   if (!d) return L;
   if (kind === 'repairs') {
-    L.push(joinLine([d.item, d.issue]));
+    L.push(joinLine([d.repair_no]));
     L.push(joinLine([d.customer, d.phone, d.technician ? (t('lbl.technician') + ' ' + d.technician) : '']));
+    L.push(joinLine([d.item, d.issue]));   // 维修名称 + 维修具体内容
     L.push(joinLine([
       d.receive_date ? (t('rec.receive') + ' ' + d.receive_date) : '',
       d.promised_date ? (t('rec.promised') + ' ' + d.promised_date) : '',
@@ -1911,7 +1948,7 @@ function recordKind() { return ST.subView || ST.tab; }
 
 // 详情面板：字段表（[显示名, 字段名]，空值自动跳过）
 var DETAIL_FIELDS = {
-  repairs: [['维修物品', 'item'], ['客户', 'customer'], ['电话', 'phone'], ['问题描述', 'issue'],
+  repairs: [['单号', 'repair_no'], ['维修物品', 'item'], ['客户', 'customer'], ['电话', 'phone'], ['问题描述', 'issue'],
             ['预估费用', 'est_fee'], ['实收费用', 'actual_fee'], ['收件日', 'receive_date'],
             ['承诺交期', 'promised_date'], ['完成日', 'done_date'], ['技师', 'technician'],
             ['状态', 'status'], ['备注', 'remark']],
@@ -1952,7 +1989,77 @@ function detailValue(k, v) {
 
 function openRecordDetail(kind, d) {
   ST.detailKind = kind || recordKind();
+  // 详情面板要展示商品图：商品缓存为空时兜底加载（名称/货号反查与 image_ts 都依赖它）
+  if (!(ST.products && ST.products.length)) reloadProducts();
   openSheet('detail', t(SUB_TITLES[ST.detailKind] || '') || t('act.detail'), Object.assign({}, d));
+}
+
+// 详情面板商品图（返回 [{url, name}]，点击看大图）：
+// 维修单优先用接单实拍照片；其余按 product_id→货号→名称反查（同名 → 互相包含 → 最长公共子串≥2）
+function detailImages() {
+  var d = ST.sheetData || {}, kind = ST.detailKind, out = [];
+  function pushUrl(url, name) {
+    if (url && !out.some(function (x) { return x.url === url; }))
+      out.push({ url: url, name: name || '' });
+  }
+  function pushProd(p, name) {
+    if (p && p.id) pushUrl(productThumbUrl({ id: p.id, image_ts: p.image_ts || '' }), name || p.name || '');
+  }
+  function byId(pid) {
+    return (ST.products || []).filter(function (p) { return p.id === pid; })[0] || null;
+  }
+  function byCode(cd) {
+    var s = String(cd || '').trim().toUpperCase();
+    if (!s) return null;
+    return (ST.products || []).filter(function (p) { return String(p.code || '').toUpperCase() === s; })[0] || null;
+  }
+  function lcsLen(a, b) {
+    var m = 0, prev = [];
+    for (var j = 0; j <= b.length; j++) prev[j] = 0;
+    for (var i = 1; i <= a.length; i++) {
+      var cur = [0];
+      for (var j2 = 1; j2 <= b.length; j2++) {
+        cur[j2] = a.charAt(i - 1) === b.charAt(j2 - 1) ? prev[j2 - 1] + 1 : 0;
+        if (cur[j2] > m) m = cur[j2];
+      }
+      prev = cur;
+    }
+    return m;
+  }
+  function byName(nm) {
+    var s = String(nm || '').trim();
+    if (!s || s.length < 2) return null;
+    var ps = ST.products || [];
+    var exact = ps.filter(function (p) { return p.name === s; })[0];
+    if (exact) return exact;
+    var part = ps.filter(function (p) { return p.name && (s.indexOf(p.name) >= 0 || p.name.indexOf(s) >= 0); })[0];
+    if (part) return part;
+    var best = null, bestScore = 1;
+    ps.forEach(function (p) {
+      if (!p.name) return;
+      var sc = lcsLen(s, p.name);
+      if (sc > bestScore || (sc === bestScore && best && p.id < best.id)) { best = p; bestScore = sc; }
+    });
+    return bestScore >= 2 ? best : null;
+  }
+  if (kind === 'repairs' && d.photos && d.photos.length) {
+    (d.photos || []).forEach(function (ph) {
+      pushUrl(API + '/api/repairs/photo/' + ph.id + '/thumb' + (ph.ts ? '?v=' + encodeURIComponent(ph.ts) : ''), d.item);
+    });
+    return out;
+  }
+  if (kind === 'sales') {
+    (d.items || []).forEach(function (it) {
+      pushProd(byId(it.product_id) || byCode(it.code) || byName(it.name), it.name);
+    });
+  } else if (kind === 'deposits') {
+    pushProd(byId(d.product_id) || byCode(d.product_code) || byName(d.product), d.product);
+  } else if (kind === 'loans') {
+    pushProd(byCode(d.code) || byName(d.product), d.product);
+  } else if (kind === 'repairs' || kind === 'purchases' || kind === 'outsourcings') {
+    pushProd(byId(d.product_id) || byCode(d.code) || byName(d.item || d.product), d.item || d.product);
+  }
+  return out;
 }
 
 // 看板「最近销售」卡片点击：展开该订单详情
@@ -1977,11 +2084,22 @@ function detailRows() {
   return out;
 }
 
-// 从详情面板切到编辑表单（沿用各自的编辑面板）
+// 从详情面板切到编辑表单（沿用各自的编辑面板）。
+// 注意：历史上这里与商品详情面板各有一个同名 editFromDetail（函数声明后者覆盖前者），
+// 曾导致维修/会员等详情面板的编辑按钮错误打开商品编辑——现已合并为唯一入口。
 function editFromDetail() {
   var d = ST.sheetData || {}, kind = ST.detailKind;
   if (kind === 'repairs') editRepair(d);
   else if (kind === 'customers') editCustomer(d);
+  else if (kind === 'products') {
+    // 商品详情面板：先取快照关面板，再走原编辑动线（币种换算/在途拦截都在 editProduct）；
+    // 标记来源：保存成功后回到详情面板（而不是返回列表）
+    var p = Object.assign({}, d);
+    closeSheet();
+    editProduct(p);
+    if (ST.sheetMode === 'product' && p.id) ST._retDetail = p.id;
+    return;
+  }
   else if (kind === 'deposits') openSheet('deposit', t('sheet.depositEdit'), Object.assign({}, d));
   else if (kind === 'loans') openSheet('loan', t('sheet.loan'), Object.assign({}, d));
   else if (kind === 'purchases') openSheet('purchase', t('sheet.purchase'), Object.assign({}, d));
@@ -2374,11 +2492,8 @@ function saleStoreId() {
   return f ? f.store_id : 0;
 }
 function saleItemLimit() {
-  var sid = saleStoreId();
-  if (!sid) return 0;   // 尚未选商品：不限（由店铺上限在首件后生效）
-  var st = ST.stores.find(function (x) { return x.id === sid; });
-  var shop = st && ST.shops.find(function (p) { return p.id === st.shop_id; });
-  return shop ? (Number(shop.sale_item_limit) || 0) : 0;
+  // 每单件数上限：租户级业务配置（原挂在店铺上，店铺层级已移除）
+  return Number(ST.bizConfig.sale_item_limit) || 0;
 }
 function round2(x) { return Math.round((Number(x) || 0) * 100) / 100; }
 // 本地时区的今天（YYYY-MM-DD）：toISOString 是 UTC，上海 0-8 点会默认成昨天
@@ -2386,13 +2501,14 @@ function localToday() {
   var d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
-// 单件小计：计件=单价；计重=克重×金价+工费
+// 单行小计：计件=售价×数量；计重=(克重×金价+工费)×数量（qty 缺省 1）
 function itemSubtotal(it) {
   if (!it) return 0;
+  var n = Math.max(1, Math.floor(Number(it.qty) || 1));
   if (it.pricing_mode === 'weight') {
-    return round2((Number(it.weight) || 0) * (Number(it.gold_price) || 0) + (Number(it.labor_fee) || 0));
+    return round2(((Number(it.weight) || 0) * (Number(it.gold_price) || 0) + (Number(it.labor_fee) || 0)) * n);
   }
-  return round2(Number(it.price) || 0);
+  return round2((Number(it.price) || 0) * n);
 }
 function saleReceivable() {
   return round2((ST.sheetData.items || []).reduce(function (s, it) { return s + itemSubtotal(it); }, 0));
@@ -2431,7 +2547,7 @@ function addSaleItem(p) {
     product_id: p.id, name: p.name, code: p.code || '', epc: p.rfid_epc || '',
     store_id: p.store_id || 0, pricing_mode: mode,
     weight: Number(p.weight) || 0, gold_price: gold, labor_fee: 0,
-    price: Number(p.price) || 0,
+    price: Number(p.price) || 0, qty: 1,
   });
   if (mode === 'weight' && !(gold > 0)) toast(t('sale.goldNeed'), 'error');
   toast(t('sale.added') + '：' + p.code + ' ' + p.name);
@@ -2504,7 +2620,7 @@ function onNameInput() {
   if (d.member && d.customer !== d.member.name) d.member = null;
   if (d._memTimer) clearTimeout(d._memTimer);
   var kw = String(d.customer || '').trim();
-  if (kw.length < 2) { d._memOpen = false; d._memList = []; return; }
+  if (!kw) { d._memOpen = false; d._memList = []; return; }   // 输 1 个字就开始匹配（后端 name LIKE）
   d._memTimer = setTimeout(function () {
     api('GET', '/api/customers/lookup?phone=' + encodeURIComponent(kw)).then(function (r) {
       // 优先按姓名匹配
@@ -3616,6 +3732,55 @@ payRows +
   setTimeout(function () { try { w.print(); } catch (e) {} }, 250);
 }
 
+// 维修小票（取货凭证）：58mm 热敏样式，与销售小票同管线（浏览器打印）
+function printRepairTicket(d) {
+  if (!d) return;
+  var shop = (ST.profile && (ST.profile.name || ST.profile.shop_name)) || '';
+  var esc = function (x) {
+    return String(x == null ? '' : x).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  };
+  var html =
+'<!doctype html><html><head><meta charset="utf-8"><title>' + esc(d.repair_no || '') + '</title>' +
+'<style>@page{size:58mm auto;margin:0}body{font-family:"Microsoft YaHei",sans-serif;width:58mm;margin:0;padding:6px 4px;color:#000;font-size:12px;line-height:1.55}' +
+'.c{text-align:center}.b{font-weight:700}.t1{font-size:15px}.sep{border-top:1px dashed #000;margin:6px 0}table{width:100%;border-collapse:collapse}td{padding:1px 0;vertical-align:top}' +
+'.r{text-align:right}.g{margin-top:4px}</style></head><body>' +
+'<div class="c b t1">' + esc(shop) + '</div>' +
+'<div class="c">' + t('rep.ticketTitle') + '</div>' +
+'<div class="sep"></div>' +
+'<table>' +
+'<tr><td>' + t('sale.receiptNo') + '</td><td class="r">' + esc(d.repair_no || '') + '</td></tr>' +
+'<tr><td>' + t('rec.receive') + '</td><td class="r">' + esc(d.receive_date || '') + '</td></tr>' +
+(d.technician ? '<tr><td>' + t('lbl.technician') + '</td><td class="r">' + esc(d.technician) + '</td></tr>' : '') +
+(d.customer ? '<tr><td>' + t('lbl.customer') + '</td><td class="r">' + esc(d.customer) + '</td></tr>' : '') +
+(d.phone ? '<tr><td>' + t('lbl.mobile') + '</td><td class="r">' + esc(d.phone) + '</td></tr>' : '') +
+'</table>' +
+'<div class="sep"></div>' +
+'<table>' +
+'<tr><td>' + t('lbl.item') + '</td><td class="r">' + esc(d.item || '') + '</td></tr>' +
+(d.issue ? '<tr><td>' + t('lbl.issue') + '</td><td class="r">' + esc(d.issue) + '</td></tr>' : '') +
+(d.remark ? '<tr><td>' + t('lbl.remark') + '</td><td class="r">' + esc(d.remark) + '</td></tr>' : '') +
+'</table>' +
+'<div class="sep"></div>' +
+'<table>' +
+'<tr><td>' + t('lbl.estFee') + '</td><td class="r">' + fmtY(d.est_fee || 0) + '</td></tr>' +
+(Number(d.actual_fee) > 0 ? '<tr><td>' + t('lbl.actualFee') + '</td><td class="r b">' + fmtY(d.actual_fee) + '</td></tr>' : '') +
+'<tr><td>' + t('lbl.status') + '</td><td class="r">' + esc(statusText(d.status)) + '</td></tr>' +
+'</table>' +
+'<div class="sep"></div>' +
+'<div class="c g">' + t('rep.ticketKeep') + '</div>' +
+'<div class="c">' + t('sale.receiptThanks') + '</div>' +
+'</body></html>';
+  var w = window.open('', '_blank', 'width=360,height=600');
+  if (!w) { toast(t('sale.receiptBlocked'), 'error'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(function () { try { w.print(); } catch (e) {} }, 250);
+}
+
 // ---------------- 商品图片：4:3 裁切（可横/竖，长边 800px，商品居中可人工调整，WebP q80） ----------------
 var IMG_LONG_EDGE = 800;
 var IMG_QUALITY = 0.8;
@@ -3637,6 +3802,20 @@ function chooseProductImage(pid) {
   _imgFileInput.dataset.pid = String(pid || 0);
   _imgFileInput.click();
 }
+// 编辑态点图 = 重新进入裁切编辑（不是看大图；看大图走详情面板）：
+// 已暂存图直接进；已存商品取现图转 dataURL 进；取图失败回退选新文件
+function editProductImage(pid) {
+  if (ST.pendingImg) { openImgCrop(0, ST.pendingImg); return; }
+  if (!pid) { chooseProductImage(pid); return; }
+  fetch(productImageUrl({ id: pid, image_ts: ST.sheetData && ST.sheetData.image_ts }))
+    .then(function (r) { if (!r.ok) throw new Error('no image'); return r.blob(); })
+    .then(function (b) {
+      var fr = new FileReader();
+      fr.onload = function () { openImgCrop(pid, fr.result); };
+      fr.readAsDataURL(b);
+    })
+    .catch(function () { chooseProductImage(pid); });
+}
 function onProductImageChosen(e) {
   var input = e.target;
   var f = input.files && input.files[0];
@@ -3653,9 +3832,11 @@ function onProductImageChosen(e) {
   };
   reader.readAsDataURL(f);
 }
-function openImgCrop(pid, src) {
+function openImgCrop(pid, src, opts) {
   var ic = ST.imgCrop;
   ic.pid = pid; ic.src = src; ic.orient = ic.orient || 'landscape';
+  ic.dst = (opts && opts.dst) || 'product';          // product=确认即上传；repair=确认只回写表单照片
+  ic.dstIdx = (opts && opts.idx != null) ? opts.idx : -1;
   ic.zoom = 1; ic.tx = 0; ic.ty = 0; ic.busy = false;
   ic.rot = 0; ic.mirrorX = false; ic.mirrorY = false;
   ic.iw = 0; ic.ih = 0;
@@ -3680,27 +3861,48 @@ function imgFrameSize() {
   var el = document.getElementById('img-crop-frame');
   return { w: el ? el.clientWidth : 480, h: el ? el.clientHeight : 360 };
 }
-// 按 cover 方式铺满裁切框并居中（base 按旋转包围盒算；tx/ty 是未旋转图片左上角平移，居中必须围绕图片中心）
+// 载入时按 cover 方式铺满裁切框并居中（长或宽撑满）。base 只在此定一次：
+// 之后旋转/镜像/改比例都不重算 base、不重置 zoom，人工缩放的视觉大小始终保持。
 function resetImgCrop() {
   var ic = ST.imgCrop;
   if (!ic.iw) return;
-  var eff = cropEffDims();
   var f = imgFrameSize();
-  ic.base = Math.max(f.w / eff.bw, f.h / eff.bh);
+  ic.base = Math.max(f.w / ic.iw, f.h / ic.ih);   // 长或宽撑满（cover）
   ic.zoom = 1;
   var s = ic.base;
   ic.tx = (f.w - ic.iw * s) / 2;
   ic.ty = (f.h - ic.ih * s) / 2;
   _clampPan();
 }
+// 当前旋转包围盒下盖住裁切框所需的最小显示比例
+function cropMinScale() {
+  var ic = ST.imgCrop, f = imgFrameSize();
+  var eff = cropEffDims();
+  return Math.max(f.w / eff.bw, f.h / eff.bh);
+}
+// 旋转/镜像/改比例后调用：不改视觉大小、不动中心，仅当新姿态盖不住裁切框时
+// 按几何必需把缩放提到最小覆盖值（以画面中心为锚），再约束平移范围。
+function _keepCover() {
+  var ic = ST.imgCrop, f = imgFrameSize();
+  if (!ic.base) return;
+  var minScale = cropMinScale();
+  var s = ic.base * ic.zoom;
+  if (s < minScale) {
+    var k = minScale / s;
+    ic.tx = f.w / 2 - (f.w / 2 - ic.tx) * k;
+    ic.ty = f.h / 2 - (f.h / 2 - ic.ty) * k;
+    ic.zoom = minScale / ic.base;
+  }
+  _clampPan();
+}
 function setImgOrient(o) {
   ST.imgCrop.orient = o;
-  Vue.nextTick(resetImgCrop);
+  Vue.nextTick(_keepCover);   // 等裁切框尺寸更新后再校验覆盖
 }
-// 旋转滑块（步进 30°，棘轮顿挫）；镜像切换；变更后按新包围盒重新 cover 居中
+// 旋转滑块（步进 30°，棘轮顿挫）；镜像切换；均不改变图片显示大小
 function setImgRot(v) {
   ST.imgCrop.rot = Number(v) || 0;
-  Vue.nextTick(resetImgCrop);
+  Vue.nextTick(_keepCover);
 }
 // 松手吸附特殊角度（0/90/180/270/360）：±3° 内自动吸附，其余保持任意角度
 function snapImgRot(v) {
@@ -3710,15 +3912,15 @@ function snapImgRot(v) {
     if (Math.abs(rot - targets[i]) <= 3) { rot = targets[i] % 360; break; }
   }
   ST.imgCrop.rot = rot;
-  Vue.nextTick(resetImgCrop);
+  Vue.nextTick(_keepCover);
 }
 function toggleMirrorX() {
   ST.imgCrop.mirrorX = !ST.imgCrop.mirrorX;
-  Vue.nextTick(resetImgCrop);
+  Vue.nextTick(_keepCover);
 }
 function toggleMirrorY() {
   ST.imgCrop.mirrorY = !ST.imgCrop.mirrorY;
-  Vue.nextTick(resetImgCrop);
+  Vue.nextTick(_keepCover);
 }
 function cropImgStyle() {
   var ic = ST.imgCrop;
@@ -3766,7 +3968,8 @@ function cropWheel(e) {
   var ic = ST.imgCrop, f = imgFrameSize();
   var old = ic.zoom;
   var nz = old * (e.deltaY < 0 ? 1.1 : 1 / 1.1);
-  nz = Math.max(1, Math.min(5, nz));
+  var minZ = cropMinScale() / ic.base;   // 覆盖裁切框的最小缩放（旋转后可能 >1）
+  nz = Math.max(minZ, Math.min(5, nz));
   if (nz === old) return;
   // 以画面中心为锚点缩放
   var cx = f.w / 2, cy = f.h / 2;
@@ -3804,6 +4007,15 @@ function confirmImgCrop() {
   ctx.drawImage(_cropImg, -ic.iw / 2, -ic.ih / 2);
   ic.busy = true;
   var done = function (dataUrl) {
+    if (ic.dst === 'repair') {
+      // 维修照片：只回写表单（随提交统一上传），不直传
+      if (ST.sheetData && ST.sheetData.photos && ST.sheetData.photos[ic.dstIdx]) {
+        ST.sheetData.photos[ic.dstIdx].url = dataUrl;
+        toast(t('img.saved'));
+      }
+      closeImgCrop();
+      return;
+    }
     if (!ic.pid) {
       // 新商品：暂存图片，点「确认提交」时与商品一起保存
       ST.pendingImg = dataUrl;
@@ -3847,9 +4059,9 @@ function sheetImgSrc() {
   if (ST.pendingImg) return ST.pendingImg;
   return d.image_ts ? productImageUrl(d) : '';
 }
-// 点击缩略图看大图：传商品对象取其图片；不传参回退编辑表单内图片
+// 点击缩略图看大图：传商品对象取其图片；传 {url} 直接用；不传参回退编辑表单内图片
 function viewProductImage(p) {
-  var src = p && p.image_ts ? productImageUrl(p) : sheetImgSrc();
+  var src = p && p.url ? p.url : (p && p.image_ts ? productImageUrl(p) : sheetImgSrc());
   if (!src) return;
   ST.imgViewer.src = src;
   ST.imgViewer.meta = '';
@@ -3870,16 +4082,10 @@ function viewProductImage(p) {
 function openProdDetail(p) {
   if (!p || !p.id) return;
   ST.sheetNameLang = ST.lang;
+  ST.detailKind = 'products';   // 详情面板编辑按钮（editFromDetail）按此分发到商品编辑
   openSheet('product-detail', t('prod.detailTitle'), Object.assign({}, p));
 }
-// 详情面板 → 编辑：先取快照关面板，再走原编辑动线（币种换算/在途拦截都在 editProduct）
-// 标记来源：保存成功后回到详情面板（而不是返回列表）
-function editFromDetail() {
-  var p = Object.assign({}, ST.sheetData || {});
-  closeSheet();
-  editProduct(p);
-  if (ST.sheetMode === 'product' && p.id) ST._retDetail = p.id;
-}
+// 详情面板 → 编辑：统一走上方唯一的 editFromDetail（商品分支在 kind==='products'）
 
 // ---------------- 门店调拨 ----------------
 function reloadProducts() {
@@ -4369,11 +4575,64 @@ function applyCoopEpc(epc) {
 }
 
 function openRepair() {
-  openSheet('repair', t('sheet.repair'), { customer: '', phone: '', item: '', issue: '', est_fee: 0, actual_fee: 0, receive_date: localToday(), promised_date: '', status: '待维修', technician: '', remark: '' });
+  openSheet('repair', t('sheet.repair'), { customer: '', phone: '', item: '', issue: '', est_fee: 0, actual_fee: 0, receive_date: localToday(), promised_date: '', status: '待维修', technician: '', remark: '', photos: [] });
 }
 
 function editRepair(d) {
-  openSheet('repair', t('sheet.repair'), Object.assign({}, d));
+  var dd = Object.assign({}, d);
+  // 已有照片带进编辑表单（url 预览 + keep_id 保留标记；新加的存 dataURL）
+  dd.photos = (d.photos || []).map(function (ph) {
+    return { url: repPhotoUrl(ph.id, ph.ts), keep_id: ph.id };
+  });
+  openSheet('repair', t('sheet.repair'), dd);
+}
+
+// ---- 维修单照片（接单必传 ≥1 张，最多 3 张；客户端压缩 WebP q80 长边 800）----
+var REP_PHOTO_MAX = 3;
+function repPhotoUrl(pid, ts) {
+  return API + '/api/repairs/photo/' + pid + (ts ? '?v=' + encodeURIComponent(ts) : '');
+}
+function repThumbUrl(d) {
+  if (!d || !d.photo_id) return '';
+  return API + '/api/repairs/photo/' + d.photo_id + '/thumb' + (d.photo_ts ? '?v=' + encodeURIComponent(d.photo_ts) : '');
+}
+function repPhotoThumbUrl(ph) {
+  if (!ph || !ph.id) return '';
+  return API + '/api/repairs/photo/' + ph.id + '/thumb' + (ph.ts ? '?v=' + encodeURIComponent(ph.ts) : '');
+}
+function removeRepairPhoto(i) { ST.sheetData.photos.splice(i, 1); }
+// 点维修照片 = 进裁切编辑（缩放/旋转/镜像），确认后回写该张；提交时统一上传
+function editRepairPhoto(i) {
+  var p = ST.sheetData && ST.sheetData.photos ? ST.sheetData.photos[i] : null;
+  if (!p || !p.url) return;
+  openImgCrop(0, p.url, { dst: 'repair', idx: i });
+}
+function addRepairPhotos(ev) {
+  var files = Array.prototype.slice.call((ev.target && ev.target.files) || []);
+  ev.target.value = '';
+  var d = ST.sheetData;
+  files = files.slice(0, REP_PHOTO_MAX - (d.photos || []).length);
+  if (!files.length) { toast(t('rep.photoMax', { n: REP_PHOTO_MAX }), 'error'); return; }
+  var firstNewIdx = -1;
+  files.forEach(function (f) {
+    if (!/^image\//.test(f.type)) return;
+    var fr = new FileReader();
+    fr.onload = function () {
+      var img = new Image();
+      img.onload = function () {
+        var long = Math.max(img.naturalWidth, img.naturalHeight);
+        var scale = long > 800 ? 800 / long : 1;
+        var cv = document.createElement('canvas');
+        cv.width = Math.round(img.naturalWidth * scale);
+        cv.height = Math.round(img.naturalHeight * scale);
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        d.photos.push({ url: cv.toDataURL('image/webp', 0.8) });
+        if (firstNewIdx < 0) { firstNewIdx = d.photos.length - 1; editRepairPhoto(firstNewIdx); }
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(f);
+  });
 }
 
 function openPurchase() {
@@ -4571,13 +4830,20 @@ function submitSheet() {
       .map(function (p) { return { method: p.method || '现金', amount: round2(Number(p.amount) || 0) }; });
     if (!pays.length) { toast(t('sale.payNeed'), 'error'); return; }
     if (salePaid() > salePayable() + 0.01) { toast(t('sale.paidTooBig'), 'error'); return; }
-    var saleItems = rawItems.map(function (it) {
-      return {
-        product_id: it.product_id, epc: it.epc || '', code: it.code || '',
-        price: it.pricing_mode === 'weight' ? itemSubtotal(it) : (Number(it.price) || 0),
-        gold_price: it.pricing_mode === 'weight' ? (Number(it.gold_price) || 0) : 0,
-        labor_fee: it.pricing_mode === 'weight' ? (Number(it.labor_fee) || 0) : 0,
-      };
+    // 数量列：按 qty 展开为多件提交（同款多件由后端自动匹配同货号其他在库件）
+    var saleItems = [];
+    rawItems.forEach(function (it) {
+      var n = Math.max(1, Math.min(999, Math.floor(Number(it.qty) || 1)));
+      for (var k = 0; k < n; k++) {
+        saleItems.push({
+          product_id: it.product_id, epc: it.epc || '', code: it.code || '',
+          price: it.pricing_mode === 'weight'
+            ? round2((Number(it.weight) || 0) * (Number(it.gold_price) || 0) + (Number(it.labor_fee) || 0))
+            : (Number(it.price) || 0),
+          gold_price: it.pricing_mode === 'weight' ? (Number(it.gold_price) || 0) : 0,
+          labor_fee: it.pricing_mode === 'weight' ? (Number(it.labor_fee) || 0) : 0,
+        });
+      }
     });
     api('POST', '/api/sales', {
       customer: d.customer || '', phone: d.phone || '',
@@ -4633,9 +4899,13 @@ function submitSheet() {
     }).catch(function (e) { toast(e.message, 'error'); });
   } else if (ST.sheetMode === 'repair') {
     if (!d.customer) { toast(t('toast.fillCustomer'), 'error'); return; }
+    // 接单（新增）必传 ≥1 张；更新状态（编辑）允许删到 0 张
+    if (!d.id && !(d.photos || []).length) { toast(t('rep.photoRequired'), 'error'); return; }
     var rm = d.id ? 'PUT' : 'POST';
     var ru = d.id ? '/api/repairs/' + d.id : '/api/repairs';
-    api(rm, ru, { customer: d.customer || '', phone: d.phone || '', item: d.item || '', issue: d.issue || '', est_fee: Number(d.est_fee) || 0, actual_fee: Number(d.actual_fee) || 0, receive_date: d.receive_date || '', promised_date: d.promised_date || '', status: d.status || '待维修', technician: d.technician || '', remark: d.remark || '' }).then(function () {
+    var rKeep = (d.photos || []).filter(function (p) { return p.keep_id; }).map(function (p) { return p.keep_id; });
+    var rNew = (d.photos || []).filter(function (p) { return !p.keep_id && /^data:/.test(p.url); }).map(function (p) { return p.url; });
+    api(rm, ru, { customer: d.customer || '', phone: d.phone || '', item: d.item || '', issue: d.issue || '', est_fee: Number(d.est_fee) || 0, actual_fee: Number(d.actual_fee) || 0, receive_date: d.receive_date || '', promised_date: d.promised_date || '', status: d.status || '待维修', technician: d.technician || '', remark: d.remark || '', photos: rNew, photos_keep: d.id ? rKeep : null }).then(function () {
       toast(t('toast.saveOk')); closeSheet(); loadSubList();
     }).catch(function (e) { toast(e.message, 'error'); });
   } else if (ST.sheetMode === 'purchase') {
@@ -4825,6 +5095,7 @@ function exportCustomers() {
   var url = API + '/api/customers/export';
   var sep = '?';
   if (ST.custQ) { url += sep + 'keyword=' + encodeURIComponent(ST.custQ); sep = '&'; }
+  if (ST.custQ && ST.custPurchased) { url += sep + 'purchased=1'; }
   if (ST.custFilter) { url += sep + 'filter=' + ST.custFilter; }
   window.open(url, '_blank');
   toast(t('toast.exportOk'));
@@ -5847,7 +6118,7 @@ function startHealthTimer() {
 }
 function createStore() {
   ST.storeEditMode = 'new';
-  ST.storeEdit = { id: 0, name: '', code: '', owner: '', shop_id: (ST.shops[0] && ST.shops[0].id) || 0 };
+  ST.storeEdit = { id: 0, name: '', code: '', owner: '', owner_phone: '', address: '' };
 }
 function editStoreInline(s) {
   ST.inlineEditStoreId = ST.inlineEditStoreId === s.id ? 0 : s.id;
@@ -5867,9 +6138,9 @@ function cancelStoreInline() {
 }
 function editStore(s) {
   ST.storeEditMode = 'edit';
-  ST.storeEdit = { id: s.id, name: s.name, code: s.code || '', owner: s.owner || '', shop_id: s.shop_id || 0, display_currency: s.display_currency || '' };
+  ST.storeEdit = { id: s.id, name: s.name, code: s.code || '', owner: s.owner || '', owner_phone: s.owner_phone || '', address: s.address || '', display_currency: s.display_currency || '' };
 }
-function resetStoreEdit() { ST.storeEditMode = ''; ST.storeEdit = { id: 0, name: '', code: '', owner: '', shop_id: 0, display_currency: '' }; }
+function resetStoreEdit() { ST.storeEditMode = ''; ST.storeEdit = { id: 0, name: '', code: '', owner: '', owner_phone: '', address: '', display_currency: '' }; }
 function saveStoreCurrency() {
   var d = ST.storeEdit;
   api('PUT', '/api/stores/' + d.id + '/display-currency', { display_currency: d.display_currency || '' }).then(function () {
@@ -5880,10 +6151,10 @@ function saveStore() {
   var d = ST.storeEdit;
   if (!d.name || !d.name.trim()) { toast(t('shop.storeNameReq'), 'error'); return; }
   // 门店编号由后端自动生成（0001 起）且不可修改，前端不提交 code
-  var payload = { name: d.name.trim(), owner: (d.owner || '').trim(), shop_id: d.shop_id || 0, display_currency: d.display_currency || '' };
+  var payload = { name: d.name.trim(), owner: (d.owner || '').trim(), owner_phone: (d.owner_phone || '').trim(), address: (d.address || '').trim(), display_currency: d.display_currency || '' };
   var req = d.id ? api('PUT', '/api/stores/' + d.id, payload) : api('POST', '/api/stores', payload);
   req.then(function () {
-    toast(t('toast.saveOk')); resetStoreEdit(); loadShops(); loadStores(true, ST.tab === 'shops'); loadBridgeList(); loadCurrency();
+    toast(t('toast.saveOk')); resetStoreEdit(); loadStores(true, ST.tab === 'shops'); loadBridgeList(); loadCurrency();
   }).catch(function (e) { toast(e.message, 'error'); });
 }
 
@@ -5896,11 +6167,6 @@ function loadStores(all, detail) {
     loadLocations();
   }).catch(function () {});
 }
-function loadShops() {
-  api('GET', '/api/shops').then(function (r) { ST.shops = r || []; }).catch(function () {});
-}
-// 门店管理：按店铺分组（分组数据受总店/分店可见性约束：分店只有本店）
-function storesByShop(shopId) { return manageStores().filter(function (s) { return (s.shop_id || 0) === shopId && String(s.code || '').toUpperCase() !== 'HQ'; }); }
 // 门店管理页选中态校正：分店锁定当前工作门店，总店默认选第一家
 function syncManageStore() {
   if (!isHqStore()) {
@@ -5941,7 +6207,6 @@ function storeSecStore(sid) { return ST.secSensors.filter(function (x) { return 
 function loadSecSensors() {
   api('GET', '/api/sensors').then(function (r) { ST.secSensors = r.items || []; }).catch(function () {});
 }
-function shopOfStore(s) { return ST.shops.find(function (p) { return p.id === (s && s.shop_id); }) || null; }
 // 门店内入库：固定门店打开入库面板
 function inboundForStore(s) { openInbound(s); }
 function revokePrintAgent(aid) {
@@ -6227,13 +6492,6 @@ var app = Vue.createApp({
         return true;
       });
     },
-    // 门店管理页可见的店铺分组：总店全部，分店只有本店所属店铺（避免列出其他门店/空分组）
-    manageShops: function () {
-      if (isHqStore()) return ST.shops;
-      var cur = workStore();
-      var sid = cur ? cur.shop_id : 0;
-      return ST.shops.filter(function (p) { return p.id === sid; });
-    },
     adminSubs: function () {
       // 旧兼容：isAdminSubAllowed 过滤的全集合（实际两页各自用 hqAdminSubs / storeAdminSubs）
       return ADMIN_SUBS.filter(function (s) {
@@ -6256,6 +6514,9 @@ var app = Vue.createApp({
     shopsTabs: function () {
       return SHOPS_TABS.map(function (x) { return { key: x.key, icon: x.icon, label: t(x.labelKey) }; });
     },
+    // 门店管理子 Tab（页签化面板；操作日志跳独立页）
+    storeTabs: function () { return STORE_TABS; },
+    dashTabs: function () { return DASH_TABS; },
     cats: function () {
       var list = (ST.cats || []).map(function (c) { return (c.names && c.names.zh) || c.code; });
       return list.length ? list : CATS;
@@ -6280,7 +6541,10 @@ var app = Vue.createApp({
     // 门店管理：当前选中门店 / 其打印桥 / 其库位 / 所属店铺
     curStore: function () { return ST.stores.find(function (s) { return s.id === ST.locStore; }) || null; },
     curLocations: function () { return ST.locations.filter(function (l) { return l.store_id === ST.locStore; }); },
-    curShop: function () { var s = ST.stores.find(function (x) { return x.id === ST.locStore; }); return s ? (ST.shops.find(function (p) { return p.id === s.shop_id; }) || null) : null; },
+    // 总部管理：业务门店平铺列表（不含总部门店角色）
+    branchStores: function () {
+      return manageStores().filter(function (s) { return String(s.code || '').toUpperCase() !== 'HQ'; });
+    },
     // 多件开单：件数上限 / 应收 / 优惠后应付 / 实收合计
     sItemLimit: function () { return saleItemLimit(); },
     sTotal: function () { return saleTotal(); },
@@ -6323,7 +6587,7 @@ var app = Vue.createApp({
     detailRows: detailRows,
   },
   methods: {
-    go: go, isNavActive: isNavActive, switchAdminSub: switchAdminSub, goInvStatus: goInvStatus, clearInvStatusFilter: clearInvStatusFilter,
+    go: go, isNavActive: isNavActive, switchAdminSub: switchAdminSub, switchStoreSub: switchStoreSub, goInvStatus: goInvStatus, clearInvStatusFilter: clearInvStatusFilter,
     openLockedItems: openLockedItems, closeLockedItems: closeLockedItems,
     invCatDonut: invCatDonut, invCatPct: invCatPct,
     invPtypeDonut: invPtypeDonut, invPtypePct: invPtypePct,
@@ -6345,7 +6609,7 @@ var app = Vue.createApp({
     saleAnaDonut: saleAnaDonut, saleAnaTop5Sum: saleAnaTop5Sum,
     saleAnaPtypeDonut: saleAnaPtypeDonut, saleAnaPtypeTop5Sum: saleAnaPtypeTop5Sum,
     saleAnaTagDonut: saleAnaTagDonut, saleTagTop5: saleTagTop5, saleTagTop5Sum: saleTagTop5Sum, saleTagRows: saleTagRows,
-    saleClerkDonut: saleClerkDonut, saleClerkSum: saleClerkSum,
+    saleClerkDonut: saleClerkDonut, saleClerkSum: saleClerkSum, saleMethodDonut: saleMethodDonut, saleMethodSum: saleMethodSum,
     switchStore: switchStore,
     isHqStore: isHqStore,   // 总店/分店视图判定（模板以 isHqStore() 调用，故放 methods）
     nonHqStores: nonHqStores, // 排除总店的门店列表（打印代理页专用）
@@ -6384,6 +6648,8 @@ var app = Vue.createApp({
     catNameOf: catNameOf, productCatName: productCatName, catText: catText,
     typeNameByCode: typeNameByCode, productTypeName: productTypeName,
     materialText: materialText, productImageUrl: productImageUrl, productThumbUrl: productThumbUrl, dlUrl: dlUrl,
+    detailImages: detailImages,
+    repThumbUrl: repThumbUrl, repPhotoThumbUrl: repPhotoThumbUrl, addRepairPhotos: addRepairPhotos, removeRepairPhoto: removeRepairPhoto, editRepairPhoto: editRepairPhoto,
     normLang: normLang,
     sheetNameGet: sheetNameGet, sheetNameSet: sheetNameSet, langNameFilled: langNameFilled,
     resetCatEdit: resetCatEdit, editCat: editCat, saveCat: saveCat, delCat: delCat,
@@ -6405,7 +6671,7 @@ var app = Vue.createApp({
     // 推广页多语言可写内容
     openProfLang: openProfLang, profLangFilled: profLangFilled, profLangName: profLangName,
     // 商品图片裁切上传 + 商品详情面板
-    chooseProductImage: chooseProductImage, closeImgCrop: closeImgCrop,
+    chooseProductImage: chooseProductImage, closeImgCrop: closeImgCrop, editProductImage: editProductImage,
     setImgRot: setImgRot, toggleMirrorX: toggleMirrorX, toggleMirrorY: toggleMirrorY,
     viewProductImage: viewProductImage, openProdDetail: openProdDetail, editFromDetail: editFromDetail,
     addCustMemo: addCustMemo, delCustMemo: delCustMemo,
@@ -6426,7 +6692,7 @@ var app = Vue.createApp({
     saveAdminUser: saveAdminUser, delAdminUser: delAdminUser,
     editClerk: editClerk, saveClerk: saveClerk, toggleClerk: toggleClerk,
     activeClerkTypes: activeClerkTypes, defaultClerkTypeName: defaultClerkTypeName,
-    loadSales: loadSales, clerkText: clerkText, printReceipt: printReceipt,
+    loadSales: loadSales, clerkText: clerkText, printReceipt: printReceipt, printRepairTicket: printRepairTicket,
     // 门店调拨
     reloadProducts: reloadProducts,
     toggleTransferMode: toggleTransferMode, clearTransferSel: clearTransferSel,
@@ -6449,8 +6715,8 @@ var app = Vue.createApp({
     loadBridgeList: loadBridgeList, createStore: createStore,
     revokePrintAgent: revokePrintAgent,
     storeControl: storeControl,
-    loadShops: loadShops, loadStores: loadStores, storesByShop: storesByShop,
-    selectStore: selectStore, openStorePage: openStorePage, bridgeOfStore: bridgeOfStore, storeSecStore: storeSecStore, shopOfStore: shopOfStore,
+    loadStores: loadStores,
+    selectStore: selectStore, openStorePage: openStorePage, bridgeOfStore: bridgeOfStore, storeSecStore: storeSecStore,
     editStore: editStore, editStoreInline: editStoreInline, saveStoreInline: saveStoreInline, cancelStoreInline: cancelStoreInline, resetStoreEdit: resetStoreEdit, saveStore: saveStore, saveStoreCurrency: saveStoreCurrency,
     labelStoreBridge: labelStoreBridge,
     openInbound: openInbound, copyInbound: copyInbound, openRfid: openRfid, doRfid: doRfid, toggleInvGroup: toggleInvGroup,

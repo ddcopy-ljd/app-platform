@@ -30,7 +30,7 @@ from types import SimpleNamespace
 
 from fastapi import FastAPI, Body, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 import uvicorn
@@ -81,7 +81,7 @@ _lock = threading.Lock()
 # 行政/系统类（账号/门店组织/企业资料/编码规则/品类/库位/安防配置）仅当当前工作门店为总店(HQ)时可写。
 # 统一在中间件按路径前缀裁决，避免逐个端点散落判断；设备/公开链路无会话，不受此限。
 _EXEC_ADMIN_PREFIXES = (
-    "/api/admin/", "/api/shops", "/api/stores", "/api/profile", "/api/biz-config",
+    "/api/admin/", "/api/stores", "/api/profile", "/api/biz-config",
     "/api/categories", "/api/product-types", "/api/label-templates", "/api/product-tags",
     "/api/tag-groups",
     "/api/clerk-types", "/api/locations", "/api/sensors", "/api/label-papers",
@@ -238,7 +238,7 @@ def _require_auth(request: Request) -> dict:
     if sess.get("role") == "SYS_ADMIN":
         p = request.url.path
         allowed = p.startswith("/api/auth/") or p.startswith("/api/admin/") \
-            or (request.method == "GET" and (p in ("/api/stores", "/api/shops") or p.startswith("/api/docs/")))
+            or (request.method == "GET" and (p == "/api/stores" or p.startswith("/api/docs/")))
         if not allowed:
             raise HTTPException(status_code=403, detail="系统管理员账号仅可进行用户管理")
     return sess
@@ -290,7 +290,7 @@ def _accessible_store_rows(conn: sqlite3.Connection, sess: dict) -> list[sqlite3
     if sess.get("role") in ("TENANT_ADMIN", "EXECUTIVE"):
         rows = conn.execute("SELECT * FROM stores ORDER BY id").fetchall()
         # 追加虚拟"总部汇总"行（id=-1），仅店长/高管可见
-        rows.append({"id": -1, "name": "总部汇总", "code": "ALL", "shop_id": ""})
+        rows.append({"id": -1, "name": "总部汇总", "code": "ALL"})
         return rows
     return conn.execute(
         """SELECT s.* FROM stores s
@@ -306,9 +306,9 @@ def _store_payload(rows: list) -> list[dict]:
     out = []
     for r in rows:
         if isinstance(r, dict):
-            out.append({"id": r["id"], "name": r["name"], "code": r["code"], "shop_id": r.get("shop_id", "")})
+            out.append({"id": r["id"], "name": r["name"], "code": r["code"]})
         else:
-            out.append({"id": r["id"], "name": r["name"], "code": r["code"], "shop_id": r["shop_id"]})
+            out.append({"id": r["id"], "name": r["name"], "code": r["code"]})
     return out
 
 
@@ -1686,16 +1686,21 @@ def dashboard_overview(request: Request, start: str = Query(default=""), end: st
             f"SELECT id, bill_no, customer, amount, method, biz_date, status FROM sales "
             f"WHERE 1=1{sid_filter} ORDER BY id DESC LIMIT 8", sid_args
         ).fetchall()
-        # 销售明细：一次取回这 8 单的条目，按 sale_id 分组附上
+        # 销售明细：一次取回这 8 单的条目，按 sale_id 分组附上（带 product_id/image_ts 供详情面板展示商品图）
         recent_items = {}
         if recent:
             ids = [r["id"] for r in recent]
             marks = ",".join("?" * len(ids))
+            has_ts = db._has_column(conn, "products", "image_ts")
+            ts_sel = ", p.image_ts" if has_ts else ", NULL AS image_ts"
             for it in conn.execute(
-                f"SELECT sale_id, name, code, price, weight, pricing_mode, labor_fee, subtotal, seq "
-                f"FROM sale_items WHERE sale_id IN ({marks}) ORDER BY sale_id, seq", ids
+                f"SELECT si.sale_id, si.name, si.code, si.price, si.weight, si.pricing_mode, si.labor_fee, "
+                f"si.subtotal, si.seq, si.product_id{ts_sel} "
+                f"FROM sale_items si LEFT JOIN products p ON p.id=si.product_id "
+                f"WHERE si.sale_id IN ({marks}) ORDER BY si.sale_id, si.seq", ids
             ).fetchall():
-                d = {k: it[k] for k in ("name", "code", "price", "weight", "pricing_mode", "labor_fee", "subtotal")}
+                d = {k: it[k] for k in ("name", "code", "price", "weight", "pricing_mode", "labor_fee",
+                                        "subtotal", "product_id", "image_ts")}
                 recent_items.setdefault(it["sale_id"], []).append(d)
         cost_visible = _can_view_cost(conn, sess)
         recent_out = []
@@ -2317,6 +2322,15 @@ def dashboard_reminders(request: Request):
             "SELECT * FROM repairs WHERE status IN ('待维修','维修中') "
             "AND (store_id=? OR store_id=0) ORDER BY promised_date LIMIT 8", (sid,)
         ).fetchall()
+        repairs_pending_out = []
+        pmap = _repair_photos_meta(conn, [r["id"] for r in repairs_pending])
+        for r in repairs_pending:
+            d = dict(r)
+            phs = pmap.get(r["id"]) or []
+            d["photos"] = phs
+            d["photo_id"] = phs[0]["id"] if phs else 0
+            d["photo_ts"] = phs[0]["ts"] if phs else ""
+            repairs_pending_out.append(d)
         # 采购到货提醒：未入库且应到货日在未来 3 天内（含今天）
         purchases_incoming = conn.execute(
             "SELECT * FROM purchases WHERE status!='已入库' "
@@ -2351,7 +2365,7 @@ def dashboard_reminders(request: Request):
         return {
             "deposits": [dict(r) for r in deposits_urgent],
             "loansOverdue": [dict(r) for r in loans_overdue],
-            "repairsPending": [dict(r) for r in repairs_pending],
+            "repairsPending": repairs_pending_out,
             "purchasesIncoming": [dict(r) for r in purchases_incoming],
             "care": care[:12],
         }
@@ -2528,16 +2542,18 @@ def biz_config_get(request: Request):
     _require_auth(request)
     with _db(request) as conn:
         r = conn.execute(
-            "SELECT epc_prefix,seq_bits,IFNULL(gold_price,0),IFNULL(currency,'CNY') FROM biz_config WHERE id=1"
+            "SELECT epc_prefix,seq_bits,IFNULL(gold_price,0),IFNULL(currency,'CNY'),IFNULL(sale_item_limit,20) "
+            "FROM biz_config WHERE id=1"
         ).fetchone()
         if not r:
             conn.execute("INSERT OR IGNORE INTO biz_config(id,epc_prefix,seq_bits) VALUES(1,'E280',8)")
             conn.commit()
-            r = ("E280", 8, 0, "CNY")
+            r = ("E280", 8, 0, "CNY", 20)
         # 门店编号(4位数字码)只读展示用: EPC 卡显示总店的码, 各门店由系统独立分配
         hq = _hq_store_id(conn)
         return {"epc_prefix": r[0], "seq_bits": r[1], "gold_price": r[2] or 0,
                 "currency": r[3] or "CNY",
+                "sale_item_limit": r[4] or 0,
                 "store_num": db._store_num_code(conn, hq or 1),
                 **_points_rules(conn)}
 
@@ -3874,7 +3890,10 @@ def product_thumb_get(pid: int, request: Request):
             im.save(buf, "WEBP", quality=80, method=6)
             thumb = buf.getvalue()
         except Exception:
-            raise HTTPException(500, "缩略图生成失败")
+            # 兜底：无 Pillow/生成失败时直接回原图（与维修照片缩略图同策略），列表不致裂图
+            return Response(
+                content=data, media_type=_img_mime(data),
+                headers={"Cache-Control": "no-cache", "ETag": f'"{row["image_ts"]}"'})
         if fp:
             try:
                 fp.write_bytes(thumb)
@@ -5096,17 +5115,11 @@ def store_create(body: dict, request: Request):
     if not name:
         raise HTTPException(400, "门店名称必填")
     with _db(request) as conn:
-        shop_id = int(body.get("shop_id") or 0)
-        if shop_id:
-            if not conn.execute("SELECT 1 FROM shops WHERE id=?", (shop_id,)).fetchone():
-                raise HTTPException(400, "所属店铺不存在")
-        else:
-            shop_id = conn.execute("SELECT id FROM shops ORDER BY id LIMIT 1").fetchone()["id"]
         code = _next_store_code(conn)  # 门店编号自动生成，不接受外部传入
         try:
             cur = conn.execute(
-                "INSERT INTO stores(name,code,owner,shop_id) VALUES(?,?,?,?)",
-                (name, code, str(body.get("owner") or ""), shop_id))
+                "INSERT INTO stores(name,code,owner) VALUES(?,?,?)",
+                (name, code, str(body.get("owner") or "")))
             sid = cur.lastrowid
             # 新门店补齐每个打印业务的指派行（空指派）
             conn.executemany(
@@ -6936,15 +6949,24 @@ def sale_create(body: SaleReq, request: Request):
         }
 
         resolved = []   # [(product, item_snapshot_dict)]
-        seen = set()
-        shop_id = 0
+        used_ids = set()   # 本单已占用的商品 id（数量列同款多件时自动匹配其他在库件）
         store_id = sid  # 开单门店固定为当前工作门店
         for it in req_items:
             p = _resolve_sale_product(conn, it)
             if not p:
                 raise HTTPException(400, "扫描的商品未登记或不存在")
-            if p["id"] in seen:
-                raise HTTPException(400, f"商品 {p['code']} 在本单重复，请只保留一件")
+            if p["id"] in used_ids:
+                # 同款多件（数量列展开）：自动匹配同货号同店的其他在库件
+                if not (p["code"] or "").strip():
+                    raise HTTPException(400, f"商品 {p['name']} 无货号，无法按同款补足数量")
+                marks = ",".join("?" * len(used_ids))
+                alt = conn.execute(
+                    f"SELECT * FROM products WHERE code=? AND store_id=? AND status='在库' "
+                    f"AND id NOT IN ({marks}) ORDER BY id LIMIT 1",
+                    (p["code"], sid, *used_ids)).fetchone()
+                if not alt:
+                    raise HTTPException(400, f"商品 {p['code']} 同款在库数量不足，无法按数量开单")
+                p = alt
             if p["status"] != "在库":
                 raise HTTPException(400, f"商品 {p['code']} 当前状态为{p['status']}，无法开单")
             pstore = p["store_id"] or 0
@@ -6964,20 +6986,16 @@ def sale_create(body: SaleReq, request: Request):
                 subtotal = round(float(it.price if it.price is not None else (p["price"] or 0)), 2)
                 snap = {"pricing_mode": "piece", "weight": 0.0, "gold_price": 0.0,
                         "labor_fee": 0.0, "subtotal": subtotal}
-            seen.add(p["id"])
+            used_ids.add(p["id"])
             resolved.append((p, snap))
 
-        # 店铺件数上限（经商品门店→店铺）
-        if store_id:
-            srow = conn.execute("SELECT shop_id FROM stores WHERE id=?", (store_id,)).fetchone()
-            shop_id = srow["shop_id"] if srow else 0
+        # 每单件数上限（业务配置，租户级统一）
         limit = 0
-        if shop_id:
-            lp = conn.execute("SELECT sale_item_limit FROM shops WHERE id=?", (shop_id,)).fetchone()
-            if lp:
-                limit = lp["sale_item_limit"] or 0
+        cfg = conn.execute("SELECT sale_item_limit FROM biz_config WHERE id=1").fetchone()
+        if cfg:
+            limit = cfg["sale_item_limit"] or 0
         if limit and len(resolved) > limit:
-            raise HTTPException(400, f"本店铺单张开单最多 {limit} 件，当前 {len(resolved)} 件")
+            raise HTTPException(400, f"单张开单最多 {limit} 件，当前 {len(resolved)} 件")
 
         # 应收（各件小计汇总）→ 优惠 → 积分抵扣 → 应付
         receivable = round(sum(s["subtotal"] for _p, s in resolved), 2)
@@ -7159,8 +7177,19 @@ def sale_analysis(request: Request, start: str = Query(default=""), end: str = Q
         clerk_total = sum(r["amt"] for r in clerk_rows) or 1
         clerks = [{"clerk": r["clerk"], "bills": r["bills"], "amount": round(r["amt"], 2),
                    "pct": round(r["amt"] * 100 / clerk_total, 1)} for r in clerk_rows]
+
+        # 支付方式占比（组合支付单按 sale_payments 逐笔拆分到各方式；无明细行回退单据主方式）
+        method_rows = conn.execute(
+            f"""SELECT COALESCE(NULLIF(p.method,''), s.method) pay_method,
+                       COUNT(DISTINCT s.id) bills, COALESCE(SUM(COALESCE(p.amount, s.amount)),0) amt
+                FROM sales s LEFT JOIN sale_payments p ON p.sale_id = s.id
+                WHERE {base}
+                GROUP BY pay_method ORDER BY amt DESC""", args).fetchall()
+        method_total = sum(r["amt"] for r in method_rows) or 1
+        methods = [{"method": r["pay_method"], "bills": r["bills"], "amount": round(r["amt"], 2),
+                    "pct": round(r["amt"] * 100 / method_total, 1)} for r in method_rows]
         return {"range": {"start": rs, "end": re_}, "kpi": kpi, "categories": categories,
-                "hotProducts": hot_products, "clerks": clerks}
+                "hotProducts": hot_products, "clerks": clerks, "methods": methods}
 
 
 @app.get("/api/sales")
@@ -7264,21 +7293,22 @@ def sale_void(sid: int, request: Request):
 
 @app.get("/api/stores")
 def store_list(request: Request, all: int = 0, detail: int = 0):
-    """门店精简列表（含所属店铺；库位、调拨、商品表单等共用）。
+    """门店精简列表（库位、调拨、商品表单等共用）。
     默认只返回当前账号被授权的门店；all=1 且为店长时返回全部门店（门店/总部管理页使用）。
     detail=1 附带门店卡片统计（库存/销售/库位；无成本权限时金额字段为 null）。"""
     sess = _require_auth(request)
     with _db(request) as conn:
         rows = conn.execute(
-            """SELECT s.id,s.name,s.code,s.owner,s.shop_id,
+            """SELECT s.id,s.name,s.code,s.owner,
+                      IFNULL(s.owner_phone,'') AS owner_phone,
+                      IFNULL(s.address,'') AS address,
                       IFNULL(s.display_currency,'') AS display_currency,
-                      COALESCE(sp.name,'') AS shop_name,
                       IFNULL(s.bridge_key,'') AS bridge_key,
                       IFNULL(s.printer_name,'') AS printer_name,
                       IFNULL((SELECT sp2.printer_name FROM store_printers sp2
                                WHERE sp2.store_id=s.id AND sp2.biz_code='receipt_sale'),'') AS receipt_printer
-               FROM stores s LEFT JOIN shops sp ON sp.id=s.shop_id
-               ORDER BY s.shop_id, s.id""").fetchall()
+               FROM stores s
+               ORDER BY s.id""").fetchall()
         if all and sess.get("role") != "TENANT_ADMIN":
             all = 0
         if not all:
@@ -7336,35 +7366,27 @@ def _store_card_stats(conn, rows, sess):
 
 @app.put("/api/stores/{sid}")
 def store_update(sid: int, body: dict, request: Request):
-    """更新门店基础信息/归属店铺。总部视图可改任意门店；分店视图仅可改本店，
-    且归属店铺由总部决定（忽略传入 shop_id，保持原值）。"""
+    """更新门店基础信息。总部视图可改任意门店；分店视图仅可改本店。"""
     sess = _require_admin(request)
     name = str(body.get("name") or "").strip()
     if not name:
         raise HTTPException(400, "门店名称必填")
     with _db(request) as conn:
-        row = conn.execute("SELECT id, shop_id FROM stores WHERE id=?", (sid,)).fetchone()
+        row = conn.execute("SELECT id FROM stores WHERE id=?", (sid,)).fetchone()
         if not row:
             raise HTTPException(404, "门店不存在")
         cur_sid, _ = _current_store(request, conn, sess)
         if not _is_hq_scope(conn, cur_sid):
             if sid != cur_sid:
                 raise HTTPException(403, "分店仅可修改本店资料，其他门店请切换到总部操作")
-            shop_id = row["shop_id"]
-        else:
-            shop_id = int(body.get("shop_id") or 0)
-            if shop_id:
-                if not conn.execute("SELECT 1 FROM shops WHERE id=?", (shop_id,)).fetchone():
-                    raise HTTPException(400, "所属店铺不存在")
-            else:
-                shop_id = conn.execute("SELECT id FROM shops ORDER BY id LIMIT 1").fetchone()["id"]
         dc = str(body.get("display_currency") or "").strip().upper()
         if dc and dc not in {"CNY", "USD", "EUR"}:
             dc = ""
         try:
             conn.execute(
-                "UPDATE stores SET name=?, owner=?, shop_id=?, display_currency=? WHERE id=?",
-                (name, str(body.get("owner") or ""), shop_id, dc, sid))
+                "UPDATE stores SET name=?, owner=?, owner_phone=?, address=?, display_currency=? WHERE id=?",
+                (name, str(body.get("owner") or ""), str(body.get("owner_phone") or "").strip(),
+                 str(body.get("address") or "").strip(), dc, sid))
             _log(conn, sess.get("username", ""), "编辑门店", f"#{sid} {name}")
             conn.commit()
         except sqlite3.IntegrityError:
@@ -7522,80 +7544,7 @@ def admin_grant_stores(uid: int, body: GrantStoresIn, request: Request):
         return {"ok": True, "store_ids": ids}
 
 
-# ------------------------------------------------- 店铺（上层组织）
-@app.get("/api/shops")
-def shop_list(request: Request):
-    """店铺列表，含各店铺门店数。"""
-    _require_auth(request)
-    with _db(request) as conn:
-        rows = conn.execute(
-            """SELECT sp.*, (SELECT COUNT(*) FROM stores s WHERE s.shop_id=sp.id) AS store_count
-               FROM shops sp ORDER BY sp.sort_order, sp.id""").fetchall()
-        return [dict(r) for r in rows]
-
-
-class ShopIn(BaseModel):
-    name: str
-    code: str = ""
-    sale_item_limit: int = 20
-
-
-@app.post("/api/shops")
-def shop_create(body: ShopIn, request: Request):
-    _require_auth(request)
-    name = body.name.strip()
-    if not name:
-        raise HTTPException(400, "店铺名称必填")
-    limit = body.sale_item_limit if body.sale_item_limit >= 1 else 20
-    with _db(request) as conn:
-        code = body.code.strip()
-        if not code:
-            nid = conn.execute("SELECT COALESCE(MAX(id),0)+1 FROM shops").fetchone()[0]
-            code = f"S{nid:02X}"
-        try:
-            cur = conn.execute(
-                "INSERT INTO shops(name,code,sale_item_limit) VALUES(?,?,?)",
-                (name, code, limit))
-            conn.commit()
-        except sqlite3.IntegrityError:
-            raise HTTPException(400, "店铺编码已存在")
-        return {"ok": True, "id": cur.lastrowid, "code": code}
-
-
-@app.put("/api/shops/{sid}")
-def shop_update(sid: int, body: ShopIn, request: Request):
-    _require_auth(request)
-    name = body.name.strip()
-    if not name:
-        raise HTTPException(400, "店铺名称必填")
-    limit = body.sale_item_limit if body.sale_item_limit >= 1 else 20
-    with _db(request) as conn:
-        if not conn.execute("SELECT 1 FROM shops WHERE id=?", (sid,)).fetchone():
-            raise HTTPException(404, "店铺不存在")
-        try:
-            conn.execute("UPDATE shops SET name=?, code=?, sale_item_limit=? WHERE id=?",
-                         (name, body.code.strip(), limit, sid))
-            conn.commit()
-        except sqlite3.IntegrityError:
-            raise HTTPException(400, "店铺编码已存在")
-    return {"ok": True}
-
-
-@app.delete("/api/shops/{sid}")
-def shop_delete(sid: int, request: Request):
-    """仅允许删除其下无门店的店铺。"""
-    _require_auth(request)
-    with _db(request) as conn:
-        if not conn.execute("SELECT 1 FROM shops WHERE id=?", (sid,)).fetchone():
-            raise HTTPException(404, "店铺不存在")
-        n = conn.execute("SELECT COUNT(*) n FROM stores WHERE shop_id=?", (sid,)).fetchone()["n"]
-        if n:
-            raise HTTPException(400, f"该店铺下仍有 {n} 家门店，请先调整门店归属后再删除")
-        conn.execute("DELETE FROM shops WHERE id=?", (sid,))
-        conn.commit()
-    return {"ok": True}
-
-
+# ------------------------------------------------- 库位
 class LocationIn(BaseModel):
     store_id: int = 0
     code: str = ""
@@ -8090,8 +8039,18 @@ def _customer_phones_map(conn, cids: list) -> dict:
     return cmap
 
 
+def _purchased_search_cond(q: str) -> tuple[str, list]:
+    """会员搜索扩展：按已购商品匹配（销售单商品名/货号，含明细行；已冲红单不算）。"""
+    like = f"%{q}%"
+    cond = ("EXISTS (SELECT 1 FROM sales s2 LEFT JOIN sale_items si2 ON si2.sale_id=s2.id "
+            "WHERE s2.customer_id=c.id AND s2.status!='已冲红' "
+            "AND (COALESCE(si2.name,'') LIKE ? OR COALESCE(si2.code,'') LIKE ? OR s2.product LIKE ?))")
+    return cond, [like, like, like]
+
+
 @app.get("/api/customers/list")
-def customer_list(request: Request, page: int = 1, size: int = 50, keyword: str = "", filter: str = ""):
+def customer_list(request: Request, page: int = 1, size: int = 50, keyword: str = "", filter: str = "",
+                  purchased: int = 0):
     sess = _require_auth(request)
     q = (keyword or "").strip()
     # 统计卡片过滤：today=今日新增 / month=本月新增（按建档时间 created，与 stats 口径一致）
@@ -8111,13 +8070,20 @@ def customer_list(request: Request, page: int = 1, size: int = 50, keyword: str 
         like = f"%{q}%"
         # 全字段检索：凡是会员档案上的文本信息都可搜到（姓名/电话/邮箱/等级/生日/纪念日/偏好/
         # 地址组/来源/事件备忘录（子表）/建档时间），另含其他手机号
-        conds.append("(c.name LIKE ? OR c.phone LIKE ? OR c.note LIKE ? OR c.email LIKE ? OR c.level LIKE ? "
-                     "OR c.birthday LIKE ? OR c.anniversary LIKE ? OR c.preference LIKE ? "
-                     "OR c.address LIKE ? OR c.city LIKE ? OR c.zip_code LIKE ? OR c.country LIKE ? "
-                     "OR c.source LIKE ? OR c.created LIKE ? "
-                     "OR EXISTS (SELECT 1 FROM customer_phones cp WHERE cp.customer_id=c.id AND cp.phone LIKE ?) "
-                     "OR EXISTS (SELECT 1 FROM customer_memos m WHERE m.customer_id=c.id AND m.content LIKE ?))")
-        params += [like] * 14 + [like, like]
+        group = ("(c.name LIKE ? OR c.phone LIKE ? OR c.note LIKE ? OR c.email LIKE ? OR c.level LIKE ? "
+                 "OR c.birthday LIKE ? OR c.anniversary LIKE ? OR c.preference LIKE ? "
+                 "OR c.address LIKE ? OR c.city LIKE ? OR c.zip_code LIKE ? OR c.country LIKE ? "
+                 "OR c.source LIKE ? OR c.created LIKE ? "
+                 "OR EXISTS (SELECT 1 FROM customer_phones cp WHERE cp.customer_id=c.id AND cp.phone LIKE ?) "
+                 "OR EXISTS (SELECT 1 FROM customer_memos m WHERE m.customer_id=c.id AND m.content LIKE ?))")
+        gparams = [like] * 14 + [like, like]
+        if purchased:
+            # 勾选「搜索已购商品」：关键词同时匹配该会员购买过的商品（明细行名/货号 + 历史单商品文本）
+            pcond, pparams = _purchased_search_cond(q)
+            group = group[:-1] + " OR " + pcond + ")"
+            gparams += pparams
+        conds.append(group)
+        params += gparams
     if flt == "today":
         conds.append("date(c.created)=date('now','localtime')")
     elif flt == "month":
@@ -8148,21 +8114,28 @@ def customer_list(request: Request, page: int = 1, size: int = 50, keyword: str 
 
 @app.get("/api/customers/export")
 def customer_export(request: Request):
-    """客户资料导出为 CSV（Excel 可直接打开）。支持 keyword/filter 过滤，不分页。"""
+    """客户资料导出为 CSV（Excel 可直接打开）。支持 keyword/filter/purchased 过滤，不分页。"""
     sess = _require_auth(request)
     q = (request.query_params.get("keyword") or "").strip()
     flt = (request.query_params.get("filter") or "").strip().lower()
+    purchased = int(request.query_params.get("purchased") or 0)
     conds, params = [], []
     if q:
         like = f"%{q}%"
-        # 与 customer_list 同口径：全字段检索
-        conds.append("(c.name LIKE ? OR c.phone LIKE ? OR c.note LIKE ? OR c.email LIKE ? OR c.level LIKE ? "
-                     "OR c.birthday LIKE ? OR c.anniversary LIKE ? OR c.preference LIKE ? "
-                     "OR c.address LIKE ? OR c.city LIKE ? OR c.zip_code LIKE ? OR c.country LIKE ? "
-                     "OR c.source LIKE ? OR c.created LIKE ? "
-                     "OR EXISTS (SELECT 1 FROM customer_phones cp WHERE cp.customer_id=c.id AND cp.phone LIKE ?) "
-                     "OR EXISTS (SELECT 1 FROM customer_memos m WHERE m.customer_id=c.id AND m.content LIKE ?))")
-        params += [like] * 14 + [like, like]
+        # 与 customer_list 同口径：全字段检索（勾选「搜索已购商品」时含已购商品匹配）
+        group = ("(c.name LIKE ? OR c.phone LIKE ? OR c.note LIKE ? OR c.email LIKE ? OR c.level LIKE ? "
+                 "OR c.birthday LIKE ? OR c.anniversary LIKE ? OR c.preference LIKE ? "
+                 "OR c.address LIKE ? OR c.city LIKE ? OR c.zip_code LIKE ? OR c.country LIKE ? "
+                 "OR c.source LIKE ? OR c.created LIKE ? "
+                 "OR EXISTS (SELECT 1 FROM customer_phones cp WHERE cp.customer_id=c.id AND cp.phone LIKE ?) "
+                 "OR EXISTS (SELECT 1 FROM customer_memos m WHERE m.customer_id=c.id AND m.content LIKE ?))")
+        gparams = [like] * 14 + [like, like]
+        if purchased:
+            pcond, pparams = _purchased_search_cond(q)
+            group = group[:-1] + " OR " + pcond + ")"
+            gparams += pparams
+        conds.append(group)
+        params += gparams
     if flt == "today":
         conds.append("date(c.created)=date('now','localtime')")
     elif flt == "month":
@@ -8427,6 +8400,45 @@ class RepairIn(BaseModel):
     status: str = "待维修"
     technician: str = ""
     remark: str = ""
+    photos: list[str] = []            # 新增照片（dataURL，统一转 WebP q80 入库）
+    photos_keep: list[int] | None = None   # 编辑保留的旧照片 id；None=不动照片（兼容旧客户端）
+
+
+def _repair_photos_meta(conn, rids: list[int]) -> dict:
+    """按维修单 id 批量取照片元数据（id/seq/ts），返回 {repair_id: [{id,seq,ts}]}。"""
+    if not rids:
+        return {}
+    marks = ",".join("?" * len(rids))
+    pmap: dict = {}
+    for ph in conn.execute(
+        f"SELECT id,repair_id,seq,image_ts FROM repair_photos WHERE repair_id IN ({marks}) "
+        "ORDER BY repair_id, seq, id", rids
+    ).fetchall():
+        pmap.setdefault(ph["repair_id"], []).append(
+            {"id": ph["id"], "seq": ph["seq"], "ts": ph["image_ts"] or ""})
+    return pmap
+
+
+def _save_repair_photos(conn, rid: int, keep_ids, new_photos: list[str], required: bool):
+    """重排/追加维修照片；required=True 时结果为空报 400（接单必传）。"""
+    if keep_ids is not None:
+        keep = [int(k) for k in keep_ids]
+        if keep:
+            marks = ",".join("?" * len(keep))
+            conn.execute(f"DELETE FROM repair_photos WHERE repair_id=? AND id NOT IN ({marks})",
+                         (rid, *keep))
+        else:
+            conn.execute("DELETE FROM repair_photos WHERE repair_id=?", (rid,))
+    base = conn.execute("SELECT COALESCE(MAX(seq),-1)+1 FROM repair_photos WHERE repair_id=?",
+                        (rid,)).fetchone()[0]
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for i, data in enumerate(new_photos or []):
+        raw = _to_webp(_decode_image_data(data))
+        conn.execute("INSERT INTO repair_photos(repair_id,seq,image,image_ts) VALUES(?,?,?,?)",
+                     (rid, base + i, raw, ts))
+    n = conn.execute("SELECT COUNT(*) FROM repair_photos WHERE repair_id=?", (rid,)).fetchone()[0]
+    if required and n < 1:
+        raise HTTPException(400, "请上传待修商品照片（至少 1 张）")
 
 
 @app.get("/api/repairs")
@@ -8439,12 +8451,21 @@ def repair_list(request: Request, page: int = 1, size: int = 50):
         rows = conn.execute(
             "SELECT * FROM repairs WHERE store_id=? OR store_id=0 ORDER BY id DESC LIMIT ? OFFSET ?",
             (sid, size, (page - 1) * size)).fetchall()
-        return {"total": total, "page": page, "size": size, "items": [dict(r) for r in rows]}
+        items = [dict(r) for r in rows]
+        pmap = _repair_photos_meta(conn, [it["id"] for it in items])
+        for it in items:
+            phs = pmap.get(it["id"]) or []
+            it["photos"] = phs
+            it["photo_id"] = phs[0]["id"] if phs else 0
+            it["photo_ts"] = phs[0]["ts"] if phs else ""
+        return {"total": total, "page": page, "size": size, "items": items}
 
 
 @app.post("/api/repairs")
 def repair_create(body: RepairIn, request: Request):
     op = _require_auth(request)
+    if not body.photos:
+        raise HTTPException(400, "请上传待修商品照片（至少 1 张）")
     with _db(request) as conn:
         sid, _ = _current_store(request, conn, op)
         cur = conn.execute(
@@ -8453,11 +8474,16 @@ def repair_create(body: RepairIn, request: Request):
             (body.customer, body.phone, body.item, body.issue, body.est_fee, body.actual_fee,
              body.receive_date, body.promised_date, body.status, body.technician, body.remark, sid),
         )
+        rid = cur.lastrowid
+        # 维修单号：WX + 接单日 + 3 位 id（全局唯一，方便电话核对/取件）
+        repair_no = "WX" + date.today().strftime("%Y%m%d") + f"{rid:03d}"
+        conn.execute("UPDATE repairs SET repair_no=? WHERE id=?", (repair_no, rid))
+        _save_repair_photos(conn, rid, None, body.photos, required=True)
         conn.commit()
         _log(conn, op["username"], "接维修",
-             f"#{cur.lastrowid} {body.item} 客户{body.customer or '散客'} "
-             f"问题{(body.issue or '')[:30]} 预估￥{body.est_fee or 0:,.2f}")
-        return {"id": cur.lastrowid}
+             f"{repair_no} {body.item} 客户{body.customer or '散客'} "
+             f"问题{(body.issue or '')[:30]} 预估￥{body.est_fee or 0:,.2f} 照片{len(body.photos)}张")
+        return {"id": rid, "repair_no": repair_no}
 
 
 @app.put("/api/repairs/{rid}")
@@ -8477,13 +8503,68 @@ def repair_update(rid: int, body: RepairIn, request: Request):
             (body.customer, body.phone, body.item, body.issue, body.est_fee, body.actual_fee,
              body.promised_date, body.status, body.technician, body.remark, done, rid),
         )
+        if body.photos_keep is not None or body.photos:
+            # 更新状态（编辑）允许删到 0 张；接单（POST）仍必传 ≥1 张
+            _save_repair_photos(conn, rid, body.photos_keep, body.photos, required=False)
         if old and old["status"] != "已完成" and body.status == "已完成" and body.actual_fee:
             _touch_customer(conn, body.customer, body.phone, body.actual_fee, 0, sid)
         conn.commit()
         _log(conn, op["username"], "更新维修",
-             f"#{rid} {body.item} 状态{old['status']}→{body.status}"
+             f"{old['repair_no'] or ('#' + str(rid))} {body.item} 状态{old['status']}→{body.status}"
              + (f" 实收￥{body.actual_fee:,.2f}" if body.status == "已完成" and body.actual_fee else ""))
         return {"ok": True}
+
+
+@app.get("/api/repairs/photo/{pid}")
+def repair_photo_get(pid: int, request: Request):
+    """维修照片原图（公开读取：<img> 无鉴权头，URL 含 image_ts 缓存标识）。"""
+    with _db(request) as conn:
+        row = conn.execute("SELECT image,image_ts FROM repair_photos WHERE id=?", (pid,)).fetchone()
+        if not row or not row["image"]:
+            raise HTTPException(404, "暂无照片")
+        data = bytes(row["image"])
+        return Response(
+            content=data,
+            media_type=_img_mime(data),
+            headers={"Cache-Control": "no-cache", "ETag": f'"{row["image_ts"]}"'},
+        )
+
+
+@app.get("/api/repairs/photo/{pid}/thumb")
+def repair_photo_thumb(pid: int, request: Request):
+    """维修照片缩略图（列表用）：240px WebP 临时文件缓存，与商品缩略图同一目录/TTL。"""
+    with _db(request) as conn:
+        row = conn.execute("SELECT image,image_ts FROM repair_photos WHERE id=?", (pid,)).fetchone()
+        if not row or not row["image"]:
+            raise HTTPException(404, "暂无照片")
+        data = bytes(row["image"])
+        ts = (row["image_ts"] or "").replace("-", "").replace(":", "").replace(" ", "")
+        d = _thumb_dir(conn)
+        fp = (d / f"rp{pid}_{ts or 'x'}.webp") if d else None
+        if fp and fp.exists():
+            return Response(content=fp.read_bytes(), media_type="image/webp",
+                            headers={"Cache-Control": "no-cache", "ETag": f'"{row["image_ts"]}"'})
+        try:
+            from PIL import Image
+            im = Image.open(io.BytesIO(data))
+            if im.mode not in ("RGB", "L"):
+                im = im.convert("RGB")
+            im.thumbnail((_THUMB_SIZE, _THUMB_SIZE), Image.LANCZOS)
+            buf = io.BytesIO()
+            im.save(buf, "WEBP", quality=80, method=6)
+            thumb = buf.getvalue()
+        except Exception:
+            return Response(  # 无 Pillow 环境兜底：直接回原图，列表仍可见
+                content=data, media_type=_img_mime(data),
+                headers={"Cache-Control": "no-cache"})
+        if fp:
+            try:
+                fp.write_bytes(thumb)
+                _cleanup_thumbs(d)
+            except OSError:
+                pass
+        return Response(content=thumb, media_type="image/webp",
+                        headers={"Cache-Control": "no-cache", "ETag": f'"{row["image_ts"]}"'})
 
 
 class PurchaseIn(BaseModel):
@@ -9449,7 +9530,11 @@ def _no_cache_file(request: Request, f: Path):
 @app.get("/mobile")
 @app.get("/mobile/{asset_path:path}")
 def mobile_asset(request: Request, asset_path: str = ""):
-    """网页版手机应用：伺服 mobile/ 目录（免安装 H5/PWA）。"""
+    """网页版手机应用：伺服 mobile/ 目录（免安装 H5/PWA）。
+    无尾斜杠的 /mobile 重定向到 /mobile/：页面内相对路径 ./app.js 等必须解析到 /mobile/ 下，
+    否则会错误加载 PC 端（frontend/）的同名文件导致白屏。"""
+    if request.url.path == "/mobile":
+        return RedirectResponse(url="/mobile/", status_code=307)
     idx = MOBILE_DIR / "index.html"
     if not asset_path:
         if idx.is_file():

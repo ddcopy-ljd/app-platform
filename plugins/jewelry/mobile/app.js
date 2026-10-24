@@ -162,12 +162,12 @@
     form: {}, formTitle: "", formKind: "",
     auditNote: "",
     // 总部管理（信息/推广/分店/品类/分类）
-    hqTab: "info", shops: [], hqStores: [], labelTemplates: [],
+    hqTab: "info", hqStores: [], labelTemplates: [],
     typeEdit: { code: "", names: { zh: "", en: "", it: "" }, sort_order: 0, pricing_mode: "piece" }, typeEditMode: "new",
     tagGroups: [], tagFilter: "",
     tagGroupEdit: { id: 0, name: "", sort_order: 1 }, tagGroupEditMode: "new",
     tagEdit: { id: 0, name: "", color: "#C9A227", sort_order: 1, group_name: "" }, tagEditMode: "new",
-    storeEdit: { id: 0, name: "", code: "", owner: "", shop_id: 0 }, storeEditMode: "",
+    storeEdit: { id: 0, name: "", code: "", owner: "" }, storeEditMode: "",
     profI18n: {}, profEdit: {}, profLang: "en",
     // 库位管理
     locations: [], locStore: 0,
@@ -1349,7 +1349,7 @@
   function loadHqTab() {
     var k = ST.hqTab;
     if (k === "info" || k === "promo") loadHqProfile();
-    else if (k === "branches") { loadShops(); loadHqStores(); }
+    else if (k === "branches") { loadHqStores(); }
     else if (k === "types") { loadProductTypes(); loadLabelTemplates(); }
     else if (k === "categories") { loadTagGroups(); loadTags(); }
     else if (k === "locations") { loadHqStores(); loadLocations(); }
@@ -1406,23 +1406,24 @@
   }
 
   // 分店管理
-  function loadShops() { api("GET", "/api/shops").then(function (r) { ST.shops = r || []; }).catch(function () {}); }
   function loadHqStores() { api("GET", "/api/stores?all=1&detail=1").then(function (r) { ST.hqStores = r || []; }).catch(function () {}); }
-  function storesByShop(shopId) {
+  function branchStores() {
     var out = [];
-    for (var i = 0; i < ST.hqStores.length; i++) { if ((ST.hqStores[i].shop_id || 0) === shopId) out.push(ST.hqStores[i]); }
+    for (var i = 0; i < ST.hqStores.length; i++) {
+      if (String(ST.hqStores[i].code || "").toUpperCase() !== "HQ") out.push(ST.hqStores[i]);
+    }
     return out;
   }
-  function createStore() { ST.storeEditMode = "new"; ST.storeEdit = { id: 0, name: "", code: "", owner: "", shop_id: (ST.shops[0] && ST.shops[0].id) || 0 }; }
-  function editStore(s) { ST.storeEditMode = "edit"; ST.storeEdit = { id: s.id, name: s.name, code: s.code || "", owner: s.owner || "", shop_id: s.shop_id || 0 }; }
-  function resetStoreEdit() { ST.storeEditMode = ""; ST.storeEdit = { id: 0, name: "", code: "", owner: "", shop_id: 0 }; }
+  function createStore() { ST.storeEditMode = "new"; ST.storeEdit = { id: 0, name: "", code: "", owner: "" }; }
+  function editStore(s) { ST.storeEditMode = "edit"; ST.storeEdit = { id: s.id, name: s.name, code: s.code || "", owner: s.owner || "" }; }
+  function resetStoreEdit() { ST.storeEditMode = ""; ST.storeEdit = { id: 0, name: "", code: "", owner: "" }; }
   function saveStore() {
     var d = ST.storeEdit;
     if (!d.name || !d.name.trim()) { toast(t("shop.storeNameReq"), "error"); return; }
     // 门店编号由后端自动生成（0001 起）且不可修改，前端不提交 code
-    var payload = { name: d.name.trim(), owner: (d.owner || "").trim(), shop_id: d.shop_id || 0 };
+    var payload = { name: d.name.trim(), owner: (d.owner || "").trim() };
     var req = d.id ? api("PUT", "/api/stores/" + d.id, payload) : api("POST", "/api/stores", payload);
-    req.then(function () { toast(t("store.saveOk")); resetStoreEdit(); loadShops(); loadHqStores(); }).catch(function (e) { toast(e.message, "error"); });
+    req.then(function () { toast(t("store.saveOk")); resetStoreEdit(); loadHqStores(); }).catch(function (e) { toast(e.message, "error"); });
   }
 
   // 品类管理
@@ -2191,7 +2192,7 @@
     loadProfile: loadProfile, saveProfile: saveProfile, loadDocs: loadDocs, quickGo: quickGo, reminderCount: reminderCount,
     switchHqTab: switchHqTab, loadHqTab: loadHqTab, siteHref: siteHref, saveHqProfile: saveHqProfile,
     hqLangName: hqLangName, hqLangFilled: hqLangFilled, openProfLang: openProfLang,
-    loadShops: loadShops, loadHqStores: loadHqStores, storesByShop: storesByShop, createStore: createStore,
+    loadHqStores: loadHqStores, branchStores: branchStores, createStore: createStore,
     editStore: editStore, resetStoreEdit: resetStoreEdit, saveStore: saveStore,
     loadProductTypes: loadProductTypes, loadLabelTemplates: loadLabelTemplates, typeName: typeName, typeGroupOptions: typeGroupOptions,
     resetTypeEdit: resetTypeEdit, editType: editType, saveType: saveType, delType: delType,

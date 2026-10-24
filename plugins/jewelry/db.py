@@ -48,19 +48,11 @@ CREATE TABLE IF NOT EXISTS stores (
   owner TEXT,
   bridge_key TEXT DEFAULT '',
   printer_name TEXT DEFAULT '',
-  shop_id INTEGER DEFAULT 0,
   -- 门店显示币种（NULL 或空 = 跟随总部内部币种）；汇率从 exchange_rates 取
-  display_currency TEXT DEFAULT ''
-);
-
--- 店铺（上层组织）：一个店铺含多个门店；sale_item_limit=快速开单单件数上限
-CREATE TABLE IF NOT EXISTS shops (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  code TEXT UNIQUE,
-  sale_item_limit INTEGER DEFAULT 20,
-  sort_order INTEGER DEFAULT 0,
-  created TEXT DEFAULT (datetime('now','localtime'))
+  display_currency TEXT DEFAULT '',
+  -- 负责人电话 / 门店地址（门店管理·基本信息展示与编辑）
+  owner_phone TEXT DEFAULT '',
+  address TEXT DEFAULT ''
 );
 
 -- 门店按打印业务指派打印机（store_id × biz_code 唯一；多个业务可指向同一台打印机）
@@ -390,6 +382,16 @@ CREATE TABLE IF NOT EXISTS repairs (
   technician TEXT DEFAULT '',
   remark TEXT DEFAULT ''
 );
+
+-- 维修单商品照片（接单必传，≥1 张；seq 定序，image 统一 WebP）
+CREATE TABLE IF NOT EXISTS repair_photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  repair_id INTEGER NOT NULL,
+  seq INTEGER DEFAULT 0,
+  image BLOB,
+  image_ts TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_repair_photos_repair ON repair_photos(repair_id);
 
 CREATE TABLE IF NOT EXISTS purchases (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -942,12 +944,15 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("products", "cert_location_id", "INTEGER DEFAULT 0"),
         ("sales", "clerk_type", "TEXT DEFAULT '店员'"),
         ("sales", "clerk_name", "TEXT DEFAULT ''"),
-        ("stores", "shop_id", "INTEGER DEFAULT 0"),
+        ("stores", "owner_phone", "TEXT DEFAULT ''"),
+        ("stores", "address", "TEXT DEFAULT ''"),
         # 门店数据隔离：业务单据补 store_id（历史数据迁移时按商品关联回填，无法关联的置 0）
         ("sales", "store_id", "INTEGER DEFAULT 0"),
         ("loans", "store_id", "INTEGER DEFAULT 0"),
         ("deposits", "store_id", "INTEGER DEFAULT 0"),
         ("repairs", "store_id", "INTEGER DEFAULT 0"),
+        # 1.2.62 维修单号（WX+日期+序号，方便电话/取件核对；历史单按收件日回填）
+        ("repairs", "repair_no", "TEXT DEFAULT ''"),
         ("purchases", "store_id", "INTEGER DEFAULT 0"),
         ("outsourcings", "store_id", "INTEGER DEFAULT 0"),
         ("appointments", "store_id", "INTEGER DEFAULT 0"),
@@ -965,6 +970,8 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         ("biz_config", "gold_price", "REAL DEFAULT 0"),
         ("biz_config", "currency", "TEXT DEFAULT 'CNY'"),
         ("stores", "display_currency", "TEXT DEFAULT ''"),
+        # 快速开单每单件数上限（原 shops.sale_item_limit，店铺层级已移除，迁入业务配置）
+        ("biz_config", "sale_item_limit", "INTEGER DEFAULT 20"),
         ("tag_groups", "names", "TEXT DEFAULT '{}'"),
         ("product_tags", "names", "TEXT DEFAULT '{}'"),
         # 1.0.9 会员：积分 + 金价折扣待遇
@@ -1037,6 +1044,15 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     for table, col, decl in alters:
         if not _has_column(conn, table, col):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    # 店铺层级移除（1.2.62）：shops.sale_item_limit → biz_config；随后删列删表（幂等）
+    if conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='shops'").fetchone():
+        old = conn.execute("SELECT sale_item_limit FROM shops ORDER BY id LIMIT 1").fetchone()
+        conn.execute("INSERT OR IGNORE INTO biz_config(id,epc_prefix,seq_bits) VALUES(1,'E280',8)")
+        if old and old["sale_item_limit"]:
+            conn.execute("UPDATE biz_config SET sale_item_limit=? WHERE id=1", (old["sale_item_limit"],))
+        conn.execute("DROP TABLE shops")
+    if _has_column(conn, "stores", "shop_id"):
+        conn.execute("ALTER TABLE stores DROP COLUMN shop_id")
     # 实际开单日期回填：历史单据取落库时间（created）的日期部分，幂等
     if _has_column(conn, "sales", "real_biz_date"):
         conn.execute(
@@ -1069,6 +1085,12 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
     _dedupe_customers(conn)
     _backfill_sales_customer_id(conn)
+    # 1.2.62 历史维修单回填单号：WX + 收件日(yyyymmdd) + 3 位 id（新单由后端生成，不冲突）
+    if _has_column(conn, "repairs", "repair_no"):
+        conn.execute(
+            "UPDATE repairs SET repair_no='WX'||replace(IFNULL(receive_date,''),'-','')||printf('%03d',id) "
+            "WHERE IFNULL(repair_no,'')=''"
+        )
     # 角色级兜底：店长/高管始终拥有成本查看权（不触碰店员被显式授予/收回的状态）
     conn.execute(
         "UPDATE users SET can_view_cost=1 WHERE role IN ('TENANT_ADMIN','EXECUTIVE') "
@@ -1286,21 +1308,9 @@ def _migrate_legacy_zero_store(conn: sqlite3.Connection) -> None:
 
 
 def _migrate_shops_and_sale_items(conn: sqlite3.Connection) -> None:
-    """总部/门店两级 + 一单多件 的一次性、幂等数据回填：
-    1) 无总部则建默认总部，把 shop_id=0 的门店全部挂到首个总部；
-    2) 历史单件 sales（product_id 非空且无明细）回填 1 条 sale_items。"""
-    # 把历史遗留的「默认店铺」统一改名为「默认总部」
-    conn.execute("UPDATE shops SET name='默认总部' WHERE code='DEFAULT' AND name IN ('默认店铺','默认总部')")
-    shop_count = conn.execute("SELECT COUNT(*) n FROM shops").fetchone()["n"]
-    if shop_count == 0:
-        cur = conn.execute(
-            "INSERT INTO shops(name,code,sale_item_limit,sort_order) VALUES(?,?,20,0)",
-            ("默认总部", "DEFAULT"))
-        default_shop = cur.lastrowid
-    else:
-        default_shop = conn.execute("SELECT id FROM shops ORDER BY id LIMIT 1").fetchone()["id"]
-    # 归属所有未挂店铺的存量门店
-    conn.execute("UPDATE stores SET shop_id=? WHERE COALESCE(shop_id,0)=0", (default_shop,))
+    """一单多件的一次性、幂等数据回填：
+    历史单件 sales（product_id 非空且无明细）回填 1 条 sale_items。
+    （店铺(shops)层级已于 1.2.62 移除，原门店归属/默认总部逻辑一并删除）"""
     # 清理 store_printers 孤儿（stores 被硬删除后残留，新 AUTOINCREMENT 分配 id 会撞 UNIQUE）
     conn.execute("DELETE FROM store_printers WHERE store_id NOT IN (SELECT id FROM stores)")
     # 历史单件销售单回填明细（仅回填还没有任何明细行的单）
@@ -1753,11 +1763,6 @@ def ensure_new_seeds(conn: sqlite3.Connection) -> None:
         )
         # 有"已定"定金单的商品 → 自动置为已定锁定（同 seed_demo 逻辑）
         conn.execute("UPDATE products SET status='已定' WHERE id IN (SELECT product_id FROM deposits WHERE status='已定')")
-    if conn.execute("SELECT COUNT(*) FROM shops").fetchone()[0] == 0:
-        conn.execute(
-            "INSERT INTO shops(name,code,sale_item_limit) VALUES(?,?,?)",
-            ("懿臻珠宝总店", "HQ", 20),
-        )
     # —— stores：保证至少 2 家（前端门店切换 select 只有 stores.length>1 才显示）——
     _ensure_stores_seed(conn)
     # —— user_stores：确保 admin 有权限看到所有门店（含新加的分店）——
@@ -1856,6 +1861,10 @@ def ensure_new_seeds(conn: sqlite3.Connection) -> None:
     _ensure_historical_sales(conn)
     # —— extra_business：会员/委外/定金/借货/维修/采购/预约/库存流水 演示数据补全（各自幂等）——
     _ensure_extra_business(conn)
+    # —— member_sales：有积分但零消费的演示会员补近期销售（档案消费记录自洽，幂等）——
+    _ensure_member_sales(conn)
+    # —— repair_photos：存量演示维修单按品名回填商品照片（列表缩略图/详情展示，幂等）——
+    _ensure_repair_photos(conn)
     # —— transfers + transfer_items ——
     if conn.execute("SELECT COUNT(*) FROM transfers").fetchone()[0] == 0:
         cur = conn.execute(
@@ -2140,18 +2149,18 @@ def _ensure_stores_seed(conn: sqlite3.Connection) -> None:
     if n == 0:
         # 全空：seed 两家
         conn.executemany(
-            "INSERT INTO stores(name,code,owner,shop_id) VALUES(?,?,?,?)",
-            [("总部", "HQ", "管理员", 1), ("分店A", "A001", "店长小张", 0)],
+            "INSERT INTO stores(name,code,owner) VALUES(?,?,?)",
+            [("总部", "HQ", "管理员"), ("分店A", "A001", "店长小张")],
         )
     elif n == 1:
         # 只有 1 家：补第二家分店
         existing_code = conn.execute("SELECT code FROM stores LIMIT 1").fetchone()[0]
         if existing_code == "HQ":
-            conn.execute("INSERT INTO stores(name,code,owner,shop_id) VALUES(?,?,?,?)",
-                         ("分店A", "A001", "店长小张", 0))
+            conn.execute("INSERT INTO stores(name,code,owner) VALUES(?,?,?)",
+                         ("分店A", "A001", "店长小张"))
         else:
-            conn.execute("INSERT INTO stores(name,code,owner,shop_id) VALUES(?,?,?,?)",
-                         ("总部", "HQ", "管理员", 1))
+            conn.execute("INSERT INTO stores(name,code,owner) VALUES(?,?,?)",
+                         ("总部", "HQ", "管理员"))
 
 
 def _ensure_user_store_grants(conn: sqlite3.Connection) -> None:
@@ -2441,6 +2450,132 @@ def _ensure_historical_sales(conn: sqlite3.Connection) -> None:
             m += 1
         if m > 12:
             m, y = 1, y + 1
+        conn.commit()
+    except Exception:
+        pass  # 演示数据生成失败不阻塞连接
+
+
+def _ensure_member_sales(conn: sqlite3.Connection) -> None:
+    """有积分会员补消费记录：会员种子直接带积分（点数先于消费存在），此处为
+    「有积分但零消费」的演示会员补 1~3 单近期销售，保证会员档案（消费记录/累计消费）自洽。
+
+    幂等：补过后这些会员已有 sales 关联，门槛自然不再触发；真实租户会员有真实订单则完全不触发。
+    单号用 XSM 前缀（开单为 XSyyyymmddnnn、历史种子为 XSyyyymmddnnn），永不冲突。
+    """
+    try:
+        if not _has_column(conn, "sales", "customer_id"):
+            return
+        rows = conn.execute(
+            "SELECT id,name,phone,points,store_id FROM customers WHERE IFNULL(points,0)>0 AND NOT EXISTS "
+            "(SELECT 1 FROM sales s WHERE s.customer_id=customers.id"
+            " OR (s.phone<>'' AND s.phone=customers.phone)"
+            " OR (s.customer<>'' AND s.customer=customers.name))"
+        ).fetchall()
+        if not rows:
+            return
+        import random
+        from datetime import date, timedelta
+        rnd = random.Random(26102402)
+        today = date.today()
+        methods = ["微信", "支付宝", "刷卡", "现金"]
+        spend = {}   # customer_id -> 补录累计消费（回写 total_amount）
+        seq = 1
+        for r in rows:
+            sid = r["store_id"] or 0
+            pool = conn.execute(
+                "SELECT id,name,price,store_id FROM products WHERE status='在库' AND price>0 "
+                "AND (store_id=? OR ?=0) ORDER BY id LIMIT 40", (sid, sid)).fetchall()
+            if not pool:
+                pool = conn.execute(
+                    "SELECT id,name,price,store_id FROM products WHERE status='在库' AND price>0 "
+                    "ORDER BY id LIMIT 40").fetchall()
+            if not pool:
+                return
+            for _ in range(rnd.randint(1, 3)):
+                p = pool[rnd.randrange(len(pool))]
+                d = today - timedelta(days=rnd.randint(3, 120))
+                ds = d.isoformat()
+                amt = round(p["price"], 2)
+                conn.execute(
+                    "INSERT INTO sales(bill_no,customer,phone,product,product_id,amount,paid,method,biz_date,"
+                    "type,status,clerk_type,clerk_name,store_id,discount,receivable,real_biz_date,"
+                    "points_earned,points_redeemed)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0)",
+                    (f"XSM{ds.replace('-', '')}{seq:03d}", r["name"], r["phone"] or "", p["name"], p["id"],
+                     amt, amt, methods[rnd.randrange(len(methods))], ds, "普通", "已完成", "店员",
+                     "林雅" if seq % 2 else "周芸", sid or p["store_id"], 0, amt, ds))
+                spend[r["id"]] = spend.get(r["id"], 0) + amt
+                seq += 1
+        if spend and _has_column(conn, "customers", "total_amount"):
+            for cid, amt in spend.items():
+                conn.execute("UPDATE customers SET total_amount=IFNULL(total_amount,0)+? WHERE id=?", (amt, cid))
+        conn.commit()
+    except Exception:
+        pass  # 演示数据生成失败不阻塞连接
+
+
+def _ensure_repair_photos(conn: sqlite3.Connection) -> None:
+    """演示维修单补商品照片：接单必传照片是 1.2.62 起的规则，存量演示维修单按品名
+    匹配商品（同名 → 互相包含 → 最长公共子串≥2）取包内 assets/products/{code}.webp 回填。
+
+    幂等：repair_photos 已有该单记录则跳过；真实租户维修单有自传照片不触发，匹配不上静默留空。
+    """
+    try:
+        if not _has_column(conn, "repair_photos", "image"):
+            return
+        rows = conn.execute(
+            "SELECT r.id, r.item FROM repairs r WHERE NOT EXISTS "
+            "(SELECT 1 FROM repair_photos rp WHERE rp.repair_id=r.id)"
+        ).fetchall()
+        if not rows:
+            return
+        prods = [(r["id"], r["name"], r["code"]) for r in conn.execute(
+            "SELECT id,name,code FROM products WHERE IFNULL(code,'')!=''").fetchall()]
+        from datetime import datetime
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        def lcs(a: str, b: str) -> int:
+            m = 0
+            prev = [0] * (len(b) + 1)
+            for i in range(1, len(a) + 1):
+                cur = [0]
+                for j in range(1, len(b) + 1):
+                    cur.append(prev[j - 1] + 1 if a[i - 1] == b[j - 1] else 0)
+                    m = max(m, cur[j])
+                prev = cur
+            return m
+
+        for r in rows:
+            item = (r["item"] or "").strip()
+            if len(item) < 2:
+                continue
+            pid = code = None
+            for _pid, name, code_ in prods:   # 同名优先
+                if name == item:
+                    pid, code = _pid, code_
+                    break
+            if not pid:
+                for _pid, name, code_ in prods:   # 互相包含
+                    if name and (item in name or name in item):
+                        pid, code = _pid, code_
+                        break
+            if not pid:
+                best, best_sc = None, 1
+                for _pid, name, code_ in prods:   # 最长公共子串≥2
+                    if not name:
+                        continue
+                    sc = lcs(item, name)
+                    if sc > best_sc:
+                        best, best_sc = (_pid, code_), sc
+                if best:
+                    pid, code = best
+            if not pid or not code:
+                continue
+            fp = _ASSETS_IMG_DIR / (code + ".webp")
+            if not fp.exists():
+                continue
+            conn.execute("INSERT INTO repair_photos(repair_id,seq,image,image_ts) VALUES(?,?,?,?)",
+                         (r["id"], 0, fp.read_bytes(), ts))
         conn.commit()
     except Exception:
         pass  # 演示数据生成失败不阻塞连接
@@ -2741,9 +2876,6 @@ def seed_demo(conn: sqlite3.Connection) -> None:
         return
     stores = [("总部", "HQ", "管理员"), ("分店A", "A001", "店长小张")]
     conn.executemany("INSERT INTO stores(name,code,owner) VALUES(?,?,?)", stores)
-    # —— shops（上层组织）——
-    conn.execute("INSERT INTO shops(name,code,sale_item_limit) VALUES(?,?,?)", ("懿臻珠宝总店", "HQ", 20))
-    conn.execute("UPDATE stores SET shop_id=1 WHERE code='HQ'")
     # —— biz_config（EPC 规则）——
     conn.execute("INSERT OR IGNORE INTO biz_config(id,epc_prefix,seq_bits,gold_price) VALUES(1,'E28',8,520)")
     conn.execute("UPDATE biz_config SET epc_prefix='E28', seq_bits=8, gold_price=520 WHERE id=1")

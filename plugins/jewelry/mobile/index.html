@@ -1068,28 +1068,19 @@
                 <div class="form-group"><label>{{ t('store.code') }}</label><input v-model="ST.storeEdit.code" maxlength="4" disabled :placeholder="t('store.codePh')"></div>
                 <div class="form-group"><label>{{ t('store.owner') }}</label><input v-model="ST.storeEdit.owner"></div>
               </div>
-              <div class="form-group"><label>{{ t('store.belongShop') }}</label>
-                <select v-model.number="ST.storeEdit.shop_id">
-                  <option v-for="p in ST.shops" :key="p.id" :value="p.id">{{ p.name }}</option>
-                </select>
-              </div>
               <div style="display:flex;gap:8px">
                 <button class="btn btn-gold" style="flex:1" @click="saveStore()">{{ ST.storeEditMode==='edit' ? t('cat.saveEdit') : t('common.confirm') }}</button>
                 <button class="btn btn-outline" style="flex:1" @click="resetStoreEdit()">{{ t('common.cancel') }}</button>
               </div>
             </div>
-            <div v-for="p in ST.shops" :key="'sh'+p.id">
-              <div class="hq-grp-title">🏬 {{ p.name }} <span v-if="p.code">#{{ p.code }}</span></div>
-              <div class="card" v-for="s in storesByShop(p.id)" :key="s.id">
-                <div class="card-head">
-                  <div class="card-title">🏪 {{ s.name }} <small v-if="s.code">#{{ s.code }}</small></div>
-                  <button class="btn btn-outline btn-sm" @click="(ST.storeEditMode==='edit' && ST.storeEdit.id===s.id) ? resetStoreEdit() : editStore(s)">{{ (ST.storeEditMode==='edit' && ST.storeEdit.id===s.id) ? t('common.cancel') : t('common.edit') }}</button>
-                </div>
-                <div class="kv" v-if="s.owner"><span class="kv-k">{{ t('store.owner') }}</span><span class="kv-v">{{ s.owner }}</span></div>
+            <div class="card" v-for="s in branchStores()" :key="s.id">
+              <div class="card-head">
+                <div class="card-title">🏪 {{ s.name }} <small v-if="s.code">#{{ s.code }}</small></div>
+                <button class="btn btn-outline btn-sm" @click="(ST.storeEditMode==='edit' && ST.storeEdit.id===s.id) ? resetStoreEdit() : editStore(s)">{{ (ST.storeEditMode==='edit' && ST.storeEdit.id===s.id) ? t('common.cancel') : t('common.edit') }}</button>
               </div>
-              <div v-if="!storesByShop(p.id).length" class="empty" style="padding:10px"><div class="empty-text">{{ t('store.emptyInShop') }}</div></div>
+              <div class="kv" v-if="s.owner"><span class="kv-k">{{ t('store.owner') }}</span><span class="kv-v">{{ s.owner }}</span></div>
             </div>
-            <div v-if="!ST.shops.length" class="empty"><div class="empty-text">{{ t('common.loading') }}</div></div>
+            <div v-if="!branchStores().length" class="empty"><div class="empty-text">{{ t('common.loading') }}</div></div>
           </template>
 
           <!-- 品类管理 -->

@@ -183,6 +183,22 @@ a { text-decoration: none; color: inherit; }
 .ri-code { color: var(--wine-dark); font-weight: 600; margin-right: 6px; }
 /* 详情面板顶部：锁定商品实物照（取货核对） */
 .detail-photo { margin: 0 0 8px; text-align: center; }
+/* 详情面板商品图条：多件并排缩略图，点击看大图 */
+.detail-imgs { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 10px; }
+.detail-img { width: 76px; text-align: center; cursor: zoom-in; }
+.detail-img img { width: 76px; height: 76px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); background: #fff; display: block; }
+.detail-img .di-name { display: block; margin-top: 3px; font-size: 11px; color: var(--muted, #8a7a6a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 维修单照片：表单上传块 + 列表卡缩略图 */
+.rep-photos { display: flex; flex-wrap: wrap; gap: 8px; }
+.rep-photo { position: relative; width: 84px; }
+.rep-photo img { width: 84px; height: 84px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); background: #fff; display: block; cursor: zoom-in; }
+.rep-photo-del { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; border: none; background: #c0392b; color: #fff; font-size: 13px; line-height: 18px; cursor: pointer; padding: 0; }
+.rep-photo-add { width: 84px; height: 84px; border: 1px dashed var(--border); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 24px; color: var(--muted, #8a7a6a); cursor: pointer; }
+.rep-thumbs { display: flex; gap: 6px; flex-wrap: wrap; }
+/* 维修列表卡：照片独占一行，最多 3 张恒定三等分并排（每张 1/3 宽），窄边充满（cover）无白边 */
+.rec-card .rep-thumbs { width: 100%; margin-bottom: 10px; }
+.rec-card .rep-thumb { flex: 0 0 calc((100% - 12px) / 3); min-width: 0; height: 110px; object-fit: cover; border-radius: 8px; background: transparent; cursor: zoom-in; }
+.rep-thumb { width: 52px; height: 52px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); background: #fff; flex: 0 0 52px; cursor: zoom-in; }
 .detail-photo img { max-width: 100%; max-height: 220px; border-radius: 10px; border: 1px solid var(--border); object-fit: contain; }
 .detail-photo-code { display: block; margin-top: 4px; font-size: 13px; color: var(--wine-dark); font-weight: 600; }
 /* 资产风控条 */
@@ -447,6 +463,7 @@ a { text-decoration: none; color: inherit; }
 .rec-card:active { transform: translateY(0); }
 .rec-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .rec-lines { min-width: 0; flex: 1; }
+.rec-lines .rec-line { word-break: keep-all; overflow-wrap: normal; }  /* 文字不拆字折行（如「师傅」不再被拆成 师/傅） */
 .rec-line { font-size: 14px; color: var(--text2); line-height: 1.55; margin-top: 3px; word-break: break-word; white-space: normal; }
 .rec-line:first-child { margin-top: 0; }
 .rec-title { font-size: 15px; font-weight: 600; color: var(--text); }
@@ -2293,3 +2310,19 @@ body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; 
 .docs-body th, .docs-body td { border: 1px solid rgba(var(--gold-rgb),.35); padding: 6px 10px; text-align: left; font-size: 13px; }
 .docs-body th { background: rgba(var(--gold-rgb),.12); }
 .docs-body strong { color: var(--wine, #5c1a2e); }
+
+/* ===== 子页签导航（总部管理/门店管理/系统管理/操作日志）：下划线式页签，替代按钮组 ===== */
+.admin-subnav { display: flex; gap: 2px; margin-bottom: 14px; flex-wrap: wrap; align-items: flex-end; border-bottom: 2px solid var(--border, #EADFC8); }
+.admin-subnav .sub-tab {
+  border: none; background: none; font-family: inherit;
+  padding: 9px 16px 11px; font-size: 13.5px; line-height: 1;
+  color: var(--text2, #6B5A48); cursor: pointer; position: relative;
+  white-space: nowrap; border-radius: 8px 8px 0 0; user-select: none;
+  transition: color .15s, background .15s;
+}
+.admin-subnav .sub-tab:hover { color: var(--text, #3D2B1F); background: rgba(var(--gold-rgb), .10); }
+.admin-subnav .sub-tab.on { color: var(--wine, #5c2233); font-weight: 600; }
+.admin-subnav .sub-tab.on::after {
+  content: ''; position: absolute; left: 8px; right: 8px; bottom: -2px; height: 3px;
+  border-radius: 2px 2px 0 0; background: linear-gradient(90deg, var(--gold-soft, #e8d5a0), var(--gold-deep, #9c7b3a));
+}
