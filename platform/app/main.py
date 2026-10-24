@@ -4,6 +4,7 @@ import re
 import secrets
 import shutil
 import threading
+import time
 from pathlib import Path
 
 from fastapi import (Depends, FastAPI, File, HTTPException, Request, UploadFile,
@@ -95,19 +96,33 @@ class LoginIn(BaseModel):
     password: str = Field(max_length=128)
 
 
+# 登录验证响应最短耗时（秒）：无论成功失败，一律不低于该间隔
+LOGIN_MIN_SECONDS = 2.0
+
+
 def _set_session_cookie(response: Response, token: str) -> None:
     response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_TTL_SECONDS, httponly=True, samesite="lax")
 
 
 @app.post("/api/auth/login")
 def login(body: LoginIn, response: Response):
+    """登录验证响应耗时强制 ≥2s：拖慢暴力破解节奏，且成功/失败耗时一致，防时序探测。"""
+    start = time.monotonic()
+
+    def _pace():
+        remain = LOGIN_MIN_SECONDS - (time.monotonic() - start)
+        if remain > 0:
+            time.sleep(remain)
+
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM users WHERE username=?", (body.username,)).fetchone()
     if not row or not verify_password(body.password, row["password_hash"]):
+        _pace()
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     user = {"username": row["username"], "display_name": row["display_name"], "role": row["role"]}
     token = create_session(user)
     _set_session_cookie(response, token)
+    _pace()
     return {"token": token, "user": user}
 
 
@@ -122,6 +137,24 @@ def logout(request: Request, response: Response, _: dict = Depends(current_user)
 def me(request: Request, response: Response, user: dict = Depends(current_user)):
     _set_session_cookie(response, request.headers.get("authorization", "").removeprefix("Bearer ").strip())
     return user
+
+
+class ChangePwdIn(BaseModel):
+    old_password: str = Field(max_length=128)
+    new_password: str = Field(min_length=6, max_length=128)
+
+
+@app.post("/api/auth/change-password")
+def change_password(body: ChangePwdIn, user: dict = Depends(current_user)):
+    """平台管理员自助修改登录密码；原密码校验通过后更新，并记审计。"""
+    with get_conn() as conn:
+        row = conn.execute("SELECT password_hash FROM users WHERE username=?", (user["username"],)).fetchone()
+        if not row or not verify_password(body.old_password, row["password_hash"]):
+            raise HTTPException(status_code=400, detail="原密码不正确")
+        conn.execute("UPDATE users SET password_hash=? WHERE username=?",
+                     (hash_password(body.new_password), user["username"]))
+        audit(conn, user["username"], "修改平台密码", user["username"])
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------- 应用插件管理

@@ -410,7 +410,14 @@ createApp({
     });
     const isNewer = v => !detail.value.current_version || cmpVer(v.software_version, detail.value.current_version) > 0;
 
-    onMounted(() => { reload().catch(e => toast(e.message, true)); loadPlatformVersion(); });
+    onMounted(() => {
+      reload().catch(e => toast(e.message, true));
+      loadPlatformVersion();
+      // 主界面左下角「上传平台包」按钮经 postMessage 触发平台升级文件选择
+      window.addEventListener('message', e => {
+        if (e.origin === location.origin && e.data && e.data.type === 'pick-upgrade') pickUpgradeFile();
+      });
+    });
 
     return {
       plugins, activeId, detail, guideOpen, dragging, fileInput, svcBusy,

@@ -12,10 +12,7 @@
     <aside class="sidebar">
       <div class="sidebar-head">
         <h2>插件列表</h2>
-        <div style="display:flex;flex-direction:column;gap:6px;align-items:stretch">
-          <button class="btn ghost sm" :disabled="upgrading" :title="'当前平台 v' + platformVersion" @click="pickUpgradeFile">⬆ {{ upgrading ? '升级中…' : '上传平台包' }}</button>
-          <button class="btn primary sm" @click="pickFile">＋ 上传插件包</button>
-        </div>
+        <button class="btn primary sm" @click="pickFile">＋ 上传插件包</button>
       </div>
       <ul class="plugin-list">
         <li v-for="p in plugins" :key="p.id" class="pl-item" :class="{active: p.id === activeId}" @click="openPlugin(p.id)">

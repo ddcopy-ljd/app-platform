@@ -12,14 +12,14 @@
   <!-- ==================== 登录 ==================== -->
   <div v-if="!user" class="login-wrap">
     <form class="login-card" @submit.prevent="doLogin">
-      <div class="login-logo">◆</div>
-      <h1>综合业务应用服务平台</h1>
-      <p class="sub">平台管理后台</p>
+      <div class="login-head">
+        <div class="login-logo">◆</div>
+        <h1>综合业务应用服务平台</h1>
+      </div>
       <label class="field"><span>用户名</span><input v-model.trim="loginForm.username" autocomplete="username" required></label>
       <label class="field"><span>密码</span><input v-model="loginForm.password" type="password" autocomplete="current-password" required></label>
       <div class="login-err">{{ loginError }}</div>
-      <button class="btn primary block" :disabled="loggingIn">{{ loggingIn ? '登录中…' : '登 录' }}</button>
-      <div class="login-hint">演示账号：admin / admin123</div>
+      <button class="login-btn" :disabled="loggingIn">{{ loggingIn ? '登录中…' : '登 录' }}</button>
     </form>
   </div>
 
@@ -39,6 +39,7 @@
       <div class="brand"><i>◆</i>综合业务应用服务平台<span class="ver-tag">v{{ platformVersion || version }}</span></div>
       <div class="spacer"></div>
       <span class="user">{{ user.display_name }}（{{ user.username }}）</span>
+      <button class="btn sm" @click="openPwd">修改密码</button>
       <button class="btn sm" @click="doLogout">退出</button>
     </header>
 
@@ -57,10 +58,30 @@
         <div v-for="m in menus" :key="m.key" class="menu-item" :class="{active: menu === m.key}" @click="menu = m.key">
           <span>{{ m.icon }}</span>{{ m.label }}
         </div>
+        <div class="menu-foot">
+          <button class="btn block" :title="'当前平台 v' + (platformVersion || version)" @click="pickUpgrade">⬆ 上传平台包</button>
+        </div>
       </nav>
-      <iframe class="work-frame" :key="currentMenu.key" :src="currentMenu.src" :title="currentMenu.label"></iframe>
+      <iframe class="work-frame" :key="currentMenu.key" :src="currentMenu.src" :title="currentMenu.label" @load="onFrameLoad"></iframe>
     </div>
   </div>
+
+  <!-- ==================== 修改密码弹窗 ==================== -->
+  <div v-if="pwdOpen" class="mask" @click.self="pwdOpen = false">
+    <div class="modal">
+      <h3>修改密码</h3>
+      <label class="field"><span>原密码</span><input v-model="pwdForm.oldPassword" type="password" autocomplete="current-password"></label>
+      <label class="field"><span>新密码（至少 6 位）</span><input v-model="pwdForm.newPassword" type="password" autocomplete="new-password"></label>
+      <label class="field"><span>确认新密码</span><input v-model="pwdForm.confirm" type="password" autocomplete="new-password" @keyup.enter="submitPwd"></label>
+      <div class="login-err">{{ pwdError }}</div>
+      <div class="modal-actions">
+        <button class="btn" @click="pwdOpen = false">取消</button>
+        <button class="btn primary" :disabled="pwdBusy" @click="submitPwd">{{ pwdBusy ? '提交中…' : '确认修改' }}</button>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="toastMsg" class="toast">{{ toastMsg }}</div>
 </div>
 
 <script src="/static/vendor/vue.global.prod.js"></script>

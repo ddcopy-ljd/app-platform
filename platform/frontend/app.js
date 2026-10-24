@@ -6,19 +6,74 @@ const { api, getToken, setToken, loadPlatformVersion } = Platform;
 // 避免浏览器对 iframe 内的 html 做启发式缓存导致改动不生效。
 const FRAME_VER = Date.now();
 const MENUS = [
-  { key: 'plugins', icon: '🧩', label: '应用插件管理', src: `/static/plugins.html?v=${FRAME_VER}` },
+  { key: 'plugins', icon: '🧩', label: '应用管理', src: `/static/plugins.html?v=${FRAME_VER}` },
   { key: 'tenants', icon: '🏢', label: '租户管理', src: `/static/tenants.html?v=${FRAME_VER}` },
-  { key: 'traffic', icon: '📊', label: '服务流量统计', src: `/static/traffic.html?v=${FRAME_VER}` },
+  { key: 'traffic', icon: '📊', label: '流量统计', src: `/static/traffic.html?v=${FRAME_VER}` },
 ];
 
 createApp({
   setup() {
     const user = ref(null);
-    const loginForm = reactive({ username: 'admin', password: '' });
+    const loginForm = reactive({ username: '', password: '' });
     const loginError = ref('');
     const loggingIn = ref(false);
     const menu = ref(MENUS[0].key);
     const currentMenu = computed(() => MENUS.find(m => m.key === menu.value));
+    // 左下角「上传平台包」：若不在应用管理页，先切过去，等 iframe 加载完再 postMessage 触发文件选择
+    const pendingUpgrade = ref(false);
+    function sendPickUpgrade() {
+      const frame = document.querySelector('.work-frame');
+      if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: 'pick-upgrade' }, location.origin);
+    }
+    function pickUpgrade() {
+      if (menu.value === 'plugins') { sendPickUpgrade(); return; }
+      pendingUpgrade.value = true;
+      menu.value = 'plugins';
+    }
+    function onFrameLoad() {
+      if (pendingUpgrade.value) { pendingUpgrade.value = false; sendPickUpgrade(); }
+    }
+
+    // ---------------- 修改密码 ----------------
+    const pwdOpen = ref(false);
+    const pwdForm = reactive({ oldPassword: '', newPassword: '', confirm: '' });
+    const pwdError = ref('');
+    const pwdBusy = ref(false);
+    const toastMsg = ref('');
+    let toastTimer = null;
+
+    function toast(m) {
+      toastMsg.value = m;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toastMsg.value = '', 2500);
+    }
+
+    function openPwd() {
+      pwdForm.oldPassword = pwdForm.newPassword = pwdForm.confirm = '';
+      pwdError.value = '';
+      pwdOpen.value = true;
+    }
+
+    async function submitPwd() {
+      pwdError.value = '';
+      if (!pwdForm.oldPassword || !pwdForm.newPassword) { pwdError.value = '请填写原密码与新密码'; return; }
+      if (pwdForm.newPassword.length < 6) { pwdError.value = '新密码至少 6 位'; return; }
+      if (pwdForm.newPassword === pwdForm.oldPassword) { pwdError.value = '新密码不能与原密码相同'; return; }
+      if (pwdForm.newPassword !== pwdForm.confirm) { pwdError.value = '两次输入的新密码不一致'; return; }
+      pwdBusy.value = true;
+      try {
+        await api('/api/auth/change-password', {
+          method: 'POST',
+          json: { old_password: pwdForm.oldPassword, new_password: pwdForm.newPassword },
+        });
+        pwdOpen.value = false;
+        toast('密码修改成功');
+      } catch (e) {
+        pwdError.value = e.message;
+      } finally {
+        pwdBusy.value = false;
+      }
+    }
     const maintenance = ref([]);
     const digest = ref(null);
     const platformVersion = ref('');
@@ -99,6 +154,8 @@ createApp({
     return {
       user, loginForm, loginError, loggingIn, doLogin, doLogout,
       menus: MENUS, menu, currentMenu, maintenance, digest, fmtMB, num, version: Platform.version, platformVersion,
+      pickUpgrade, onFrameLoad,
+      pwdOpen, pwdForm, pwdError, pwdBusy, toastMsg, openPwd, submitPwd,
     };
   },
 }).mount('#app');
